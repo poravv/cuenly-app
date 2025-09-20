@@ -285,10 +285,19 @@ jobs:
             --from-literal=mongodb-root-password="${{ secrets.MONGODB_ROOT_PASSWORD }}" \
             --from-literal=mongodb-database="${{ secrets.MONGODB_DATABASE }}"
             
+          # Generar keyfile de MongoDB automáticamente
+          echo "🔑 Generando keyfile de MongoDB..."
+          MONGODB_KEYFILE=$(openssl rand -base64 756 | tr -d '\n')
+          echo "Keyfile generado con $(echo -n "$MONGODB_KEYFILE" | wc -c) caracteres"
+          
+          # Crear archivo temporal y secret
+          echo "$MONGODB_KEYFILE" > /tmp/mongodb-keyfile.txt
           kubectl delete secret mongodb-keyfile -n ${{ env.NAMESPACE }} --ignore-not-found=true
           kubectl create secret generic mongodb-keyfile \
             --namespace=${{ env.NAMESPACE }} \
-            --from-literal=keyfile="${{ secrets.MONGODB_KEYFILE }}"
+            --from-file=keyfile=/tmp/mongodb-keyfile.txt
+          rm -f /tmp/mongodb-keyfile.txt
+          echo "✅ Secret mongodb-keyfile creado correctamente"
             
       - name: Deploy MongoDB
         run: |
