@@ -188,3 +188,72 @@ try {
 } catch (e) { }
 
 print('✅ Colecciones invoice_headers y invoice_items listas');
+
+// Crear colección de usuarios autenticados
+try {
+  db.createCollection('auth_users', {
+    validator: {
+      $jsonSchema: {
+        bsonType: 'object',
+        required: ['email', 'uid'],
+        properties: {
+          email: {
+            bsonType: 'string',
+            pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+            description: 'Email del usuario (único)'
+          },
+          uid: {
+            bsonType: 'string',
+            description: 'UID de Firebase'
+          },
+          name: {
+            bsonType: 'string',
+            description: 'Nombre del usuario'
+          },
+          picture: {
+            bsonType: 'string',
+            description: 'URL de la foto de perfil'
+          },
+          created_at: {
+            bsonType: 'date',
+            description: 'Fecha de creación del usuario'
+          },
+          last_login: {
+            bsonType: 'date',
+            description: 'Último login del usuario'
+          },
+          is_trial_user: {
+            bsonType: 'bool',
+            description: 'Si es usuario de prueba'
+          },
+          trial_expires_at: {
+            bsonType: 'date',
+            description: 'Fecha de expiración del trial'
+          },
+          ai_invoices_processed: {
+            bsonType: 'int',
+            minimum: 0,
+            description: 'Número de facturas procesadas con IA'
+          },
+          ai_invoices_limit: {
+            bsonType: 'int',
+            minimum: 0,
+            description: 'Límite de facturas con IA para usuarios trial'
+          }
+        }
+      }
+    }
+  });
+  
+  // Crear índices para usuarios
+  db.auth_users.createIndex({ email: 1 }, { unique: true });
+  db.auth_users.createIndex({ uid: 1 });
+  db.auth_users.createIndex({ trial_expires_at: 1 });
+  db.auth_users.createIndex({ ai_invoices_processed: 1 });
+  db.auth_users.createIndex({ is_trial_user: 1 });
+  
+} catch (e) { 
+  print('⚠️ Error creando colección auth_users: ' + e.message);
+}
+
+print('✅ Colección auth_users configurada');

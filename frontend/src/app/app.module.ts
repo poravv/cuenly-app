@@ -14,9 +14,11 @@ import { HelpComponent } from './components/help/help.component';
 import { InvoiceExplorerComponent } from './components/invoice-explorer/invoice-explorer.component';
 import { InvoicesV2Component } from './components/invoices-v2/invoices-v2.component';
 import { LoginComponent } from './components/login/login.component';
+import { TrialBannerComponent } from './components/trial-banner/trial-banner.component';
 import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
+import { TrialInterceptor } from './interceptors/trial.interceptor';
 
 @NgModule({
   declarations: [
@@ -30,7 +32,8 @@ import { AuthInterceptor } from './interceptors/auth.interceptor';
     HelpComponent,
     InvoiceExplorerComponent,
     InvoicesV2Component,
-    LoginComponent
+    LoginComponent,
+    TrialBannerComponent
   ],
   imports: [
     BrowserModule,
@@ -41,7 +44,8 @@ import { AuthInterceptor } from './interceptors/auth.interceptor';
     BrowserAnimationsModule
   ],
   providers: [
-    { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true }
+    { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true },
+    { provide: HTTP_INTERCEPTORS, useClass: TrialInterceptor, multi: true }
   ],
   bootstrap: [AppComponent]
 })

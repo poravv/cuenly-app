@@ -80,22 +80,23 @@ class MultiEmailProcessor:
 
     def process_all_emails(self) -> ProcessResult:
         # Refrescar configuración en cada corrida para reflejar cambios dinámicos desde el frontend
+        # Usar check_trial=True para que automáticamente filtre usuarios con trial expirado
         try:
-            configs_data = get_enabled_configs(include_password=True)
+            configs_data = get_enabled_configs(include_password=True, check_trial=True)
             self.email_configs = [MultiEmailConfig(**cfg) for cfg in configs_data]
         except Exception as e:
             logger.warning(f"No se pudo refrescar configuraciones desde MongoDB: {e}")
+        
         all_invoices: List[InvoiceData] = []
         success_count = 0
         errors: List[str] = []
         
-
-        logger.info(f"Iniciando procesamiento de {len(self.email_configs)} cuentas de correo")
+        logger.info(f"Iniciando procesamiento de {len(self.email_configs)} cuentas de correo (filtradas por trial válido)")
 
         if not self.email_configs:
             return ProcessResult(
                 success=False,
-                message="No hay cuentas de correo configuradas. Agregue al menos una desde la UI.",
+                message="No hay cuentas de correo configuradas con acceso válido. Usuarios con trial expirado han sido omitidos.",
                 invoice_count=0,
                 invoices=[]
             )
@@ -115,7 +116,7 @@ class MultiEmailProcessor:
                         single = EmailProcessor(EmailConfig(
                             host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
                             search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
-                        ))
+                        ), owner_email=cfg.owner_email)  # Pasar owner_email
                         r = single.process_emails()
                         # Serializar con pickle para preservar objetos complejos
                         result_queue.put(pickle.dumps(('success', r)))
@@ -335,10 +336,12 @@ class MultiEmailProcessor:
 # =========================
 class EmailProcessor:
     """
-    Procesador para una sola cuenta.
+    Procesador de correos para una cuenta IMAP específica.
     Separa responsabilidades: IMAP, parseo, guardado adjuntos, links y envío a OpenAI.
     """
-    def __init__(self, config: EmailConfig = None):
+    def __init__(self, config: EmailConfig = None, owner_email: Optional[str] = None):
+        self.owner_email = (owner_email or '').lower() if owner_email else ''
+        
         if config is None:
             # Obtener primera configuración habilitada desde MongoDB
             try:
@@ -537,7 +540,7 @@ class EmailProcessor:
                         # XML primero
                         if xml_path:
                             logger.info("📄 Procesando XML adjunto como fuente principal")
-                            inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai)
+                            inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
                             if inv:
                                 result.invoices.append(inv)
                                 result.invoice_count += 1
@@ -546,7 +549,7 @@ class EmailProcessor:
                         # Si el XML falló o no existe, intentar PDF
                         if not processed and pdf_path:
                             logger.info("📄 Procesando PDF como imagen (fallback o sin XML)")
-                            inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai)
+                            inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
                             if inv:
                                 result.invoices.append(inv)
                                 result.invoice_count += 1
@@ -566,10 +569,10 @@ class EmailProcessor:
                                 inv = None
                                 if low.endswith(".xml"):
                                     logger.info("📄 XML detectado desde enlace, procesando como factura electrónica (SIFEN si aplica)")
-                                    inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path)
+                                    inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, owner_email=self.owner_email)
                                 elif low.endswith(".pdf"):
                                     logger.info("📄 PDF detectado desde enlace, procesando con OpenAI")
-                                    inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai)
+                                    inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
                                 else:
                                     logger.warning(f"⚠️ Tipo de archivo no reconocido: {downloaded_path}")
                                     continue

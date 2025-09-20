@@ -68,14 +68,29 @@ def list_configs(include_password: bool = False, owner_email: Optional[str] = No
     return results
 
 
-def get_enabled_configs(include_password: bool = True, owner_email: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_enabled_configs(include_password: bool = True, owner_email: Optional[str] = None, check_trial: bool = False) -> List[Dict[str, Any]]:
     coll = _get_collection()
     q: Dict[str, Any] = {"enabled": True}
     if owner_email:
         q['owner_email'] = owner_email.lower()
     docs = list(coll.find(q))
     configs = []
+    
+    # Si se solicita verificación de trial, filtrar por usuarios con acceso válido
+    if check_trial:
+        from app.repositories.user_repository import UserRepository
+        user_repo = UserRepository()
+    
     for d in docs:
+        # Verificar trial si está habilitado
+        if check_trial:
+            config_owner = d.get('owner_email', '').lower()
+            if config_owner:
+                trial_info = user_repo.get_trial_info(config_owner)
+                if trial_info['is_trial_user'] and trial_info['trial_expired']:
+                    logger.info(f"Omitiendo configuración de {config_owner} - trial expirado")
+                    continue
+        
         cfg = {
             "id": str(d.get("_id")),
             "name": d.get("name") or "",
@@ -87,6 +102,7 @@ def get_enabled_configs(include_password: bool = True, owner_email: Optional[str
             "search_terms": d.get("search_terms") or [],
             "provider": d.get("provider") or "other",
             "enabled": True,
+            "owner_email": d.get("owner_email", "")  # Incluir owner_email en la respuesta
         }
         if include_password:
             cfg["password"] = d.get("password") or ""

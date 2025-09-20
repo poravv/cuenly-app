@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from app.config.settings import settings
 from app.utils.firebase_auth import verify_firebase_token, extract_bearer_token
+from app.utils.trial_middleware import check_trial_limits_optional, check_trial_limits, check_ai_limits
 from app.repositories.user_repository import UserRepository
 from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig
 from app.main import CuenlyApp
@@ -109,6 +110,39 @@ def _get_current_user(request: Request) -> Dict[str, Any]:
         pass
     return claims
 
+def _get_current_user_with_trial_info(request: Request) -> Dict[str, Any]:
+    """Valida token Firebase y retorna claims con información de trial."""
+    claims = _get_current_user(request)
+    if not claims:
+        return claims
+    
+    # Agregar información del trial
+    trial_info = check_trial_limits_optional(claims)
+    claims['trial_info'] = trial_info
+    return claims
+
+def _get_current_user_with_trial_check(request: Request) -> Dict[str, Any]:
+    """Valida token Firebase y verifica que el trial esté válido. Lanza excepción si expiró."""
+    claims = _get_current_user(request)
+    if not claims:
+        return claims
+    
+    # Verificar límites de trial (lanza excepción si expiró)
+    trial_info = check_trial_limits(claims)
+    claims['trial_info'] = trial_info
+    return claims
+
+def _get_current_user_with_ai_check(request: Request) -> Dict[str, Any]:
+    """Valida token Firebase y verifica que pueda usar IA. Lanza excepción si no puede."""
+    claims = _get_current_user(request)
+    if not claims:
+        return claims
+    
+    # Verificar límites de trial + IA (lanza excepción si no puede usar IA)
+    trial_info = check_ai_limits(claims)
+    claims['trial_info'] = trial_info
+    return claims
+
 # Tarea en segundo plano para procesar correos
 def process_emails_task():
     """Tarea en segundo plano para procesar correos."""
@@ -123,8 +157,36 @@ async def root():
     """Endpoint raíz para verificar que la API está funcionando."""
     return {"message": "CuenlyApp API está en funcionamiento"}
 
+@app.get("/user/profile")
+async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get_current_user_with_trial_info)):
+    """
+    Obtiene el perfil del usuario autenticado incluyendo información del trial
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    trial_info = user.get('trial_info', {})
+    
+    return {
+        "user": {
+            "email": user.get('email'),
+            "name": user.get('name'),
+            "picture": user.get('picture'),
+            "uid": user.get('user_id')
+        },
+        "trial": {
+            "is_trial_user": trial_info.get('is_trial_user', True),
+            "trial_expired": trial_info.get('trial_expired', True),
+            "days_remaining": trial_info.get('days_remaining', 0),
+            "trial_expires_at": trial_info.get('trial_expires_at'),
+            "ai_invoices_processed": trial_info.get('ai_invoices_processed', 0),
+            "ai_invoices_limit": trial_info.get('ai_invoices_limit', 50),
+            "ai_limit_reached": trial_info.get('ai_limit_reached', True)
+        }
+    }
+
 @app.post("/process", response_model=ProcessResult)
-async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user)):
+async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # Procesamiento mixto - verificar IA internamente
     """
     Procesa correos electrónicos para extraer facturas.
     
@@ -193,7 +255,7 @@ async def process_emails_direct(user: Dict[str, Any] = Depends(_get_current_user
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/tasks/process")
-async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user)):
+async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """Encola una ejecución de procesamiento de correos y retorna un job_id."""
     
     # Verificar si el job automático está ejecutándose
@@ -295,7 +357,7 @@ async def upload_pdf(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):  # PDFs usan IA
     """
     Sube un archivo PDF para procesarlo directamente.
     
@@ -330,7 +392,8 @@ async def upload_pdf(
 
         # Extraer + guardar en esquema v2 (invoice_headers/items)
         with PROCESSING_LOCK:
-            invoice_data = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta)
+            owner = (user.get('email') or '').lower()
+            invoice_data = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
             invoices = [invoice_data] if invoice_data else []
             if invoices:
                 try:
@@ -375,7 +438,7 @@ async def upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # XMLs usan parser nativo
     """
     Sube un archivo XML SIFEN para procesarlo directamente con el parser nativo (fallback OpenAI).
     """
@@ -400,7 +463,8 @@ async def upload_xml(
 
         with PROCESSING_LOCK:
             # Procesar XML y almacenar en esquema v2
-            invoice_data = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta)
+            owner = (user.get('email') or '').lower()
+            invoice_data = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
             invoices = [invoice_data] if invoice_data else []
             if invoices:
                 try:
@@ -445,7 +509,7 @@ async def enqueue_upload_pdf(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):  # PDFs usan IA
     """Encola el procesamiento de un PDF manual y retorna job_id."""
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
@@ -461,7 +525,8 @@ async def enqueue_upload_pdf(
                 logger.warning(f"Formato de fecha incorrecto: {date}")
 
         def _runner():
-            inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta)
+            owner = (user.get('email') or '').lower()
+            inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
             invoices = [inv] if inv else []
             if invoices:
                 try:
@@ -496,7 +561,7 @@ async def enqueue_upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # XMLs usan parser nativo
     """Encola el procesamiento de un XML manual y retorna job_id."""
     if not file.filename.lower().endswith('.xml'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
@@ -512,7 +577,8 @@ async def enqueue_upload_xml(
                 logger.warning(f"Formato de fecha incorrecto: {date}")
 
         def _runner():
-            inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta)
+            owner = (user.get('email') or '').lower()
+            inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
             invoices = [inv] if inv else []
             if invoices:
                 try:

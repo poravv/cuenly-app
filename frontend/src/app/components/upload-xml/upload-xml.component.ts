@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { UserService } from '../../services/user.service';
 import { ProcessResult, TaskSubmitResponse, TaskStatusResponse } from '../../models/invoice.model';
 import { Subscription, interval } from 'rxjs';
 
@@ -23,6 +24,7 @@ export class UploadXmlComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private apiService: ApiService,
+    private userService: UserService,
     private router: Router
   ) {
     this.uploadForm = this.fb.group({
@@ -87,6 +89,11 @@ export class UploadXmlComponent implements OnInit {
           if (this.pollingSub) { this.pollingSub.unsubscribe(); this.pollingSub = null; }
           this.result = st.result || null;
           this.loading = false;
+          
+          // Actualizar perfil después del procesamiento (aunque XML no consume límite de IA)
+          if (st.status === 'done' && st.result?.success) {
+            this.userService.updateProfileAfterProcessing();
+          }
         }
       },
       error: (err) => console.error(err)

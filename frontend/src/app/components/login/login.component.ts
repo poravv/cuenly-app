@@ -35,7 +35,10 @@ export class LoginComponent implements OnInit, OnDestroy {
     this.loading = true; this.error = null;
     try {
       await this.auth.signInWithGoogle();
-      this.router.navigateByUrl(this.returnUrl || '/');
+      this.info = 'Autenticación exitosa. ¡Tienes 15 días de uso gratuito!';
+      setTimeout(() => {
+        this.router.navigateByUrl(this.returnUrl || '/');
+      }, 1500);
     } catch (e: any) {
       this.error = e?.message || 'Error al iniciar sesión';
     } finally {

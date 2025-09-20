@@ -46,13 +46,14 @@ class OpenAIProcessor:
             logger.info("⚠️ OpenAI Cache deshabilitado")
 
     # ------------------------------------------------------------------ API --
-    def extract_invoice_data(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None):
+    def extract_invoice_data(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None, owner_email: Optional[str] = None):
         """
         Estrategia simplificada (segura) con cache inteligente:
         1) Verificar cache primero
         2) Procesar como Imagen (OCR/Vision) → OpenAI
         3) Filtro de 'Nota de Remisión'
         4) Cachear resultado
+        5) Contar uso de IA para trial users
         """
         from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
         
@@ -74,6 +75,16 @@ class OpenAIProcessor:
 
             # Ir directo a la estrategia por imagen (Vision/OCR)
             result = self._process_as_image(pdf_path, email_metadata)
+            
+            # Si el procesamiento fue exitoso y usó IA, incrementar contador
+            if result and owner_email:
+                try:
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    updated_info = user_repo.increment_ai_usage(owner_email, 1)
+                    logger.info(f"📊 IA usage incremented for {owner_email}: {updated_info.get('ai_invoices_processed', 0)}/{updated_info.get('ai_invoices_limit', 50)}")
+                except Exception as e:
+                    logger.warning(f"Error updating AI usage counter: {e}")
             
             # Cachear el resultado si existe
             if result and self.cache:
@@ -108,7 +119,7 @@ class OpenAIProcessor:
             logger.exception("❌ Error inesperado en extract_invoice_data: %s", e)
             return None
 
-    def extract_invoice_data_from_xml(self, xml_path: str, email_metadata: dict | None = None):
+    def extract_invoice_data_from_xml(self, xml_path: str, email_metadata: dict | None = None, owner_email: Optional[str] = None):
         try:
             import os
             if not os.path.exists(xml_path):
@@ -207,6 +218,17 @@ class OpenAIProcessor:
             )
             data = extract_and_normalize_json(raw)
             logger.info("Datos extraídos del XML (OpenAI): %s", data)
+            
+            # Incrementar contador de IA ya que usamos OpenAI como fallback
+            if owner_email:
+                try:
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    updated_info = user_repo.increment_ai_usage(owner_email, 1)
+                    logger.info(f"📊 IA usage incremented for XML fallback {owner_email}: {updated_info.get('ai_invoices_processed', 0)}/{updated_info.get('ai_invoices_limit', 50)}")
+                except Exception as e:
+                    logger.warning(f"Error updating AI usage counter for XML: {e}")
+            
             # Forzar CDC desde atributo Id si está presente
             cdc_id = _extract_cdc_id(xml_content)
             if cdc_id:
