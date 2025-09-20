@@ -247,3 +247,4 @@ El sistema puede ser adaptado para diferentes tipos de facturas ajustando los si
 ## Licencia
 
 Este proyecto está licenciado bajo [MIT License](LICENSE).
+# Trigger workflow sábado, 20 de septiembre de 2025, 19:18:50 -03
