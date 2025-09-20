@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cuenly-frontend
+  namespace: cuenly-frontend
+  labels:
+    app: cuenly-frontend
+    tier: frontend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: cuenly-frontend
+      tier: frontend
+  template:
+    metadata:
+      labels:
+        app: cuenly-frontend
+        tier: frontend
+    spec:
+      containers:
+      - name: cuenly-frontend
+        image: ghcr.io/OWNER/REPO-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: http
+        envFrom:
+        - configMapRef:
+            name: frontend-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command: ["sh","-c","curl -fsS http://127.0.0.1/ >/dev/null"]
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command: ["sh","-c","curl -fsS http://127.0.0.1/ >/dev/null"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh","-c","sleep 10"]
+      imagePullSecrets:
+      - name: ghcr-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cuenly-frontend-service
+  namespace: cuenly-frontend
+  labels:
+    app: cuenly-frontend
+    tier: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: cuenly-frontend
+    tier: frontend
+  ports:
+  - port: 80
+    targetPort: http
+    name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cuenly-frontend-hpa
+  namespace: cuenly-frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cuenly-frontend
+  minReplicas: 2
+  maxReplicas: 5
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      selectPolicy: Max
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

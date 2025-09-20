@@ -1,0 +1,29 @@
+<div class="login-hero d-flex align-items-center">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow border-0">
+          <div class="card-body p-4 p-lg-5">
+            <div class="text-center mb-4">
+              <div class="display-6 fw-bold mb-1">Cuenly</div>
+              <div class="text-muted">Accede para continuar</div>
+            </div>
+
+            <div *ngIf="error" class="alert alert-danger border-0">{{ error }}</div>
+            <div *ngIf="info" class="alert alert-info border-0">{{ info }}</div>
+
+            <button class="btn btn-primary w-100 d-flex align-items-center justify-content-center" (click)="signInGoogle()" [disabled]="loading">
+              <span *ngIf="loading" class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+              <img *ngIf="!loading" src="assets/google.svg" alt="Google" class="google-icon me-2">
+              <span>Continuar con Google</span>
+            </button>
+
+            <div class="mt-4 small text-muted text-center">
+              Usamos tu correo solo para autenticación y asignar tus datos.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,50 @@
+<div class="container mt-4 px-4 px-lg-5">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="card shadow-sm">
+        <div class="card-header header-primary">
+          <h5 class="card-title mb-0"><i class="bi bi-upload"></i> Subir XML Manual</h5>
+        </div>
+        <div class="card-body">
+          <form [formGroup]="uploadForm" (ngSubmit)="onSubmit()">
+            <div class="mb-3">
+              <label for="file" class="form-label">Archivo XML</label>
+              <input type="file" id="file" class="form-control" (change)="onFileSelected($event)" accept=".xml, text/xml, application/xml">
+              <div class="form-text" *ngIf="fileName">Seleccionado: {{ fileName }}</div>
+            </div>
+
+            <div class="mb-3">
+              <label for="sender" class="form-label">Remitente (opcional)</label>
+              <input id="sender" type="text" class="form-control" formControlName="sender">
+            </div>
+
+            <div class="mb-3">
+              <label for="date" class="form-label">Fecha (opcional)</label>
+              <input id="date" type="date" class="form-control" formControlName="date">
+            </div>
+
+            <div *ngIf="error" class="alert alert-danger">{{ error }}</div>
+
+            <div class="d-flex gap-2">
+              <button class="btn btn-success" type="submit" [disabled]="loading">
+                <span *ngIf="!loading"><i class="bi bi-cloud-upload"></i> Procesar XML</span>
+                <span *ngIf="loading" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="btn btn-outline-primary" (click)="resetForm()">Limpiar</button>
+              <button type="button" class="btn btn-outline-primary" (click)="goToDashboard()">Volver</button>
+            </div>
+          </form>
+
+          <div *ngIf="result" class="mt-3">
+            <div class="alert" [ngClass]="result.success ? 'alert-success' : 'alert-danger'">
+              {{ result.message }}
+            </div>
+            <div *ngIf="result.invoice_count && result.invoice_count > 0">
+              <strong>Facturas procesadas:</strong> {{ result.invoice_count }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

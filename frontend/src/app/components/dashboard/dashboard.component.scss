@@ -1,0 +1,135 @@
+:host { 
+  display: block; 
+  background: var(--color-bg); 
+  min-height: 100vh; 
+  padding-bottom: 2rem; 
+}
+
+.card {
+  border: none !important;
+  border-radius: 1rem;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04);
+
+  &:hover { 
+    transform: translateY(-3px); 
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08); 
+  }
+}
+
+.card-header {
+  border-top-left-radius: 1rem !important;
+  border-top-right-radius: 1rem !important;
+  background: transparent !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  padding: 1.5rem !important;
+}
+
+.btn {
+  transition: all 0.2s ease-in-out;
+  border-radius: 0.5rem;
+  font-weight: 500;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+.table {
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: white;
+
+  th, td {
+    vertical-align: middle;
+    border: none !important;
+    padding: 1rem 1.25rem;
+  }
+
+  thead th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #374151;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+  }
+
+  tbody tr {
+    transition: all 0.2s ease;
+    
+    &:hover { 
+      background: rgba(43, 78, 255, 0.03) !important; 
+      transform: scale(1.01);
+    }
+  }
+}
+
+.spinner-border {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.badge {
+  font-size: 0.875rem;
+  padding: 0.5em 1em;
+  font-weight: 500;
+  border-radius: 50px;
+}
+
+h1, h5.card-title {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+h1 i { 
+  margin-right: .75rem; 
+  vertical-align: middle; 
+  color: #2b4eff; 
+  text-shadow: 0 1px 2px rgba(2,6,23,0.08); 
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+  border-radius: 0.5rem;
+}
+
+@keyframes loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.hover-shadow {
+  transition: all 0.3s ease;
+  
+  &:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12) !important;
+    transform: translateY(-2px);
+  }
+}
+
+.transition {
+  transition: all 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .container-fluid {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  
+  .card-body {
+    padding: 1.25rem;
+  }
+  
+  h1 {
+    font-size: 1.75rem;
+  }
+}

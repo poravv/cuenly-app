@@ -1,0 +1,348 @@
+<div class="container-fluid py-4 px-4 px-lg-5">
+  <!-- Header Section -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+          <li class="breadcrumb-item">
+            <a routerLink="/" class="text-decoration-none">
+              <i class="bi bi-house-door"></i> Inicio
+            </a>
+          </li>
+          <li class="breadcrumb-item active">Centro de Ayuda</li>
+        </ol>
+      </nav>
+      <div class="d-flex align-items-center mb-3">
+        <div class="bg-info bg-opacity-10 rounded-3 p-3 me-3">
+          <i class="bi bi-question-circle text-info fs-4"></i>
+        </div>
+        <div>
+          <h1 class="h2 fw-bold mb-1">Centro de Ayuda</h1>
+          <p class="text-muted mb-0">Guía completa para usar CuenlyApp de manera eficiente</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Access Cards -->
+  <div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+      <div class="card border-0 shadow-sm h-100 quick-access-card">
+        <div class="card-body text-center">
+          <div class="text-primary mb-3" style="font-size: 1.5rem;">
+            <i class="bi bi-play-circle" style="display: inline-block;"></i>
+          </div>
+          <h6 class="fw-bold mb-2">Primeros Pasos</h6>
+          <p class="text-muted small mb-3">Configuración inicial y primera automatización</p>
+          <a href="#getting-started" class="btn btn-outline-primary btn-sm">Ver Guía</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+      <div class="card border-0 shadow-sm h-100 quick-access-card">
+        <div class="card-body text-center">
+          <div class="text-success mb-3" style="font-size: 1.5rem;">
+            <i class="bi bi-robot" style="display: inline-block;"></i>
+          </div>
+          <h6 class="fw-bold mb-2">Automatización</h6>
+          <p class="text-muted small mb-3">Control de procesos automáticos</p>
+          <a href="#automation" class="btn btn-outline-success btn-sm">Ver Detalles</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+      <div class="card border-0 shadow-sm h-100 quick-access-card">
+        <div class="card-body text-center">
+          <div class="text-warning mb-3" style="font-size: 1.5rem;">
+            <i class="bi bi-upload" style="display: inline-block;"></i>
+          </div>
+          <h6 class="fw-bold mb-2">Carga Manual</h6>
+          <p class="text-muted small mb-3">Subida de archivos PDF y XML</p>
+          <a href="#manual-upload" class="btn btn-outline-warning btn-sm">Ver Proceso</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+      <div class="card border-0 shadow-sm h-100 quick-access-card">
+        <div class="card-body text-center">
+          <div class="text-info mb-3" style="font-size: 1.5rem;">
+            <i class="bi bi-question-circle" style="display: inline-block;"></i>
+          </div>
+          <h6 class="fw-bold mb-2">Solución de Problemas</h6>
+          <p class="text-muted small mb-3">Errores comunes y soluciones</p>
+          <a href="#troubleshooting" class="btn btn-outline-info btn-sm">Ver FAQ</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help Content -->
+  <div class="row">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          
+          <!-- Getting Started Section -->
+          <section id="getting-started" class="help-section">
+            <div class="section-header">
+              <div class="d-flex align-items-center mb-3">
+                <div class="text-primary me-3" style="font-size: 1.5rem;">
+                  <i class="bi bi-play-circle" style="display: inline-block;"></i>
+                </div>
+                <h3 class="fw-bold mb-0">Primeros Pasos</h3>
+              </div>
+            </div>
+            
+            <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#overview" aria-expanded="true">
+                <h5 class="fw-semibold mb-0">¿Qué es CuenlyApp?</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="overview" class="collapse show help-item-content">
+                <p class="text-muted">
+                  CuenlyApp es un sistema inteligente que automatiza la gestión de facturas electrónicas. 
+                  Conecta con tu correo electrónico, procesa facturas automáticamente y almacena los datos estructurados en MongoDB.
+                </p>
+                <div class="alert alert-info border-0">
+                  <div class="d-flex align-items-start">
+                    <i class="bi bi-lightbulb text-info me-2 mt-1"></i>
+                    <div>
+                      <strong>Beneficios principales:</strong>
+                      <ul class="mb-0 mt-2">
+                        <li>Procesamiento automático de facturas desde el correo</li>
+                        <li>Extracción inteligente de datos con IA</li>
+                        
+                        <li>Soporte para PDF y XML (facturas electrónicas)</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Automation Section -->
+          <section id="automation" class="help-section">
+            <div class="section-header">
+              <div class="d-flex align-items-center mb-3">
+                <div class="text-success me-3" style="font-size: 1.5rem;">
+                  <i class="bi bi-robot" style="display: inline-block;"></i>
+                </div>
+                <h3 class="fw-bold mb-0">Automatización</h3>
+              </div>
+            </div>
+
+            <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#auto-process">
+                <h5 class="fw-semibold mb-0">¿Cómo funciona la automatización?</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="auto-process" class="collapse help-item-content">
+                <p class="text-muted">
+                  La automatización revisa periódicamente tus correos electrónicos en busca de facturas y las procesa 
+                  automáticamente sin intervención manual.
+                </p>
+                <div class="row g-3 mt-2">
+                  <div class="col-md-6">
+                    <div class="feature-box">
+                      <i class="bi bi-clock text-primary"></i>
+                      <div>
+                        <h6 class="fw-semibold">Configuración de Intervalo</h6>
+                        <p class="small text-muted mb-0">Define cada cuántos minutos debe ejecutarse el proceso</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="feature-box">
+                      <i class="bi bi-envelope text-success"></i>
+                      <div>
+                        <h6 class="fw-semibold">Revisión de Correos</h6>
+                        <p class="small text-muted mb-0">Busca automáticamente facturas en todas las cuentas configuradas</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#auto-controls">
+                <h5 class="fw-semibold mb-0">Controles de automatización</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="auto-controls" class="collapse help-item-content">
+                <div class="table-responsive">
+                  <table class="table table-borderless">
+                    <tbody>
+                      <tr>
+                        <td class="text-center" style="width: 60px;">
+                          <span class="badge bg-success px-3 py-2">ACTIVO</span>
+                        </td>
+                        <td>La automatización está funcionando y procesará correos según el intervalo configurado</td>
+                      </tr>
+                      <tr>
+                        <td class="text-center">
+                          <span class="badge bg-secondary px-3 py-2">INACTIVO</span>
+                        </td>
+                        <td>La automatización está detenida. Los correos no se procesarán automáticamente</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Manual Upload Section -->
+          <section id="manual-upload" class="help-section">
+            <div class="section-header">
+              <div class="d-flex align-items-center mb-3">
+                <div class="text-warning me-3" style="font-size: 1.5rem;">
+                  <i class="bi bi-upload" style="display: inline-block;"></i>
+                </div>
+                <h3 class="fw-bold mb-0">Carga Manual de Archivos</h3>
+              </div>
+            </div>
+
+            <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#upload-pdf">
+                <h5 class="fw-semibold mb-0">Subir archivos PDF</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="upload-pdf" class="collapse help-item-content">
+                <p class="text-muted">
+                  Los archivos PDF se procesan utilizando inteligencia artificial para extraer la información de la factura.
+                </p>
+                <div class="upload-steps">
+                  <div class="step">
+                    <div class="step-number">1</div>
+                    <div>
+                      <h6 class="fw-semibold">Navegar a "Cargar Archivos"</h6>
+                      <p class="small text-muted mb-0">Utiliza el menú de navegación y selecciona "Subir PDF"</p>
+                    </div>
+                  </div>
+                  <div class="step">
+                    <div class="step-number">2</div>
+                    <div>
+                      <h6 class="fw-semibold">Seleccionar archivo</h6>
+                      <p class="small text-muted mb-0">Elige el archivo PDF de la factura desde tu computadora</p>
+                    </div>
+                  </div>
+                  <div class="step">
+                    <div class="step-number">3</div>
+                    <div>
+                      <h6 class="fw-semibold">Confirmar carga</h6>
+                      <p class="small text-muted mb-0">El sistema procesará el archivo y mostrará los resultados</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#upload-xml">
+                <h5 class="fw-semibold mb-0">Subir archivos XML</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="upload-xml" class="collapse help-item-content">
+                <p class="text-muted">
+                  Los archivos XML (facturas electrónicas) se procesan de forma nativa y suelen tener mayor precisión 
+                  en la extracción de datos.
+                </p>
+                <div class="alert alert-success border-0">
+                  <i class="bi bi-check-circle text-success me-2"></i>
+                  <strong>Ventaja:</strong> Los archivos XML no requieren OpenAI para ser procesados y proporcionan 
+                  información más estructurada y precisa.
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Troubleshooting Section -->
+          <section id="troubleshooting" class="help-section">
+            <div class="section-header">
+              <div class="d-flex align-items-center mb-3">
+                <div class="text-info me-3" style="font-size: 1.5rem;">
+                  <i class="bi bi-question-circle" style="display: inline-block;"></i>
+                </div>
+                <h3 class="fw-bold mb-0">Solución de Problemas</h3>
+              </div>
+            </div>
+
+            <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#openai-status">
+                <h5 class="fw-semibold mb-0">Estado de OpenAI</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="openai-status" class="collapse help-item-content">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <div class="status-explanation success">
+                      <div class="d-flex align-items-center mb-2">
+                        <span class="badge bg-success me-2">ACTIVO</span>
+                        <strong>OpenAI Configurado</strong>
+                      </div>
+                      <p class="small text-muted mb-0">
+                        El procesamiento de PDF funciona correctamente. Todas las funciones están disponibles.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="status-explanation danger">
+                      <div class="d-flex align-items-center mb-2">
+                        <span class="badge bg-danger me-2">INACTIVO</span>
+                        <strong>OpenAI No Disponible</strong>
+                      </div>
+                      <p class="small text-muted mb-0">
+                        Solo se pueden procesar archivos XML. Los PDF requieren configuración de OpenAI.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#common-issues">
+                <h5 class="fw-semibold mb-0">Problemas comunes</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="common-issues" class="collapse help-item-content">
+                <div class="faq-list">
+                  <div class="faq-item">
+                    <div class="faq-question">
+                      <i class="bi bi-question-circle text-warning me-2"></i>
+                      <strong>¿Por qué no se procesan mis correos automáticamente?</strong>
+                    </div>
+                    <div class="faq-answer">
+                      <p class="mb-2">Verifica que:</p>
+                      <ul class="mb-0">
+                        <li>La automatización esté activada (botón ACTIVO en el dashboard)</li>
+                        <li>Las cuentas de correo estén correctamente configuradas</li>
+                        <li>El intervalo de tiempo esté configurado apropiadamente</li>
+                      </ul>
+                    </div>
+                  </div>
+                  
+                  <div class="faq-item">
+                    <div class="faq-question">
+                      <i class="bi bi-question-circle text-warning me-2"></i>
+                      <strong>¿Qué hago si un PDF no se procesa correctamente?</strong>
+                    </div>
+                    <div class="faq-answer">
+                      <p class="mb-0">
+                        Intenta subir el archivo manualmente cuando OpenAI esté disponible. Si el problema persiste, 
+                        verifica que el PDF sea legible y contenga información estructurada de factura.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

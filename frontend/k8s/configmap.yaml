@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: cuenly-frontend
+data:
+  APP_NAME: "Cuenly App"
+  ENVIRONMENT: "production"
+  FRONTEND_HOST: "app.cuenly.com"
+

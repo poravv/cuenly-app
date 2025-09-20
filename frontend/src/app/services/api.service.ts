@@ -1,0 +1,206 @@
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
+import { SystemStatus, ProcessResult, JobStatus, EmailConfig, EmailTestResult, TaskSubmitResponse, TaskStatusResponse, AutoRefreshPref } from '../models/invoice.model';
+
+
+@Injectable({
+  providedIn: 'root'
+})
+export class ApiService {
+  private apiUrl = environment.apiUrl;
+
+  constructor(private http: HttpClient) { }
+
+  // Obtener estado del sistema
+  getStatus(): Observable<SystemStatus> {
+    return this.http.get<SystemStatus>(`${this.apiUrl}/status`);
+  }
+
+  // Procesar correos
+  processEmails(runAsync: boolean = false): Observable<ProcessResult> {
+    return this.http.post<ProcessResult>(`${this.apiUrl}/process`, { run_async: runAsync });
+  }
+
+  // Subir un archivo PDF
+  uploadPdf(file: File, metadata: {sender?: string, date?: string}): Observable<ProcessResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    if (metadata.sender) {
+      formData.append('sender', metadata.sender);
+    }
+    
+    if (metadata.date) {
+      formData.append('date', metadata.date);
+    }
+    
+    return this.http.post<ProcessResult>(`${this.apiUrl}/upload`, formData);
+  }
+
+  // Subir un archivo XML
+  uploadXml(file: File, metadata: {sender?: string, date?: string}): Observable<ProcessResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    if (metadata.sender) {
+      formData.append('sender', metadata.sender);
+    }
+
+    if (metadata.date) {
+      formData.append('date', metadata.date);
+    }
+
+    return this.http.post<ProcessResult>(`${this.apiUrl}/upload-xml`, formData);
+  }
+
+  // Encolar carga de PDF
+  enqueueUploadPdf(file: File, metadata: {sender?: string, date?: string}): Observable<TaskSubmitResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (metadata.sender) formData.append('sender', metadata.sender);
+    if (metadata.date) formData.append('date', metadata.date);
+    return this.http.post<TaskSubmitResponse>(`${this.apiUrl}/tasks/upload-pdf`, formData);
+  }
+
+  // Encolar carga de XML
+  enqueueUploadXml(file: File, metadata: {sender?: string, date?: string}): Observable<TaskSubmitResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (metadata.sender) formData.append('sender', metadata.sender);
+    if (metadata.date) formData.append('date', metadata.date);
+    return this.http.post<TaskSubmitResponse>(`${this.apiUrl}/tasks/upload-xml`, formData);
+  }
+
+  // Excel removido: no hay endpoints de Excel
+
+  // Probar configuración de email
+  testEmailConfig(config: EmailConfig): Observable<EmailTestResult> {
+    return this.http.post<EmailTestResult>(`${this.apiUrl}/email-config/test`, config);
+  }
+
+  // Probar configuración por ID (guardada en DB)
+  testEmailConfigById(id: string): Observable<EmailTestResult> {
+    return this.http.post<EmailTestResult>(`${this.apiUrl}/email-configs/${id}/test`, {});
+  }
+
+  // Email Configs CRUD
+  getEmailConfigs(): Observable<{success: boolean, configs: EmailConfig[], total: number}> {
+    return this.http.get<{success: boolean, configs: EmailConfig[], total: number}>(`${this.apiUrl}/email-configs`);
+  }
+
+  createEmailConfig(config: EmailConfig): Observable<{success: boolean, id: string}> {
+    return this.http.post<{success: boolean, id: string}>(`${this.apiUrl}/email-configs`, config);
+  }
+
+  updateEmailConfig(id: string, config: EmailConfig): Observable<{success: boolean, id: string}> {
+    return this.http.put<{success: boolean, id: string}>(`${this.apiUrl}/email-configs/${id}`, config);
+  }
+
+  deleteEmailConfig(id: string): Observable<{success: boolean}> {
+    return this.http.delete<{success: boolean}>(`${this.apiUrl}/email-configs/${id}`);
+  }
+
+  setEmailConfigEnabled(id: string, enabled: boolean): Observable<{success: boolean, enabled: boolean}> {
+    return this.http.patch<{success: boolean, enabled: boolean}>(`${this.apiUrl}/email-configs/${id}/enabled`, { enabled });
+  }
+
+  toggleEmailConfig(id: string): Observable<{success: boolean, enabled: boolean}> {
+    return this.http.post<{success: boolean, enabled: boolean}>(`${this.apiUrl}/email-configs/${id}/toggle`, {});
+  }
+  
+  // Iniciar job programado
+  startJob(): Observable<JobStatus> {
+    return this.http.post<JobStatus>(`${this.apiUrl}/job/start`, {});
+  }
+  
+  // Detener job programado
+  stopJob(): Observable<JobStatus> {
+    return this.http.post<JobStatus>(`${this.apiUrl}/job/stop`, {});
+  }
+  
+  // Obtener estado del job
+  getJobStatus(): Observable<JobStatus> {
+    return this.http.get<JobStatus>(`${this.apiUrl}/job/status`);
+  }
+
+  // Ajustar intervalo del job (minutos)
+  setJobInterval(minutes: number): Observable<JobStatus> {
+    return this.http.post<JobStatus>(`${this.apiUrl}/job/interval`, { minutes });
+  }
+
+  // Procesamiento directo sin cola de tareas
+  processEmailsDirect(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/process-direct`, {});
+  }
+
+  // Encolar procesamiento (usa TaskQueue)
+  enqueueProcess(): Observable<TaskSubmitResponse> {
+    return this.http.post<TaskSubmitResponse>(`${this.apiUrl}/tasks/process`, {});
+  }
+
+  // Consultar estado de tarea
+  getTaskStatus(jobId: string): Observable<TaskStatusResponse> {
+    return this.http.get<TaskStatusResponse>(`${this.apiUrl}/tasks/${jobId}`);
+  }
+
+  // Limpiar tareas antiguas
+  cleanupOldTasks(): Observable<{message: string, cleaned_count: number}> {
+    return this.http.delete<{message: string, cleaned_count: number}>(`${this.apiUrl}/tasks/cleanup`);
+  }
+
+  // Debug de tareas (solo para desarrollo)
+  debugTasks(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/tasks/debug`);
+  }
+
+  // Preferencias: Auto‑refresh
+  getAutoRefreshPref(): Observable<AutoRefreshPref> {
+    return this.http.get<AutoRefreshPref>(`${this.apiUrl}/prefs/auto-refresh`);
+  }
+
+  setAutoRefreshPref(enabled: boolean, interval_ms: number): Observable<AutoRefreshPref> {
+    return this.http.post<AutoRefreshPref>(`${this.apiUrl}/prefs/auto-refresh`, { enabled, interval_ms });
+  }
+
+  // V2: Headers + Items
+  getV2Headers(params: {
+    page?: number; page_size?: number; ruc_emisor?: string; ruc_receptor?: string;
+    year_month?: string; date_from?: string; date_to?: string; search?: string;
+  }): Observable<any> {
+    // Limpiar params: omitir undefined, null y strings vacíos
+    const qp: any = {};
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v === undefined || v === null) return;
+      if (typeof v === 'string') {
+        const trimmed = v.trim();
+        if (trimmed === '') return;
+        qp[k] = trimmed;
+      } else {
+        qp[k] = v as any;
+      }
+    });
+    return this.http.get<any>(`${this.apiUrl}/v2/invoices/headers`, { params: qp });
+  }
+
+  getV2InvoiceById(headerId: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/v2/invoices/${headerId}`);
+  }
+
+  getV2Items(params: { page?: number; page_size?: number; header_id?: string; iva?: number; search?: string; year_month?: string; }): Observable<any> {
+    // Limpiar params: omitir undefined, null y strings vacíos
+    const qp: any = {};
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v === undefined || v === null) return;
+      if (typeof v === 'string') {
+        const trimmed = v.trim();
+        if (trimmed === '') return;
+        qp[k] = trimmed;
+      } else {
+        qp[k] = v as any;
+      }
+    });
+    return this.http.get<any>(`${this.apiUrl}/v2/invoices/items`, { params: qp });
+  }
+}

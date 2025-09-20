@@ -1,0 +1,449 @@
+<div class="container-fluid mt-4 px-4 px-lg-5">
+  <!-- Header con breadcrumb profesional -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="d-flex align-items-center justify-content-between flex-wrap">
+        <div>
+          <nav aria-label="breadcrumb" class="mb-2">
+            <ol class="breadcrumb mb-0">
+              <li class="breadcrumb-item"><a href="/" class="text-decoration-none">Inicio</a></li>
+              <li class="breadcrumb-item active" aria-current="page">Panel de Control</li>
+            </ol>
+          </nav>
+          <h1 class="h2 mb-1 fw-bold d-flex align-items-center">
+            <i class="bi bi-speedometer2 text-primary fs-4 me-3"></i>
+            Panel de Control
+          </h1>
+          <p class="text-muted mb-0">Gestión inteligente de extracción y procesamiento de facturas</p>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-primary" (click)="getSystemStatus()" [disabled]="loading">
+            <i class="bi bi-arrow-clockwise me-1"></i>
+            Actualizar
+          </button>
+          <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+              <i class="bi bi-gear me-1"></i>
+              Configuración
+            </button>
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" routerLink="/email-config"><i class="bi bi-envelope me-2"></i>Correos</a></li>
+              <li><a class="dropdown-item" routerLink="/ayuda"><i class="bi bi-question-circle me-2"></i>Ayuda</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs Principales con diseño profesional -->
+  <div class="row g-4 mb-4" *ngIf="status">
+    
+
+    <div class="col-xl-3 col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center">
+                        <div class="text-success fs-3 me-4" style="width: 60px; text-align: center;">
+              <i class="bi bi-check-circle"></i>
+            </div>
+            <div class="flex-grow-1">
+              <p class="text-muted fw-semibold mb-1">Cuentas Email</p>
+              <h3 class="fw-bold mb-0">{{ status.email_configs_count || 0 }}</h3>
+              <small [ngClass]="status.email_configured ? 'text-success' : 'text-warning'">
+                <i class="bi bi-{{status.email_configured ? 'check-circle' : 'exclamation-triangle'}} me-1">{{ status.email_configured ? '✓' : '⚠' }}</i>
+                {{ status.email_configured ? 'Configurado' : 'Incompleto' }}
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6" *ngIf="jobStatus">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center">
+            <!-- <div class="text-warning fs-1 me-4" style="width: 60px; text-align: center;">
+              <i class="bi bi-gear-fill" style="font-size: 1.5rem; display: inline-block;">⚙️</i>
+            </div> -->
+            <div class="flex-grow-1">
+              <p class="text-muted fw-semibold mb-1">Automatización</p>
+              <h3 class="fw-bold mb-0">{{ jobStatus.running ? 'ON' : 'OFF' }}</h3>
+              <small [ngClass]="jobStatus.running ? 'text-success' : 'text-danger'">
+                <i class="bi bi-{{jobStatus.running ? 'play-circle' : 'stop-circle'}} me-1">{{ jobStatus.running ? '▶' : '⏸' }}</i>
+                {{ jobStatus.running ? 'Activa' : 'Inactiva' }}
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex align-items-center">
+            <!-- <div class="text-info fs-1 me-4" style="width: 60px; text-align: center;">
+              <i class="bi bi-cpu-fill" style="font-size: 1.5rem; display: inline-block;">🤖</i>
+            </div> -->
+            <div class="flex-grow-1">
+              <p class="text-muted fw-semibold mb-1">OpenAI</p>
+              <h3 class="fw-bold mb-0">{{ status.openai_configured ? 'OK' : 'NO' }}</h3>
+              <small [ngClass]="status.openai_configured ? 'text-success' : 'text-danger'">
+                <i class="bi bi-{{status.openai_configured ? 'check-circle' : 'x-circle'}} me-1">{{ status.openai_configured ? '✓' : '✗' }}</i>
+                {{ status.openai_configured ? 'Configurado' : 'Requerido' }}
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Panel de Acciones Rápidas -->
+    <div class="col-xl-8">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-0 pb-0">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-lightning-charge text-primary fs-5 me-3"></i>
+            <div>
+              <h5 class="card-title mb-1 fw-bold">Acciones Rápidas</h5>
+              <p class="text-muted mb-0 small">Gestiona tus procesos de extracción de facturas</p>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="d-grid">
+                <button class="btn btn-success btn-lg py-3" [disabled]="loading" (click)="processEmails(true)">
+                  <div class="d-flex align-items-center justify-content-center">
+                    <i class="bi bi-envelope-check fs-6 me-2"></i>
+                    <div class="text-start">
+                      <div class="fw-bold">Procesar Correos</div>
+                      <small class="opacity-75">Ejecutar extracción ahora</small>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            
+            
+            <div class="col-md-4">
+              <div class="d-grid">
+                <a class="btn btn-outline-primary py-3" routerLink="/upload">
+                  <i class="bi bi-file-pdf me-2"></i>
+                  <div>Subir PDF</div>
+                </a>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="d-grid">
+                <a class="btn btn-outline-primary py-3" routerLink="/upload-xml">
+                  <i class="bi bi-file-code me-2"></i>
+                  <div>Subir XML</div>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel de Estado del Proceso -->
+    <div class="col-xl-4">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-0 pb-0">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-activity text-info fs-5 me-3"></i>
+            <div>
+              <h5 class="card-title mb-1 fw-bold">Estado del Proceso</h5>
+              <p class="text-muted mb-0 small">Resultado de la última ejecución</p>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- Loading State -->
+          <div *ngIf="loading" class="text-center py-4">
+            <div class="spinner-border text-primary mb-3" role="status">
+              <span class="visually-hidden">Procesando...</span>
+            </div>
+            <h6 class="fw-semibold">Procesando correos...</h6>
+            <p class="text-muted small mb-0">Esto puede tomar unos momentos</p>
+          </div>
+
+          <!-- Success/Error State -->
+          <div *ngIf="!loading && processingResult" class="text-center py-2">
+            <div class="mb-3">
+              <!-- Círculo con icono más descriptivo -->
+              <div [ngClass]="processingResult.success ? 'bg-success' : 'bg-danger'" 
+                   class="bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center" 
+                   style="width: 60px; height: 60px;">
+                <i [ngClass]="processingResult.success ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger'" 
+                   class="fs-4"></i>
+              </div>
+            </div>
+            <h6 class="fw-semibold mb-2" [ngClass]="processingResult.success ? 'text-success' : 'text-danger'">
+              {{ processingResult.success ? 'Proceso Completado' : 'Error en Proceso' }}
+            </h6>
+            <p class="text-muted small mb-3">{{ processingResult.message }}</p>
+            
+            <div *ngIf="processingResult.invoice_count && processingResult.invoice_count > 0" class="bg-light rounded-3 p-3">
+              <div class="fw-bold text-primary fs-5">{{ processingResult.invoice_count }}</div>
+              <div class="small text-muted">Facturas procesadas</div>
+            </div>
+          </div>
+
+          <!-- Error State General -->
+          <div *ngIf="!loading && !processingResult && error" class="alert alert-danger border-0 mx-3">
+            <div class="d-flex align-items-start">
+              <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
+              <div>
+                <strong>Error:</strong> {{ error }}
+                <div class="mt-2 small">
+                  <button class="btn btn-sm btn-outline-danger" (click)="error = null">
+                    <i class="bi bi-x me-1"></i>Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div *ngIf="!loading && !processingResult" class="text-center py-4">
+            <div class="bg-light bg-opacity-50 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+              <i class="bi bi-envelope-open text-muted fs-4"></i>
+            </div>
+            <h6 class="fw-semibold text-muted">Listo para procesar</h6>
+            <p class="text-muted small mb-0">Haz clic en "Procesar Correos" para comenzar la extracción</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel de Automatización Avanzada -->
+  <div class="row mt-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-0 pb-0">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center">
+              <i class="bi bi-robot text-warning fs-5 me-3"></i>
+              <div>
+                <h5 class="card-title mb-1 fw-bold">Automatización Inteligente</h5>
+                <p class="text-muted mb-0 small">Control avanzado del procesamiento automático</p>
+              </div>
+            </div>
+            <div class="d-flex gap-2">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="autoRefreshSwitch" 
+                       [(ngModel)]="autoRefresh" (ngModelChange)="onAutoRefreshToggle($event)">
+                <label class="form-check-label text-muted small" for="autoRefreshSwitch">Auto-actualizar</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div *ngIf="jobLoading" class="d-flex justify-content-center py-4">
+            <div class="spinner-border text-warning" role="status">
+              <span class="visually-hidden">Cargando...</span>
+            </div>
+          </div>
+
+          <div *ngIf="!jobLoading && jobStatus" class="row g-4">
+            <!-- Estado y Controles -->
+            <div class="col-lg-6">
+              <div class="bg-light bg-opacity-50 rounded-3 p-4 h-100">
+                <h6 class="fw-bold mb-3 d-flex align-items-center">
+                  <i class="bi bi-gear me-2 text-primary"></i>
+                  Estado y Controles
+                </h6>
+                
+                <!-- Estado actual -->
+                <div class="d-flex align-items-center justify-content-between p-3 bg-white rounded-3 mb-3">
+                  <div>
+                    <div class="fw-semibold">Estado del Sistema</div>
+                    <small class="text-muted">Automatización de procesos</small>
+                  </div>
+                  <div class="text-end">
+                    <span class="badge px-3 py-2" [ngClass]="jobStatus.running ? 'bg-success' : 'bg-secondary'">
+                      <i class="bi bi-{{jobStatus.running ? 'play-circle' : 'pause-circle'}} me-1"></i>
+                      {{ jobStatus.running ? 'ACTIVO' : 'INACTIVO' }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Información temporal -->
+                <div class="row g-3 mb-3">
+                  <div class="col-6">
+                    <div class="bg-white rounded-3 p-3 text-center">
+                      <div class="text-primary fw-bold">{{ jobStatus.interval_minutes }}</div>
+                      <small class="text-muted">Intervalo (min)</small>
+                    </div>
+                  </div>
+                  <div class="col-6">
+                    <div class="bg-white rounded-3 p-3 text-center">
+                      <div class="text-info fw-bold" *ngIf="jobStatus.next_run">
+                        {{ formatParaguayTime(jobStatus.next_run) }}
+                      </div>
+                      <div class="text-muted fw-bold" *ngIf="!jobStatus.next_run">--:--</div>
+                      <small class="text-muted">Próxima ejecución</small>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Controles principales -->
+                <div class="d-grid gap-2">
+                  <button *ngIf="!jobStatus.running" class="btn btn-success py-2" [disabled]="jobLoading" (click)="startJob()">
+                    <i class="bi bi-play-fill me-2"></i>
+                    Activar Automatización
+                  </button>
+                  <button *ngIf="jobStatus.running" class="btn btn-danger py-2" [disabled]="jobLoading" (click)="stopJob()">
+                    <i class="bi bi-stop-fill me-2"></i>
+                    Detener Automatización
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Configuración Avanzada -->
+            <div class="col-lg-6">
+              <div class="bg-light bg-opacity-50 rounded-3 p-4 h-100">
+                <h6 class="fw-bold mb-3 d-flex align-items-center">
+                  <i class="bi bi-sliders me-2 text-info"></i>
+                  Configuración Avanzada
+                </h6>
+
+                <!-- Intervalo de automatización -->
+                <div class="mb-3">
+                  <label class="form-label fw-semibold small">Intervalo de Procesamiento</label>
+                  <div class="input-group">
+                    <input type="number" class="form-control" min="1" placeholder="Minutos"
+                           [ngModel]="jobIntervalInput !== null ? jobIntervalInput : jobStatus.interval_minutes"
+                           (ngModelChange)="onJobIntervalChange($event)"
+                           [class.is-invalid]="isJobIntervalInvalid()">
+                    <span class="input-group-text">min</span>
+                    <button class="btn btn-outline-primary" (click)="applyJobInterval()" 
+                            [disabled]="jobLoading || isJobIntervalInvalid()">
+                      <i class="bi bi-check"></i>
+                    </button>
+                  </div>
+                  <div class="invalid-feedback">Debe ser un número entero de 1 minuto o más.</div>
+                </div>
+
+                <!-- Frecuencia de actualización del panel -->
+                <div class="mb-3">
+                  <label class="form-label fw-semibold small">Actualización del Panel</label>
+                  <select class="form-select" [ngModel]="autoRefreshIntervalMs" (ngModelChange)="setAutoRefreshInterval($event)">
+                    <option [ngValue]="15000">Cada 15 segundos</option>
+                    <option [ngValue]="30000">Cada 30 segundos</option>
+                    <option [ngValue]="60000">Cada 60 segundos</option>
+                  </select>
+                </div>
+
+                <!-- Información adicional -->
+                <div class="bg-white rounded-3 p-3">
+                  <div class="row text-center">
+                    <div class="col-6 border-end">
+                      <div class="small text-muted">Última ejecución</div>
+                      <div class="fw-semibold" *ngIf="jobStatus.last_run">
+                        {{ formatParaguayDateTime(jobStatus.last_run) }}
+                      </div>
+                      <div class="text-muted" *ngIf="!jobStatus.last_run">Nunca</div>
+                    </div>
+                    <div class="col-6">
+                      <div class="small text-muted">Estado</div>
+                      <div class="fw-semibold" [ngClass]="jobStatus.running ? 'text-success' : 'text-secondary'">
+                        {{ jobStatus.running ? 'Monitoreando' : 'En espera' }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="jobError" class="alert alert-danger border-0 mt-3">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            {{ jobError }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+
+  <!-- Últimas facturas con diseño mejorado -->
+  <div *ngIf="processingResult?.invoices && processingResult?.invoices!.length > 0" class="row mt-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-0 pb-0">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-receipt text-info fs-5 me-3"></i>
+            <div>
+              <h5 class="card-title mb-1 fw-bold">Últimas Facturas Procesadas</h5>
+              <p class="text-muted mb-0 small">{{ processingResult?.invoices?.length || 0 }} facturas en la última ejecución</p>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th class="border-0 fw-bold">Fecha</th>
+                  <th class="border-0 fw-bold">Emisor</th>
+                  <th class="border-0 fw-bold">RUC</th>
+                  <th class="border-0 fw-bold">Nro. Factura</th>
+                  <th class="border-0 fw-bold text-end">Monto Total</th>
+                  <th class="border-0 fw-bold text-end">IVA</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let invoice of processingResult?.invoices" class="border-bottom">
+                  <td class="border-0">
+                    <span class="fw-semibold">{{ invoice.fecha ? formatParaguayDate(invoice.fecha) : 'N/A' }}</span>
+                  </td>
+                  <td class="border-0">
+                    <div class="fw-semibold text-truncate" style="max-width: 200px;" 
+                         [title]="invoice.nombre_emisor">
+                      {{ invoice.nombre_emisor || 'N/A' }}
+                    </div>
+                  </td>
+                  <td class="border-0">
+                    <code class="text-muted">{{ invoice.ruc_emisor || 'N/A' }}</code>
+                  </td>
+                  <td class="border-0">
+                    <span class="badge bg-light text-dark">{{ invoice.numero_factura || 'N/A' }}</span>
+                  </td>
+                  <td class="border-0 text-end">
+                    <span class="fw-bold text-success">{{ invoice.monto_total | currency:'':'symbol':'1.2-2' }}</span>
+                  </td>
+                  <td class="border-0 text-end">
+                    <span class="text-muted">{{ invoice.iva | currency:'':'symbol':'1.2-2' }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.hover-shadow {
+  transition: all 0.2s ease;
+}
+.hover-shadow:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+}
+.transition {
+  transition: all 0.2s ease;
+}
+</style>

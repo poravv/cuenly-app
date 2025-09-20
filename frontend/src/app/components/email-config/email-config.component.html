@@ -1,0 +1,298 @@
+<div class="container-fluid mt-4 px-4 px-lg-5">
+  <div class="row mb-3">
+    <div class="col-12 d-flex align-items-center justify-content-between flex-wrap">
+      <div>
+        <nav aria-label="breadcrumb" class="mb-2">
+          <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a routerLink="/" class="text-decoration-none">Inicio</a></li>
+            <li class="breadcrumb-item active">Correos</li>
+          </ol>
+        </nav>
+        <h1 class="h3 fw-bold mb-0 d-flex align-items-center">
+          <i class="bi bi-envelope text-primary me-2"></i>
+          Configuración de Correos
+        </h1>
+      </div>
+      <button class="btn btn-outline-primary mt-2 mt-md-0" (click)="showAddForm = true" *ngIf="!showAddForm" [disabled]="loading">
+        <i class="bi bi-plus-circle"></i> Agregar Correo
+      </button>
+    </div>
+  
+    <div class="col-12">
+      <div *ngIf="error" class="alert alert-danger border-0">{{ error }}</div>
+
+      <!-- Filtro -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-3">
+          <div class="row g-2 align-items-center">
+            <div class="col-md-6">
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control" [(ngModel)]="filterText" placeholder="Buscar cuentas (usuario, host, proveedor)">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Formulario para agregar nueva configuración -->
+      <div *ngIf="showAddForm" class="card mb-4">
+        <div class="card-header header-primary">
+          <h5 class="card-title mb-0">Nueva Configuración de Correo</h5>
+        </div>
+        <div class="card-body">
+          <form (ngSubmit)="addEmailConfig()" #emailForm="ngForm">
+            <!-- Selector de proveedor -->
+            <div class="mb-3">
+              <label class="form-label">Proveedor de Correo</label>
+              <div class="row">
+                <div class="col-md-3 mb-2" *ngFor="let provider of providers">
+                  <button type="button" class="btn btn-outline-primary w-100" (click)="selectProvider(provider)">
+                    {{ provider.name }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <!-- Configuración del servidor -->
+              <div class="col-md-6">
+                <h6>Configuración del Servidor</h6>
+                <div class="mb-3">
+                  <label for="host" class="form-label">Servidor IMAP *</label>
+                  <input type="text" class="form-control" id="host" [(ngModel)]="newConfig.host" 
+                         name="host" required placeholder="ej: imap.gmail.com">
+                </div>
+                <div class="mb-3">
+                  <label for="port" class="form-label">Puerto *</label>
+                  <input type="number" class="form-control" id="port" [(ngModel)]="newConfig.port" 
+                         name="port" required>
+                </div>
+                <div class="mb-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="use_ssl" 
+                           [(ngModel)]="newConfig.use_ssl" name="use_ssl">
+                    <label class="form-check-label" for="use_ssl">
+                      Usar SSL/TLS
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Credenciales -->
+              <div class="col-md-6">
+                <h6>Credenciales</h6>
+                <div class="mb-3">
+                  <label for="username" class="form-label">Usuario/Email *</label>
+                  <input type="email" class="form-control" id="username" [(ngModel)]="newConfig.username" 
+                         name="username" required placeholder="tu-email@ejemplo.com">
+                </div>
+                <div class="mb-3">
+                  <label for="password" class="form-label">Contraseña *</label>
+                  <input type="password" class="form-control" id="password" [(ngModel)]="newConfig.password" 
+                         name="password" required>
+                  <div class="form-text">
+                    Para Gmail, usa una contraseña de aplicación en lugar de tu contraseña regular.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Términos de búsqueda -->
+            <div class="mb-3">
+              <label class="form-label">Términos de Búsqueda</label>
+              <div class="mb-2" *ngFor="let term of newConfig.search_terms; let i = index; trackBy: trackByIndex">
+                <div class="input-group">
+                  <input type="text" class="form-control" [(ngModel)]="newConfig.search_terms[i]" 
+                         [name]="'search_term_' + i" placeholder="ej: factura, invoice">
+                  <button class="btn btn-outline-danger" type="button" (click)="removeSearchTerm(i)"
+                          [disabled]="newConfig.search_terms.length <= 1">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+              </div>
+              <button type="button" class="btn btn-outline-primary btn-sm" (click)="addSearchTerm()">
+                <i class="bi bi-plus"></i> Agregar término
+              </button>
+            </div>
+
+            <!-- Botones de acción -->
+            <div class="d-flex justify-content-between">
+              <div>
+                <button type="button" class="btn btn-outline-primary me-2" (click)="testConfiguration(newConfig, -1)"
+                        [disabled]="testing[-1] || !newConfig.host || !newConfig.username || !newConfig.password">
+                  <span *ngIf="testing[-1]" class="spinner-border spinner-border-sm me-1"></span>
+                  <i *ngIf="!testing[-1]" class="bi bi-check-circle"></i>
+                  Probar Conexión
+                </button>
+                <div *ngIf="testResults[-1]" class="mt-2">
+                  <div class="alert" [ngClass]="testResults[-1].success ? 'alert-success' : 'alert-danger'">
+                    {{ testResults[-1].message }}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <button type="button" class="btn btn-soft-primary me-2" (click)="cancelAdd()">
+                  Cancelar
+                </button>
+                <button type="submit" class="btn btn-primary" [disabled]="!emailForm.form.valid">
+                  <i class="bi bi-save"></i> Guardar
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Skeleton de carga -->
+      <div *ngIf="loading && !showAddForm" class="row">
+        <div class="col-md-6 col-lg-4 mb-4" *ngFor="let s of [1,2,3]">
+          <div class="card border-0 shadow-sm h-100 p-3">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <div class="d-flex align-items-center gap-2">
+                <div class="skeleton" style="width:28px;height:28px;border-radius:50%;"></div>
+                <div class="skeleton" style="width:160px;height:16px;border-radius:6px;"></div>
+              </div>
+              <div class="skeleton" style="width:48px;height:20px;border-radius:6px;"></div>
+            </div>
+            <div class="skeleton mb-2" style="width:100%;height:14px;border-radius:6px;"></div>
+            <div class="skeleton mb-2" style="width:80%;height:14px;border-radius:6px;"></div>
+            <div class="d-flex gap-2 mt-3">
+              <div class="skeleton" style="width:80px;height:28px;border-radius:8px;"></div>
+              <div class="skeleton" style="width:80px;height:28px;border-radius:8px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lista de configuraciones existentes -->
+      <div *ngIf="!loading && emailConfigs.length === 0 && !showAddForm" class="text-center">
+        <div class="card border-0 shadow-sm p-5">
+          <div class="mb-2"><i class="bi bi-envelope-slash fs-3 text-muted"></i></div>
+          <p class="mt-2 text-muted mb-1">No hay configuraciones de correo</p>
+          <p class="text-muted">Agrega al menos una configuración para comenzar a procesar correos</p>
+          <button class="btn btn-primary mt-2" (click)="showAddForm = true"><i class="bi bi-plus-circle me-1"></i> Agregar correo</button>
+        </div>
+      </div>
+
+      <div *ngIf="!loading && emailConfigs.length > 0" class="row">
+        <div class="col-md-6 col-lg-4 mb-4" *ngFor="let config of emailConfigs; let i = index">
+          <div class="card border-0 shadow-sm h-100" *ngIf="matchesFilter(config)">
+            <div class="card-body pb-2">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="d-flex align-items-center gap-2">
+                  <img *ngIf="getProvider(config) === 'Gmail'" src="assets/google.svg" width="20" height="20" alt="Gmail">
+                  <i *ngIf="getProvider(config) !== 'Gmail'" class="bi bi-envelope"></i>
+                  <div>
+                    <div class="fw-semibold">{{ config.username }}</div>
+                    <div class="text-muted small">{{ getProvider(config) }}</div>
+                  </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="badge" [ngClass]="config.enabled ? 'bg-success' : 'bg-secondary'">{{ config.enabled ? 'Habilitada' : 'Deshabilitada' }}</span>
+                  <button class="btn btn-sm btn-outline-secondary" (click)="startEdit(i)" *ngIf="!editing[keyFor(i, config)]">
+                    <i class="bi bi-pencil-square"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="form-check form-switch mb-2" *ngIf="!editing[keyFor(i, config)]">
+                <input class="form-check-input" type="checkbox" role="switch" id="enabled_{{i}}"
+                       [checked]="config.enabled" (change)="onToggleEnabled(i, $event)">
+                <label class="form-check-label" for="enabled_{{i}}">
+                  {{ config.enabled ? 'Habilitada' : 'Deshabilitada' }}
+                </label>
+              </div>
+              <div class="mb-2 text-muted" *ngIf="!editing[keyFor(i, config)]">
+                <i class="bi bi-hdd-network me-1"></i>
+                {{ config.host }}:{{ config.port }}
+                <span *ngIf="config.use_ssl" class="badge bg-primary ms-2">SSL</span>
+              </div>
+              <div class="mb-2" *ngIf="!editing[keyFor(i, config)]">
+                <div class="text-muted mb-1">Términos</div>
+                <div class="d-flex flex-wrap gap-1">
+                  <span class="badge rounded-pill bg-light border text-muted" *ngFor="let term of config.search_terms">{{ term }}</span>
+                </div>
+              </div>
+              <div *ngIf="testResults[i] && !editing[keyFor(i, config)]" class="mt-3">
+                <div class="alert alert-sm" [ngClass]="testResults[i].success ? 'alert-success' : 'alert-danger'">
+                  <small>{{ testResults[i].message }}</small>
+                </div>
+              </div>
+
+              <!-- Edit Inline -->
+              <div *ngIf="editing[keyFor(i, config)]">
+                <div class="row g-2">
+                  <div class="col-8">
+                    <label class="form-label small">Servidor IMAP</label>
+                    <input class="form-control" [(ngModel)]="editData[keyFor(i, config)].host" [name]="'host_'+i" placeholder="imap.servidor.com">
+                  </div>
+                  <div class="col-4">
+                    <label class="form-label small">Puerto</label>
+                    <input type="number" class="form-control" [(ngModel)]="editData[keyFor(i, config)].port" [name]="'port_'+i">
+                  </div>
+                  <div class="col-12 d-flex align-items-center">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" [(ngModel)]="editData[keyFor(i, config)].use_ssl" [name]="'ssl_'+i" id="ssl_{{i}}">
+                      <label class="form-check-label" for="ssl_{{i}}">Usar SSL/TLS</label>
+                    </div>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small">Usuario/Email</label>
+                    <input type="email" class="form-control" [(ngModel)]="editData[keyFor(i, config)].username" [name]="'user_'+i">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small">Contraseña (dejar en blanco para no cambiar)</label>
+                    <input type="password" class="form-control" [(ngModel)]="editData[keyFor(i, config)].password" [name]="'pass_'+i">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small">Términos</label>
+                    <div class="mb-1" *ngFor="let term of editData[keyFor(i, config)].search_terms; let ti = index; trackBy: trackByIndex">
+                      <div class="input-group input-group-sm">
+                        <input type="text" class="form-control" [(ngModel)]="editData[keyFor(i, config)].search_terms[ti]" [name]="'term_'+i+'_'+ti">
+                        <button type="button" class="btn btn-outline-danger" (click)="removeEditSearchTerm(keyFor(i, config), ti)"><i class="bi bi-x"></i></button>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" (click)="addEditSearchTerm(keyFor(i, config))"><i class="bi bi-plus"></i> Agregar término</button>
+                  </div>
+                </div>
+                <div class="d-flex justify-content-between mt-3">
+                  <div>
+                    <button class="btn btn-outline-primary btn-sm" (click)="testEditedConfiguration(keyFor(i, config))" [disabled]="testing[keyFor(i, config)]">
+                      <span *ngIf="testing[keyFor(i, config)]" class="spinner-border spinner-border-sm me-1"></span>
+                      <i *ngIf="!testing[keyFor(i, config)]" class="bi bi-check-circle me-1"></i>
+                      Probar cambios
+                    </button>
+                    <div *ngIf="testResults[keyFor(i, config)]" class="mt-2">
+                      <div class="alert alert-sm" [ngClass]="testResults[keyFor(i, config)].success ? 'alert-success' : 'alert-danger'">
+                        <small>{{ testResults[keyFor(i, config)].message }}</small>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <button class="btn btn-soft-primary btn-sm me-2" (click)="cancelEdit(i)" [disabled]="saving[keyFor(i, config)]">Cancelar</button>
+                    <button class="btn btn-primary btn-sm" (click)="saveEdit(i)" [disabled]="saving[keyFor(i, config)]">
+                      <span *ngIf="saving[keyFor(i, config)]" class="spinner-border spinner-border-sm me-1"></span>
+                      <i *ngIf="!saving[keyFor(i, config)]" class="bi bi-save me-1"></i> Guardar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer bg-transparent border-0 pt-0">
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm" (click)="testConfiguration(config, i)" [disabled]="testing[i] || editing[keyFor(i, config)]">
+                  <span *ngIf="testing[i]" class="spinner-border spinner-border-sm me-1"></span>
+                  <i *ngIf="!testing[i]" class="bi bi-check-circle me-1"></i>
+                  Probar
+                </button>
+                <button class="btn btn-danger btn-sm" (click)="removeConfig(i)" [disabled]="editing[keyFor(i, config)] || saving[keyFor(i, config)]">
+                  <i class="bi bi-trash me-1"></i> Eliminar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

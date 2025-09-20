@@ -1,0 +1,373 @@
+/* You can add global styles to this file, and also import other style files */
+@import "~bootstrap/dist/css/bootstrap.min.css";
+
+/* Bootstrap Icons - Asegurar carga correcta */
+@import url('https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css');
+
+/* Forzar visualización de iconos Bootstrap */
+.bi::before {
+  display: inline-block !important;
+  font-family: "bootstrap-icons" !important;
+  font-style: normal !important;
+  font-weight: normal !important;
+  font-variant: normal !important;
+  text-transform: none !important;
+  line-height: 1 !important;
+  vertical-align: -0.125em !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+}
+
+/* Paleta seria (no pastel) proporcionada */
+:root {
+  --color-bg: #f5f5f5;           /* gris claro fondo */
+  --color-surface: #ffffff;      /* tarjetas */
+  --color-border: #e5e5e5;
+  --color-text: #333333;         /* gris oscuro texto */
+  --color-muted: #4b5563;        /* slate-600 */
+
+  --brand-primary: #1a237e;      /* azul principal (navbar, enfoque) */
+  --primary: #4a57b9;            /* azul secundario (botones, headers) */
+  --primary-600: #3e49a8;
+  --success: #4caf50;            /* acento verde */
+  --warning: #F59E0B;            /* opcional */
+  --danger:  #E53935;            /* rojo serio */
+}
+
+/* Override Bootstrap CSS variables para una adopción total de paleta */
+:root {
+  /* base */
+  --bs-body-bg: var(--color-bg);
+  --bs-body-color: var(--color-text);
+  --bs-border-color: var(--color-border);
+  --bs-link-color: var(--primary);
+  --bs-link-hover-color: var(--primary-600);
+
+  /* primarios pastel */
+  --bs-primary: #4a57b9;  /* azul secundario */
+  --bs-primary-rgb: 74,87,185;
+  --bs-secondary: #6B7280; /* gris utilitario */
+  --bs-secondary-rgb: 107,114,128;
+  --bs-success: #4caf50;
+  --bs-success-rgb: 76,175,80;
+  --bs-warning: #F59E0B;
+  --bs-warning-rgb: 245,158,11;
+  --bs-danger: #E53935;
+  --bs-danger-rgb: 229,57,53;
+  --bs-info: #4a57b9;
+  --bs-info-rgb: 74,87,185;
+}
+
+/* Tipografía y fondo */
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+  font-size: 0.9rem; /* Reducir el tamaño base de fuente */
+  line-height: 1.5;
+}
+
+/* Ajustes globales de tipografía para tamaños más pequeños */
+h1, .h1 {
+  font-size: 1.75rem; /* Reducido de 2.5rem */
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+h2, .h2 {
+  font-size: 1.5rem; /* Reducido de 2rem */
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+h3, .h3 {
+  font-size: 1.25rem; /* Reducido de 1.75rem */
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+h4, .h4 {
+  font-size: 1.1rem; /* Reducido de 1.5rem */
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+h5, .h5 {
+  font-size: 1rem; /* Reducido de 1.25rem */
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+h6, .h6 {
+  font-size: 0.9rem; /* Reducido de 1rem */
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Textos de cuerpo más pequeños */
+p, .text-base {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Texto pequeño */
+.small, small {
+  font-size: 0.8rem;
+}
+
+/* Texto muy pequeño */
+.text-xs {
+  font-size: 0.75rem;
+}
+
+/* Ajustes para elementos de navegación */
+.nav-link {
+  font-size: 0.875rem;
+}
+
+/* Ajustes para botones */
+.btn {
+  font-size: 0.875rem;
+}
+
+.btn-sm {
+  font-size: 0.8rem;
+}
+
+.btn-lg {
+  font-size: 0.95rem;
+}
+
+/* Ajustes para formularios */
+.form-control, .form-select {
+  font-size: 0.875rem;
+}
+
+.form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Ajustes para tablas */
+.table {
+  font-size: 0.875rem;
+}
+
+.table th {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Ajustes para alertas */
+.alert {
+  font-size: 0.875rem;
+}
+
+/* Ajustes para badges */
+.badge {
+  font-size: 0.75rem;
+}
+
+/* Clases de utilidad para iconos consistentes */
+.icon-xs { font-size: 0.75rem !important; }
+.icon-sm { font-size: 1rem !important; }
+.icon-md { font-size: 1.25rem !important; }
+.icon-lg { font-size: 1.5rem !important; }
+.icon-xl { font-size: 2rem !important; }
+
+/* Espaciado más compacto para listas */
+.list-group-item {
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+}
+
+/* Ajustes para modales */
+.modal-title {
+  font-size: 1.15rem;
+}
+
+.modal-body {
+  font-size: 0.875rem;
+}
+
+/* Ajustes para breadcrumbs */
+.breadcrumb {
+  font-size: 0.85rem;
+}
+
+/* Dropdown items más compactos */
+.dropdown-item {
+  font-size: 0.875rem;
+  padding: 0.4rem 1rem;
+}
+
+/* Ajustes para tooltips */
+.tooltip {
+  font-size: 0.8rem;
+}
+
+/* Tarjetas limpias */
+.card {
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 6px 20px rgba(2, 6, 23, 0.04);
+}
+
+.card-header {
+  font-weight: 600;
+  font-size: 0.95rem; /* Tamaño específico para headers de tarjetas */
+  padding: 0.85rem 1.25rem;
+  background: linear-gradient(180deg, rgba(2,6,23,0.02) 0%, rgba(2,6,23,0.00) 100%);
+}
+
+.card-body {
+  font-size: 0.875rem; /* Tamaño específico para cuerpo de tarjetas */
+}
+
+.card-title {
+  font-size: 1.1rem; /* Títulos de tarjetas más pequeños */
+  font-weight: 600;
+}
+
+.card-subtitle {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+/* Botones consistentes */
+.btn {
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 0.5rem 1.1rem;
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+.btn:focus { box-shadow: 0 0 0 .2rem rgba(43,78,255,.15); }
+.btn-primary { background: var(--primary); border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary-600); border-color: var(--primary-600); }
+.btn-success { background: var(--success); border-color: var(--success); }
+.btn-success:hover { filter: brightness(0.95); }
+.btn-outline-primary { color: var(--primary); border-color: var(--primary); }
+.btn-outline-primary:hover { background: var(--primary); color: #fff; }
+.btn-secondary { background: var(--color-muted); border-color: var(--color-muted); }
+.btn-secondary:hover { filter: brightness(0.95); }
+
+/* Botones suaves (pastel) */
+.btn-soft-primary {
+  background: rgba(108, 138, 231, 0.12);
+  color: var(--primary);
+  border: 1px solid rgba(108, 138, 231, 0.18);
+}
+.btn-soft-primary:hover { background: rgba(108, 138, 231, 0.18); }
+
+/* Tablas */
+.table th { font-weight: 600; background: rgba(2, 6, 23, 0.03); }
+.table-hover tbody tr:hover { background: rgba(43, 78, 255, 0.06); }
+
+/* Utilidades Bootstrap ajustadas a la paleta */
+.text-primary { color: var(--primary) !important; }
+.bg-primary { background-color: var(--primary) !important; }
+.bg-success { background-color: var(--success) !important; }
+.bg-warning { background-color: var(--warning) !important; }
+.bg-danger  { background-color: var(--danger) !important; }
+.badge.bg-primary { background-color: var(--primary) !important; }
+.badge.bg-success { background-color: var(--success) !important; }
+.badge.bg-warning { background-color: var(--warning) !important; color: #1F2937; }
+.alert-success { border-color: var(--success); }
+.alert-danger  { border-color: var(--danger); }
+
+/* Badges sobrios */
+.badge { border-radius: 20px; font-weight: 600; }
+
+/* Alert suave informativa */
+.alert-soft {
+  background: #F3F5FA;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+/* Chips de estado */
+.chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .25rem .6rem; border-radius: 999px;
+  background: #F3F5FA; color: var(--color-text);
+  border: 1px solid var(--color-border); font-weight: 600; font-size: .85rem;
+}
+.chip .dot { width: .5rem; height: .5rem; border-radius: 50%; display: inline-block; }
+.chip.success .dot { background: var(--success); }
+.chip.danger  .dot { background: var(--danger); }
+.chip.warning .dot { background: var(--warning); }
+.chip.primary .dot { background: var(--primary); }
+
+/* Tarjetas de KPIs */
+.stat-card { 
+  border: 1px solid var(--color-border); 
+  border-radius: 12px; 
+  background: var(--color-surface); 
+  padding: 1rem; 
+}
+.stat-card .label { 
+  color: var(--color-muted); 
+  font-weight: 600; 
+  font-size: 0.75rem; /* Reducido para etiquetas */
+}
+.stat-card .value { 
+  font-weight: 800; 
+  font-size: 1.25rem; /* Reducido de 1.5rem */
+  color: var(--color-text); 
+}
+
+/* Skeleton loaders */
+.skeleton { position: relative; overflow: hidden; background: #EEF1F7; border-radius: 8px; }
+.skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.6) 50%, transparent 100%);
+  transform: translateX(-100%);
+  animation: shimmer 1.2s infinite;
+}
+@keyframes shimmer { to { transform: translateX(100%);} }
+
+/* Navbar personalizada */
+.app-navbar { 
+  background: var(--brand-primary); 
+  border-bottom: 1px solid rgba(255,255,255,0.08); 
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2); 
+}
+.app-navbar .navbar-brand { 
+  color: #fff; 
+  font-weight: 800; 
+  font-size: 1.1rem; /* Reducido el tamaño del brand */
+  letter-spacing: .2px; 
+}
+.app-navbar .brand-name {
+  font-size: 1.1rem; /* Tamaño específico para el nombre */
+}
+.app-navbar .brand-subtitle {
+  font-size: 0.75rem; /* Subtítulo más pequeño */
+}
+.app-navbar .nav-link { 
+  color: #e5e7eb; 
+  font-weight: 600; 
+  font-size: 0.875rem; /* Tamaño específico para links del nav */
+}
+.app-navbar .nav-link.active, .app-navbar .nav-link:hover { 
+  color: #fff; 
+  text-decoration: underline; 
+  text-underline-offset: 3px; 
+}
+.app-navbar .status-label {
+  font-size: 0.75rem; /* Etiquetas de status más pequeñas */
+}
+.app-navbar .status-value {
+  font-size: 0.8rem; /* Valores de status más pequeños */
+}
+
+/* Encabezados con la paleta definida */
+.card-header.header-primary { background: var(--primary); color: #fff; border-bottom: 1px solid rgba(0,0,0,0.05); }
+.card-header.header-secondary { background: #3b4696; color: #fff; border-bottom: 1px solid rgba(0,0,0,0.05); }
+
+/* Animaciones suaves */
+.fade-in { animation: fadeIn .5s; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }

@@ -1,0 +1,125 @@
+<nav class="navbar navbar-expand-lg app-navbar" *ngIf="user">
+  <div class="container-fluid px-4">
+    <!-- Brand/Logo -->
+    <a class="navbar-brand d-flex align-items-center" routerLink="/">
+      <div class="brand-icon me-3">
+        <i class="bi bi-receipt"></i>
+      </div>
+      <div class="brand-text">
+        <span class="brand-name">CuenlyApp</span>
+        <div class="brand-subtitle">Sistema de Gestión</div>
+      </div>
+    </a>
+
+    <!-- Mobile Toggle -->
+    <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+      <div class="hamburger">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </button>
+
+    <!-- Navigation -->
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav ms-auto align-items-lg-center">
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">
+            <div class="nav-item-content">
+              <i class="bi bi-speedometer2"></i>
+              <span>Dashboard</span>
+            </div>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/invoice-explorer" routerLinkActive="active">
+            <div class="nav-item-content">
+              <i class="bi bi-database-fill"></i>
+              <span>Explorador</span>
+            </div>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/invoices" routerLinkActive="active">
+            <div class="nav-item-content">
+              <i class="bi bi-journals"></i>
+              <span>Facturas</span>
+            </div>
+          </a>
+        </li>
+        
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" id="uploadDropdown">
+              <i class="bi bi-upload"></i>
+              Cargar Archivos
+          </a>
+          <ul class="dropdown-menu" aria-labelledby="uploadDropdown">
+            <li>
+              <a class="dropdown-item" routerLink="/upload">
+                <i class="bi bi-file-earmark-pdf me-2"></i>
+                Subir PDF
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/upload-xml">
+                <i class="bi bi-file-earmark-code me-2"></i>
+                Subir XML
+              </a>
+            </li>
+          </ul>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/ayuda" routerLinkActive="active">
+            <div class="nav-item-content">
+              <i class="bi bi-question-circle"></i>
+              <span>Ayuda</span>
+            </div>
+          </a>
+        </li>
+      </ul>
+
+      <!-- Status Indicators -->
+      <div class="navbar-status ms-lg-4">
+        <div class="status-group">
+          <!-- OpenAI Status -->
+          <div class="status-indicator" [ngClass]="status?.openai_configured ? 'success' : 'danger'"
+               [title]="'OpenAI: ' + (status?.openai_configured ? 'Configurado correctamente' : 'No configurado')">
+            <div class="status-icon">
+              <i class="bi bi-robot"></i>
+            </div>
+            <div class="status-info d-none d-xl-block">
+              <div class="status-label">OpenAI</div>
+              <div class="status-value">{{ status?.openai_configured ? 'Activo' : 'Inactivo' }}</div>
+            </div>
+          </div>
+
+          <!-- System Health (optional - can be added later) -->
+          <div class="status-indicator success d-none d-xxl-block" title="Sistema funcionando correctamente">
+            <div class="status-info">
+              <div class="status-label">
+                <i class="bi bi-shield-check me-1"></i>
+                Sistema Saludable
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auth area -->
+      <div class="ms-3 d-flex align-items-center">
+        <ng-container *ngIf="user; else loginBtn">
+          <div class="d-flex align-items-center gap-2">
+            <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="rounded-circle" width="28" height="28">
+            <span class="small text-truncate" style="max-width: 160px;" [title]="user.email || user.displayName">{{ user.email || user.displayName }}</span>
+            <button class="btn btn-sm btn-outline-secondary" (click)="signOut()">Salir</button>
+          </div>
+        </ng-container>
+        <ng-template #loginBtn>
+          <button class="btn btn-sm btn-outline-primary" routerLink="/login">
+            <i class="bi bi-box-arrow-in-right me-1"></i> Entrar
+          </button>
+        </ng-template>
+      </div>
+    </div>
+  </div>
+</nav>

@@ -1,0 +1,52 @@
+/* Tarjetas limpias y sutiles */
+.card { transition: transform 0.2s ease-in-out; }
+.card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.06); }
+
+.alert-sm {
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.badge {
+  font-size: 0.75em;
+}
+
+.spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+.form-text {
+  font-size: 0.875em;
+  color: #6c757d;
+}
+
+.input-group .btn {
+  border-color: #ced4da;
+}
+
+h6 {
+  color: #495057;
+  border-bottom: 1px solid #dee2e6;
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Ajustes para chips de términos */
+.badge.rounded-pill {
+  background: #f8fafc;
+}
+
+/* Ajustes de skeleton locales (usa base global .skeleton) */
+.skeleton { opacity: .9; }
+
+@media (max-width: 768px) {
+  .card-title {
+    font-size: 0.9rem;
+  }
+  
+  .d-grid.gap-2 {
+    gap: 0.5rem !important;
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "CuenlyApp",
+  "short_name": "CuenlyApp",
+  "description": "Automatización inteligente para extraer datos de facturas desde correos",
+  "theme_color": "#007bff",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "assets/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

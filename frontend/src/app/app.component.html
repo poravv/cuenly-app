@@ -1,0 +1,16 @@
+<ng-container *ngIf="authReady; else loadingTpl">
+  <app-navbar></app-navbar>
+  <main>
+    <router-outlet></router-outlet>
+  </main>
+  <app-footer></app-footer>
+</ng-container>
+<ng-template #loadingTpl>
+  <div class="splash d-flex flex-column align-items-center justify-content-center">
+    <div class="spinner-border text-primary" role="status" style="width: 2.5rem; height: 2.5rem;">
+      <span class="visually-hidden">Cargando...</span>
+    </div>
+    <div class="mt-3 text-muted">Inicializando sesión…</div>
+  </div>
+</ng-template>
+

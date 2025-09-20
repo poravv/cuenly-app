@@ -1,0 +1,175 @@
+<div class="container-fluid mt-4 px-4 px-lg-5">
+  <div class="row mb-3">
+    <div class="col-12 d-flex align-items-center justify-content-between flex-wrap">
+      <div>
+        <nav aria-label="breadcrumb" class="mb-2">
+          <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a routerLink="/" class="text-decoration-none">Inicio</a></li>
+            <li class="breadcrumb-item active">Lista de Facturas</li>
+          </ol>
+        </nav>
+        <h1 class="h3 fw-bold mb-0 d-flex align-items-center">
+          <i class="bi bi-journals text-primary me-2"></i>
+          Cabeceras de Facturas
+        </h1>
+      </div>
+      <button class="btn btn-outline-primary mt-2 mt-md-0" (click)="refresh()" [disabled]="loading">
+        <i class="bi bi-arrow-repeat"></i> Actualizar
+      </button>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Mes</label>
+          <input type="month" class="form-control" [(ngModel)]="month" (change)="refresh()">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-semibold">Buscar</label>
+          <input type="text" class="form-control" placeholder="Texto (emisor/receptor/nro)" [(ngModel)]="search" (keyup.enter)="refresh()">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">RUC Emisor</label>
+          <input type="text" class="form-control" [(ngModel)]="rucEmisor" (keyup.enter)="refresh()">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small fw-semibold">RUC Receptor</label>
+          <input type="text" class="form-control" [(ngModel)]="rucReceptor" (keyup.enter)="refresh()">
+        </div>
+        <div class="col-md-2 d-grid">
+          <button class="btn btn-primary" (click)="refresh()" [disabled]="loading">
+            <i class="bi bi-filter-circle me-1"></i> Filtrar
+          </button>
+        </div>
+      </div>
+      <!-- Chips de filtros activos -->
+      <div class="mt-3 d-flex flex-wrap gap-2" *ngIf="chips.length">
+        <span class="chip" *ngFor="let c of chips">
+          <span class="chip-label">{{ c.label }}:</span>
+          <span class="chip-value">{{ c.value }}</span>
+          <button class="chip-close" (click)="removeChip(c.key)" aria-label="Quitar filtro">
+            <i class="bi bi-x"></i>
+          </button>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabla -->
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div *ngIf="loading" class="py-3">
+        <div class="skeleton-row" *ngFor="let s of [1,2,3,4,5]">
+          <div class="skeleton sk-icon"></div>
+          <div class="skeleton sk-col"></div>
+          <div class="skeleton sk-col"></div>
+          <div class="skeleton sk-col"></div>
+          <div class="skeleton sk-col"></div>
+          <div class="skeleton sk-amt"></div>
+        </div>
+      </div>
+
+      <div *ngIf="!loading && error" class="alert alert-danger border-0">{{ error }}</div>
+
+      <div *ngIf="!loading && !error">
+        <div class="table-responsive">
+          <table class="table align-middle">
+            <thead>
+              <tr>
+                <th style="width: 40px;"></th>
+                <th>Fecha</th>
+                <th>Número</th>
+                <th>Emisor</th>
+                <th>Receptor</th>
+                <th class="text-end">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <ng-container *ngFor="let h of headers; trackBy: trackByHeaderId">
+                <tr>
+                  <td>
+                    <button class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center" (click)="toggle(h)" [disabled]="itemsLoading[h.id]" aria-label="Mostrar/ocultar detalle">
+                      <span *ngIf="itemsLoading[h.id]" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                      <i *ngIf="!itemsLoading[h.id]" class="bi" [ngClass]="expanded[h.id] ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+                    </button>
+                  </td>
+                  <td>{{ formatDate(h.fecha_emision) }}</td>
+                  <td>
+                    <div class="d-flex align-items-center gap-2">
+                      <span>{{ h.numero_documento }}</span>
+                      <span class="badge" [ngClass]="condBadgeClass(h.condicion_venta)">{{ h.condicion_venta || 'CONTADO' }}</span>
+                    </div>
+                  </td>
+                  <td>{{ h.emisor?.nombre }}</td>
+                  <td>{{ h.receptor?.nombre }}</td>
+                  <td class="text-end">{{ toCurrency(h.totales?.total || 0) }}</td>
+                </tr>
+                <tr *ngIf="expanded[h.id]">
+                  <td colspan="6" class="p-0 border-0">
+                    <div class="bg-light rounded-3 p-3 m-2">
+                      <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="fw-semibold">Detalle: {{ h.numero_documento }}</div>
+                      </div>
+                      <div *ngIf="itemsLoading[h.id]" class="d-flex justify-content-center align-items-center py-3">
+                        <div class="spinner-border text-primary me-2" role="status" style="width: 1.5rem; height: 1.5rem;">
+                          <span class="visually-hidden">Cargando...</span>
+                        </div>
+                        <span class="text-muted">Cargando detalles...</span>
+                      </div>
+
+                      <div *ngIf="!itemsLoading[h.id] && itemsError[h.id]" class="alert alert-danger mb-0 py-2">
+                        {{ itemsError[h.id] }}
+                      </div>
+
+                      <div class="table-responsive" *ngIf="!itemsLoading[h.id] && !itemsError[h.id]">
+                        <table class="table table-sm align-middle">
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Descripción</th>
+                              <th class="text-end">Cant.</th>
+                              <th>Unidad</th>
+                              <th class="text-end">P. Unit</th>
+                              <th class="text-end">Total</th>
+                              <th>IVA</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr *ngIf="!(itemsCache[h.id]?.length)">
+                              <td colspan="7" class="text-center text-muted py-3">Sin ítems</td>
+                            </tr>
+                            <tr *ngFor="let it of itemsCache[h.id]">
+                              <td>{{ it.linea }}</td>
+                              <td>{{ it.descripcion }}</td>
+                              <td class="text-end">{{ it.cantidad }}</td>
+                              <td>{{ it.unidad }}</td>
+                              <td class="text-end">{{ toCurrency(it.precio_unitario) }}</td>
+                              <td class="text-end">{{ toCurrency(it.total) }}</td>
+                              <td><span [ngClass]="ivaBadgeClass(it.iva)">{{ it.iva }}%</span></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </ng-container>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Paginación simple -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+          <div class="text-muted">Total: {{ total }}</div>
+          <div class="btn-group">
+            <button class="btn btn-outline-secondary" (click)="prevPage()" [disabled]="page <= 1">Anterior</button>
+            <button class="btn btn-outline-secondary" (click)="nextPage()" [disabled]="page >= pageCount()">Siguiente</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

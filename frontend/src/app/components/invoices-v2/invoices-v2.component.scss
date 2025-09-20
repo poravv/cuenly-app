@@ -1,0 +1,17 @@
+.table td, .table th { vertical-align: middle; }
+.breadcrumb { font-size: .9rem; }
+.btn-outline-primary { border-radius: .5rem; }
+.card { border-radius: .75rem; }
+.rounded-3 { border-radius: .75rem !important; }
+
+/* Chips: usar estilos globales y solo ajustar internos */
+.chip-label { color: var(--color-muted); font-size: .85rem; }
+.chip-value { font-weight: 600; font-size: .9rem; }
+.chip-close { border: none; background: transparent; color: var(--color-muted); line-height: 1; }
+.chip-close:hover { color: var(--danger); }
+
+/* Skeletons: usar estilos globales y definir layout */
+.skeleton-row { display: grid; grid-template-columns: 40px 1fr 1fr 1fr 1fr 120px; gap: 12px; padding: .5rem 0; }
+.sk-icon { width: 28px; height: 28px; border-radius: 50%; }
+.sk-col { height: 20px; }
+.sk-amt { width: 100%; max-width: 120px; height: 20px; }
