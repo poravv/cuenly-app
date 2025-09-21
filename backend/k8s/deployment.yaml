@@ -41,18 +41,29 @@ spec:
           httpGet:
             path: /health
             port: http
-          initialDelaySeconds: 90
-          periodSeconds: 60      # Reducido de 30s a 60s
-          timeoutSeconds: 10     # Reducido de 20s a 10s
-          failureThreshold: 3    # Reducido de 5 a 3
+          initialDelaySeconds: 120   # Dar más tiempo para inicialización completa
+          periodSeconds: 30          # Verificar cada 30 segundos
+          timeoutSeconds: 10         # Timeout de respuesta
+          failureThreshold: 5        # Permitir más fallos antes de reiniciar
+          successThreshold: 1        # Una respuesta exitosa confirma salud
         readinessProbe:
           httpGet:
             path: /health
             port: http
-          initialDelaySeconds: 60
-          periodSeconds: 20      # Reducido de 15s a 20s
-          timeoutSeconds: 5      # Mantenido
-          failureThreshold: 3    # Reducido de 5 a 3
+          initialDelaySeconds: 30    # Verificar readiness más temprano
+          periodSeconds: 10          # Verificar cada 10 segundos
+          timeoutSeconds: 5          # Timeout más corto para readiness
+          failureThreshold: 3        # Máximo 3 fallos antes de marcar como no ready
+          successThreshold: 1        # Una respuesta exitosa confirma readiness
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10    # Empezar a verificar pronto
+          periodSeconds: 10          # Verificar cada 10 segundos
+          timeoutSeconds: 5          # Timeout corto
+          failureThreshold: 30       # Hasta 5 minutos para startup (30*10s = 300s)
+          successThreshold: 1        # Una respuesta exitosa completa startup
         lifecycle:
           preStop:
             exec:
