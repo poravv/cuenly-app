@@ -113,6 +113,13 @@ spec:
                 name: backend-proxy-service
                 port:
                   number: 8000
+          - path: /user
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-proxy-service
+                port:
+                  number: 8000
           # ===== RUTA DEL FRONTEND (CATCH-ALL, DEBE IR AL FINAL) =====
           - path: /
             pathType: Prefix
