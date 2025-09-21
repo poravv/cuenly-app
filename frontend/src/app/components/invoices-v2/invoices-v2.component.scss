@@ -11,7 +11,29 @@
 .chip-close:hover { color: var(--danger); }
 
 /* Skeletons: usar estilos globales y definir layout */
-.skeleton-row { display: grid; grid-template-columns: 40px 1fr 1fr 1fr 1fr 120px; gap: 12px; padding: .5rem 0; }
+.skeleton-row { display: grid; grid-template-columns: 40px 40px 1fr 1fr 1fr 1fr 120px; gap: 12px; padding: .5rem 0; }
 .sk-icon { width: 28px; height: 28px; border-radius: 50%; }
 .sk-col { height: 20px; }
 .sk-amt { width: 100%; max-width: 120px; height: 20px; }
+
+/* Eliminación */
+.table-active {
+  background-color: var(--bs-table-active-bg, rgba(13, 110, 253, 0.1)) !important;
+}
+
+.btn-danger {
+  border-radius: .5rem;
+}
+
+/* Modal */
+.max-height-200 {
+  max-height: 200px;
+}
+
+.modal.show {
+  background-color: rgba(0,0,0,0.5);
+}
+
+.form-check-input {
+  cursor: pointer;
+}

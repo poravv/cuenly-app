@@ -203,4 +203,21 @@ export class ApiService {
     });
     return this.http.get<any>(`${this.apiUrl}/v2/invoices/items`, { params: qp });
   }
+
+  // Eliminación de facturas V2
+  deleteV2Invoice(headerId: string): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/v2/invoices/${headerId}`);
+  }
+
+  deleteV2InvoicesBulk(headerIds: string[]): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/v2/invoices/bulk-delete`, { header_ids: headerIds });
+  }
+
+  getV2DeleteInfo(headerId: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/v2/invoices/${headerId}/delete-info`);
+  }
+
+  getV2BulkDeleteInfo(headerIds: string[]): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/v2/invoices/bulk-delete-info`, { header_ids: headerIds });
+  }
 }
