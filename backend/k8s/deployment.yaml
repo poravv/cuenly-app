@@ -35,27 +35,27 @@ spec:
             name: backend-env-secrets
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
             memory: "2Gi"
-            cpu: "1500m"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /health
             port: http
-          initialDelaySeconds: 45
-          periodSeconds: 15
-          timeoutSeconds: 10
-          failureThreshold: 3
+          initialDelaySeconds: 90
+          periodSeconds: 30
+          timeoutSeconds: 20
+          failureThreshold: 5
         readinessProbe:
           httpGet:
             path: /health
             port: http
-          initialDelaySeconds: 15
-          periodSeconds: 5
-          timeoutSeconds: 5
-          failureThreshold: 3
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 15
+          failureThreshold: 5
         lifecycle:
           preStop:
             exec:
