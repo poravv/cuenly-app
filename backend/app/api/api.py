@@ -1138,6 +1138,233 @@ async def v2_list_items(
         logger.error(f"Error listando items v2: {e}")
         raise HTTPException(status_code=500, detail="Error listando items")
 
+@app.delete("/v2/invoices/{header_id}")
+async def v2_delete_invoice(header_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Elimina una factura completa (header + todos sus items).
+    """
+    try:
+        repo = MongoInvoiceRepository()
+        
+        # Verificar que la factura existe y pertenece al usuario
+        q = {"_id": header_id}
+        if settings.MULTI_TENANT_ENFORCE:
+            owner = (user.get('email') or '').lower()
+            if owner:
+                q['owner_email'] = owner
+        
+        header = repo._headers().find_one(q)
+        if not header:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+        
+        # Eliminar items primero
+        items_result = repo._items().delete_many({"header_id": header_id})
+        
+        # Eliminar header
+        header_result = repo._headers().delete_one({"_id": header_id})
+        
+        if header_result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="No se pudo eliminar la factura")
+        
+        logger.info(f"✅ Factura eliminada: {header_id} ({items_result.deleted_count} items)")
+        
+        return {
+            "success": True,
+            "message": f"Factura eliminada correctamente",
+            "deleted_items": items_result.deleted_count,
+            "header_id": header_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error eliminando factura {header_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error eliminando factura")
+
+@app.delete("/v2/invoices/bulk")
+async def v2_bulk_delete_invoices(
+    header_ids: List[str],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Elimina múltiples facturas en lote.
+    """
+    try:
+        if not header_ids:
+            raise HTTPException(status_code=400, detail="No se proporcionaron IDs de facturas")
+        
+        if len(header_ids) > 100:
+            raise HTTPException(status_code=400, detail="Máximo 100 facturas por operación")
+        
+        repo = MongoInvoiceRepository()
+        
+        # Construir query con filtro de usuario si aplica
+        q = {"_id": {"$in": header_ids}}
+        if settings.MULTI_TENANT_ENFORCE:
+            owner = (user.get('email') or '').lower()
+            if owner:
+                q['owner_email'] = owner
+        
+        # Verificar que todas las facturas existen y pertenecen al usuario
+        existing_headers = list(repo._headers().find(q, {"_id": 1}))
+        existing_ids = [h["_id"] for h in existing_headers]
+        
+        if len(existing_ids) != len(header_ids):
+            missing_ids = set(header_ids) - set(existing_ids)
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Facturas no encontradas: {list(missing_ids)}"
+            )
+        
+        # Eliminar items de todas las facturas
+        items_result = repo._items().delete_many({"header_id": {"$in": existing_ids}})
+        
+        # Eliminar headers
+        headers_result = repo._headers().delete_many({"_id": {"$in": existing_ids}})
+        
+        logger.info(f"✅ Eliminación en lote: {headers_result.deleted_count} facturas, {items_result.deleted_count} items")
+        
+        return {
+            "success": True,
+            "message": f"Se eliminaron {headers_result.deleted_count} facturas correctamente",
+            "deleted_headers": headers_result.deleted_count,
+            "deleted_items": items_result.deleted_count,
+            "processed_ids": existing_ids
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en eliminación en lote: {e}")
+        raise HTTPException(status_code=500, detail="Error en eliminación en lote")
+
+class BulkDeleteRequest(BaseModel):
+    header_ids: List[str]
+
+@app.post("/v2/invoices/bulk-delete")
+async def v2_bulk_delete_invoices_post(
+    request: BulkDeleteRequest,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Alternativa POST para eliminación en lote (para payloads grandes).
+    """
+    return await v2_bulk_delete_invoices(request.header_ids, user)
+
+@app.get("/v2/invoices/{header_id}/delete-info")
+async def v2_get_delete_info(header_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Obtiene información sobre lo que se eliminará antes de confirmar.
+    """
+    try:
+        repo = MongoInvoiceRepository()
+        
+        # Verificar que la factura existe y pertenece al usuario
+        q = {"_id": header_id}
+        if settings.MULTI_TENANT_ENFORCE:
+            owner = (user.get('email') or '').lower()
+            if owner:
+                q['owner_email'] = owner
+        
+        header = repo._headers().find_one(q)
+        if not header:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+        
+        # Contar items
+        items_count = repo._items().count_documents({"header_id": header_id})
+        
+        return {
+            "success": True,
+            "can_delete": True,
+            "header": {
+                "id": header_id,
+                "numero_documento": header.get("numero_documento", ""),
+                "emisor": header.get("emisor", {}).get("nombre", ""),
+                "fecha_emision": header.get("fecha_emision"),
+                "monto_total": header.get("monto_total", 0)
+            },
+            "items_count": items_count,
+            "warning": f"Se eliminará la factura completa con {items_count} ítems. Esta acción no se puede deshacer."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo información de eliminación: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo información")
+
+@app.post("/v2/invoices/bulk-delete-info")
+async def v2_get_bulk_delete_info(
+    request: BulkDeleteRequest,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Obtiene información sobre eliminación en lote antes de confirmar.
+    """
+    try:
+        if not request.header_ids:
+            raise HTTPException(status_code=400, detail="No se proporcionaron IDs de facturas")
+        
+        if len(request.header_ids) > 100:
+            raise HTTPException(status_code=400, detail="Máximo 100 facturas por operación")
+        
+        repo = MongoInvoiceRepository()
+        
+        # Construir query con filtro de usuario si aplica
+        q = {"_id": {"$in": request.header_ids}}
+        if settings.MULTI_TENANT_ENFORCE:
+            owner = (user.get('email') or '').lower()
+            if owner:
+                q['owner_email'] = owner
+        
+        # Obtener facturas existentes
+        headers = list(repo._headers().find(q, {
+            "_id": 1, 
+            "numero_documento": 1, 
+            "emisor.nombre": 1, 
+            "fecha_emision": 1,
+            "monto_total": 1
+        }))
+        
+        existing_ids = [h["_id"] for h in headers]
+        missing_ids = set(request.header_ids) - set(existing_ids)
+        
+        # Contar items totales
+        total_items = repo._items().count_documents({"header_id": {"$in": existing_ids}})
+        
+        # Calcular monto total
+        total_amount = sum(h.get("monto_total", 0) for h in headers)
+        
+        return {
+            "success": True,
+            "can_delete": len(missing_ids) == 0,
+            "summary": {
+                "total_invoices": len(headers),
+                "total_items": total_items,
+                "total_amount": total_amount,
+                "found_invoices": len(existing_ids),
+                "missing_invoices": len(missing_ids)
+            },
+            "missing_ids": list(missing_ids) if missing_ids else [],
+            "invoices": [
+                {
+                    "id": h["_id"],
+                    "numero_documento": h.get("numero_documento", ""),
+                    "emisor": h.get("emisor", {}).get("nombre", "") if h.get("emisor") else "",
+                    "fecha_emision": h.get("fecha_emision"),
+                    "monto_total": h.get("monto_total", 0)
+                }
+                for h in headers
+            ],
+            "warning": f"Se eliminarán {len(headers)} facturas con un total de {total_items} ítems. Esta acción no se puede deshacer."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo información de eliminación en lote: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo información")
+
 @app.post("/job/start", response_model=JobStatus)
 async def start_job():
     """
