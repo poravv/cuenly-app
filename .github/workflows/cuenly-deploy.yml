@@ -364,9 +364,30 @@ jobs:
             echo "⚠️  No se encontró script mongo-indexes.js, continuando..."
           fi
           
-      - name: Deploy backend application
+      - name: Clean problematic backend resources
         run: |
           set -euo pipefail
+          echo "🧹 Limpiando recursos problemáticos del backend..."
+          
+          # Eliminar deployment problemático si existe
+          kubectl delete deployment cuenly-backend -n ${{ env.NAMESPACE }} --ignore-not-found=true --force --grace-period=0 || true
+          
+          # Esperar a que los pods terminen
+          echo "⏳ Esperando terminación de pods..."
+          sleep 10
+          
+          # Forzar eliminación de pods colgados
+          kubectl delete pods -l app=cuenly-backend -n ${{ env.NAMESPACE }} --force --grace-period=0 --ignore-not-found=true || true
+          
+          # Eliminar replica sets huérfanos
+          kubectl delete replicaset -l app=cuenly-backend -n ${{ env.NAMESPACE }} --force --grace-period=0 --ignore-not-found=true || true
+          
+          echo "✅ Limpieza completada"
+          
+      - name: Deploy backend application  
+        run: |
+          set -euo pipefail
+          echo "🚀 Desplegando backend limpio..."
           kubectl apply -f backend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
           kubectl set image deployment/cuenly-backend cuenly-backend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA} -n ${{ env.NAMESPACE }}
