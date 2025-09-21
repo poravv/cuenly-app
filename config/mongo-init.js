@@ -6,8 +6,9 @@ db = db.getSiblingDB('cuenlyapp_warehouse');
 
 print('🔧 Inicializando base de datos cuenlyapp_warehouse...');
 
-// Crear la colección principal con validación de esquema
-db.createCollection('facturas_completas', {
+// Crear la colección principal con validación de esquema (idempotente)
+try {
+  db.createCollection('facturas_completas', {
   validator: {
     $jsonSchema: {
       bsonType: 'object',
@@ -86,82 +87,112 @@ db.createCollection('facturas_completas', {
 });
 
 print('✅ Colección facturas_completas creada');
+} catch (e) {
+  print('⚠️ facturas_completas ya existe: ' + e.message);
+}
 
-// Crear índices optimizados para consultas frecuentes
-db.facturas_completas.createIndex({ 'factura.fecha': 1 });
-db.facturas_completas.createIndex({ 'emisor.ruc': 1 });
-db.facturas_completas.createIndex({ 'receptor.ruc': 1 });
-db.facturas_completas.createIndex({ 'metadata.fecha_procesado': 1 });
-db.facturas_completas.createIndex({ 'indices.year_month': 1 });
-db.facturas_completas.createIndex({ 'datos_tecnicos.cdc': 1 });
+// Crear índices optimizados para consultas frecuentes (idempotente)
+try {
+  db.facturas_completas.createIndex({ 'factura.fecha': 1 });
+  db.facturas_completas.createIndex({ 'emisor.ruc': 1 });
+  db.facturas_completas.createIndex({ 'receptor.ruc': 1 });
+  db.facturas_completas.createIndex({ 'metadata.fecha_procesado': 1 });
+  db.facturas_completas.createIndex({ 'indices.year_month': 1 });
+  db.facturas_completas.createIndex({ 'datos_tecnicos.cdc': 1 });
 
-// Índices compuestos para consultas complejas
-db.facturas_completas.createIndex({ 'emisor.ruc': 1, 'factura.fecha': -1 });
-db.facturas_completas.createIndex({ 'indices.year_month': 1, 'montos.monto_total': -1 });
-db.facturas_completas.createIndex({ 'metadata.calidad_datos': 1, 'indices.has_cdc': 1 });
+  // Índices compuestos para consultas complejas
+  db.facturas_completas.createIndex({ 'emisor.ruc': 1, 'factura.fecha': -1 });
+  db.facturas_completas.createIndex({ 'indices.year_month': 1, 'montos.monto_total': -1 });
+  db.facturas_completas.createIndex({ 'metadata.calidad_datos': 1, 'indices.has_cdc': 1 });
 
-// Índice de texto para búsquedas generales
-db.facturas_completas.createIndex({
-  'emisor.nombre': 'text',
-  'receptor.nombre': 'text',
-  'factura.descripcion': 'text',
-  'productos.articulo': 'text'
-});
+  // Índice de texto para búsquedas generales
+  db.facturas_completas.createIndex({
+    'emisor.nombre': 'text',
+    'receptor.nombre': 'text',
+    'factura.descripcion': 'text',
+    'productos.articulo': 'text'
+  });
 
-print('✅ Índices principales creados');
+  print('✅ Índices principales creados');
+} catch (e) {
+  print('⚠️ Algunos índices ya existen: ' + e.message);
+}
 
-// Crear colección para logs de procesamiento
-db.createCollection('processing_logs', {
-  validator: {
-    $jsonSchema: {
-      bsonType: 'object',
-      required: ['timestamp', 'action', 'status'],
-      properties: {
-        timestamp: {
-          bsonType: 'date',
-          description: 'Fecha y hora del evento'
-        },
-        action: {
-          bsonType: 'string',
-          enum: ['PROCESS_EMAILS', 'EXPORT_EXCEL', 'EXPORT_MONGODB', 'MANUAL_UPLOAD'],
-          description: 'Tipo de acción realizada'
-        },
-        status: {
-          bsonType: 'string',
-          enum: ['SUCCESS', 'ERROR', 'WARNING'],
-          description: 'Estado del procesamiento'
+// Crear colección para logs de procesamiento (idempotente)
+try {
+  db.createCollection('processing_logs', {
+    validator: {
+      $jsonSchema: {
+        bsonType: 'object',
+        required: ['timestamp', 'action', 'status'],
+        properties: {
+          timestamp: {
+            bsonType: 'date',
+            description: 'Fecha y hora del evento'
+          },
+          action: {
+            bsonType: 'string',
+            enum: ['PROCESS_EMAILS', 'EXPORT_EXCEL', 'EXPORT_MONGODB', 'MANUAL_UPLOAD'],
+            description: 'Tipo de acción realizada'
+          },
+          status: {
+            bsonType: 'string',
+            enum: ['SUCCESS', 'ERROR', 'WARNING'],
+            description: 'Estado del procesamiento'
+          }
         }
       }
     }
-  }
-});
+  });
 
-// Índices para logs
-db.processing_logs.createIndex({ 'timestamp': -1 });
-db.processing_logs.createIndex({ 'action': 1, 'timestamp': -1 });
+  // Índices para logs
+  db.processing_logs.createIndex({ 'timestamp': -1 });
+  db.processing_logs.createIndex({ 'action': 1, 'timestamp': -1 });
+  
+  print('✅ Colección processing_logs creada');
+} catch (e) {
+  print('⚠️ processing_logs ya existe: ' + e.message);
+}
 
-// Crear colección para estadísticas mensuales (materializada)
-db.createCollection('monthly_stats');
-db.monthly_stats.createIndex({ 'year_month': 1 }, { unique: true });
+// Crear colección para estadísticas mensuales (materializada) (idempotente)
+try {
+  db.createCollection('monthly_stats');
+  db.monthly_stats.createIndex({ 'year_month': 1 }, { unique: true });
+  print('✅ Colección monthly_stats creada');
+} catch (e) {
+  print('⚠️ monthly_stats ya existe: ' + e.message);
+}
 
 print('✅ Colecciones auxiliares creadas');
 
-// Insertar documento de configuración inicial
-db.system_config.insertOne({
-  _id: 'app_config',
-  version: '2.0.0',
-  created_at: new Date(),
-  features: {
-    mongodb_primary: true,
-    excel_export_enabled: true,
-    auto_export_excel: true,
-    retention_days: 365
-  },
-  indexes_created: true,
-  last_updated: new Date()
-});
-
-print('✅ Configuración inicial guardada');
+// Insertar documento de configuración inicial (idempotente)
+try {
+  const existingConfig = db.system_config.findOne({ _id: 'app_config' });
+  if (!existingConfig) {
+    db.system_config.insertOne({
+      _id: 'app_config',
+      version: '2.0.0',
+      created_at: new Date(),
+      features: {
+        mongodb_primary: true,
+        excel_export_enabled: true,
+        auto_export_excel: true,
+        retention_days: 365
+      },
+      indexes_created: true,
+      last_updated: new Date()
+    });
+    print('✅ Configuración inicial guardada');
+  } else {
+    print('⚠️ Configuración ya existe, actualizando timestamp...');
+    db.system_config.updateOne(
+      { _id: 'app_config' },
+      { $set: { last_updated: new Date() } }
+    );
+  }
+} catch (e) {
+  print('⚠️ Error en configuración: ' + e.message);
+}
 
 // ------------------------------
 // Nuevas colecciones: cabecera y detalle
