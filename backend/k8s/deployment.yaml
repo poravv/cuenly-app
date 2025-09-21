@@ -45,17 +45,17 @@ spec:
             path: /health
             port: http
           initialDelaySeconds: 90
-          periodSeconds: 30
-          timeoutSeconds: 20
-          failureThreshold: 5
+          periodSeconds: 60      # Reducido de 30s a 60s
+          timeoutSeconds: 10     # Reducido de 20s a 10s
+          failureThreshold: 3    # Reducido de 5 a 3
         readinessProbe:
           httpGet:
             path: /health
             port: http
           initialDelaySeconds: 60
-          periodSeconds: 15
-          timeoutSeconds: 15
-          failureThreshold: 5
+          periodSeconds: 20      # Reducido de 15s a 20s
+          timeoutSeconds: 5      # Mantenido
+          failureThreshold: 3    # Reducido de 5 a 3
         lifecycle:
           preStop:
             exec:
