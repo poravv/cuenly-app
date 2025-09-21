@@ -6,6 +6,8 @@ metadata:
   labels:
     app: cuenly-backend
     tier: backend
+  annotations:
+    deployment.kubernetes.io/revision: "1"
 spec:
   replicas: 1
   strategy:

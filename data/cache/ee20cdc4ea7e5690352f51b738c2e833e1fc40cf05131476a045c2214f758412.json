@@ -1,0 +1,7 @@
+{
+  "pdf_hash": "ee20cdc4ea7e5690352f51b738c2e833e1fc40cf05131476a045c2214f758412",
+  "pdf_name": "20250921194340422_b410c641_Factura_electrónica_003-001-0516895.pdf",
+  "cached_at": "2025-09-21T19:43:59.833424",
+  "processing_method": "openai_vision",
+  "result": "fecha=datetime.datetime(2025, 7, 9, 0, 0) tipo_documento='CO' numero_documento='003-001-0516895' ruc_proveedor='80031970-2' razon_social_proveedor='TUPI RAMOS GENERALES S.A.' condicion_compra='CONTADO' gravado_10=5078091.0 iva_10=507091.0 gravado_5=0.0 iva_5=0.0 exento=0.0 total_factura=5578000.0 timbrado='16012519' cdc='01800319702003001051689522025070915101728090' moneda='GS' tipo_cambio=0.0 descripcion_factura='' detalle_articulos='' email_origen='Carga manual' procesado_en=datetime.datetime(2025, 9, 21, 19, 43, 59, 805023) mes_proceso='2025-07' ruc_emisor='80031970-2' nombre_emisor='TUPI RAMOS GENERALES S.A.' numero_factura='003-001-0516895' monto_total=5578000.0 iva=0.0 pdf_path='' ruc_cliente='5379057-0' nombre_cliente='VERA CHAVEZ, ANDRES VALENTIN' email_cliente='' condicion_venta='CONTADO' subtotal_exentas=0.0 subtotal_5=0.0 subtotal_10=5078091.0 actividad_economica=None empresa=None timbrado_data=None factura_data=None productos=[ProductoFactura(articulo='EJERCITADOR DE PIERNAS TECNOFITNESS ADUCTOR LM60 TEACLM60 OBS.', cantidad=1.0, precio_unitario=0.0, total=0.0, iva=0), ProductoFactura(articulo='CINTA P/CAMINAR ATHLETIC 3260T ATCC3260T', cantidad=1.0, precio_unitario=5578000.0, total=5578000.0, iva=507091)] totales=None cliente=None observacion=''"
+}

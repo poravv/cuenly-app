@@ -366,6 +366,7 @@ class ParaguayanXMLParser:
     def _extract_iva_info(self, item_element: ET.Element) -> Dict[str, Any]:
         """
         Extrae información de IVA de un item.
+        CRÍTICO: Mapea tasa_iva al campo 'iva' para consistencia con modelo.
         """
         iva_info = {}
         
@@ -381,10 +382,21 @@ class ParaguayanXMLParser:
         
         if iva_element is not None:
             iva_info['afectacion_iva'] = self._get_text(iva_element, 'dDesAfecIVA')
-            iva_info['tasa_iva'] = self._get_float(iva_element, 'dTasaIVA')
+            tasa = self._get_float(iva_element, 'dTasaIVA')
+            iva_info['tasa_iva'] = tasa
+            
+            # CRÍTICO: Mapear tasa de IVA al campo 'iva' (tipo: 0, 5 o 10)
+            try:
+                iva_info['iva'] = int(float(tasa or 0))
+            except Exception:
+                iva_info['iva'] = 0
+                
             iva_info['base_gravada'] = self._get_float(iva_element, 'dBasGravIVA')
             iva_info['liquidacion_iva'] = self._get_float(iva_element, 'dLiqIVAItem')
             iva_info['base_exenta'] = self._get_float(iva_element, 'dBasExe')
+        else:
+            # Si no hay información de IVA, establecer valores por defecto
+            iva_info['iva'] = 0
         
         return iva_info
     

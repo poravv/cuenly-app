@@ -29,6 +29,30 @@ CuenlyApp es una herramienta automatizada para extraer información de facturas 
 - Python 3.9 o superior
 - Node.js 16 o superior (para desarrollo frontend)
 - Tesseract OCR instalado en el sistema
+- Docker y Kubernetes (para deployment en producción)
+
+## 🚀 Deployment Rápido
+
+### Kubernetes (Producción)
+
+Para deployment forzado (garantiza actualización de imágenes latest):
+
+```bash
+# Deployment completo de ambos componentes
+./force-deploy.sh all
+
+# Solo frontend
+./force-deploy.sh frontend
+
+# Solo backend
+./force-deploy.sh backend
+
+# Restart rápido (sin recrear deployment)
+./force-deploy.sh restart-frontend
+./force-deploy.sh restart-backend
+```
+
+Ver [Guía de Deployment](DEPLOYMENT_GUIDE.md) para más detalles.
 - Docker y Docker Compose (opcional, para despliegue)
 
 ## 🛠️ Instalación
