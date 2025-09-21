@@ -7,7 +7,7 @@ metadata:
     app: cuenly-backend
     tier: backend
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -35,11 +35,11 @@ spec:
             name: backend-env-secrets
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "300m"
+            memory: "256Mi"
+            cpu: "100m"
           limits:
-            memory: "1Gi"
-            cpu: "1000m"
+            memory: "512Mi"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /health
@@ -91,8 +91,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: cuenly-backend
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 3
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
