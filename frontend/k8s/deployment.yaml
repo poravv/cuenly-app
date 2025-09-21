@@ -6,6 +6,8 @@ metadata:
   labels:
     app: cuenly-frontend
     tier: frontend
+  annotations:
+    deployment.kubernetes.io/revision: "1"
 spec:
   replicas: 2
   strategy:

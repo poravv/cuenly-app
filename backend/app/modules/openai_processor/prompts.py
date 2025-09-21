@@ -46,7 +46,7 @@ def base_text_schema() -> Dict[str, Any]:
                 "cantidad": 1,
                 "precio_unitario": 0,
                 "total": 0,
-                "iva": 0   # 0, 5 o 10
+                "iva": 0   # TIPO de IVA: 0, 5 o 10 (NO el monto, sino el porcentaje aplicado)
             }
         ]
     }
@@ -84,7 +84,7 @@ def v2_header_detail_schema() -> Dict[str, Any]:
                 "unidad": "",
                 "precio_unitario": 0,
                 "total": 0,
-                "iva": 0
+                "iva": 0  # TIPO de IVA: 0, 5 o 10 (porcentaje, NO monto)
             }
         ]
     }
@@ -101,6 +101,7 @@ Reglas:
 - Si solo tienes IVA: `gravado_10 = iva_10 * 10`, `gravado_5 = iva_5 * 20`.
 - Moneda: "GS" para Guaraníes, "USD" para Dólares. No conviertas.
 - condicion_venta: CONTADO o CREDITO. tipo_documento: CO (CONTADO) o CR (CREDITO).
+- **IMPORTANTE**: En items, el campo `iva` debe ser el TIPO de IVA (0, 5 o 10), NO el monto del IVA.
 """.strip()
 
 # CAMPOS ELIMINADOS (no se usan en export):
@@ -125,6 +126,7 @@ Devuelve **solo** un JSON válido y completo (sin explicaciones) con esta estruc
 - Si el documento **solo muestra el IVA** y no el gravado:
   - Calcula: `subtotal_10 = iva_10 * 10` (en Paraguay, IVA 10% = gravado/10).
   - Calcula: `subtotal_5  = iva_5  * 20` (en Paraguay, IVA 5%  = gravado/20).
+- **IMPORTANTE**: Para productos, el campo `iva` debe ser el TIPO de IVA (0, 5 o 10), NO el monto del IVA.
 - Si hay columna de IVA por ítem, úsala como fuente de verdad; si no hay, aplica el IVA único del resumen; si tampoco hay, asume exento.
 - Nunca infieras IVA por nombre del producto.
 - Moneda: si la factura está en USD, usa "USD" y agrega "tipo_cambio" si está impreso. No conviertas a PYG.
@@ -151,6 +153,7 @@ Analiza con extrema atención la imagen de una factura paraguaya y devuelve **so
 - Si el documento **solo muestra el IVA** y no el gravado:
   - Calcula: `subtotal_10 = iva_10 * 10`.
   - Calcula: `subtotal_5  = iva_5  * 20`.
+- **CRÍTICO**: Para productos, el campo `iva` debe ser el TIPO de IVA (0, 5 o 10), NO el monto del IVA.
 - Respeta montos y decimales tal como están impresos. No conviertas moneda.
 - El campo `condicion_venta` debe ser exactamente `"CONTADO"` o `"CREDITO"`.
 - El campo `tipo_documento` debe ser `"CO"` si es CONTADO, o `"CR"` si es CREDITO.
@@ -186,7 +189,7 @@ def build_xml_prompt(xml_content: str) -> str:
                 "cantidad": 1,
                 "precio_unitario": 0,
                 "total": 0,
-                "iva": 0
+                "iva": 0  # TIPO de IVA: 0, 5 o 10 (porcentaje, NO monto)
             }
         ]
     }
@@ -201,6 +204,7 @@ Analiza este XML de factura electrónica paraguaya y devuelve **solo** un JSON v
 📌 Reglas importantes:
 - `subtotal_5` y `subtotal_10` son los **montos gravados sin IVA**
 - Si solo hay IVA: `subtotal_10 = iva_10 * 10`, `subtotal_5 = iva_5 * 20`
+- **CRÍTICO**: En productos, el campo `iva` debe ser el TIPO de IVA (0, 5 o 10), NO el monto del IVA
 - Moneda: "GS" para Guaraníes, "USD" para Dólares
 - No convertir monedas, usar valores exactos del XML
 
