@@ -99,7 +99,35 @@ spec:
                 name: backend-proxy-service
                 port:
                   number: 8000
-          - path: /invoices
+          - path: /invoices/months
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-proxy-service
+                port:
+                  number: 8000
+          - path: /invoices/month
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-proxy-service
+                port:
+                  number: 8000
+          - path: /invoices/recent-activity
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-proxy-service
+                port:
+                  number: 8000
+          - path: /invoices/search
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-proxy-service
+                port:
+                  number: 8000
+          - path: /export
             pathType: Prefix
             backend:
               service:
