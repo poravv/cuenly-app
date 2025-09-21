@@ -15,7 +15,7 @@ class UserRepository:
 
     def _coll(self) -> Collection:
         if not self._client:
-            self._client = MongoClient(self.conn_str, serverSelectionTimeoutMS=5000)
+            self._client = MongoClient(self.conn_str, serverSelectionTimeoutMS=30000)
             self._client.admin.command('ping')
         db = self._client[self.db_name]
         coll = db[self.collection]
