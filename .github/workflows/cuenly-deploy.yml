@@ -351,6 +351,16 @@ jobs:
             kubectl exec deployment/mongodb -n ${{ env.NAMESPACE }} -- mongosh -u "$ROOT_USER" -p "$ROOT_PASS" --authenticationDatabase admin cuenlyapp_warehouse /tmp/mongo-init.js
             echo "✅ Script de inicialización aplicado"
           else
+            echo "ℹ️  No se encontró config/mongo-init.js"
+          fi
+          
+          # Aplicar índices de rendimiento
+          if [ -f "config/mongo-indexes.js" ]; then
+            echo "🚀 Aplicando índices de rendimiento..."
+            kubectl cp config/mongo-indexes.js ${{ env.NAMESPACE }}/$(kubectl get pod -l app=mongodb -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}'):/tmp/mongo-indexes.js
+            kubectl exec deployment/mongodb -n ${{ env.NAMESPACE }} -- mongosh -u "$ROOT_USER" -p "$ROOT_PASS" --authenticationDatabase admin /tmp/mongo-indexes.js || true
+            echo "✅ Índices de rendimiento aplicados"
+          fi
             echo "⚠️  No se encontró script mongo-init.js, continuando..."
           fi
           

@@ -23,4 +23,12 @@ print(f"[INFO] Hora actual en Paraguay: {datetime.now(paraguay_tz).strftime('%Y-
 from app.api.api import app
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=8000,
+        workers=2,           # Múltiples workers para mejor concurrencia
+        loop="uvloop",       # Loop optimizado si está disponible
+        log_level="info",
+        access_log=False     # Deshabilitar access logs para mejor rendimiento
+    )

@@ -53,6 +53,13 @@ spec:
             secretKeyRef:
               name: cuenly-backend-secrets
               key: mongodb-database
+        # Optimizaciones de rendimiento MongoDB
+        - name: MONGO_LOG_LEVEL
+          value: "1"  # Reducir logging para mejor rendimiento
+        args: 
+          - "--wiredTigerCacheSizeGB=2"      # Cache en memoria para índices
+          - "--wiredTigerJournalCompressor=snappy"  # Compresión rápida
+          - "--quiet"                        # Menos logging
         ports:
         - containerPort: 27017
           name: mongo
@@ -61,11 +68,11 @@ spec:
           mountPath: /data/db
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "1.5Gi"  # Aumentado para mejor cache
+            cpu: "750m"      # Más CPU para operaciones
           limits:
-            memory: "2Gi"
-            cpu: "1500m"
+            memory: "3Gi"    # Más RAM para índices en memoria
+            cpu: "2000m"     # CPU ilimitada prácticamente
         livenessProbe:        # ✅ Simplificada para evitar reinicios falsos
           tcpSocket:
             port: 27017

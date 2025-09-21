@@ -19,8 +19,8 @@ def _get_client() -> MongoClient:
         serverSelectionTimeoutMS=60000,
         connectTimeoutMS=60000,
         socketTimeoutMS=120000,
-        maxPoolSize=20,
-        minPoolSize=1,
+        maxPoolSize=30,  # Aumentado para mejor concurrencia
+        minPoolSize=3,   # Mínimo más alto para conexiones ready
     )
     # smoke test
     client.admin.command("ping")
