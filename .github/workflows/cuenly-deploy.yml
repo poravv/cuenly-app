@@ -393,6 +393,32 @@ jobs:
           kubectl logs deployment/cuenly-backend -n ${{ env.NAMESPACE }} --tail=50
           exit 1
 
+  debug-conditions:
+    needs: [detect-changes, deploy-backend]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: Debug all conditions
+        run: |
+          echo "🔍 DEBUGGING FRONTEND DEPLOY CONDITIONS"
+          echo "======================================"
+          echo "always(): true (this job is running)"
+          echo "needs.deploy-backend.result: ${{ needs.deploy-backend.result }}"
+          echo "needs.deploy-backend.outputs.backend-ready: '${{ needs.deploy-backend.outputs.backend-ready }}'"
+          echo "needs.detect-changes.outputs.backend-changed: '${{ needs.detect-changes.outputs.backend-changed }}'"
+          echo "needs.detect-changes.outputs.frontend-changed: '${{ needs.detect-changes.outputs.frontend-changed }}'"
+          echo "needs.detect-changes.outputs.config-changed: '${{ needs.detect-changes.outputs.config-changed }}'"
+          echo ""
+          echo "🧮 EVALUATING FRONTEND CONDITION:"
+          echo "always() = true"
+          echo "backend-ready == 'true': ${{ needs.deploy-backend.outputs.backend-ready == 'true' }}"
+          echo "frontend-changed == 'true': ${{ needs.detect-changes.outputs.frontend-changed == 'true' }}"
+          echo "config-changed == 'true': ${{ needs.detect-changes.outputs.config-changed == 'true' }}"
+          echo "frontend OR config changed: ${{ needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true' }}"
+          echo ""
+          echo "🎯 FINAL CONDITION:"
+          echo "Should deploy frontend: ${{ needs.deploy-backend.outputs.backend-ready == 'true' && (needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') }}"
+
   deploy-frontend:
     needs: [detect-changes, deploy-backend]
     # Simplificado: Frontend se despliega si backend está listo Y hay algún cambio relevante
