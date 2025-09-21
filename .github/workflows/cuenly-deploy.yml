@@ -569,6 +569,10 @@ jobs:
           kubectl apply -f frontend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
           kubectl set image deployment/cuenly-frontend cuenly-frontend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA} -n ${{ env.NAMESPACE }}
+          
+          # Forzar recreación de pods aunque la imagen sea la misma
+          kubectl patch deployment cuenly-frontend -n ${{ env.NAMESPACE }} -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"forceUpdate\":\"$(date +%s)\"}}}}}"
+          
           kubectl rollout status deployment/cuenly-frontend -n ${{ env.NAMESPACE }} --timeout=600s
           
       - name: Frontend health check
