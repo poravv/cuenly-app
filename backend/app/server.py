@@ -24,11 +24,10 @@ from app.api.api import app
 
 if __name__ == "__main__":
     uvicorn.run(
-        app, 
+        "app.api.api:app",   # Usar string de importación en lugar del objeto
         host="0.0.0.0", 
         port=8000,
-        workers=2,           # Múltiples workers para mejor concurrencia
-        loop="uvloop",       # Loop optimizado si está disponible
+        workers=1,           # Usar solo 1 worker en contenedor para evitar problemas
         log_level="info",
         access_log=False     # Deshabilitar access logs para mejor rendimiento
     )
