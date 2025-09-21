@@ -192,7 +192,7 @@ class MultiEmailProcessor:
                             pass
                 for d in docs:
                     repo.save_document(d)
-                message_suffix = f" | MongoDB repo: {len(docs)} facturas almacenadas"
+                message_suffix = f" | {len(docs)} facturas almacenadas"
                 logger.info(f"💾 MongoDB repo: {len(docs)} documentos (cabecera + detalle)")
             except Exception as e:
                 logger.error(f"❌ Error persistiendo en MongoDB (repo): {e}")
@@ -500,6 +500,197 @@ class EmailProcessor:
 
     # --------- Core processing ---------
     def process_emails(self) -> ProcessResult:
+        """
+        Procesamiento optimizado por lotes para evitar problemas de memoria.
+        Procesa correos en lotes pequeños, almacenando y liberando memoria inmediatamente.
+        """
+        import gc
+        from app.config.settings import settings
+        
+        result = ProcessResult(success=True, message="Procesamiento completado", invoice_count=0, invoices=[])
+        try:
+            if not self.connect():
+                return ProcessResult(success=False, message="Error al conectar al servidor de correo")
+
+            email_ids = self.search_emails()
+            if not email_ids:
+                self.disconnect()
+                return ProcessResult(success=True, message="No se encontraron correos con facturas", invoice_count=0)
+
+            total_emails = len(email_ids)
+            batch_size = getattr(settings, 'EMAIL_BATCH_SIZE', 10)  # Por defecto 10 correos por lote
+            
+            logger.info(f"🔄 Procesando {total_emails} correos en lotes de {batch_size}")
+
+            abort_run = False
+            processed_emails = 0
+
+            # Procesar en lotes pequeños
+            for batch_start in range(0, total_emails, batch_size):
+                if abort_run:
+                    break
+                    
+                batch_end = min(batch_start + batch_size, total_emails)
+                batch_ids = email_ids[batch_start:batch_end]
+                batch_num = (batch_start // batch_size) + 1
+                total_batches = (total_emails + batch_size - 1) // batch_size
+                
+                logger.info(f"📦 Procesando lote {batch_num}/{total_batches} ({len(batch_ids)} correos)")
+                
+                # Procesar correos del lote
+                batch_invoices = []
+                for i, eid in enumerate(batch_ids):
+                    if abort_run:
+                        break
+                        
+                    try:
+                        processed_emails += 1
+                        logger.debug(f"🔍 Procesando correo {i+1}/{len(batch_ids)} del lote {batch_num}")
+                        
+                        # Procesar un correo
+                        invoice = self._process_single_email(eid)
+                        
+                        if invoice:
+                            # Almacenar inmediatamente
+                            self._store_invoice_v2(invoice)
+                            batch_invoices.append(invoice)
+                            result.invoice_count += 1
+                            logger.debug(f"✅ Factura procesada: {invoice.numero_factura}")
+                        
+                        # Marcar como leído inmediatamente después de procesar
+                        try:
+                            self.mark_as_read(eid)
+                            logger.debug(f"📧 Correo {eid} marcado como leído")
+                        except Exception as mark_err:
+                            logger.warning(f"⚠️ No se pudo marcar correo {eid} como leído: {mark_err}")
+                        
+                        # Liberar memoria del invoice procesado
+                        if 'invoice' in locals():
+                            del invoice
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Error procesando correo {eid}: {e}")
+                        continue
+                
+                # Agregar facturas del lote al resultado
+                result.invoices.extend(batch_invoices)
+                
+                # Liberar memoria del lote
+                del batch_invoices
+                gc.collect()
+                
+                logger.info(f"✅ Lote {batch_num} completado. Total procesadas: {result.invoice_count}")
+
+            result.message = f"Procesamiento por lotes completado: {result.invoice_count} facturas de {processed_emails} correos procesados"
+            
+            self.disconnect()
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ Error en procesamiento por lotes: {e}")
+            self.disconnect()
+            return ProcessResult(success=False, message=f"Error en procesamiento por lotes: {str(e)}")
+
+    def _process_single_email(self, email_id: str):
+        """
+        Procesa un solo correo y retorna la factura extraída.
+        Versión optimizada para uso en lotes.
+        """
+        try:
+            metadata, attachments = self.get_email_content(email_id)
+            if not metadata:
+                return None
+
+            email_meta_for_ai = {
+                "sender": metadata.get("sender", ""),
+                "subject": metadata.get("subject", ""),
+                "date": metadata.get("date")
+            }
+
+            xml_path = None
+            pdf_path = None
+
+            # Adjuntos: XML prioridad, luego PDF
+            for att in attachments:
+                fname = (att.get("filename") or "").lower()
+                ctype = (att.get("content_type") or "").lower()
+                content = att.get("content") or b""
+                is_pdf = fname.endswith(".pdf") or ctype == "application/pdf"
+                is_xml = fname.endswith(".xml") or ctype in (
+                    "text/xml", "application/xml", "application/x-iso20022+xml", "application/x-invoice+xml"
+                )
+                if is_xml:
+                    xml_path = save_binary(content, fname)
+                elif is_pdf:
+                    pdf_path = save_binary(content, fname, force_pdf=True)
+            
+            # Procesar con prioridad: XML > PDF > Enlaces
+            try:
+                # XML primero
+                if xml_path:
+                    inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
+                    if inv:
+                        return inv
+
+                # PDF si no hay XML o falló
+                if pdf_path:
+                    inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
+                    if inv:
+                        return inv
+
+                # Enlaces como último recurso
+                if metadata.get("links"):
+                    for link in metadata["links"]:
+                        try:
+                            downloaded_path = download_pdf_from_url(link)
+                            if downloaded_path:
+                                if downloaded_path.lower().endswith(".xml"):
+                                    inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                                elif downloaded_path.lower().endswith(".pdf"):
+                                    inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                                else:
+                                    continue
+                                if inv:
+                                    return inv
+                        except Exception:
+                            continue
+
+            except Exception as e:
+                logger.warning(f"⚠️ Error procesando archivos del correo {email_id}: {e}")
+
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error en _process_single_email para {email_id}: {e}")
+            return None
+
+    def _store_invoice_v2(self, invoice):
+        """
+        Almacena una factura inmediatamente en el esquema v2.
+        """
+        try:
+            from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+            from app.modules.mapping.invoice_mapping import map_invoice
+            
+            repo = MongoInvoiceRepository()
+            doc = map_invoice(invoice, fuente="EMAIL_BATCH_PROCESSOR")
+            
+            # Asignar owner_email si está disponible
+            if hasattr(self, 'owner_email') and self.owner_email:
+                try:
+                    doc.header.owner_email = self.owner_email
+                    for item in doc.items:
+                        item.owner_email = self.owner_email
+                except Exception:
+                    pass
+            
+            repo.save_document(doc)
+            
+        except Exception as e:
+            logger.error(f"❌ Error almacenando factura v2: {e}")
+            # No re-lanzar la excepción para no detener el procesamiento del lote
+    
+    def process_emails_legacy(self) -> ProcessResult:
         result = ProcessResult(success=True, message="Procesamiento completado", invoice_count=0, invoices=[])
         try:
             if not self.connect():
