@@ -99,15 +99,21 @@ def _get_current_user(request: Request) -> Dict[str, Any]:
             raise HTTPException(status_code=401, detail="Authorization requerido")
         return {}
     claims = verify_firebase_token(token)
+    
+    # Intentar registrar/actualizar usuario en DB con manejo de errores mejorado
     try:
-        UserRepository().upsert_user({
+        user_repo = UserRepository()
+        user_repo.upsert_user({
             'email': claims.get('email'),
             'uid': claims.get('user_id'),
             'name': claims.get('name'),
             'picture': claims.get('picture'),
         })
-    except Exception:
-        pass
+        logger.info(f"Usuario autenticado y registrado: {claims.get('email')}")
+    except Exception as e:
+        logger.error(f"Error registrando usuario {claims.get('email')}: {e}")
+        # No fallar la autenticación, pero loggear el error para diagnóstico
+        
     return claims
 
 def _get_current_user_with_trial_info(request: Request) -> Dict[str, Any]:
@@ -185,6 +191,33 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
         }
     }
 
+@app.get("/debug/user-info")
+async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Endpoint de debug para verificar información del usuario autenticado
+    """
+    if not user:
+        return {"authenticated": False, "message": "No authenticated user"}
+    
+    try:
+        # Verificar si el usuario existe en la base de datos
+        user_repo = UserRepository()
+        db_user = user_repo.get_by_email(user.get('email'))
+        trial_info = user_repo.get_trial_info(user.get('email'))
+        
+        return {
+            "authenticated": True,
+            "firebase_claims": user,
+            "database_user": db_user,
+            "trial_info": trial_info
+        }
+    except Exception as e:
+        return {
+            "authenticated": True,
+            "firebase_claims": user,
+            "database_error": str(e)
+        }
+
 @app.post("/process", response_model=ProcessResult)
 async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # Procesamiento mixto - verificar IA internamente
     """
@@ -214,7 +247,15 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
             configs = get_enabled_configs(include_password=True, owner_email=owner_email) if owner_email else []
             if not configs:
                 return ProcessResult(success=False, message="Sin cuentas de correo habilitadas para este usuario", invoice_count=0)
-            mp = MultiEmailProcessor(email_configs=[MultiEmailConfig(**c) for c in configs], owner_email=owner_email)
+            
+            # Crear configs con owner_email agregado
+            email_configs = []
+            for c in configs:
+                config_data = dict(c)
+                config_data['owner_email'] = owner_email
+                email_configs.append(MultiEmailConfig(**config_data))
+                
+            mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
             result = mp.process_all_emails()
             return result
     except Exception as e:
@@ -235,7 +276,15 @@ async def process_emails_direct(user: Dict[str, Any] = Depends(_get_current_user
         configs = get_enabled_configs(include_password=True, owner_email=owner_email) if owner_email else []
         if not configs:
             return {"success": False, "message": "Sin cuentas de correo habilitadas para este usuario", "invoice_count": 0}
-        mp = MultiEmailProcessor(email_configs=[MultiEmailConfig(**c) for c in configs], owner_email=owner_email)
+        
+        # Crear configs con owner_email agregado
+        email_configs = []
+        for c in configs:
+            config_data = dict(c)
+            config_data['owner_email'] = owner_email  # Agregar owner_email explícitamente
+            email_configs.append(MultiEmailConfig(**config_data))
+            
+        mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
         result = mp.process_all_emails()
         
         if result and hasattr(result, 'success') and result.success:
@@ -286,7 +335,15 @@ async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_use
         from app.modules.email_processor.email_processor import MultiEmailProcessor
         owner_email = (user.get('email') or '').lower()
         configs = get_enabled_configs(include_password=True, owner_email=owner_email) if owner_email else []
-        mp = MultiEmailProcessor(email_configs=[MultiEmailConfig(**c) for c in configs], owner_email=owner_email)
+        
+        # Crear configs con owner_email agregado
+        email_configs = []
+        for c in configs:
+            config_data = dict(c)
+            config_data['owner_email'] = owner_email
+            email_configs.append(MultiEmailConfig(**config_data))
+            
+        mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
         return mp.process_all_emails()
 
     job_id = task_queue.enqueue("process_emails", _runner)

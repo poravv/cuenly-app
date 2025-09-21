@@ -245,6 +245,7 @@ class MultiEmailConfig(BaseModel):
     search_terms: Optional[List[str]] = None
     provider: str = "other"
     enabled: bool = True
+    owner_email: Optional[str] = None  # Campo agregado para multiusuario
 
 class EmailConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
