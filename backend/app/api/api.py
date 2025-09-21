@@ -173,12 +173,23 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     
     trial_info = user.get('trial_info', {})
     
+    # Obtener fecha de inicio de procesamiento de correos
+    processing_start_date = None
+    try:
+        user_repo = UserRepository()
+        processing_start_date = user_repo.get_email_processing_start_date(user.get('email', ''))
+        if processing_start_date:
+            processing_start_date = processing_start_date.isoformat()
+    except Exception as e:
+        logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
+    
     return {
         "user": {
             "email": user.get('email'),
             "name": user.get('name'),
             "picture": user.get('picture'),
-            "uid": user.get('user_id')
+            "uid": user.get('user_id'),
+            "email_processing_start_date": processing_start_date
         },
         "trial": {
             "is_trial_user": trial_info.get('is_trial_user', True),
@@ -190,6 +201,52 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
             "ai_limit_reached": trial_info.get('ai_limit_reached', True)
         }
     }
+
+class UpdateProcessingStartDatePayload(BaseModel):
+    start_date: Optional[str] = None  # ISO format date, si es None usa fecha actual
+
+@app.post("/user/email-processing-start-date")
+async def update_email_processing_start_date(
+    payload: UpdateProcessingStartDatePayload,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Actualiza la fecha desde la cual se procesarán los correos para este usuario.
+    Si no se proporciona fecha, usa la fecha actual.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    try:
+        from datetime import datetime
+        
+        # Parsear fecha o usar actual
+        if payload.start_date:
+            try:
+                start_date = datetime.fromisoformat(payload.start_date.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use ISO format (YYYY-MM-DDTHH:MM:SS)")
+        else:
+            start_date = datetime.utcnow()
+        
+        # Actualizar en base de datos
+        user_repo = UserRepository()
+        success = user_repo.update_email_processing_start_date(user.get('email', ''), start_date)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Fecha de inicio de procesamiento actualizada a {start_date.isoformat()}",
+                "start_date": start_date.isoformat()
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error actualizando fecha de inicio de procesamiento: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @app.get("/debug/user-info")
 async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_current_user)):

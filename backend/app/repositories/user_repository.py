@@ -42,12 +42,14 @@ class UserRepository:
             'last_login': now,
         }
         
-        # Si es un usuario nuevo, establecer fecha límite de uso y límites de IA
-        if is_new_user:
+        # Configurar trial para nuevos usuarios
+        if payload.get('is_trial_user', False):
             payload['trial_expires_at'] = now + timedelta(days=15)
-            payload['is_trial_user'] = True
-            payload['ai_invoices_processed'] = 0  # Contador de facturas procesadas con IA
+            payload['ai_invoices_processed'] = 0    # Contador de facturas procesadas por IA
             payload['ai_invoices_limit'] = 50     # Límite de facturas con IA para trial
+        
+        # Establecer fecha de inicio de procesamiento de correos (desde hoy)
+        payload['email_processing_start_date'] = now
         
         self._coll().update_one(
             {'email': email}, 
@@ -57,9 +59,10 @@ class UserRepository:
                     'trial_expires_at': payload.get('trial_expires_at'),
                     'is_trial_user': payload.get('is_trial_user', False),
                     'ai_invoices_processed': payload.get('ai_invoices_processed', 0),
-                    'ai_invoices_limit': payload.get('ai_invoices_limit', 50)
+                    'ai_invoices_limit': payload.get('ai_invoices_limit', 50),
+                    'email_processing_start_date': payload.get('email_processing_start_date')
                 }, 
-                '$set': {k: v for k, v in payload.items() if k not in ['trial_expires_at', 'is_trial_user', 'ai_invoices_processed', 'ai_invoices_limit']}
+                '$set': {k: v for k, v in payload.items() if k not in ['trial_expires_at', 'is_trial_user', 'ai_invoices_processed', 'ai_invoices_limit', 'email_processing_start_date']}
             }, 
             upsert=True
         )
@@ -197,4 +200,26 @@ class UserRepository:
             'reason': 'trial_valid',
             'message': f'Puedes procesar {trial_info["ai_invoices_limit"] - trial_info["ai_invoices_processed"]} facturas más con IA'
         }
+
+    def get_email_processing_start_date(self, email: str) -> Optional[datetime]:
+        """Obtiene la fecha desde la cual debe procesar correos para este usuario"""
+        user = self.get_by_email(email)
+        if not user:
+            return None
+        
+        # Retornar fecha de inicio de procesamiento o fecha de creación como fallback
+        start_date = user.get('email_processing_start_date') or user.get('created_at')
+        return start_date
+
+    def update_email_processing_start_date(self, email: str, start_date: datetime = None) -> bool:
+        """Actualiza la fecha de inicio de procesamiento de correos para un usuario"""
+        if start_date is None:
+            start_date = datetime.utcnow()
+        
+        result = self._coll().update_one(
+            {'email': email.lower()},
+            {'$set': {'email_processing_start_date': start_date}}
+        )
+        
+        return result.modified_count > 0
 

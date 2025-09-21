@@ -414,6 +414,7 @@ class EmailProcessor:
         """
         Usa IMAPClient.search(subject_terms) que devuelve UIDs (str).
         NOTA: los términos en .env deben venir SIN acentos (como acordamos).
+        Filtra correos por fecha de registro del usuario.
         """
         if not self.client.conn:
             if not self.connect():
@@ -424,11 +425,24 @@ class EmailProcessor:
             logger.info("No se configuraron términos de búsqueda. Se devolverá lista vacía.")
             return []
 
+        # Obtener fecha de inicio de procesamiento para este usuario
+        start_date = None
+        if self.owner_email:
+            try:
+                from app.repositories.user_repository import UserRepository
+                user_repo = UserRepository()
+                start_date = user_repo.get_email_processing_start_date(self.owner_email)
+                if start_date:
+                    logger.info(f"📅 Filtrando correos desde: {start_date.strftime('%Y-%m-%d %H:%M:%S')} para usuario {self.owner_email}")
+            except Exception as e:
+                logger.warning(f"No se pudo obtener fecha de inicio para {self.owner_email}: {e}")
+
         # Pasamos la lista de términos directamente al nuevo IMAPClient.search()
         unread_only = (str(self.config.search_criteria or 'UNSEEN').upper() != 'ALL')
-        uids = self.client.search(terms, unread_only=unread_only)
+        uids = self.client.search(terms, unread_only=unread_only, since_date=start_date)
 
-        logger.info(f"Se encontraron {len(uids)} correos combinando términos: {terms}")
+        logger.info(f"Se encontraron {len(uids)} correos combinando términos: {terms}" + 
+                   (f" desde {start_date.strftime('%Y-%m-%d')}" if start_date else ""))
         return uids
 
     # --------- Fetch + parse ---------
