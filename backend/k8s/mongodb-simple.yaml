@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-pvc
+  namespace: cuenly-backend
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: longhorn
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb
+  namespace: cuenly-backend
+  labels:
+    app: mongodb
+    tier: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # ✅ Para que nunca haya dos pods con el mismo PVC
+  selector:
+    matchLabels:
+      app: mongodb
+      tier: database
+  template:
+    metadata:
+      labels:
+        app: mongodb
+        tier: database
+    spec:
+      terminationGracePeriodSeconds: 60   # ✅ Da tiempo a MongoDB de cerrar conexiones
+      containers:
+      - name: mongodb
+        image: mongo:6.0
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: cuenly-backend-secrets
+              key: mongodb-root-username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cuenly-backend-secrets
+              key: mongodb-root-password
+        - name: MONGO_INITDB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: cuenly-backend-secrets
+              key: mongodb-database
+        ports:
+        - containerPort: 27017
+          name: mongo
+        volumeMounts:
+        - name: mongodb-storage
+          mountPath: /data/db
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:        # ✅ Simplificada para evitar reinicios falsos
+          tcpSocket:
+            port: 27017
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          failureThreshold: 5
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - mongosh --eval 'db.adminCommand({ ping: 1 }).ok' --quiet
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+      volumes:
+      - name: mongodb-storage
+        persistentVolumeClaim:
+          claimName: mongodb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+  namespace: cuenly-backend
+  labels:
+    app: mongodb
+    tier: database
+spec:
+  type: ClusterIP   # ✅ Solo accesible desde dentro del cluster
+  selector:
+    app: mongodb
+    tier: database
+  ports:
+  - port: 27017
+    targetPort: 27017
+    name: mongo

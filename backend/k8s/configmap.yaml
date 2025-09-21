@@ -12,4 +12,8 @@ data:
   AUTH_REQUIRE: "true"
   FIREBASE_PROJECT_ID: "cuenly-app"
   MULTI_TENANT_ENFORCE: "true"
+  # MongoDB connection (actualizado para usar servicio simple)
+  MONGODB_URL: "mongodb://mongodb-service.cuenly-backend.svc.cluster.local:27017/cuenlyapp_warehouse"
+  MONGODB_DATABASE: "cuenlyapp_warehouse"
+  MONGODB_COLLECTION: "invoice_headers"
 
