@@ -362,9 +362,10 @@ jobs:
           kubectl set image deployment/cuenly-backend cuenly-backend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA} -n ${{ env.NAMESPACE }}
           kubectl rollout status deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=300s
           
-      - name: Deploy backend ingress
+      - name: Remove old backend ingress (now handled by frontend)
         run: |
-          kubectl apply -f backend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
+          kubectl delete ingress cuenly-backend-ingress -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          echo "✅ Backend ingress eliminado - ahora se maneja desde frontend ingress"
           
       - name: Backend health check
         id: health-check
