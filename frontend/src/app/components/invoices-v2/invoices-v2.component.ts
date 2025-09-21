@@ -28,6 +28,13 @@ export class InvoicesV2Component implements OnInit {
   itemsError: { [id: string]: string | null } = {};
   chips: { key: string; label: string; value: string }[] = [];
 
+  // Eliminación
+  selectedHeaders: Set<string> = new Set();
+  selectAll = false;
+  showDeleteConfirm = false;
+  deleteLoading = false;
+  deleteInfo: any = null;
+
   constructor(private api: ApiService) {}
 
   ngOnInit(): void {
@@ -41,6 +48,8 @@ export class InvoicesV2Component implements OnInit {
 
   loadHeaders(): void {
     this.loading = true; this.error = null;
+    this.selectedHeaders.clear(); // Limpiar selecciones al recargar
+    this.updateSelectAll();
     this.updateChips();
     this.api.getV2Headers({
       page: this.page,
@@ -55,6 +64,7 @@ export class InvoicesV2Component implements OnInit {
         this.headers = res?.data || [];
         this.total = res?.total || 0;
         this.loading = false;
+        this.updateSelectAll(); // Actualizar estado del selectAll después de cargar
       },
       error: (err) => {
         this.error = 'Error cargando cabeceras';
@@ -147,5 +157,123 @@ export class InvoicesV2Component implements OnInit {
 
   trackByHeaderId(index: number, h: any): any {
     return h?.id || h?._id || index;
+  }
+
+  // Métodos de selección
+  toggleSelection(headerId: string): void {
+    if (this.selectedHeaders.has(headerId)) {
+      this.selectedHeaders.delete(headerId);
+    } else {
+      this.selectedHeaders.add(headerId);
+    }
+    this.updateSelectAll();
+  }
+
+  toggleSelectAll(): void {
+    if (this.selectAll) {
+      this.selectedHeaders.clear();
+    } else {
+      this.headers.forEach(h => this.selectedHeaders.add(h.id));
+    }
+    this.updateSelectAll();
+  }
+
+  updateSelectAll(): void {
+    this.selectAll = this.headers.length > 0 && this.selectedHeaders.size === this.headers.length;
+  }
+
+  // Métodos de eliminación
+  deleteSelected(): void {
+    if (this.selectedHeaders.size === 0) return;
+    
+    const headerIds = Array.from(this.selectedHeaders);
+    this.deleteLoading = true;
+    
+    if (headerIds.length === 1) {
+      // Eliminación individual
+      this.api.getV2DeleteInfo(headerIds[0]).subscribe({
+        next: (info) => {
+          this.deleteInfo = info;
+          this.showDeleteConfirm = true;
+          this.deleteLoading = false;
+        },
+        error: (err) => {
+          this.error = 'Error obteniendo información de eliminación';
+          this.deleteLoading = false;
+          console.error(err);
+        }
+      });
+    } else {
+      // Eliminación en lote
+      this.api.getV2BulkDeleteInfo(headerIds).subscribe({
+        next: (info) => {
+          this.deleteInfo = info;
+          this.showDeleteConfirm = true;
+          this.deleteLoading = false;
+        },
+        error: (err) => {
+          this.error = 'Error obteniendo información de eliminación en lote';
+          this.deleteLoading = false;
+          console.error(err);
+        }
+      });
+    }
+  }
+
+  confirmDelete(): void {
+    if (!this.deleteInfo || this.selectedHeaders.size === 0) return;
+    
+    const headerIds = Array.from(this.selectedHeaders);
+    this.deleteLoading = true;
+    
+    if (headerIds.length === 1) {
+      // Eliminación individual
+      this.api.deleteV2Invoice(headerIds[0]).subscribe({
+        next: (result) => {
+          this.showDeleteConfirm = false;
+          this.selectedHeaders.clear();
+          this.deleteInfo = null;
+          this.deleteLoading = false;
+          this.loadHeaders(); // Recargar lista
+          this.error = null;
+        },
+        error: (err) => {
+          this.error = 'Error eliminando factura';
+          this.deleteLoading = false;
+          console.error(err);
+        }
+      });
+    } else {
+      // Eliminación en lote
+      this.api.deleteV2InvoicesBulk(headerIds).subscribe({
+        next: (result) => {
+          this.showDeleteConfirm = false;
+          this.selectedHeaders.clear();
+          this.deleteInfo = null;
+          this.deleteLoading = false;
+          this.loadHeaders(); // Recargar lista
+          this.error = null;
+        },
+        error: (err) => {
+          this.error = 'Error eliminando facturas en lote';
+          this.deleteLoading = false;
+          console.error(err);
+        }
+      });
+    }
+  }
+
+  cancelDelete(): void {
+    this.showDeleteConfirm = false;
+    this.deleteInfo = null;
+    this.deleteLoading = false;
+  }
+
+  isSelected(headerId: string): boolean {
+    return this.selectedHeaders.has(headerId);
+  }
+
+  get hasSelection(): boolean {
+    return this.selectedHeaders.size > 0;
   }
 }
