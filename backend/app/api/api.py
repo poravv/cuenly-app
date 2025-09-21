@@ -800,11 +800,39 @@ async def toggle_email_config_enabled(config_id: str, user: Dict[str, Any] = Dep
 async def health_check():
     """
     Health check endpoint for container health checks.
+    Verifica que la aplicación esté lista para recibir requests.
     
     Returns:
         dict: Simple health status.
     """
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    try:
+        # Verificación básica de que la aplicación está funcionando
+        current_time = datetime.now().isoformat()
+        
+        # Verificar que el invoice_sync esté inicializado
+        if not invoice_sync:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "unhealthy", "reason": "invoice_sync not initialized", "timestamp": current_time}
+            )
+        
+        # Verificación simple de conectividad MongoDB (opcional, sin bloquear)
+        try:
+            from app.repositories.user_repository import UserRepository
+            # Test rápido de conexión (timeout muy corto)
+            UserRepository()._get_collection().find_one({}, {"_id": 1})
+        except Exception:
+            # No fallar health check por MongoDB temporalmente no disponible
+            pass
+        
+        return {"status": "healthy", "timestamp": current_time}
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "reason": str(e), "timestamp": datetime.now().isoformat()}
+        )
 
 @app.get("/status")
 async def get_status(user: Dict[str, Any] = Depends(_get_current_user)):
