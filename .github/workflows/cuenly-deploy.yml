@@ -322,10 +322,15 @@ jobs:
           # Verificar conectividad a MongoDB
           kubectl exec deployment/mongodb -n ${{ env.NAMESPACE }} -- mongosh --eval 'db.adminCommand({ ping: 1 })'
           
-          # Aplicar script de inicialización si existe
+          # Aplicar script de inicialización si existe usando autenticación admin
           if [ -f "config/mongo-init.js" ]; then
             kubectl cp config/mongo-init.js ${{ env.NAMESPACE }}/$(kubectl get pod -l app=mongodb -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}'):/tmp/mongo-init.js
-            kubectl exec deployment/mongodb -n ${{ env.NAMESPACE }} -- mongosh cuenlyapp_warehouse /tmp/mongo-init.js
+            
+            # Ejecutar con autenticación admin
+            ROOT_USER=$(kubectl get secret cuenly-backend-secrets -n ${{ env.NAMESPACE }} -o jsonpath='{.data.mongodb-root-username}' | base64 -d)
+            ROOT_PASS=$(kubectl get secret cuenly-backend-secrets -n ${{ env.NAMESPACE }} -o jsonpath='{.data.mongodb-root-password}' | base64 -d)
+            
+            kubectl exec deployment/mongodb -n ${{ env.NAMESPACE }} -- mongosh -u "$ROOT_USER" -p "$ROOT_PASS" --authenticationDatabase admin cuenlyapp_warehouse /tmp/mongo-init.js
             echo "✅ Script de inicialización aplicado"
           else
             echo "⚠️  No se encontró script mongo-init.js, continuando..."

@@ -4,17 +4,7 @@
 // Cambiar a la base de datos principal
 db = db.getSiblingDB('cuenlyapp_warehouse');
 
-// Crear usuario específico para la aplicación
-db.createUser({
-  user: 'cuenlyapp_app',
-  pwd: 'cuenlyapp_app_2025',
-  roles: [
-    {
-      role: 'readWrite',
-      db: 'cuenlyapp_warehouse'
-    }
-  ]
-});
+print('🔧 Inicializando base de datos cuenlyapp_warehouse...');
 
 // Crear la colección principal con validación de esquema
 db.createCollection('facturas_completas', {
@@ -95,6 +85,8 @@ db.createCollection('facturas_completas', {
   }
 });
 
+print('✅ Colección facturas_completas creada');
+
 // Crear índices optimizados para consultas frecuentes
 db.facturas_completas.createIndex({ 'factura.fecha': 1 });
 db.facturas_completas.createIndex({ 'emisor.ruc': 1 });
@@ -115,6 +107,8 @@ db.facturas_completas.createIndex({
   'factura.descripcion': 'text',
   'productos.articulo': 'text'
 });
+
+print('✅ Índices principales creados');
 
 // Crear colección para logs de procesamiento
 db.createCollection('processing_logs', {
@@ -150,6 +144,8 @@ db.processing_logs.createIndex({ 'action': 1, 'timestamp': -1 });
 db.createCollection('monthly_stats');
 db.monthly_stats.createIndex({ 'year_month': 1 }, { unique: true });
 
+print('✅ Colecciones auxiliares creadas');
+
 // Insertar documento de configuración inicial
 db.system_config.insertOne({
   _id: 'app_config',
@@ -165,12 +161,7 @@ db.system_config.insertOne({
   last_updated: new Date()
 });
 
-print('✅ MongoDB inicializado correctamente para CuenlyApp');
-print('📊 Base de datos: cuenlyapp_warehouse');
-print('👤 Usuario aplicación: cuenlyapp_app');
-print('📑 Colecciones creadas: facturas_completas, processing_logs, monthly_stats');
-print('🔍 Índices optimizados aplicados');
-print('⚙️ Configuración inicial completada');
+print('✅ Configuración inicial guardada');
 
 // ------------------------------
 // Nuevas colecciones: cabecera y detalle
@@ -180,14 +171,19 @@ try {
   db.invoice_headers.createIndex({ _id: 1 }, { unique: true });
   db.invoice_headers.createIndex({ 'emisor.ruc': 1, 'fecha_emision': -1 });
   db.invoice_headers.createIndex({ mes_proceso: 1 });
-} catch (e) { }
+  db.invoice_headers.createIndex({ owner_email: 1 }); // ✅ Índice multi-tenant
+  print('✅ Colección invoice_headers lista');
+} catch (e) { 
+  print('⚠️ invoice_headers ya existe o error: ' + e.message);
+}
 
 try {
   db.createCollection('invoice_items');
   db.invoice_items.createIndex({ header_id: 1, linea: 1 }, { unique: true });
-} catch (e) { }
-
-print('✅ Colecciones invoice_headers y invoice_items listas');
+  print('✅ Colección invoice_items lista');
+} catch (e) { 
+  print('⚠️ invoice_items ya existe o error: ' + e.message);
+}
 
 // Crear colección de usuarios autenticados
 try {
@@ -222,7 +218,7 @@ try {
             bsonType: 'date',
             description: 'Último login del usuario'
           },
-          is_trial_user: {
+          is_trial: {
             bsonType: 'bool',
             description: 'Si es usuario de prueba'
           },
@@ -250,10 +246,20 @@ try {
   db.auth_users.createIndex({ uid: 1 });
   db.auth_users.createIndex({ trial_expires_at: 1 });
   db.auth_users.createIndex({ ai_invoices_processed: 1 });
-  db.auth_users.createIndex({ is_trial_user: 1 });
+  db.auth_users.createIndex({ is_trial: 1 });
+  
+  print('✅ Colección auth_users configurada');
   
 } catch (e) { 
-  print('⚠️ Error creando colección auth_users: ' + e.message);
+  print('⚠️ auth_users ya existe o error: ' + e.message);
 }
 
-print('✅ Colección auth_users configurada');
+print('==================================');
+print('✅ MongoDB inicializado correctamente para CuenlyApp');
+print('📊 Base de datos: cuenlyapp_warehouse');
+print('👤 Usuario: root (sin usuario adicional por simplicidad)');
+print('📑 Colecciones creadas: facturas_completas, processing_logs, monthly_stats, invoice_headers, invoice_items, auth_users');
+print('🔍 Índices optimizados aplicados');
+print('⚙️ Configuración inicial completada');
+print('🎯 Sistema listo para aceptar conexiones de la aplicación');
+print('==================================');
