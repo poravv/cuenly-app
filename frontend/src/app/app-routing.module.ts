@@ -17,7 +17,7 @@ const routes: Routes = [
   { path: 'upload', component: UploadComponent, canActivate: [AuthGuard] },
   { path: 'upload-xml', component: UploadXmlComponent, canActivate: [AuthGuard] },
   { path: 'invoice-explorer', component: InvoiceExplorerComponent, canActivate: [AuthGuard] },
-  { path: 'invoices', component: InvoicesV2Component, canActivate: [AuthGuard] },
+  { path: 'invoice-list', component: InvoicesV2Component, canActivate: [AuthGuard] },
   { path: 'email-config', component: EmailConfigComponent, canActivate: [AuthGuard] },
   { path: 'ayuda', component: HelpComponent, canActivate: [AuthGuard] },
   { path: '**', redirectTo: '', pathMatch: 'full' }
