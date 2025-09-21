@@ -16,9 +16,9 @@ def _get_client() -> MongoClient:
     mongo_url = getattr(settings, "MONGODB_URL", None) or "mongodb://localhost:27017/"
     client = MongoClient(
         mongo_url,
-        serverSelectionTimeoutMS=5000,
-        connectTimeoutMS=10000,
-        socketTimeoutMS=20000,
+        serverSelectionTimeoutMS=30000,
+        connectTimeoutMS=30000,
+        socketTimeoutMS=60000,
         maxPoolSize=20,
         minPoolSize=1,
     )
