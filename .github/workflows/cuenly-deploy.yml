@@ -506,6 +506,8 @@ jobs:
             
       - name: Deploy frontend infrastructure
         run: |
+          # Aplicar backend proxy service primero
+          kubectl apply -f frontend/k8s/backend-proxy-service.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/configmap.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/networkpolicy.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
