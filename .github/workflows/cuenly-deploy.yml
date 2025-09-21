@@ -81,9 +81,26 @@ jobs:
               BASE_SHA="HEAD~1"
             fi
             
-            BACKEND_CHANGED=$(git diff --name-only $BASE_SHA HEAD | grep -E '^backend/' > /dev/null && echo "true" || echo "false")
-            FRONTEND_CHANGED=$(git diff --name-only $BASE_SHA HEAD | grep -E '^frontend/' > /dev/null && echo "true" || echo "false")
-            CONFIG_CHANGED=$(git diff --name-only $BASE_SHA HEAD | grep -E '^config/|^nginx/|^docker-compose.yml' > /dev/null && echo "true" || echo "false")
+            # Obtener lista de archivos cambiados
+            CHANGED_FILES=$(git diff --name-only $BASE_SHA HEAD)
+            echo "📁 Archivos cambiados:"
+            echo "$CHANGED_FILES"
+            
+            # Detectar cambios en backend (código o k8s)
+            BACKEND_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^backend/' > /dev/null && echo "true" || echo "false")
+            
+            # Detectar cambios en frontend (código o k8s)
+            FRONTEND_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^frontend/' > /dev/null && echo "true" || echo "false")
+            
+            # Detectar cambios en config global
+            CONFIG_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^config/|^nginx/|^docker-compose.yml|\.github/workflows/' > /dev/null && echo "true" || echo "false")
+            
+            # Si hay cambios en config o workflow, rebuildeamos todo
+            if [ "$CONFIG_CHANGED" == "true" ]; then
+              echo "🔧 Cambios globales detectados, rebuildeando ambos componentes"
+              BACKEND_CHANGED="true"
+              FRONTEND_CHANGED="true"
+            fi
             
             echo "backend=$BACKEND_CHANGED" >> $GITHUB_OUTPUT
             echo "frontend=$FRONTEND_CHANGED" >> $GITHUB_OUTPUT
@@ -97,7 +114,7 @@ jobs:
 
   build-backend:
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend-changed == 'true'
+    if: needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true'
     runs-on: self-hosted
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
@@ -144,7 +161,7 @@ jobs:
 
   build-frontend:
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend-changed == 'true'
+    if: needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true'
     runs-on: self-hosted
     outputs:
       image-digest: ${{ steps.build.outputs.digest }}
@@ -231,6 +248,7 @@ jobs:
 
   deploy-backend:
     needs: [detect-changes, build-backend]
+    # Backend se despliega si cambió backend O config Y el build fue exitoso
     if: always() && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped')
     runs-on: self-hosted
     environment: ${{ github.event.inputs.environment || 'development' }}
@@ -377,7 +395,7 @@ jobs:
 
   deploy-frontend:
     needs: [detect-changes, build-frontend, deploy-backend]
-    # Frontend solo se despliega si backend está listo Y frontend cambió
+    # Frontend se despliega si backend está listo Y (frontend cambió O config cambió O no tenemos imagen frontend actual)
     if: always() && needs.deploy-backend.outputs.backend-ready == 'true' && (needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped')
     runs-on: self-hosted
     environment: ${{ github.event.inputs.environment || 'development' }}
