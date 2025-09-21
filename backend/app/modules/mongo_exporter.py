@@ -48,9 +48,9 @@ class MongoDBExporter:
             try:
                 self._sync_client = MongoClient(
                     self.connection_string,
-                    serverSelectionTimeoutMS=5000,
-                    connectTimeoutMS=10000,
-                    socketTimeoutMS=20000,
+                    serverSelectionTimeoutMS=60000,
+                    connectTimeoutMS=60000,
+                    socketTimeoutMS=120000,
                     maxPoolSize=50,
                     minPoolSize=5
                 )
@@ -66,9 +66,9 @@ class MongoDBExporter:
             try:
                 self._async_client = AsyncIOMotorClient(
                     self.connection_string,
-                    serverSelectionTimeoutMS=5000,
-                    connectTimeoutMS=10000,
-                    socketTimeoutMS=20000,
+                    serverSelectionTimeoutMS=60000,
+                    connectTimeoutMS=60000,
+                    socketTimeoutMS=120000,
                     maxPoolSize=50,
                     minPoolSize=5
                 )
