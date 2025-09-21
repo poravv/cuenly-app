@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
       - name: cuenly-frontend
-        image: ghcr.io/OWNER/REPO-frontend:latest
+        image: ghcr.io/poravv/cuenly-app-frontend:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 80
