@@ -125,10 +125,11 @@ class IMAPClient:
         finally:
             self.conn = None
 
-    def search(self, subject_terms: List[str], unread_only: Optional[bool] = None) -> List[str]:
+    def search(self, subject_terms: List[str], unread_only: Optional[bool] = None, since_date=None) -> List[str]:
         """
         Devuelve UIDs de correos que coincidan con cualquiera de los términos de asunto.
         El parámetro unread_only controla si buscar solo no leídos (True) o todos (False).
+        El parámetro since_date filtra correos desde una fecha específica.
         Funciona igual para Gmail y servidores IMAP comunes. Sin X-GM-RAW.
         """
         if not self.conn and not self.connect():
@@ -137,6 +138,16 @@ class IMAPClient:
         if unread_only is None:
             unread_only = True
         flag_args = ['UNSEEN'] if unread_only else ['ALL']
+        
+        # Agregar filtro de fecha si se proporciona
+        if since_date:
+            from datetime import datetime
+            # Convertir fecha a formato IMAP (DD-MMM-YYYY)
+            date_str = since_date.strftime("%d-%b-%Y")
+            flag_args.append('SINCE')
+            flag_args.append(date_str)
+            logger.debug(f"Aplicando filtro de fecha SINCE {date_str}")
+        
         def _to_ascii(s: str) -> str:
             try:
                 # Normaliza y remueve diacríticos → ASCII
