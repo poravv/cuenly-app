@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-proxy-service
+  namespace: cuenly-frontend
+  labels:
+    app: cuenly-frontend
+    component: backend-proxy
+spec:
+  type: ExternalName
+  externalName: cuenly-backend-service.cuenly-backend.svc.cluster.local
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http

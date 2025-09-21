@@ -7,9 +7,12 @@ metadata:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     acme.cert-manager.io/http01-edit-in-place: "true"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "900"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffering: "on"
     # Configuración CORS para el backend
     nginx.ingress.kubernetes.io/enable-cors: "true"
     nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.cuenly.com"
@@ -118,17 +121,4 @@ spec:
                 name: cuenly-frontend-service
                 port:
                   number: 80
----
-# Service proxy para el backend en el namespace frontend
-apiVersion: v1
-kind: Service
-metadata:
-  name: backend-proxy-service
-  namespace: cuenly-frontend
-spec:
-  type: ExternalName
-  externalName: cuenly-backend-service.cuenly-backend.svc.cluster.local
-  ports:
-  - port: 8000
-    targetPort: 8000
 
