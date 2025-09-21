@@ -394,15 +394,75 @@ jobs:
           exit 1
 
   deploy-frontend:
-    needs: [detect-changes, build-frontend, deploy-backend]
-    # Frontend se despliega si backend está listo Y (frontend cambió O config cambió O no tenemos imagen frontend actual)
-    if: always() && needs.deploy-backend.outputs.backend-ready == 'true' && (needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped')
+    needs: [detect-changes, deploy-backend]
+    # Simplificado: Frontend se despliega si backend está listo Y hay algún cambio relevante
+    if: always() && needs.deploy-backend.outputs.backend-ready == 'true' && (needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true')
     runs-on: self-hosted
     environment: ${{ github.event.inputs.environment || 'development' }}
     env:
       NAMESPACE: cuenly-frontend
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Build frontend image if needed
+        run: |
+          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+          
+          # Log in to GHCR
+          echo "${{ secrets.GHCR_PAT }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+          
+          # Verificar si la imagen ya existe
+          if docker manifest inspect ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA} > /dev/null 2>&1; then
+            echo "✅ Imagen frontend ya existe para SHA ${SHORT_SHA}"
+          else
+            echo "🔨 Construyendo imagen frontend para SHA ${SHORT_SHA}..."
+            
+            # Generar archivos de entorno
+            mkdir -p frontend/src/environments
+            
+            cat > frontend/src/environments/environment.ts << 'EOF'
+          export const environment = {
+            production: false,
+            apiUrl: '',
+            firebase: {
+              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
+              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
+              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
+              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
+              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
+              appId: "${{ secrets.FIREBASE_APP_ID }}",
+              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+            }
+          };
+          EOF
+            
+            cat > frontend/src/environments/environment.prod.ts << 'EOF'
+          export const environment = {
+            production: true,
+            apiUrl: '',
+            firebase: {
+              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
+              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
+              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
+              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
+              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
+              appId: "${{ secrets.FIREBASE_APP_ID }}",
+              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+            }
+          };
+          EOF
+            
+            # Build and push
+            docker build \
+              --tag ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA} \
+              --tag ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:latest \
+              ./frontend
+            
+            docker push ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA}
+            docker push ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:latest
+            
+            echo "✅ Imagen frontend construida y subida"
+          fi
       
       - name: Ensure namespace exists
         run: |
