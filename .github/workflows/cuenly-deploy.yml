@@ -360,8 +360,8 @@ jobs:
             kubectl cp config/mongo-indexes.js ${{ env.NAMESPACE }}/$(kubectl get pod -l app=mongodb -n ${{ env.NAMESPACE }} -o jsonpath='{.items[0].metadata.name}'):/tmp/mongo-indexes.js
             kubectl exec deployment/mongodb -n ${{ env.NAMESPACE }} -- mongosh -u "$ROOT_USER" -p "$ROOT_PASS" --authenticationDatabase admin /tmp/mongo-indexes.js || true
             echo "✅ Índices de rendimiento aplicados"
-          fi
-            echo "⚠️  No se encontró script mongo-init.js, continuando..."
+          else
+            echo "⚠️  No se encontró script mongo-indexes.js, continuando..."
           fi
           
       - name: Deploy backend application
