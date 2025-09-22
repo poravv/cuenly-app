@@ -6,6 +6,11 @@
   position: sticky;
   top: 0;
   z-index: 1030;
+  min-height: 70px; /* Altura mínima consistente */
+}
+
+.container-fluid {
+  position: relative;
 }
 
 .navbar-brand {
@@ -209,6 +214,99 @@
   }
 }
 
+/* Área de autenticación responsive */
+.navbar-auth {
+  .user-info-container {
+    .user-info-desktop {
+      .user-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid rgba(43, 78, 255, 0.1);
+        transition: all 0.3s ease;
+        
+        &:hover {
+          border-color: rgba(43, 78, 255, 0.3);
+          transform: scale(1.05);
+        }
+      }
+      
+      .user-details {
+        .user-name {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: #1f2937;
+          line-height: 1.2;
+          margin-bottom: 0;
+        }
+        
+        .user-email {
+          font-size: 0.75rem;
+          color: #6b7280;
+          line-height: 1;
+          max-width: 140px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      }
+      
+      .btn {
+        white-space: nowrap;
+        transition: all 0.3s ease;
+        
+        &:hover {
+          transform: translateY(-1px);
+        }
+      }
+    }
+    
+    .user-info-mobile {
+      margin-top: 1rem;
+      background: rgba(248, 250, 252, 0.5);
+      border-radius: 12px;
+      border-top: 1px solid rgba(0, 0, 0, 0.1) !important;
+      
+      .user-avatar-mobile {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 2px solid rgba(43, 78, 255, 0.1);
+      }
+      
+      .user-details-mobile {
+        .user-name-mobile {
+          font-size: 1rem;
+          font-weight: 600;
+          color: #1f2937;
+          line-height: 1.2;
+          margin-bottom: 0;
+        }
+        
+        .user-email-mobile {
+          font-size: 0.875rem;
+          color: #6b7280;
+          line-height: 1.2;
+          word-break: break-word;
+        }
+      }
+    }
+  }
+}
+
+/* Responsive breakpoints específicos para el navbar */
+@media (max-width: 1199.98px) {
+  .navbar-auth {
+    .user-info-desktop {
+      .user-details {
+        .user-email {
+          max-width: 100px;
+        }
+      }
+    }
+  }
+}
+
 @media (max-width: 991.98px) {
   .navbar-nav {
     padding-top: 1rem;
@@ -238,6 +336,153 @@
     .status-indicator {
       justify-content: center;
       padding: 1rem;
+    }
+  }
+  
+  /* Ocultar el área de auth desktop en mobile */
+  .navbar-auth {
+    margin-left: 0 !important;
+  }
+}
+
+/* Breakpoints adicionales para mejor responsive */
+@media (max-width: 575.98px) {
+  .brand-text {
+    .brand-name {
+      font-size: 1.2rem;
+    }
+    
+    .brand-subtitle {
+      font-size: 0.7rem;
+    }
+  }
+  
+  .brand-icon {
+    width: 40px;
+    height: 40px;
+    
+    i {
+      font-size: 1.3rem;
+    }
+  }
+  
+  .navbar-auth {
+    .user-info-mobile {
+      .user-details-mobile {
+        .user-name-mobile {
+          font-size: 0.9rem;
+        }
+        
+        .user-email-mobile {
+          font-size: 0.8rem;
+        }
+      }
+    }
+  }
+}
+
+/* Tablet landscape y desktop pequeño */
+@media (min-width: 768px) and (max-width: 1023.98px) {
+  .navbar-status {
+    .status-indicator {
+      padding: 0.4rem 0.8rem;
+      
+      .status-info {
+        .status-label {
+          font-size: 0.7rem;
+        }
+        
+        .status-value {
+          font-size: 0.8rem;
+        }
+      }
+    }
+  }
+  
+  .navbar-auth {
+    .user-info-desktop {
+      .user-details {
+        .user-email {
+          max-width: 100px;
+        }
+      }
+    }
+  }
+}
+
+@media (min-width: 992px) and (max-width: 1199.98px) {
+  .navbar-status {
+    .status-indicator {
+      padding: 0.4rem 0.8rem;
+      
+      .status-info {
+        .status-label {
+          font-size: 0.7rem;
+        }
+        
+        .status-value {
+          font-size: 0.8rem;
+        }
+      }
+    }
+  }
+}
+
+/* Pantallas muy grandes */
+@media (min-width: 1400px) {
+  .navbar-auth {
+    .user-info-desktop {
+      .user-details {
+        .user-email {
+          max-width: 180px;
+        }
+      }
+    }
+  }
+}
+
+/* Mejoras para touch devices */
+@media (hover: none) and (pointer: coarse) {
+  .navbar-nav {
+    .nav-item {
+      .nav-link {
+        padding: 1.2rem 1rem;
+        
+        &:hover {
+          transform: none; /* Desactivar hover en touch */
+        }
+        
+        &:active {
+          background: rgba(43, 78, 255, 0.15);
+          transform: scale(0.98);
+        }
+      }
+    }
+  }
+  
+  .navbar-auth {
+    .user-info-desktop {
+      .btn {
+        padding: 0.6rem 1rem;
+        
+        &:hover {
+          transform: none;
+        }
+        
+        &:active {
+          transform: scale(0.95);
+        }
+      }
+    }
+    
+    .user-info-mobile {
+      .btn {
+        padding: 0.8rem 1.2rem;
+        
+        &:active {
+          transform: scale(0.95);
+        }
+      }
     }
   }
 }
