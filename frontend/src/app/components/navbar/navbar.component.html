@@ -106,17 +106,44 @@
       </div>
 
       <!-- Auth area -->
-      <div class="ms-3 d-flex align-items-center">
+      <div class="navbar-auth ms-lg-3">
         <ng-container *ngIf="user; else loginBtn">
-          <div class="d-flex align-items-center gap-2">
-            <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="rounded-circle" width="28" height="28">
-            <span class="small text-truncate" style="max-width: 160px;" [title]="user.email || user.displayName">{{ user.email || user.displayName }}</span>
-            <button class="btn btn-sm btn-outline-secondary" (click)="signOut()">Salir</button>
+          <div class="user-info-container">
+            <!-- Desktop user info -->
+            <div class="user-info-desktop d-none d-lg-flex align-items-center">
+              <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="user-avatar me-2">
+              <div class="user-details me-3">
+                <div class="user-name">{{ user.displayName || 'Usuario' }}</div>
+                <div class="user-email">{{ user.email }}</div>
+              </div>
+              <button class="btn btn-outline-secondary btn-sm" (click)="signOut()">
+                <i class="bi bi-box-arrow-right me-1"></i>
+                <span class="d-none d-xl-inline">Salir</span>
+              </button>
+            </div>
+            
+            <!-- Mobile user info -->
+            <div class="user-info-mobile d-lg-none">
+              <div class="d-flex align-items-center justify-content-between w-100 p-3 border-top">
+                <div class="d-flex align-items-center">
+                  <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="user-avatar-mobile me-2">
+                  <div class="user-details-mobile">
+                    <div class="user-name-mobile">{{ user.displayName || 'Usuario' }}</div>
+                    <div class="user-email-mobile">{{ user.email }}</div>
+                  </div>
+                </div>
+                <button class="btn btn-outline-danger btn-sm" (click)="signOut()">
+                  <i class="bi bi-box-arrow-right"></i>
+                  Salir
+                </button>
+              </div>
+            </div>
           </div>
         </ng-container>
         <ng-template #loginBtn>
-          <button class="btn btn-sm btn-outline-primary" routerLink="/login">
-            <i class="bi bi-box-arrow-in-right me-1"></i> Entrar
+          <button class="btn btn-outline-primary btn-sm" routerLink="/login">
+            <i class="bi bi-box-arrow-in-right me-1"></i> 
+            <span class="d-none d-sm-inline">Entrar</span>
           </button>
         </ng-template>
       </div>
