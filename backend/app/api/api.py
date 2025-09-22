@@ -2045,3 +2045,270 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
             email_cliente="",
             monto_total=0
         )
+
+# ================================
+# ENDPOINTS PARA TEMPLATES DE EXPORTACIÓN
+# ================================
+
+@app.get("/export-templates")
+async def get_export_templates(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtener todos los templates de exportación del usuario"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        repo = ExportTemplateRepository()
+        templates = repo.get_templates_by_user(user["email"])
+        
+        return {
+            "templates": [template.model_dump() for template in templates],
+            "count": len(templates)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo templates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/export-templates")
+async def create_export_template(
+    template_data: Dict[str, Any],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Crear un nuevo template de exportación"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        from app.models.export_template import ExportTemplate
+        
+        # Agregar owner_email
+        template_data["owner_email"] = user["email"]
+        
+        # Crear template
+        template = ExportTemplate(**template_data)
+        repo = ExportTemplateRepository()
+        template_id = repo.create_template(template)
+        
+        return {
+            "success": True,
+            "template_id": template_id,
+            "message": f"Template '{template.name}' creado exitosamente"
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creando template: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/export-templates/{template_id}")
+async def get_export_template(
+    template_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Obtener un template específico"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        repo = ExportTemplateRepository()
+        template = repo.get_template_by_id(template_id, user["email"])
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+        return template.model_dump()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/export-templates/{template_id}")
+async def update_export_template(
+    template_id: str,
+    template_data: Dict[str, Any],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Actualizar un template existente"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        from app.models.export_template import ExportTemplate
+        
+        # Agregar owner_email
+        template_data["owner_email"] = user["email"]
+        
+        # Actualizar template
+        template = ExportTemplate(**template_data)
+        repo = ExportTemplateRepository()
+        
+        if repo.update_template(template_id, template):
+            return {
+                "success": True,
+                "message": f"Template '{template.name}' actualizado exitosamente"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error actualizando template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/export-templates/{template_id}")
+async def delete_export_template(
+    template_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Eliminar un template"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        repo = ExportTemplateRepository()
+        
+        if repo.delete_template(template_id, user["email"]):
+            return {
+                "success": True,
+                "message": "Template eliminado exitosamente"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error eliminando template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/export-templates/{template_id}/duplicate")
+async def duplicate_export_template(
+    template_id: str,
+    request_data: Dict[str, str],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Duplicar un template existente"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        new_name = request_data.get("name")
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Nombre requerido para el template duplicado")
+        
+        repo = ExportTemplateRepository()
+        new_template_id = repo.duplicate_template(template_id, new_name, user["email"])
+        
+        if new_template_id:
+            return {
+                "success": True,
+                "template_id": new_template_id,
+                "message": f"Template duplicado como '{new_name}'"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Template original no encontrado")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error duplicando template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/export-templates/{template_id}/set-default")
+async def set_default_export_template(
+    template_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Establecer un template como por defecto"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        repo = ExportTemplateRepository()
+        
+        if repo.set_default_template(template_id, user["email"]):
+            return {
+                "success": True,
+                "message": "Template establecido como por defecto"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error estableciendo template por defecto {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/export-templates/available-fields")
+async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtener lista de campos disponibles para templates"""
+    try:
+        from app.models.export_template import AVAILABLE_FIELDS
+        
+        return {
+            "fields": AVAILABLE_FIELDS,
+            "categories": {
+                "basic": ["numero_factura", "fecha", "cdc", "timbrado"],
+                "emisor": ["ruc_emisor", "nombre_emisor"],
+                "cliente": ["ruc_cliente", "nombre_cliente"],
+                "montos": ["subtotal_5", "iva_5", "subtotal_10", "iva_10", "subtotal_exentas", "monto_total"],
+                "productos": ["productos", "productos.articulo", "productos.cantidad", "productos.precio_unitario", "productos.total", "productos.iva"],
+                "metadata": ["condicion_venta", "moneda", "descripcion_factura", "processing_quality", "created_at"]
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo campos disponibles: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/export/custom")
+async def export_invoices_with_template(
+    export_request: Dict[str, Any],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Exportar facturas usando un template personalizado"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        from app.modules.excel_exporter.template_exporter import ExcelExporter
+        from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+        
+        template_id = export_request.get("template_id")
+        filters = export_request.get("filters", {})
+        filename = export_request.get("filename", f"facturas_custom_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        
+        if not template_id:
+            raise HTTPException(status_code=400, detail="template_id requerido")
+        
+        # Obtener template
+        template_repo = ExportTemplateRepository()
+        template = template_repo.get_template_by_id(template_id, user["email"])
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+        # Obtener facturas
+        invoice_repo = MongoInvoiceRepository()
+        invoices = invoice_repo.get_invoices_by_user(user["email"], filters)
+        
+        if not invoices:
+            raise HTTPException(status_code=404, detail="No se encontraron facturas con los filtros especificados")
+        
+        # Generar Excel
+        exporter = ExcelExporter()
+        excel_data = exporter.export_invoices(invoices, template)
+        
+        # Retornar archivo
+        headers = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+        
+        return Response(
+            content=excel_data,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers=headers
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exportando con template: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
