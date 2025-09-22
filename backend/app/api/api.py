@@ -948,6 +948,19 @@ async def health_check():
             content={"status": "unhealthy", "reason": str(e), "timestamp": datetime.now().isoformat()}
         )
 
+@app.get("/email-processing/config")
+async def get_email_processing_config(user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Obtiene la configuración actual de procesamiento de emails.
+    """
+    from app.config.settings import settings
+    
+    return {
+        "process_all_dates": settings.EMAIL_PROCESS_ALL_DATES,
+        "description": "Si es true, procesa todos los correos sin restricción de fecha. Si es false, solo procesa desde fecha de alta del usuario.",
+        "current_setting": "Procesando TODOS los correos" if settings.EMAIL_PROCESS_ALL_DATES else "Procesando solo desde fecha de alta"
+    }
+
 @app.get("/status")
 async def get_status(user: Dict[str, Any] = Depends(_get_current_user)):
     """
