@@ -129,9 +129,8 @@ class MongoInvoiceRepository(InvoiceRepository):
                     "anticipo": header.get("totales", {}).get("anticipo", 0),
                     "base_gravada_5": header.get("totales", {}).get("gravado_5", 0),
                     "base_gravada_10": header.get("totales", {}).get("gravado_10", 0),
-                    "total_base_gravada": header.get("totales", {}).get("total_base_gravada", 0) or (
-                        header.get("totales", {}).get("gravado_5", 0) + header.get("totales", {}).get("gravado_10", 0)
-                    ),
+                    # Calcular total_base_gravada siempre como suma
+                    "total_base_gravada": header.get("totales", {}).get("gravado_5", 0) + header.get("totales", {}).get("gravado_10", 0),
                     "condicion_venta": header.get("condicion_venta", ""),
                     "moneda": header.get("moneda", "PYG"),
                     "tipo_cambio": header.get("tipo_cambio", 0.0),
