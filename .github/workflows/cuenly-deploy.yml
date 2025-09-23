@@ -387,11 +387,38 @@ jobs:
       - name: Deploy backend application  
         run: |
           set -euo pipefail
-          echo "🚀 Desplegando backend limpio..."
+          echo "🚀 Desplegando backend..."
+          
+          # Aplicar configuración de Kubernetes
           kubectl apply -f backend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
+          
+          # Obtener SHA corto para tag único
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
-          kubectl set image deployment/cuenly-backend cuenly-backend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA} -n ${{ env.NAMESPACE }}
+          echo "📦 Desplegando imagen: ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}"
+          
+          # Actualizar imagen del deployment
+          kubectl set image deployment/cuenly-backend \
+            cuenly-backend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA} \
+            -n ${{ env.NAMESPACE }}
+          
+          # Forzar actualización con anotaciones únicas para garantizar pull de imagen
+          kubectl patch deployment cuenly-backend -n ${{ env.NAMESPACE }} -p \
+            "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
+          
+          # Esperar que el rollout complete
           kubectl rollout status deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=300s
+          
+          # Verificar que los pods estén usando la imagen correcta
+          echo "🔍 Verificando imagen desplegada:"
+          CURRENT_IMAGES=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend -o jsonpath='{.items[*].spec.containers[*].image}')
+          echo "Imágenes en pods: $CURRENT_IMAGES"
+          
+          if echo "$CURRENT_IMAGES" | grep -q "sha-${SHORT_SHA}"; then
+            echo "✅ Backend desplegado correctamente con SHA: ${SHORT_SHA}"
+          else
+            echo "❌ Error: Backend no está usando la imagen esperada"
+            exit 1
+          fi
           
       - name: Remove old backend ingress (now handled by frontend)
         run: |
@@ -566,14 +593,38 @@ jobs:
           
       - name: Deploy frontend application
         run: |
+          echo "🚀 Desplegando frontend..."
+          
+          # Aplicar configuración de Kubernetes
           kubectl apply -f frontend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
+          
+          # Obtener SHA corto para tag único
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
-          kubectl set image deployment/cuenly-frontend cuenly-frontend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA} -n ${{ env.NAMESPACE }}
+          echo "📦 Desplegando imagen: ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA}"
           
-          # Forzar recreación de pods aunque la imagen sea la misma
-          kubectl patch deployment cuenly-frontend -n ${{ env.NAMESPACE }} -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"forceUpdate\":\"$(date +%s)\"}}}}}"
+          # Actualizar imagen del deployment
+          kubectl set image deployment/cuenly-frontend \
+            cuenly-frontend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA} \
+            -n ${{ env.NAMESPACE }}
           
+          # Forzar actualización con anotaciones únicas para garantizar pull de imagen
+          kubectl patch deployment cuenly-frontend -n ${{ env.NAMESPACE }} -p \
+            "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
+          
+          # Esperar que el rollout complete
           kubectl rollout status deployment/cuenly-frontend -n ${{ env.NAMESPACE }} --timeout=600s
+          
+          # Verificar que los pods estén usando la imagen correcta
+          echo "🔍 Verificando imagen desplegada:"
+          CURRENT_IMAGES=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend -o jsonpath='{.items[*].spec.containers[*].image}')
+          echo "Imágenes en pods: $CURRENT_IMAGES"
+          
+          if echo "$CURRENT_IMAGES" | grep -q "sha-${SHORT_SHA}"; then
+            echo "✅ Frontend desplegado correctamente con SHA: ${SHORT_SHA}"
+          else
+            echo "❌ Error: Frontend no está usando la imagen esperada"
+            exit 1
+          fi
           
       - name: Frontend health check
         run: |

@@ -26,7 +26,7 @@ class MongoQueryService:
     def __init__(self, connection_string: Optional[str] = None):
         config = get_mongodb_config()
         self.connection_string = connection_string or config["connection_string"]
-        self.database_name = config["database_name"]
+        self.database_name = config["database"]
         self.collection_name = config["collection_name"]
         
         self._client: Optional[MongoClient] = None
