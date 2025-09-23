@@ -517,6 +517,10 @@ class ParaguayanXMLParser:
             totals['total_descuento'] = self._get_float(totals_element, 'dTotDesc') or 0.0
             totals['anticipo'] = self._get_float(totals_element, 'dAnticipo') or 0.0
             totals['total_base_gravada'] = self._get_float(totals_element, 'dTBasGraIVA') or 0.0
+            
+            # Log para debug de totales extraídos
+            logger.info(f"XML totales extraídos - dSubExe: {exento}, dTotOpe: {totals['total_operacion']}, "
+                       f"dTotGralOpe: {total_general}, dBaseGrav5: {base5}, dBaseGrav10: {base10}")
         
         return totals
 
@@ -651,7 +655,9 @@ class ParaguayanXMLParser:
                    f"Base 10%: {normalized.get('gravado_10', 0)}, "
                    f"IVA 5%: {normalized.get('iva_5', 0)}, "
                    f"IVA 10%: {normalized.get('iva_10', 0)}, "
-                   f"Exento: {normalized.get('exento', 0)}")
+                   f"Exento: {normalized.get('exento', 0)}, "
+                   f"Total operación: {normalized.get('total_operacion', 0)}, "
+                   f"Monto exento: {normalized.get('monto_exento', 0)}")
 
         # CRÍTICO: Asegurar campos para template export
         normalized['monto_exento'] = normalized.get('exento', 0.0)

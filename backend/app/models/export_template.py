@@ -99,18 +99,19 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "actividad_economica": {"description": "Actividad económica", "field_type": FieldType.TEXT},
     
     # === MONTOS - SOLO CAMPOS REALES ===
-    "base_gravada_5": {"description": "Base gravada 5% (del XML)", "field_type": FieldType.CURRENCY},
-    "iva_5": {"description": "IVA 5% (del XML)", "field_type": FieldType.CURRENCY},
-    "base_gravada_10": {"description": "Base gravada 10% (del XML)", "field_type": FieldType.CURRENCY},
-    "iva_10": {"description": "IVA 10% (del XML)", "field_type": FieldType.CURRENCY},
+    "gravado_5": {"description": "Base gravada 5%", "field_type": FieldType.CURRENCY},
+    "iva_5": {"description": "IVA 5%", "field_type": FieldType.CURRENCY},
+    "gravado_10": {"description": "Base gravada 10%", "field_type": FieldType.CURRENCY},
+    "iva_10": {"description": "IVA 10%", "field_type": FieldType.CURRENCY},
     "monto_exento": {"description": "Monto exento", "field_type": FieldType.CURRENCY},
-    "monto_exonerado": {"description": "Monto exonerado", "field_type": FieldType.CURRENCY},
+    # "exento" eliminado por redundancia con "monto_exento"
+    "exonerado": {"description": "Exonerado", "field_type": FieldType.CURRENCY},
     "total_iva": {"description": "Total IVA", "field_type": FieldType.CURRENCY},
     "monto_total": {"description": "Monto total final", "field_type": FieldType.CURRENCY},
     
     # === TOTALES DEL XML ===
-    "total_operacion": {"description": "Total operación (del XML)", "field_type": FieldType.CURRENCY},
-    "total_descuento": {"description": "Total descuento (del XML)", "field_type": FieldType.CURRENCY},
+    # "total_operacion" eliminado por redundancia con "monto_total"
+    "total_descuento": {"description": "Total descuento", "field_type": FieldType.CURRENCY},
     "total_base_gravada": {"description": "Total base gravada", "field_type": FieldType.CURRENCY},
     "anticipo": {"description": "Anticipo recibido", "field_type": FieldType.CURRENCY},
     

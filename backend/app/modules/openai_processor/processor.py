@@ -35,15 +35,10 @@ class OpenAIProcessor:
         self.cfg = cfg
         self.client = make_openai_client(cfg.api_key)
         
-        # Inicializar cache inteligente
-        cache_enabled = getattr(settings, "OPENAI_CACHE_ENABLED", True)
-        cache_ttl = getattr(settings, "OPENAI_CACHE_TTL_HOURS", 24)
-        self.cache = OpenAICache(ttl_hours=cache_ttl) if cache_enabled else None
+        # Deshabilitar cache por problemas de estabilidad
+        self.cache = None  # Cache FORZADAMENTE deshabilitado
         
-        if self.cache:
-            logger.info("✅ OpenAI Cache habilitado - 80% reducción esperada en costos API")
-        else:
-            logger.info("⚠️ OpenAI Cache deshabilitado")
+        logger.info("⚠️ OpenAI Cache deshabilitado por estabilidad")
 
     # ------------------------------------------------------------------ API --
     def extract_invoice_data(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None, owner_email: Optional[str] = None):
@@ -63,7 +58,13 @@ class OpenAIProcessor:
                 cached_result = self.cache.get_cached_result(pdf_path)
                 if cached_result:
                     logger.info(f"🚀 Cache HIT - Resultado instantáneo para {pdf_path}")
-                    return cached_result
+                    # Asegurar que el resultado cacheado sea procesado correctamente
+                    if isinstance(cached_result, dict):
+                        # Re-procesar el dict cacheado a través de _coerce_invoice_model
+                        return _coerce_invoice_model(cached_result, email_metadata)
+                    else:
+                        # Si ya es un objeto válido, devolverlo directamente
+                        return cached_result
             
             # NOTA: Se desactiva el camino 'texto' por solicitud.
             # Mantener este bloque comentado por si se necesita reactivar en el futuro.
@@ -86,9 +87,16 @@ class OpenAIProcessor:
                 except Exception as e:
                     logger.warning(f"Error updating AI usage counter: {e}")
             
-            # Cachear el resultado si existe
+            # Cachear el resultado si existe (como diccionario para serialización)
             if result and self.cache:
-                self.cache.cache_result(pdf_path, result, "openai_vision")
+                # Si result es un objeto InvoiceData, convertirlo a dict para cache
+                if hasattr(result, '__dict__'):
+                    # Es un objeto, extraer sus datos como dict
+                    cache_data = result.__dict__ if hasattr(result, '__dict__') else result
+                else:
+                    # Ya es un dict
+                    cache_data = result
+                self.cache.cache_result(pdf_path, cache_data, "openai_vision")
             
             if result:
                 return result
@@ -311,11 +319,18 @@ def _coerce_invoice_model(data: Dict[str, Any], email_metadata: Optional[Dict[st
     """
     Intenta construir app.models.models.InvoiceData; si falla, devuelve dict con metadatos.
     """
+    # Verificar que data sea un diccionario
+    if not isinstance(data, dict):
+        logger.error(f"❌ _coerce_invoice_model recibió data inválida: {type(data).__name__} - {str(data)[:200]}")
+        return None
+        
     try:
         from app.models.models import InvoiceData  # lazy import evita ciclos
         inv = InvoiceData.from_dict(data, email_metadata)
+        logger.debug(f"✅ InvoiceData creado exitosamente: {inv.numero_factura}")
         return inv
-    except Exception:
+    except Exception as e:
+        logger.warning(f"⚠️ Fallo al crear InvoiceData: {str(e)[:200]}. Devolviendo dict enriquecido.")
         # Retornar dict enriquecido si el modelo no está disponible/compatible
         if email_metadata:
             data = {**data, "_email_meta": email_metadata}
@@ -329,6 +344,9 @@ def _convert_v2_to_v1_dict(v2: Dict[str, Any]) -> Dict[str, Any]:
     emisor = h.get("emisor") or {}
     receptor = h.get("receptor") or {}
     items = v2.get("items") or []
+
+    # Debug: Log de totales para diagnosticar problemas de mapeo
+    logger.info(f"DEBUG v2_to_v1 totales: {t}")
 
     numero_doc = h.get("numero_documento") or ""
     fecha = h.get("fecha_emision") or ""
@@ -358,12 +376,24 @@ def _convert_v2_to_v1_dict(v2: Dict[str, Any]) -> Dict[str, Any]:
         "tipo_documento": tipo_doc,
         "tipo_cambio": float(h.get("tipo_cambio", 0) or 0),
         "moneda": moneda,
+        # Mapeo completo para compatibilidad con parser XML
         "subtotal_exentas": float(t.get("exentas", 0) or 0),
+        "exento": float(t.get("exentas", 0) or 0),  # Para normalize_data
+        "monto_exento": float(t.get("exentas", 0) or 0),  # Para template export
         "subtotal_5": float(t.get("gravado_5", 0) or 0),
+        "gravado_5": float(t.get("gravado_5", 0) or 0),  # Para normalize_data
         "iva_5": float(t.get("iva_5", 0) or 0),
         "subtotal_10": float(t.get("gravado_10", 0) or 0),
+        "gravado_10": float(t.get("gravado_10", 0) or 0),  # Para normalize_data
         "iva_10": float(t.get("iva_10", 0) or 0),
         "monto_total": float(t.get("total", 0) or 0),
+        # CRÍTICO: Campos faltantes para template export
+        "total_operacion": float(t.get("total_operacion", 0) or t.get("total", 0) or 0),  # Campo faltante
+        "total_iva": float(t.get("total_iva", 0) or 0),
+        "exonerado": float(t.get("exonerado", 0) or 0),
+        "total_descuento": float(t.get("total_descuento", 0) or 0),
+        "anticipo": float(t.get("anticipo", 0) or 0),
+        # Campos adicionales
         "timbrado": h.get("timbrado", ""),
         "cdc": h.get("cdc", ""),
         "ruc_cliente": receptor.get("ruc", ""),
@@ -371,4 +401,11 @@ def _convert_v2_to_v1_dict(v2: Dict[str, Any]) -> Dict[str, Any]:
         "email_cliente": receptor.get("email", ""),
         "productos": productos
     }
+    
+    # Generar descripcion_factura desde productos (como hace el XML parser)
+    if productos:
+        articulos = [str(p.get('articulo', '')).strip() for p in productos if p.get('articulo')]
+        if articulos:
+            v1['descripcion_factura'] = ', '.join(articulos[:10])  # limitar a 10 ítems
+    
     return v1
