@@ -283,7 +283,7 @@ class ParaguayanXMLParser:
             # dDesProSer -> articulo/descripcion/nombre
             desc = self._get_text(item_element, 'dDesProSer') or ""
             producto['articulo'] = desc
-            producto['descripcion'] = desc  # Compatibilidad ASCONT
+            producto['descripcion'] = desc  # Campo descripción
             producto['nombre'] = desc  # Para modelo v2
             
             # dCantProSer -> cantidad
@@ -354,7 +354,7 @@ class ParaguayanXMLParser:
 
     def _extract_items_and_totals(self, de_element: ET.Element, data: Dict[str, Any]):
         """
-        Extrae items y totales del XML con mapeo optimizado para el modelo ASCONT.
+        Extrae items y totales del XML con mapeo optimizado para el modelo de datos.
         Manejo robusto de namespaces para todos los campos.
         """
         # Extraer items
@@ -389,7 +389,7 @@ class ParaguayanXMLParser:
         
         data['items'] = items
         
-        # Extraer totales con mapeo optimizado para ASCONT
+        # Extraer totales con mapeo optimizado
         totals = self._extract_totals_optimized(de_element)
         data.update(totals)
         
@@ -457,7 +457,7 @@ class ParaguayanXMLParser:
     
     def _extract_totals_optimized(self, de_element: ET.Element) -> Dict[str, Any]:
         """
-        Extrae totales con mapeo optimizado para el modelo ASCONT.
+        Extrae totales con mapeo optimizado para el modelo de datos.
         Mapea correctamente XML SIFEN a modelo con nomenclatura unificada.
         """
         totals = {}
@@ -473,21 +473,21 @@ class ParaguayanXMLParser:
             totals_element = self._find_element_by_name_in_de(de_element, 'gTotSub')
         
         if totals_element is not None:
-            # Mapeo directo XML SIFEN -> Modelo ASCONT
+            # Mapeo directo XML SIFEN -> Modelo de datos
             # dSubExe -> subtotal_exentas/exento
             exento = self._get_float(totals_element, 'dSubExe') or 0.0
             totals['exento'] = exento
-            totals['subtotal_exentas'] = exento  # Para compatibilidad ASCONT
+            totals['subtotal_exentas'] = exento  # Subtotal exento
             
             # dBaseGrav5 -> gravado_5/subtotal_5 (base sin IVA)
             base5 = self._get_float(totals_element, 'dBaseGrav5') or 0.0
             totals['gravado_5'] = base5
-            totals['subtotal_5'] = base5  # Para compatibilidad ASCONT
+            totals['subtotal_5'] = base5  # Subtotal gravado 5%
             
             # dBaseGrav10 -> gravado_10/subtotal_10 (base sin IVA)
             base10 = self._get_float(totals_element, 'dBaseGrav10') or 0.0
             totals['gravado_10'] = base10
-            totals['subtotal_10'] = base10  # Para compatibilidad ASCONT
+            totals['subtotal_10'] = base10  # Subtotal gravado 10%
             
             # dIVA5 -> iva_5
             totals['iva_5'] = self._get_float(totals_element, 'dIVA5') or 0.0
@@ -498,7 +498,7 @@ class ParaguayanXMLParser:
             # dTotGralOpe -> monto_total/total_general
             total_general = self._get_float(totals_element, 'dTotGralOpe') or 0.0
             totals['total_general'] = total_general
-            totals['monto_total'] = total_general  # Para compatibilidad ASCONT
+            totals['monto_total'] = total_general  # Monto total de la factura
             
             # Campos adicionales del XML SIFEN
             totals['exonerado'] = self._get_float(totals_element, 'dSubExo') or 0.0
@@ -521,7 +521,7 @@ class ParaguayanXMLParser:
     def normalize_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Normaliza al contrato esperado por InvoiceData.from_dict con mapeo optimizado.
-        Mapea correctamente gravado_5/10 e iva_5/10 desde XML SIFEN a modelo ASCONT.
+        Mapea correctamente gravado_5/10 e iva_5/10 desde XML SIFEN al modelo de datos.
         'subtotal_5' y 'subtotal_10' representan la BASE (gravado), sin IVA.
         'gravado_5' y 'gravado_10' son los mismos valores para compatibilidad.
         """
@@ -556,14 +556,14 @@ class ParaguayanXMLParser:
         # Asignar bases gravadas (valores sin IVA)
         if base5 is not None:
             normalized['subtotal_5'] = float(base5) if base5 else 0.0
-            normalized['gravado_5'] = normalized['subtotal_5']  # Compatibilidad ASCONT
+            normalized['gravado_5'] = normalized['subtotal_5']  # Campo gravado 5%
         else:
             normalized['subtotal_5'] = 0.0
             normalized['gravado_5'] = 0.0
 
         if base10 is not None:
             normalized['subtotal_10'] = float(base10) if base10 else 0.0
-            normalized['gravado_10'] = normalized['subtotal_10']  # Compatibilidad ASCONT
+            normalized['gravado_10'] = normalized['subtotal_10']  # Campo gravado 10%
         else:
             normalized['subtotal_10'] = 0.0
             normalized['gravado_10'] = 0.0

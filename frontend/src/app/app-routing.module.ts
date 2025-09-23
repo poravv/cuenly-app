@@ -11,7 +11,6 @@ import { LoginComponent } from './components/login/login.component';
 import { ExportTemplatesComponent } from './components/export-templates/export-templates.component';
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
-import { TemplatePresetSelectorComponent } from './components/export-templates/template-preset-selector.component';
 import { AuthGuard } from './guards/auth.guard';
 import { LoginGuard } from './guards/login.guard';
 
@@ -24,7 +23,7 @@ const routes: Routes = [
   { path: 'invoice-list', component: InvoicesV2Component, canActivate: [AuthGuard] },
   { path: 'email-config', component: EmailConfigComponent, canActivate: [AuthGuard] },
   { path: 'templates-export', component: ExportTemplatesComponent, canActivate: [AuthGuard] },
-  { path: 'templates-export/new', component: TemplatePresetSelectorComponent, canActivate: [AuthGuard] },
+  { path: 'templates-export/new', component: TemplateEditorComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/create', component: TemplateEditorComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/edit/:id', component: TemplateEditorComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/export/:id', component: TemplateExportComponent, canActivate: [AuthGuard] },

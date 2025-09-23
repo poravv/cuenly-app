@@ -8,8 +8,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.models.export_template import (
-    ExportTemplate, ExportField, FieldType, FieldAlignment, GroupingType,
-    CalculatedFieldType, calculate_field, CALCULATED_FIELDS_DEFINITIONS
+    ExportTemplate, ExportField, FieldType, FieldAlignment, GroupingType
 )
 from app.models.models import InvoiceData
 
@@ -144,23 +143,7 @@ class ExcelExporter:
             Valor extraído
         """
         try:
-            # === CAMPOS CALCULADOS ===
-            if field.is_calculated and field.calculated_type:
-                logger.debug(f"Calculando campo: {field.calculated_type} para {field.display_name}")
-                calculated_value = calculate_field(field.calculated_type, invoice_dict)
-                
-                # Retornar valor numérico puro (sin formateo de moneda aquí)
-                # El formateo se hará en _format_field_value
-                if calculated_value is not None:
-                    if field.field_type == FieldType.PERCENTAGE:
-                        return calculated_value  # Valor numérico puro
-                    elif field.field_type == FieldType.CURRENCY:
-                        return calculated_value  # Valor numérico puro sin ₲
-                    else:
-                        return calculated_value
-                return None
-            
-            # === CAMPOS NORMALES ===
+            # === SOLO CAMPOS REALES DE LA BD ===
             # Mapeo de compatibilidad para campos renombrados
             field_mappings = {
                 "base_gravada_5": ["gravado_5", "subtotal_5"],
@@ -311,7 +294,7 @@ class ExcelExporter:
     
     def _format_field_value(self, value: Any, field: ExportField) -> str:
         """
-        Formatear valor según tipo de campo
+        Formatear valor según tipo de campo - CORREGIDO para Excel
         
         Args:
             value: Valor a formatear
@@ -320,18 +303,23 @@ class ExcelExporter:
         Returns:
             Valor formateado
         """
-        if value is None:
+        if value is None or value == "":
             return ""
         
         try:
             if field.field_type == FieldType.CURRENCY:
                 if isinstance(value, (int, float)):
-                    return f"{value:.0f}"  # Sin comas y sin símbolo ₲
+                    # Devolver número entero sin decimales para Excel
+                    return str(int(value))
                 return str(value)
             
             elif field.field_type == FieldType.NUMBER:
                 if isinstance(value, (int, float)):
-                    return f"{value:.2f}"  # Sin comas
+                    # CORREGIDO: Para cantidades, devolver entero sin decimales
+                    if field.field_key in ['productos.cantidad', 'cantidad']:
+                        return str(int(value))
+                    else:
+                        return str(value)  # Otros números como están
                 return str(value)
             
             elif field.field_type == FieldType.PERCENTAGE:

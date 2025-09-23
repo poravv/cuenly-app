@@ -7,11 +7,25 @@
         Crear Template Inteligente
       </h2>
       <p class="text-muted mb-0">Elige el tipo de reporte que necesitas y nosotros configuramos todo automáticamente</p>
+      <div class="mt-2">
+        <span class="badge bg-info me-2">
+          <i class="bi bi-lightbulb me-1"></i>
+          Sin configuración manual
+        </span>
+        <span class="badge bg-success me-2">
+          <i class="bi bi-check-circle me-1"></i>
+          Campos optimizados
+        </span>
+        <span class="badge bg-primary">
+          <i class="bi bi-clock me-1"></i>
+          Listo en 30 segundos
+        </span>
+      </div>
     </div>
     <div>
       <button class="btn btn-outline-secondary me-2" (click)="cancel()" [disabled]="creating">
-        <i class="bi bi-x-circle me-2"></i>
-        Cancelar
+        <i class="bi bi-arrow-left me-2"></i>
+        Volver
       </button>
       <button class="btn btn-outline-primary" (click)="goToAdvancedMode()" [disabled]="creating">
         <i class="bi bi-gear me-2"></i>
@@ -32,60 +46,100 @@
   <div *ngIf="!loading" class="row">
     <!-- Preset Cards -->
     <div class="col-lg-8 mb-4">
+      <!-- Explicación antes de las opciones -->
+      <div class="alert alert-light border-primary mb-4">
+        <div class="d-flex align-items-center">
+          <i class="bi bi-info-circle text-primary fs-4 me-3"></i>
+          <div>
+            <h6 class="mb-1 text-primary">¿Cómo funciona?</h6>
+            <p class="mb-0 small">Cada template está diseñado para un rol específico con los campos más importantes ya configurados. 
+            Solo elige tu rol o tipo de análisis y tendrás un reporte listo para usar.</p>
+          </div>
+        </div>
+      </div>
+      
       <div class="card">
-        <div class="card-header">
+        <div class="card-header bg-primary text-white">
           <h5 class="mb-0">
             <i class="bi bi-grid-3x3-gap me-2"></i>
             Templates Disponibles
           </h5>
+          <small class="opacity-75">Selecciona el que mejor se adapte a tu necesidad</small>
         </div>
-        <div class="card-body">
-          <div class="row">
-            <div *ngFor="let presetEntry of getPresetsArray()" class="col-md-6 mb-4">
-              <div class="card preset-card h-100" 
+        <div class="card-body p-4">
+          <div class="row g-4">
+            <div *ngFor="let presetEntry of getPresetsArray()" class="col-md-6 mb-3">
+              <div class="card preset-card h-100 border-2" 
                    [class.border-primary]="selectedPreset === presetEntry.key"
-                   [class.shadow-sm]="selectedPreset === presetEntry.key"
+                   [class.bg-light]="selectedPreset === presetEntry.key"
+                   [class.shadow]="selectedPreset === presetEntry.key"
+                   [class.border-light]="selectedPreset !== presetEntry.key"
                    (click)="selectPreset(presetEntry.key)"
-                   style="cursor: pointer;">
-                <div class="card-body">
+                   style="cursor: pointer; transition: all 0.2s;">
+                <div class="card-body p-3">
                   <!-- Header with Icon and Badge -->
                   <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div class="preset-icon">
-                      <span class="fs-2">{{ getPresetIcon(presetEntry.value.group_type) }}</span>
+                    <div class="preset-icon d-flex align-items-center">
+                      <span class="fs-1 me-2" [style.color]="getPresetColorHex(presetEntry.value.group_type)">
+                        {{ getPresetIcon(presetEntry.value.group_type) }}
+                      </span>
+                      <div>
+                        <h6 class="mb-0 fw-bold">{{ presetEntry.value.name }}</h6>
+                        <small class="text-muted">{{ presetEntry.value.group_type | titlecase }}</small>
+                      </div>
                     </div>
-                    <div *ngIf="getRecommendationBadge(presetEntry.key)" 
-                         class="badge bg-warning text-dark small">
-                      {{ getRecommendationBadge(presetEntry.key) }}
+                    <div>
+                      <div *ngIf="getRecommendationBadge(presetEntry.key)" 
+                           class="badge bg-warning text-dark mb-2">
+                        <i class="bi bi-star me-1"></i>
+                        {{ getRecommendationBadge(presetEntry.key) }}
+                      </div>
+                      <div *ngIf="selectedPreset === presetEntry.key">
+                        <i class="bi bi-check-circle-fill text-primary fs-4"></i>
+                      </div>
                     </div>
                   </div>
 
-                  <!-- Title and Description -->
-                  <h6 class="card-title fw-bold">{{ presetEntry.value.name }}</h6>
-                  <p class="card-text text-muted small mb-3">{{ presetEntry.value.description }}</p>
+                  <!-- Description -->
+                  <p class="card-text text-muted small mb-3 lh-sm">{{ presetEntry.value.description }}</p>
 
-                  <!-- Stats -->
-                  <div class="d-flex justify-content-between align-items-center">
-                    <div class="preset-stats">
-                      <span class="badge bg-light text-dark me-2">
-                        <i class="bi bi-list-ul me-1"></i>
-                        {{ presetEntry.value.field_count }} campos
-                      </span>
-                      <span class="badge bg-success text-white">
-                        <i class="bi bi-calculator me-1"></i>
-                        {{ presetEntry.value.calculated_fields }} calculados
-                      </span>
+                  <!-- Stats Row -->
+                  <div class="row g-2 mb-3 text-center">
+                    <div class="col-4">
+                      <div class="stat-box p-2 bg-light rounded">
+                        <div class="fw-bold text-primary">{{ presetEntry.value.field_count }}</div>
+                        <small class="text-muted">Campos</small>
+                      </div>
                     </div>
-                    <div *ngIf="selectedPreset === presetEntry.key">
-                      <i class="bi bi-check-circle-fill text-primary fs-5"></i>
+                    <div class="col-4">
+                      <div class="stat-box p-2 bg-light rounded">
+                        <div class="fw-bold text-success">{{ presetEntry.value.calculated_fields }}</div>
+                        <small class="text-muted">Calculados</small>
+                      </div>
+                    </div>
+                    <div class="col-4">
+                      <div class="stat-box p-2 bg-light rounded">
+                        <div class="fw-bold text-info">{{ presetEntry.value.features.length }}</div>
+                        <small class="text-muted">Features</small>
+                      </div>
                     </div>
                   </div>
 
-                  <!-- Features -->
-                  <div class="mt-2">
-                    <div class="features-list">
-                      <span *ngFor="let feature of presetEntry.value.features" 
-                            class="badge bg-{{ getPresetColor(presetEntry.value.group_type) }} me-1 mb-1 small">
+                  <!-- Features as pills -->
+                  <div class="features-tags">
+                    <small class="text-muted d-block mb-1">Incluye:</small>
+                    <div class="d-flex flex-wrap gap-1">
+                      <span *ngFor="let feature of presetEntry.value.features.slice(0, 3)" 
+                            class="badge rounded-pill" 
+                            [class.bg-primary]="selectedPreset === presetEntry.key"
+                            [class.bg-secondary]="selectedPreset !== presetEntry.key"
+                            style="font-size: 0.65rem;">
                         {{ feature }}
+                      </span>
+                      <span *ngIf="presetEntry.value.features.length > 3"
+                            class="badge bg-light text-dark rounded-pill"
+                            style="font-size: 0.65rem;">
+                        +{{ presetEntry.value.features.length - 3 }} más
                       </span>
                     </div>
                   </div>
@@ -99,80 +153,135 @@
 
     <!-- Configuration Panel -->
     <div class="col-lg-4">
-      <div class="card sticky-top" style="top: 20px;">
-        <div class="card-header">
+      <div class="card sticky-top shadow-sm" style="top: 20px;">
+        <div class="card-header bg-success text-white">
           <h6 class="mb-0">
-            <i class="bi bi-gear me-2"></i>
-            Configuración
+            <i class="bi bi-check-circle me-2"></i>
+            Confirmar y Crear
           </h6>
         </div>
         <div class="card-body">
           <!-- No Selection State -->
-          <div *ngIf="!selectedPreset" class="text-center p-3">
-            <i class="bi bi-arrow-left-circle display-4 text-muted mb-3"></i>
-            <p class="text-muted">Selecciona un template para continuar</p>
+          <div *ngIf="!selectedPreset" class="text-center py-4">
+            <i class="bi bi-hand-index display-4 text-muted mb-3"></i>
+            <h6 class="text-muted">Paso 1</h6>
+            <p class="text-muted mb-0">Selecciona un template de la izquierda para continuar</p>
           </div>
 
           <!-- Selected Preset Configuration -->
           <div *ngIf="selectedPreset">
-            <!-- Preview -->
-            <div class="selected-preset-preview mb-4">
+            <!-- Preview Header -->
+            <div class="selected-preset-preview mb-4 p-3 bg-light rounded">
               <div class="d-flex align-items-center mb-2">
-                <span class="fs-3 me-2">{{ getPresetIcon(presets[selectedPreset].group_type) }}</span>
+                <span class="fs-2 me-3" [style.color]="getPresetColorHex(presets[selectedPreset].group_type)">
+                  {{ getPresetIcon(presets[selectedPreset].group_type) }}
+                </span>
                 <div>
-                  <h6 class="mb-0">{{ presets[selectedPreset].name }}</h6>
-                  <small class="text-muted">{{ presets[selectedPreset].group_type }}</small>
+                  <h6 class="mb-0 fw-bold">{{ presets[selectedPreset].name }}</h6>
+                  <small class="text-muted">{{ presets[selectedPreset].group_type | titlecase }}</small>
                 </div>
               </div>
-              <p class="text-muted small">{{ presets[selectedPreset].description }}</p>
+              <p class="text-muted small mb-0 lh-sm">{{ presets[selectedPreset].description }}</p>
+            </div>
+
+            <!-- Step 2 Header -->
+            <div class="mb-3">
+              <h6 class="text-success">
+                <i class="bi bi-2-circle me-2"></i>
+                Personalización (Opcional)
+              </h6>
+              <hr class="mt-2">
             </div>
 
             <!-- Custom Name -->
             <div class="mb-4">
-              <label for="customName" class="form-label">
-                Nombre del Template 
-                <span class="text-muted">(opcional)</span>
+              <label for="customName" class="form-label fw-bold">
+                <i class="bi bi-tag me-1"></i>
+                Nombre del Template
               </label>
               <input type="text" 
-                     class="form-control" 
+                     class="form-control form-control-lg" 
                      id="customName"
                      [(ngModel)]="customName"
                      [placeholder]="presets[selectedPreset].name"
                      maxlength="100">
-              <div class="form-text">Si no especificas un nombre, usaremos el nombre por defecto.</div>
+              <div class="form-text">
+                <i class="bi bi-info-circle me-1"></i>
+                Déjalo vacío para usar: <strong>"{{ presets[selectedPreset].name }}"</strong>
+              </div>
             </div>
 
             <!-- What You'll Get -->
             <div class="mb-4">
-              <h6 class="text-muted">Lo que incluye:</h6>
+              <h6 class="text-muted mb-3">
+                <i class="bi bi-gift me-2"></i>
+                Lo que incluye este template:
+              </h6>
+              
+              <!-- Estadísticas visuales -->
+              <div class="row g-2 mb-3 text-center">
+                <div class="col-6">
+                  <div class="p-2 bg-primary bg-opacity-10 rounded">
+                    <div class="fw-bold text-primary fs-5">{{ presets[selectedPreset].field_count }}</div>
+                    <small class="text-muted">Campos</small>
+                  </div>
+                </div>
+                <div class="col-6">
+                  <div class="p-2 bg-success bg-opacity-10 rounded">
+                    <div class="fw-bold text-success fs-5">{{ presets[selectedPreset].calculated_fields }}</div>
+                    <small class="text-muted">Automáticos</small>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Lista de características -->
               <ul class="list-unstyled small">
-                <li class="mb-1">
+                <li class="mb-2">
                   <i class="bi bi-check-circle-fill text-success me-2"></i>
-                  {{ presets[selectedPreset].field_count }} campos configurados
+                  <strong>Campos optimizados</strong> para tu rol
                 </li>
-                <li class="mb-1">
+                <li class="mb-2">
                   <i class="bi bi-check-circle-fill text-success me-2"></i>
-                  {{ presets[selectedPreset].calculated_fields }} cálculos automáticos
+                  <strong>Cálculos automáticos</strong> incluidos
                 </li>
-                <li class="mb-1">
+                <li class="mb-2">
                   <i class="bi bi-check-circle-fill text-success me-2"></i>
-                  Formateo y alineación optimizada
+                  <strong>Formato Excel</strong> profesional
                 </li>
-                <li class="mb-1">
+                <li class="mb-2">
                   <i class="bi bi-check-circle-fill text-success me-2"></i>
-                  Agrupación inteligente de datos
+                  <strong>Listo para usar</strong> sin configuración
                 </li>
               </ul>
             </div>
 
+            <!-- Tiempo estimado -->
+            <div class="alert alert-success mb-4">
+              <div class="d-flex align-items-center">
+                <i class="bi bi-clock text-success fs-4 me-2"></i>
+                <div>
+                  <strong>Tiempo estimado:</strong><br>
+                  <small>30 segundos para tener tu reporte listo</small>
+                </div>
+              </div>
+            </div>
+
             <!-- Create Button -->
-            <button class="btn btn-primary w-100" 
+            <button class="btn btn-success btn-lg w-100 fw-bold" 
                     (click)="createTemplate()" 
                     [disabled]="creating">
               <span *ngIf="creating" class="spinner-border spinner-border-sm me-2" role="status"></span>
               <i *ngIf="!creating" class="bi bi-magic me-2"></i>
-              {{ creating ? 'Creando Template...' : 'Crear Template' }}
+              {{ creating ? 'Creando Template...' : 'Crear Mi Template' }}
             </button>
+            
+            <!-- Disclaimer -->
+            <div class="text-center mt-3">
+              <small class="text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                Podrás editarlo después si necesitas cambios
+              </small>
+            </div>
           </div>
         </div>
       </div>

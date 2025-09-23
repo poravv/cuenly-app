@@ -88,9 +88,9 @@ class ClienteData(BaseModel):
     email: Optional[str] = ""
 
 # -----------------------
-# Modelo principal (ASCONT)
+# Modelo principal de factura (mapeo directo del XML)
 # -----------------------
-class InvoiceDataASCONT(BaseModel):
+class InvoiceData(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     fecha: Optional[datetime] = None
@@ -135,6 +135,16 @@ class InvoiceDataASCONT(BaseModel):
     subtotal_exentas: Optional[float] = 0.0
     subtotal_5: Optional[float] = 0.0
     subtotal_10: Optional[float] = 0.0
+
+    # === CAMPOS CON NOMBRES EXACTOS DEL XML ===
+    base_gravada_5: Optional[float] = 0.0   # Nombre exacto del XML
+    base_gravada_10: Optional[float] = 0.0  # Nombre exacto del XML
+    monto_exento: Optional[float] = 0.0     # Nombre exacto del XML
+    total_operacion: Optional[float] = 0.0  # dTotOpe del XML
+    total_descuento: Optional[float] = 0.0  # dTotDesc del XML 
+    total_iva: Optional[float] = 0.0        # dTotIVA del XML
+    total_base_gravada: Optional[float] = 0.0  # Total bases gravadas
+    anticipo: Optional[float] = 0.0         # dAnticipo del XML
 
     actividad_economica: Optional[str] = ""
     empresa: Optional[EmpresaData] = None
@@ -226,8 +236,7 @@ class InvoiceDataASCONT(BaseModel):
             mes_proceso=fecha_parsed.strftime("%Y-%m") if fecha_parsed else datetime.now().strftime("%Y-%m"),
         )
 
-# Alias para compatibilidad (¡esto arregla tu ImportError!)
-InvoiceData = InvoiceDataASCONT
+# Modelo principal - mapea directamente desde XML
 
 # -----------------------
 # Configs y resultados

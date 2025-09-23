@@ -9,7 +9,7 @@ import {
   GroupingType,
   CalculatedFieldType,
   AvailableField,
-  AvailableFieldsResponse 
+  AvailableFieldsResponse
 } from '../../models/export-template.model';
 
 @Component({
@@ -33,8 +33,8 @@ export class TemplateEditorComponent implements OnInit {
     is_default: false
   };
 
+  // Solo campos disponibles reales de la base de datos
   availableFields: { [key: string]: AvailableField } = {};
-  calculatedFields: { [key: string]: AvailableField } = {};
   fieldCategories: any = {};
   
   // Enums para templates
@@ -65,8 +65,8 @@ export class TemplateEditorComponent implements OnInit {
   loadAvailableFields(): void {
     this.exportTemplateService.getAvailableFields().subscribe({
       next: (response: AvailableFieldsResponse) => {
-        this.availableFields = response.fields;
-        this.calculatedFields = response.calculated_fields || {};
+        this.availableFields = response.fields || {};
+        // Ya no hay campos calculados
         this.fieldCategories = response.categories;
       },
       error: (error: any) => {
@@ -97,22 +97,19 @@ export class TemplateEditorComponent implements OnInit {
     // Verificar conflictos con campos de productos
     if (this.hasConflictingProductFields(fieldKey)) {
       const message = this.getConflictMessage(fieldKey);
-      if (confirm(`⚠️ ADVERTENCIA: ${message}\n\n¿Deseas continuar agregando este campo de todas formas?`)) {
-        // Usuario decidió continuar a pesar del conflicto
-      } else {
+      if (!confirm(`⚠️ ADVERTENCIA: ${message}\n\n¿Deseas continuar agregando este campo de todas formas?`)) {
         return; // Usuario canceló
       }
     }
     
-    // Verificar si es un campo calculado
-    const isCalculated = fieldKey.startsWith('calculated_');
-    const availableField = isCalculated ? this.calculatedFields[fieldKey] : this.availableFields[fieldKey];
+    // Obtener campo disponible
+    const availableField = this.availableFields[fieldKey];
     
     if (!availableField) return;
 
     const newField: ExportField = {
       field_key: fieldKey,
-      display_name: availableField.display_name || this.getFieldDisplayName(fieldKey),
+      display_name: this.getFieldDisplayName(fieldKey),
       field_type: availableField.field_type,
       alignment: this.getDefaultAlignment(availableField.field_type),
       grouping_type: availableField.is_array ? GroupingType.SEPARATE_ROWS : undefined,
@@ -121,9 +118,9 @@ export class TemplateEditorComponent implements OnInit {
       is_visible: true,
       width: undefined,
       
-      // Propiedades para campos calculados
-      is_calculated: isCalculated,
-      calculated_type: isCalculated ? availableField.calculated_type as CalculatedFieldType : undefined
+      // Sin campos calculados
+      is_calculated: false,
+      calculated_type: undefined
     };
 
     this.template.fields = [...(this.template.fields || []), newField];
@@ -190,13 +187,13 @@ export class TemplateEditorComponent implements OnInit {
     return '';
   }
 
-  // Función auxiliar para obtener el nombre de display de cualquier campo (normal o calculado)
+  // Función auxiliar para obtener el nombre de display de cualquier campo
   getFieldDisplayName(fieldKey: string): string {
-    const isCalculated = fieldKey.startsWith('calculated_');
-    const field = isCalculated ? this.calculatedFields[fieldKey] : this.availableFields[fieldKey];
+    const field = this.availableFields[fieldKey];
     
-    if (field && field.display_name) {
-      return field.display_name;
+    // Usar descripción del campo si está disponible
+    if (field && field.description) {
+      return field.description;
     }
     
     // Mapeo específico para campos conocidos
@@ -289,24 +286,12 @@ export class TemplateEditorComponent implements OnInit {
     return this.fieldCategories[category] || [];
   }
 
+  // Método simplificado sin campos calculados
   getAvailableCategoryFields(category: string): string[] {
-    const normalFields = this.getCategoryFields(category).filter(field => !this.isFieldAlreadyAdded(field));
-    
-    // Agregar campos calculados para categorías específicas
-    let calculatedFields: string[] = [];
-    if (category === 'calculated_iva_montos' && this.fieldCategories.calculated_iva_montos) {
-      calculatedFields = this.fieldCategories.calculated_iva_montos.filter((field: string) => !this.isFieldAlreadyAdded(field));
-    } else if (category === 'calculated_analisis' && this.fieldCategories.calculated_analisis) {
-      calculatedFields = this.fieldCategories.calculated_analisis.filter((field: string) => !this.isFieldAlreadyAdded(field));
-    } else if (category === 'calculated_totales' && this.fieldCategories.calculated_totales) {
-      calculatedFields = this.fieldCategories.calculated_totales.filter((field: string) => !this.isFieldAlreadyAdded(field));
-    } else if (category === 'calculated_productos' && this.fieldCategories.calculated_productos) {
-      calculatedFields = this.fieldCategories.calculated_productos.filter((field: string) => !this.isFieldAlreadyAdded(field));
-    }
-    
-    return [...normalFields, ...calculatedFields];
+    let fields = this.getCategoryFields(category);
+    return fields.filter(field => !this.isFieldAlreadyAdded(field));
   }
-
+  
   saveTemplate(): void {
     const errors = this.exportTemplateService.validateTemplate(this.template);
     if (errors.length > 0) {
@@ -341,19 +326,15 @@ export class TemplateEditorComponent implements OnInit {
     return fieldType === FieldType.ARRAY;
   }
 
+  // Método simple para nombres de categorías (solo las que existen)
   getCategoryName(category: string): string {
     const categoryNames: { [key: string]: string } = {
       'basic': 'Información Básica',
       'emisor': 'Datos del Emisor',
       'cliente': 'Datos del Cliente',
       'montos': 'Montos e Impuestos',
-      'productos': 'Productos (agrupados vs. individuales)',
-      'metadata': 'Información Adicional',
-      // Categorías de campos calculados
-      'calculated_iva_montos': '🧮 IVA y Montos Calculados',
-      'calculated_analisis': '📊 Análisis y Proporciones',
-      'calculated_totales': '💰 Totales y Subtotales',
-      'calculated_productos': '📦 Análisis de Productos'
+      'productos': 'Productos',
+      'metadata': 'Información Adicional'
     };
     return categoryNames[category] || category;
   }

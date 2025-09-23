@@ -19,23 +19,10 @@ export enum GroupingType {
   SUMMARY = 'SUMMARY'
 }
 
-// Tipos de campos calculados disponibles
+// === CAMPOS CALCULADOS ELIMINADOS ===
+// Solo campos reales de la base de datos
 export enum CalculatedFieldType {
-  MONTO_CON_IVA_5 = 'MONTO_CON_IVA_5',
-  MONTO_CON_IVA_10 = 'MONTO_CON_IVA_10',
-  MONTO_SIN_IVA_5 = 'MONTO_SIN_IVA_5',
-  MONTO_SIN_IVA_10 = 'MONTO_SIN_IVA_10',
-  TOTAL_IVA_5_ONLY = 'TOTAL_IVA_5_ONLY',
-  TOTAL_IVA_10_ONLY = 'TOTAL_IVA_10_ONLY',
-  TOTAL_IVA_GENERAL = 'TOTAL_IVA_GENERAL',
-  PORCENTAJE_IVA_5 = 'PORCENTAJE_IVA_5',
-  PORCENTAJE_IVA_10 = 'PORCENTAJE_IVA_10',
-  PORCENTAJE_EXENTO = 'PORCENTAJE_EXENTO',
-  SUBTOTAL_GRAVADO = 'SUBTOTAL_GRAVADO',
-  SUBTOTAL_NO_GRAVADO = 'SUBTOTAL_NO_GRAVADO',
-  TOTAL_ANTES_IVA = 'TOTAL_ANTES_IVA',
-  CANTIDAD_PRODUCTOS = 'CANTIDAD_PRODUCTOS',
-  VALOR_PROMEDIO_PRODUCTO = 'VALOR_PROMEDIO_PRODUCTO'
+  // Sin campos calculados
 }
 
 export interface ExportField {
@@ -49,7 +36,7 @@ export interface ExportField {
   is_visible?: boolean;
   width?: number;
   
-  // Campos para calculados
+    // Sin campos calculados
   is_calculated?: boolean;
   calculated_type?: CalculatedFieldType;
   calculation_params?: any;
@@ -73,12 +60,7 @@ export interface AvailableField {
   description: string;
   field_type: FieldType;
   is_array?: boolean;
-  // Para campos calculados
-  display_name?: string;
-  is_calculated?: boolean;
-  calculated_type?: string;
-  example_value?: string;
-  category?: string;
+  // Sin campos calculados
 }
 
 export interface ExportFilters {
@@ -109,7 +91,6 @@ export interface TemplatesListResponse {
 
 export interface AvailableFieldsResponse {
   fields: { [key: string]: AvailableField };
-  calculated_fields?: { [key: string]: AvailableField };
   categories: {
     basic: string[];
     emisor: string[];
@@ -117,11 +98,6 @@ export interface AvailableFieldsResponse {
     montos: string[];
     productos: string[];
     metadata: string[];
-    // Categorías de campos calculados
-    calculated_iva_montos?: string[];
-    calculated_analisis?: string[];
-    calculated_totales?: string[];
-    calculated_productos?: string[];
   };
 }
 

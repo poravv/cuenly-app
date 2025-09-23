@@ -130,7 +130,8 @@
         <div class="card-body">
           <!-- Field Categories -->
           <div class="accordion" id="fieldsAccordion">
-            <div *ngFor="let category of ['basic', 'emisor', 'cliente', 'montos', 'productos', 'metadata', 'calculated_iva_montos', 'calculated_analisis', 'calculated_totales', 'calculated_productos']; let i = index" 
+            <!-- CAMPOS NORMALES -->
+            <div *ngFor="let category of ['basic', 'emisor', 'cliente', 'montos', 'productos', 'metadata']; let i = index" 
                  class="accordion-item">
               <h2 class="accordion-header">
                 <button class="accordion-button" 
@@ -156,12 +157,6 @@
                     <strong><i class="bi bi-info-circle me-1"></i> Diferencia importante:</strong><br>
                     • <strong>"Productos (todos agrupados)"</strong>: Todos los productos en una sola celda<br>
                     • <strong>"Campos individuales"</strong>: Cada producto en una fila separada (multiplica las filas)
-                  </div>
-                  
-                  <!-- Ayuda para campos calculados -->
-                  <div *ngIf="category.startsWith('calculated_')" class="alert alert-success small mb-3">
-                    <strong><i class="bi bi-calculator me-1"></i> Campos Calculados:</strong><br>
-                    Estos campos se calculan automáticamente usando los datos de la factura. No requieren configuración adicional.
                   </div>
                   
                   <div *ngFor="let fieldKey of getAvailableCategoryFields(category)" 
@@ -191,6 +186,20 @@
                 </div>
               </div>
             </div>
+
+            <!-- SEPARADOR VISUAL -->
+            <div class="separator-section my-3">
+              <hr class="border-primary">
+              <div class="text-center">
+                <span class="badge bg-primary px-3 py-2">
+                  <i class="bi bi-calculator me-2"></i>
+                  CAMPOS CALCULADOS AUTOMÁTICAMENTE
+                </span>
+              </div>
+              <hr class="border-primary">
+            </div>
+
+            <!-- Ya no hay campos calculados - solo campos reales -->
           </div>
         </div>
       </div>
@@ -228,7 +237,6 @@
                 <div class="col-md-3">
                   <div class="field-info">
                     <div class="field-name fw-bold">
-                      <i *ngIf="field.is_calculated" class="bi bi-calculator text-success me-1" title="Campo calculado automáticamente"></i>
                       {{ field.display_name }}
                     </div>
                     <div class="field-key text-muted small">{{ field.field_key }}</div>
