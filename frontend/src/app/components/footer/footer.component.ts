@@ -8,7 +8,9 @@ import { Component } from '@angular/core';
         <div class="row align-items-center">
           <div class="col-md-6 mb-3 mb-md-0">
             <div class="brand d-flex align-items-center mb-1">
-              <i class="bi bi-receipt me-2 text-primary"></i>
+              <div class="footer-logo me-2">
+                <img src="assets/logo.png" alt="CuenlyApp Logo" class="logo-image">
+              </div>
               <strong>CuenlyApp</strong>
             </div>
             <div class="text-muted small">
@@ -36,6 +38,8 @@ import { Component } from '@angular/core';
     .app-footer .footer-nav .link { color: var(--color-muted); text-decoration: none; font-weight: 600; }
     .app-footer .footer-nav .link:hover { color: var(--primary); }
     .app-footer .bottom { background: #F3F5FA; color: var(--color-muted); }
+    .footer-logo { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
+    .footer-logo .logo-image { width: 100%; height: 100%; object-fit: contain; }
   `]
 })
 export class FooterComponent {
