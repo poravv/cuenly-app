@@ -40,10 +40,6 @@ export class ExportTemplatesComponent implements OnInit {
   }
 
   createTemplate(): void {
-    this.router.navigate(['/templates-export/create']);
-  }
-
-  createSmartTemplate(): void {
     this.router.navigate(['/templates-export/new']);
   }
 

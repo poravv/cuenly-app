@@ -458,19 +458,29 @@ class ParaguayanXMLParser:
     def _extract_totals_optimized(self, de_element: ET.Element) -> Dict[str, Any]:
         """
         Extrae totales con mapeo optimizado para el modelo de datos.
-        Mapea correctamente XML SIFEN a modelo con nomenclatura unificada.
+        Prioriza gTotSubGua (guaraníes) sobre gTotSub cuando esté disponible.
         """
         totals = {}
         
-        # Buscar elemento gTotSub
+        # Buscar primero gTotSubGua (valores en guaraníes - más preciso)
         totals_element = None
         try:
-            totals_element = de_element.find(f'.//{{{self.namespaces["sifen"]}}}gTotSub')
+            totals_element = de_element.find(f'.//{{{self.namespaces["sifen"]}}}gTotSubGua')
         except Exception:
             pass
         
         if totals_element is None:
-            totals_element = self._find_element_by_name_in_de(de_element, 'gTotSub')
+            totals_element = self._find_element_by_name_in_de(de_element, 'gTotSubGua')
+        
+        # Si no hay gTotSubGua, usar gTotSub como fallback
+        if totals_element is None:
+            try:
+                totals_element = de_element.find(f'.//{{{self.namespaces["sifen"]}}}gTotSub')
+            except Exception:
+                pass
+            
+            if totals_element is None:
+                totals_element = self._find_element_by_name_in_de(de_element, 'gTotSub')
         
         if totals_element is not None:
             # Mapeo directo XML SIFEN -> Modelo de datos
@@ -530,9 +540,22 @@ class ParaguayanXMLParser:
         # Copiar campos directos
         for k in ['fecha', 'numero_factura', 'ruc_emisor', 'nombre_emisor',
                   'condicion_venta', 'moneda', 'tipo_cambio', 'monto_total',
-                  'timbrado', 'cdc', 'ruc_cliente', 'nombre_cliente', 'email_cliente']:
+                  'timbrado', 'cdc', 'ruc_cliente', 'nombre_cliente', 'email_cliente',
+                  'total_operacion', 'total_descuento', 'anticipo', 'actividad_economica']:
             if k in data:
                 normalized[k] = data[k]
+        
+        # Campos especiales para template export
+        # mes_proceso: generar desde fecha si no existe
+        if 'mes_proceso' in data:
+            normalized['mes_proceso'] = data['mes_proceso']
+        elif 'fecha' in data and data['fecha']:
+            try:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(data['fecha'][:10], '%Y-%m-%d')
+                normalized['mes_proceso'] = fecha_obj.strftime('%Y-%m')
+            except:
+                normalized['mes_proceso'] = data['fecha'][:7] if len(data['fecha']) >= 7 else ''
 
         # Mapeo optimizado de bases e IVA desde XML
         # Preferir campos directos del XML (gravado_5/10, iva_5/10)
@@ -578,6 +601,7 @@ class ParaguayanXMLParser:
         
         # Para compatibilidad con campos legacy
         normalized['subtotal_exentas'] = normalized['exento']
+        normalized['monto_exento'] = normalized['exento']  # Mapeo para template export (siempre incluir)
 
         # Totales calculados
         total_iva = normalized['iva_5'] + normalized['iva_10']
@@ -628,6 +652,9 @@ class ParaguayanXMLParser:
                    f"IVA 5%: {normalized.get('iva_5', 0)}, "
                    f"IVA 10%: {normalized.get('iva_10', 0)}, "
                    f"Exento: {normalized.get('exento', 0)}")
+
+        # CRÍTICO: Asegurar campos para template export
+        normalized['monto_exento'] = normalized.get('exento', 0.0)
 
         return normalized
 

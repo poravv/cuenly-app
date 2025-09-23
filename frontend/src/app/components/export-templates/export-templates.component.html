@@ -9,16 +9,10 @@
       <p class="text-muted mb-0">Gestiona tus templates personalizados para exportar facturas a Excel</p>
     </div>
     <div>
-      <div class="btn-group" role="group">
-        <button class="btn btn-primary" (click)="createSmartTemplate()">
-          <i class="bi bi-magic me-2"></i>
-          Template Inteligente
-        </button>
-        <button class="btn btn-outline-primary" (click)="createTemplate()">
-          <i class="bi bi-gear me-2"></i>
-          Personalizado
-        </button>
-      </div>
+      <button class="btn btn-primary" (click)="createTemplate()">
+        <i class="bi bi-plus-circle me-2"></i>
+        Nuevo Template
+      </button>
     </div>
   </div>
 
@@ -50,13 +44,9 @@
         <h4 class="text-muted mb-3">No hay templates creados</h4>
         <p class="text-muted mb-4">Crea tu primer template personalizado para exportar facturas con el formato que necesites</p>
         <div class="d-flex gap-2 justify-content-center">
-          <button class="btn btn-primary" (click)="createSmartTemplate()">
-            <i class="bi bi-magic me-2"></i>
-            Template Inteligente
-          </button>
-          <button class="btn btn-outline-primary" (click)="createTemplate()">
-            <i class="bi bi-gear me-2"></i>
-            Personalizado
+          <button class="btn btn-primary" (click)="createTemplate()">
+            <i class="bi bi-plus-circle me-2"></i>
+            Crear Template
           </button>
         </div>
       </div>
