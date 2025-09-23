@@ -3,6 +3,7 @@ Configuración para los nuevos exportadores - MongoDB como almacenamiento primar
 """
 import os
 from typing import Optional
+from pymongo import MongoClient
 
 # Configuración MongoDB - PRIMARIO
 MONGODB_CONNECTION_STRING = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
@@ -23,10 +24,12 @@ MONGO_BULK_SIZE = int(os.getenv("MONGO_BULK_SIZE", "100"))
 MONGO_DATA_RETENTION_DAYS = int(os.getenv("MONGO_DATA_RETENTION_DAYS", "365"))
 
 def get_mongodb_config() -> dict:
-    """Obtiene configuración completa de MongoDB"""
+    """Obtiene configuración completa de MongoDB con cliente conectado"""
+    client = MongoClient(MONGODB_CONNECTION_STRING)
     return {
+        "client": client,
+        "database": MONGODB_DATABASE_NAME,
         "connection_string": MONGODB_CONNECTION_STRING,
-        "database_name": MONGODB_DATABASE_NAME,
         "collection_name": MONGODB_COLLECTION_NAME,
         "bulk_size": MONGO_BULK_SIZE,
         "retention_days": MONGO_DATA_RETENTION_DAYS,

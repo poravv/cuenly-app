@@ -39,10 +39,6 @@
 
 .help-section {
   margin-bottom: 3rem;
-  
-  &:last-child {
-    margin-bottom: 0;
-  }
 }
 
 .section-header {
@@ -67,7 +63,7 @@
   font-weight: 600;
   display: flex;
   align-items: center;
-  justify-content: between;
+  justify-content: space-between;
   transition: all 0.3s ease;
   
   &:hover, &[aria-expanded="true"] {
@@ -75,7 +71,6 @@
   }
   
   i {
-    margin-left: auto;
     transition: transform 0.3s ease;
     color: #6b7280;
   }
@@ -120,12 +115,6 @@
   border-left: 4px solid #2b4eff;
 }
 
-.upload-steps .step {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
 .step-number {
   width: 32px;
   height: 32px;
@@ -155,22 +144,6 @@
   }
 }
 
-.faq-item {
-  margin-bottom: 1.5rem;
-  padding: 1.25rem;
-  background: #f8fafc;
-  border-radius: 0.75rem;
-  border-left: 4px solid #f59e0b;
-}
-
-.faq-question {
-  display: flex;
-  align-items: center;
-  margin-bottom: 0.75rem;
-  font-weight: 600;
-  color: #1f2937;
-}
-
 .btn {
   border-radius: 0.5rem;
   font-weight: 500;
@@ -180,14 +153,6 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
-}
-
-h1, h2, h3, h4, h5, h6 {
-  color: #1f2937;
-}
-
-html {
-  scroll-behavior: smooth;
 }
 
 @media (max-width: 767.98px) {

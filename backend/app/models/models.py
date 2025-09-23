@@ -43,7 +43,7 @@ def safe_float(value, default=0.0) -> float:
 # -----------------------
 class ProductoFactura(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    articulo: Optional[str] = ""
+    nombre: Optional[str] = ""
     cantidad: Optional[float] = 0.0
     precio_unitario: Optional[float] = 0.0
     total: Optional[float] = 0.0

@@ -7,7 +7,7 @@
       </div>
       <div class="brand-text">
         <span class="brand-name">CuenlyApp</span>
-        <div class="brand-subtitle">Sistema de Gestión</div>
+        <div class="brand-subtitle d-none d-md-block">Sistema de Gestión</div>
       </div>
     </a>
 
@@ -48,6 +48,15 @@
           </a>
         </li>
         
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/templates-export" routerLinkActive="active">
+            <div class="nav-item-content">
+              <i class="bi bi-file-earmark-excel"></i>
+              <span>Exportar</span>
+            </div>
+          </a>
+        </li>
+        
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" id="uploadDropdown">
               <i class="bi bi-upload"></i>
@@ -78,47 +87,42 @@
         </li>
       </ul>
 
-      <!-- Status Indicators -->
-      <div class="navbar-status ms-lg-4">
-        <div class="status-group">
-          <!-- OpenAI Status -->
-          <div class="status-indicator" [ngClass]="status?.openai_configured ? 'success' : 'danger'"
-               [title]="'OpenAI: ' + (status?.openai_configured ? 'Configurado correctamente' : 'No configurado')">
-            <div class="status-icon">
-              <i class="bi bi-robot"></i>
-            </div>
-            <div class="status-info d-none d-xl-block">
-              <div class="status-label">OpenAI</div>
-              <div class="status-value">{{ status?.openai_configured ? 'Activo' : 'Inactivo' }}</div>
-            </div>
+      <!-- Status Indicators Optimized -->
+      <div class="navbar-status ms-lg-3">
+        <div class="status-group d-flex align-items-center gap-2">
+          <!-- OpenAI Status - Compact -->
+          <div class="status-badge" 
+               [ngClass]="status?.openai_configured ? 'success' : 'danger'"
+               [title]="'OpenAI: ' + (status?.openai_configured ? 'Configurado' : 'No configurado')">
+            <i class="bi bi-robot"></i>
+            <span class="d-none d-lg-inline ms-1">AI</span>
           </div>
 
-          <!-- System Health (optional - can be added later) -->
-          <div class="status-indicator success d-none d-xxl-block" title="Sistema funcionando correctamente">
-            <div class="status-info">
-              <div class="status-label">
-                <i class="bi bi-shield-check me-1"></i>
-                Sistema Saludable
-              </div>
-            </div>
+          <!-- System Health - More compact -->
+          <div class="status-badge success d-none d-lg-flex" 
+               title="Sistema funcionando correctamente">
+            <i class="bi bi-shield-check"></i>
+            <span class="d-none d-xl-inline ms-1">OK</span>
           </div>
         </div>
       </div>
 
-      <!-- Auth area -->
-      <div class="navbar-auth ms-lg-3">
+      <!-- Auth area Optimized -->
+      <div class="navbar-auth ms-lg-2">
         <ng-container *ngIf="user; else loginBtn">
           <div class="user-info-container">
-            <!-- Desktop user info -->
+            <!-- Desktop user info - Compact -->
             <div class="user-info-desktop d-none d-lg-flex align-items-center">
-              <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="user-avatar me-2">
-              <div class="user-details me-3">
-                <div class="user-name">{{ user.displayName || 'Usuario' }}</div>
-                <div class="user-email">{{ user.email }}</div>
+              <div class="user-compact d-flex align-items-center me-2">
+                <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="user-avatar me-2">
+                <div class="user-details d-none d-xl-block">
+                  <div class="user-name">{{ (user.displayName || 'Usuario') | slice:0:12 }}<span *ngIf="(user.displayName || 'Usuario').length > 12">...</span></div>
+                  <div class="user-email">{{ (user.email || '') | slice:0:20 }}<span *ngIf="(user.email || '').length > 20">...</span></div>
+                </div>
               </div>
-              <button class="btn btn-outline-secondary btn-sm" (click)="signOut()">
-                <i class="bi bi-box-arrow-right me-1"></i>
-                <span class="d-none d-xl-inline">Salir</span>
+              <button class="btn btn-outline-secondary btn-sm" (click)="signOut()" title="Cerrar sesión">
+                <i class="bi bi-box-arrow-right"></i>
+                <span class="d-none d-xxl-inline ms-1">Salir</span>
               </button>
             </div>
             
@@ -129,7 +133,7 @@
                   <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="user-avatar-mobile me-2">
                   <div class="user-details-mobile">
                     <div class="user-name-mobile">{{ user.displayName || 'Usuario' }}</div>
-                    <div class="user-email-mobile">{{ user.email }}</div>
+                    <div class="user-email-mobile">{{ user.email || '' }}</div>
                   </div>
                 </div>
                 <button class="btn btn-outline-danger btn-sm" (click)="signOut()">

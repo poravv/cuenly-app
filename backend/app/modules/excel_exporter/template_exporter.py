@@ -7,8 +7,11 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from app.models.export_template import ExportTemplate, ExportField, FieldType, FieldAlignment, GroupingType
-from app.models.invoice_v2 import InvoiceData
+from app.models.export_template import (
+    ExportTemplate, ExportField, FieldType, FieldAlignment, GroupingType,
+    CalculatedFieldType, calculate_field, CALCULATED_FIELDS_DEFINITIONS
+)
+from app.models.models import InvoiceData
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,11 @@ class ExcelExporter:
     def __init__(self):
         self.workbook: Optional[Workbook] = None
         self.worksheet: Optional[Worksheet] = None
+        
+    def _map_alignment(self, alignment: FieldAlignment) -> str:
+        """Mapea valores de FieldAlignment a valores válidos de openpyxl"""
+        # Los valores del enum ya coinciden con los de openpyxl
+        return alignment.value if alignment else "left"
         
     def export_invoices(self, invoices: List[InvoiceData], template: ExportTemplate) -> bytes:
         """
@@ -33,7 +41,9 @@ class ExcelExporter:
         try:
             self.workbook = Workbook()
             self.worksheet = self.workbook.active
-            self.worksheet.title = template.sheet_name
+            # Usar sheet_name del template o generar uno por defecto
+            sheet_name = template.sheet_name or template.name[:31] or "Facturas"
+            self.worksheet.title = sheet_name
             
             # Configurar estilos
             self._setup_styles()
@@ -116,7 +126,7 @@ class ExcelExporter:
                     
                 value = self._extract_field_value(invoice_dict, field)
                 formatted_value = self._format_field_value(value, field)
-                row_data[field.id] = formatted_value
+                row_data[field.field_key] = formatted_value
             
             processed_data.append(row_data)
         
@@ -134,8 +144,96 @@ class ExcelExporter:
             Valor extraído
         """
         try:
-            # Navegar por campos anidados (ej: "productos.articulo")
-            keys = field.source_field.split('.')
+            # === CAMPOS CALCULADOS ===
+            if field.is_calculated and field.calculated_type:
+                logger.debug(f"Calculando campo: {field.calculated_type} para {field.display_name}")
+                calculated_value = calculate_field(field.calculated_type, invoice_dict)
+                
+                # Retornar valor numérico puro (sin formateo de moneda aquí)
+                # El formateo se hará en _format_field_value
+                if calculated_value is not None:
+                    if field.field_type == FieldType.PERCENTAGE:
+                        return calculated_value  # Valor numérico puro
+                    elif field.field_type == FieldType.CURRENCY:
+                        return calculated_value  # Valor numérico puro sin ₲
+                    else:
+                        return calculated_value
+                return None
+            
+            # === CAMPOS NORMALES ===
+            # Mapeo de compatibilidad para campos renombrados
+            field_mappings = {
+                "base_gravada_5": ["gravado_5", "subtotal_5"],
+                "base_gravada_10": ["gravado_10", "subtotal_10"],
+                "monto_exento": ["exento", "subtotal_exentas"],
+                "monto_exonerado": ["exonerado"],
+                "productos.nombre": ["productos.articulo", "productos.descripcion", "productos.nombre"],
+            }
+            
+            field_key = field.field_key
+            
+            # Manejo especial para campos de productos
+            if field_key.startswith('productos.'):
+                productos = invoice_dict.get('productos', [])
+                if not productos:
+                    return None
+                
+                # Obtener el subcampo (ej: 'productos.cantidad' -> 'cantidad')
+                subcampo = field_key.split('.', 1)[1]
+                
+                # Usar mapeo si existe
+                possible_fields = field_mappings.get(field_key, [subcampo])
+                
+                # Extraer valores del subcampo de todos los productos
+                valores = []
+                for producto in productos:
+                    if isinstance(producto, dict):
+                        # Intentar cada posible mapeo hasta encontrar un valor
+                        valor = None
+                        for posible_campo in possible_fields:
+                            if posible_campo in producto:
+                                valor = producto.get(posible_campo)
+                                break
+                        
+                        # Mapeo adicional para compatibilidad de nombres
+                        if valor is None:
+                            if subcampo in ['articulo', 'descripcion', 'nombre']:
+                                valor = (producto.get('nombre') or 
+                                       producto.get('descripcion') or 
+                                       producto.get('articulo'))
+                        
+                        if valor is not None:
+                            valores.append(valor)
+                    else:
+                        # Si es un objeto Pydantic
+                        valor = None
+                        for posible_campo in possible_fields:
+                            valor = getattr(producto, posible_campo, None)
+                            if valor is not None:
+                                break
+                        
+                        if valor is not None:
+                            valores.append(valor)
+                
+                # Procesar como array
+                if field.field_type == FieldType.ARRAY and valores:
+                    return self._process_array_field(valores, field)
+                
+                return valores if valores else None
+            
+            # Para campos no anidados, usar mapeo si existe
+            if field_key in field_mappings:
+                for mapped_field in field_mappings[field_key]:
+                    if mapped_field in invoice_dict:
+                        return invoice_dict[mapped_field]
+                return None
+            
+            # Para campos no anidados normales
+            if '.' not in field_key:
+                return invoice_dict.get(field_key)
+            
+            # Navegar por campos anidados normales
+            keys = field_key.split('.')
             value = invoice_dict
             
             for key in keys:
@@ -148,14 +246,14 @@ class ExcelExporter:
                     value = None
                     break
             
-            # Manejo especial para arrays (productos)
+            # Manejo especial para arrays (no productos)
             if isinstance(value, list) and field.field_type == FieldType.ARRAY:
                 return self._process_array_field(value, field)
             
             return value
             
         except Exception as e:
-            logger.warning(f"Error extrayendo campo {field.source_field}: {e}")
+            logger.warning(f"Error extrayendo campo {field.field_key}: {e}")
             return None
     
     def _process_array_field(self, array_value: List[Any], field: ExportField) -> str:
@@ -172,23 +270,39 @@ class ExcelExporter:
         if not array_value:
             return ""
         
-        if field.grouping == GroupingType.CONCATENATE:
-            # Unir todos los valores con separador
-            str_values = [str(item) for item in array_value if item is not None]
-            return field.separator.join(str_values)
+        if field.grouping_type == GroupingType.CONCATENATE:
+            # Unir todos los valores con separador, manejando diferentes tipos
+            str_values = []
+            for item in array_value:
+                if item is not None:
+                    # Para números, formatear apropiadamente
+                    if isinstance(item, (int, float)):
+                        if field.field_key.endswith('.cantidad'):
+                            str_values.append(f"{item:.1f}")
+                        elif field.field_key.endswith(('.precio_unitario', '.total')):
+                            str_values.append(f"{item:.0f}")  # Sin comas
+                        else:
+                            str_values.append(str(item))
+                    else:
+                        str_values.append(str(item))
+            return (field.separator or ", ").join(str_values)
         
-        elif field.grouping == GroupingType.SUMMARY:
+        elif field.grouping_type == GroupingType.SUMMARY:
             # Para números, mostrar suma
             if field.field_type in [FieldType.NUMBER, FieldType.CURRENCY]:
                 try:
                     numeric_values = [float(item) for item in array_value if item is not None]
-                    return sum(numeric_values)
+                    total = sum(numeric_values)
+                    if field.field_type == FieldType.CURRENCY:
+                        return f"{total:.0f}"  # Sin comas y sin símbolo de moneda
+                    else:
+                        return f"{total:.2f}"  # Sin comas
                 except:
                     pass
             # Para otros tipos, mostrar cantidad
             return f"{len(array_value)} elementos"
         
-        elif field.grouping == GroupingType.SEPARATE_ROWS:
+        elif field.grouping_type == GroupingType.SEPARATE_ROWS:
             # Para separate_rows, devolver el primer elemento (se manejará en escritura)
             return str(array_value[0]) if array_value else ""
         
@@ -212,12 +326,12 @@ class ExcelExporter:
         try:
             if field.field_type == FieldType.CURRENCY:
                 if isinstance(value, (int, float)):
-                    return f"₲ {value:,.0f}"
+                    return f"{value:.0f}"  # Sin comas y sin símbolo ₲
                 return str(value)
             
             elif field.field_type == FieldType.NUMBER:
                 if isinstance(value, (int, float)):
-                    return f"{value:,.2f}"
+                    return f"{value:.2f}"  # Sin comas
                 return str(value)
             
             elif field.field_type == FieldType.PERCENTAGE:
@@ -236,14 +350,11 @@ class ExcelExporter:
                         pass
                 return str(value)
             
-            elif field.field_type == FieldType.BOOLEAN:
-                return "Sí" if value else "No"
-            
             else:  # TEXT y otros
                 return str(value)
                 
         except Exception as e:
-            logger.warning(f"Error formateando valor {value} para campo {field.id}: {e}")
+            logger.warning(f"Error formateando valor {value} para campo {field.field_key}: {e}")
             return str(value)
     
     def _write_headers(self, template: ExportTemplate, start_row: int) -> int:
@@ -261,7 +372,7 @@ class ExcelExporter:
         
         for col_idx, field in enumerate(visible_fields, 1):
             cell = self.worksheet.cell(row=start_row, column=col_idx)
-            cell.value = field.name
+            cell.value = field.display_name
             cell.font = self.header_font
             cell.fill = self.header_fill
             cell.alignment = self.header_alignment
@@ -287,11 +398,11 @@ class ExcelExporter:
         for row_data in data:
             for col_idx, field in enumerate(visible_fields, 1):
                 cell = self.worksheet.cell(row=current_row, column=col_idx)
-                cell.value = row_data.get(field.id, "")
+                cell.value = row_data.get(field.field_key, "")
                 
                 # Aplicar alineación
                 alignment = Alignment(
-                    horizontal=field.alignment.value,
+                    horizontal=self._map_alignment(field.alignment),
                     vertical="center"
                 )
                 cell.alignment = alignment
@@ -322,7 +433,7 @@ class ExcelExporter:
             if field.field_type in [FieldType.CURRENCY, FieldType.NUMBER]:
                 total = 0
                 for row_data in data:
-                    value = row_data.get(field.id, "")
+                    value = row_data.get(field.field_key, "")
                     try:
                         # Extraer número de string formateado
                         if isinstance(value, str):
@@ -332,7 +443,7 @@ class ExcelExporter:
                             total += value
                     except:
                         pass
-                totals[field.id] = total
+                totals[field.field_key] = total
         
         # Escribir fila de totales
         for col_idx, field in enumerate(visible_fields, 1):
@@ -340,11 +451,11 @@ class ExcelExporter:
             
             if col_idx == 1:
                 cell.value = "TOTALES"
-            elif field.id in totals:
+            elif field.field_key in totals:
                 if field.field_type == FieldType.CURRENCY:
-                    cell.value = f"₲ {totals[field.id]:,.0f}"
+                    cell.value = f"{totals[field.field_key]:.0f}"  # Sin comas y sin símbolo ₲
                 else:
-                    cell.value = f"{totals[field.id]:,.2f}"
+                    cell.value = f"{totals[field.field_key]:.2f}"  # Sin comas
             else:
                 cell.value = ""
             
@@ -376,7 +487,7 @@ class ExcelExporter:
                     self.worksheet.column_dimensions[column_letter].width = 15
                 elif field.field_type == FieldType.DATE:
                     self.worksheet.column_dimensions[column_letter].width = 12
-                elif field.field_type == FieldType.TEXT and "ruc" in field.source_field.lower():
+                elif field.field_type == FieldType.TEXT and "ruc" in field.field_key.lower():
                     self.worksheet.column_dimensions[column_letter].width = 15
                 else:
                     self.worksheet.column_dimensions[column_letter].width = 20

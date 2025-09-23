@@ -20,7 +20,7 @@ from app.config.settings import settings
 from app.utils.firebase_auth import verify_firebase_token, extract_bearer_token
 from app.utils.trial_middleware import check_trial_limits_optional, check_trial_limits, check_ai_limits
 from app.repositories.user_repository import UserRepository
-from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig
+from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura
 from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
@@ -1985,44 +1985,79 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
     Convierte documento MongoDB a InvoiceData para compatibilidad con exportadores existentes.
     """
     try:
-        # Extraer datos principales
-        factura = doc.get("factura", {})
-        emisor = doc.get("emisor", {})
-        receptor = doc.get("receptor", {})
-        montos = doc.get("montos", {})
+        # DEBUG: Log de la estructura del documento
+        logger.info(f"🔍 Estructura del documento MongoDB: {list(doc.keys())}")
+        if "factura" in doc:
+            logger.info(f"🔍 Keys en factura: {list(doc['factura'].keys())}")
+        
+        # Extraer datos principales - Los datos están directamente en el doc según los logs
         productos = doc.get("productos", [])
+        
+        # Función para limpiar datos de productos
+        def clean_product(p):
+            try:
+                return ProductoFactura(
+                    nombre=p.get("articulo", p.get("nombre", "")),
+                    cantidad=float(p.get("cantidad", 0)) if p.get("cantidad") not in ['', None] else 0.0,
+                    precio_unitario=float(p.get("precio_unitario", 0)) if p.get("precio_unitario") not in ['', None] else 0.0,
+                    total=float(p.get("total", 0)) if p.get("total") not in ['', None] else 0.0,
+                    iva=int(float(p.get("iva", 0))) if p.get("iva") not in ['', None] else 0
+                )
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error limpiando producto {p}: {e}")
+                return ProductoFactura(nombre="Error en producto", cantidad=0, precio_unitario=0, total=0, iva=0)
         
         # Convertir fecha
         fecha = None
-        if factura.get("fecha"):
+        fecha_raw = doc.get("fecha")
+        if fecha_raw:
             try:
-                fecha = datetime.fromisoformat(factura["fecha"].replace("Z", "+00:00"))
+                if isinstance(fecha_raw, str):
+                    fecha = datetime.fromisoformat(fecha_raw.replace("Z", "+00:00"))
+                else:
+                    fecha = fecha_raw
             except:
                 pass
         
-        # Crear InvoiceData
+        # Crear InvoiceData usando datos del modelo v2 correctamente mapeados
+        logger.info(f"🔍 Valores específicos: numero_factura='{doc.get('numero_factura')}', cdc='{doc.get('cdc')}'")
+        
+        # Obtener totales desde el modelo v2 estructura
+        totales_data = doc.get("totales", {})
+        
         invoice = InvoiceData(
-            numero_factura=factura.get("numero", ""),
+            numero_factura=doc.get("numero_factura", "") or doc.get("numero_documento", ""),
             fecha=fecha,
-            ruc_emisor=emisor.get("ruc", ""),
-            nombre_emisor=emisor.get("nombre", ""),
-            ruc_cliente=receptor.get("ruc", ""),
-            nombre_cliente=receptor.get("nombre", ""),
-            email_cliente=receptor.get("email", ""),
-            monto_total=montos.get("monto_total", 0),
-            subtotal_exentas=montos.get("subtotal_exentas", 0),
-            subtotal_5=montos.get("subtotal_5", 0),
-            subtotal_10=montos.get("subtotal_10", 0),
-            iva_5=montos.get("iva_5", 0),
-            iva_10=montos.get("iva_10", 0),
-            iva=montos.get("total_iva", 0)
+            ruc_emisor=doc.get("ruc_emisor", ""),
+            nombre_emisor=doc.get("nombre_emisor", ""),
+            ruc_cliente=doc.get("ruc_cliente", ""),
+            nombre_cliente=doc.get("nombre_cliente", ""),
+            email_cliente=doc.get("email_cliente", ""),
+            monto_total=doc.get("monto_total", 0) or totales_data.get("total", 0),
+            # Mapeo correcto desde modelo v2
+            subtotal_exentas=totales_data.get("exentas", 0),
+            gravado_5=totales_data.get("gravado_5", 0),
+            subtotal_5=totales_data.get("gravado_5", 0),  # Para compatibilidad ASCONT
+            iva_5=totales_data.get("iva_5", 0),
+            gravado_10=totales_data.get("gravado_10", 0),
+            subtotal_10=totales_data.get("gravado_10", 0),  # Para compatibilidad ASCONT
+            iva_10=totales_data.get("iva_10", 0),
+            # Fallback a campos legacy
+            iva=doc.get("iva", 0),
+            productos=[clean_product(p) for p in productos]
         )
         
-        # Agregar campos adicionales si están disponibles
+        # Agregar campos adicionales directamente del documento
+        invoice.cdc = doc.get("cdc", "")
+        invoice.timbrado = doc.get("timbrado", "")
+        
+        # También verificar en datos_tecnicos por compatibilidad
         if "datos_tecnicos" in doc:
             datos_tec = doc["datos_tecnicos"]
-            invoice.cdc = datos_tec.get("cdc", "")
-            invoice.timbrado = datos_tec.get("timbrado", "")
+            if not invoice.cdc:
+                invoice.cdc = datos_tec.get("cdc", "")
+            if not invoice.timbrado:
+                invoice.timbrado = datos_tec.get("timbrado", "")
         
         # Agregar metadata
         if "metadata" in doc:
@@ -2066,6 +2101,212 @@ async def get_export_templates(user: Dict[str, Any] = Depends(_get_current_user)
         
     except Exception as e:
         logger.error(f"Error obteniendo templates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/export-templates/available-fields")
+async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtener lista de campos disponibles para templates incluyendo campos calculados"""
+    try:
+        from app.models.export_template import AVAILABLE_FIELDS, get_calculated_fields_by_category
+        
+        # Obtener campos calculados organizados por categoría
+        calculated_fields_by_category = get_calculated_fields_by_category()
+        
+        # Convertir definiciones de campos calculados a formato de API
+        calculated_fields = {}
+        for category, field_definitions in calculated_fields_by_category.items():
+            for field_def in field_definitions:
+                calculated_fields[f"calculated_{field_def.field_type.value}"] = {
+                    "description": field_def.description,
+                    "field_type": field_def.data_type,
+                    "display_name": field_def.display_name,
+                    "is_calculated": True,
+                    "calculated_type": field_def.field_type.value,
+                    "example_value": field_def.example_value,
+                    "category": field_def.category
+                }
+        
+        return {
+            "fields": AVAILABLE_FIELDS,
+            "calculated_fields": calculated_fields,
+            "categories": {
+                "basic": [
+                    "numero_factura", "fecha", "cdc", "timbrado", "establecimiento", 
+                    "punto_expedicion", "tipo_documento", "condicion_venta", "moneda", "tipo_cambio"
+                ],
+                "emisor": [
+                    "ruc_emisor", "nombre_emisor", "direccion_emisor", "telefono_emisor", 
+                    "email_emisor", "actividad_economica"
+                ],
+                "cliente": [
+                    "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente"
+                ],
+                "montos": [
+                    "base_gravada_5", "base_gravada_10", "iva_5", "iva_10", "total_iva",
+                    "monto_exento", "monto_exonerado", "total_operacion", "monto_total", 
+                    "total_base_gravada", "total_descuento", "anticipo"
+                ],
+                "productos": [
+                    "productos", "productos.codigo", "productos.nombre", 
+                    "productos.cantidad", "productos.unidad", "productos.precio_unitario", 
+                    "productos.total", "productos.iva", "productos.base_gravada", "productos.monto_iva"
+                ],
+                "metadata": [
+                    "fuente", "processing_quality", "email_origen", "mes_proceso", 
+                    "created_at", "descripcion_factura"
+                ],
+                # Categorías de campos calculados
+                "calculated_iva_montos": [
+                    "calculated_MONTO_CON_IVA_5", "calculated_MONTO_CON_IVA_10",
+                    "calculated_MONTO_SIN_IVA_5", "calculated_MONTO_SIN_IVA_10",
+                    "calculated_TOTAL_IVA_5_ONLY", "calculated_TOTAL_IVA_10_ONLY", 
+                    "calculated_TOTAL_IVA_GENERAL"
+                ],
+                "calculated_analisis": [
+                    "calculated_PORCENTAJE_IVA_5", "calculated_PORCENTAJE_IVA_10", 
+                    "calculated_PORCENTAJE_EXENTO"
+                ],
+                "calculated_totales": [
+                    "calculated_SUBTOTAL_GRAVADO", "calculated_SUBTOTAL_NO_GRAVADO", 
+                    "calculated_TOTAL_ANTES_IVA"
+                ],
+                "calculated_productos": [
+                    "calculated_CANTIDAD_PRODUCTOS", "calculated_VALOR_PROMEDIO_PRODUCTO"
+                ]
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo campos disponibles: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/export-templates/calculated-fields/preview")
+async def preview_calculated_fields(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Preview de campos calculados con datos de ejemplo"""
+    try:
+        from app.models.export_template import CALCULATED_FIELDS_DEFINITIONS, calculate_field
+        
+        # Datos de ejemplo para preview
+        sample_invoice = {
+            "numero_factura": "001-001-0001234",
+            "base_gravada_5": 1000000,
+            "base_gravada_10": 2000000,
+            "iva_5": 50000,
+            "iva_10": 200000,
+            "monto_exento": 500000,
+            "monto_exonerado": 0,
+            "monto_total": 3750000,
+            "total_operacion": 3500000,
+            "productos": [
+                {"nombre": "Producto A", "precio_unitario": 150000, "cantidad": 5},
+                {"nombre": "Producto B", "precio_unitario": 300000, "cantidad": 3},
+                {"nombre": "Producto C", "precio_unitario": 100000, "cantidad": 2}
+            ]
+        }
+        
+        # Calcular todos los campos con datos de ejemplo
+        calculated_examples = {}
+        for field_type, definition in CALCULATED_FIELDS_DEFINITIONS.items():
+            try:
+                calculated_value = calculate_field(field_type, sample_invoice)
+                
+                # Formatear el valor según el tipo
+                if definition.data_type.value == "CURRENCY":
+                    formatted_value = f"₲ {calculated_value:,.0f}" if calculated_value else "₲ 0"
+                elif definition.data_type.value == "PERCENTAGE":
+                    formatted_value = f"{calculated_value:.2f}%" if calculated_value else "0.00%"
+                else:
+                    formatted_value = str(calculated_value) if calculated_value is not None else "0"
+                
+                calculated_examples[field_type.value] = {
+                    "display_name": definition.display_name,
+                    "description": definition.description,
+                    "category": definition.category,
+                    "calculated_value": calculated_value,
+                    "formatted_value": formatted_value,
+                    "data_type": definition.data_type.value
+                }
+            except Exception as calc_error:
+                logger.warning(f"Error calculando {field_type}: {calc_error}")
+                calculated_examples[field_type.value] = {
+                    "display_name": definition.display_name,
+                    "description": definition.description,
+                    "category": definition.category,
+                    "calculated_value": None,
+                    "formatted_value": "Error",
+                    "data_type": definition.data_type.value,
+                    "error": str(calc_error)
+                }
+        
+        return {
+            "sample_invoice": sample_invoice,
+            "calculated_fields": calculated_examples,
+            "summary": {
+                "total_fields": len(calculated_examples),
+                "categories": list(set([definition.category for definition in CALCULATED_FIELDS_DEFINITIONS.values()]))
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error en preview de campos calculados: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/export-templates/presets")
+async def get_template_presets(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtener templates predefinidos inteligentes"""
+    try:
+        from app.utils.smart_template_generator import SmartTemplateGenerator
+        
+        generator = SmartTemplateGenerator()
+        presets = generator.get_available_presets()
+        
+        return {
+            "presets": presets,
+            "recommendations": {
+                "new_user": "simple",
+                "accountant": "contable", 
+                "business_owner": "ejecutivo",
+                "auditor": "detallado"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo presets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/export-templates/create-from-preset")
+async def create_template_from_preset(
+    preset_request: dict,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Crear template a partir de un preset inteligente"""
+    try:
+        from app.utils.smart_template_generator import SmartTemplateGenerator
+        
+        preset_name = preset_request.get('preset')
+        custom_name = preset_request.get('name')
+        
+        if not preset_name:
+            raise HTTPException(status_code=400, detail="Preset name required")
+        
+        generator = SmartTemplateGenerator()
+        template = generator.create_template_from_preset(preset_name, custom_name)
+        template.owner_email = user.get('email')
+        
+        # Guardar en base de datos
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        repo = ExportTemplateRepository()
+        template_id = repo.create_template(template)
+        
+        return {
+            "success": True,
+            "template_id": template_id,
+            "message": f"Template '{template.name}' creado exitosamente",
+            "preset_used": preset_name
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creando template desde preset: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/export-templates")
@@ -2237,28 +2478,6 @@ async def set_default_export_template(
         logger.error(f"Error estableciendo template por defecto {template_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/export-templates/available-fields")
-async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Obtener lista de campos disponibles para templates"""
-    try:
-        from app.models.export_template import AVAILABLE_FIELDS
-        
-        return {
-            "fields": AVAILABLE_FIELDS,
-            "categories": {
-                "basic": ["numero_factura", "fecha", "cdc", "timbrado"],
-                "emisor": ["ruc_emisor", "nombre_emisor"],
-                "cliente": ["ruc_cliente", "nombre_cliente"],
-                "montos": ["subtotal_5", "iva_5", "subtotal_10", "iva_10", "subtotal_exentas", "monto_total"],
-                "productos": ["productos", "productos.articulo", "productos.cantidad", "productos.precio_unitario", "productos.total", "productos.iva"],
-                "metadata": ["condicion_venta", "moneda", "descripcion_factura", "processing_quality", "created_at"]
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error obteniendo campos disponibles: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/export/custom")
 async def export_invoices_with_template(
     export_request: Dict[str, Any],
@@ -2286,10 +2505,13 @@ async def export_invoices_with_template(
         
         # Obtener facturas
         invoice_repo = MongoInvoiceRepository()
-        invoices = invoice_repo.get_invoices_by_user(user["email"], filters)
+        invoices_raw = invoice_repo.get_invoices_by_user(user["email"], filters)
         
-        if not invoices:
+        if not invoices_raw:
             raise HTTPException(status_code=404, detail="No se encontraron facturas con los filtros especificados")
+        
+        # Convertir diccionarios a InvoiceData
+        invoices = [_mongo_doc_to_invoice_data(invoice) for invoice in invoices_raw]
         
         # Generar Excel
         exporter = ExcelExporter()

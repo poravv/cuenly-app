@@ -1,0 +1,213 @@
+<div class="container-fluid p-4">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-1">
+        <i class="bi bi-magic me-2 text-primary"></i>
+        Crear Template Inteligente
+      </h2>
+      <p class="text-muted mb-0">Elige el tipo de reporte que necesitas y nosotros configuramos todo automáticamente</p>
+    </div>
+    <div>
+      <button class="btn btn-outline-secondary me-2" (click)="cancel()" [disabled]="creating">
+        <i class="bi bi-x-circle me-2"></i>
+        Cancelar
+      </button>
+      <button class="btn btn-outline-primary" (click)="goToAdvancedMode()" [disabled]="creating">
+        <i class="bi bi-gear me-2"></i>
+        Modo Avanzado
+      </button>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading" class="text-center p-5">
+    <div class="spinner-border text-primary mb-3" role="status">
+      <span class="visually-hidden">Cargando templates...</span>
+    </div>
+    <p class="text-muted">Cargando templates inteligentes...</p>
+  </div>
+
+  <!-- Preset Selection -->
+  <div *ngIf="!loading" class="row">
+    <!-- Preset Cards -->
+    <div class="col-lg-8 mb-4">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="bi bi-grid-3x3-gap me-2"></i>
+            Templates Disponibles
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div *ngFor="let presetEntry of getPresetsArray()" class="col-md-6 mb-4">
+              <div class="card preset-card h-100" 
+                   [class.border-primary]="selectedPreset === presetEntry.key"
+                   [class.shadow-sm]="selectedPreset === presetEntry.key"
+                   (click)="selectPreset(presetEntry.key)"
+                   style="cursor: pointer;">
+                <div class="card-body">
+                  <!-- Header with Icon and Badge -->
+                  <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div class="preset-icon">
+                      <span class="fs-2">{{ getPresetIcon(presetEntry.value.group_type) }}</span>
+                    </div>
+                    <div *ngIf="getRecommendationBadge(presetEntry.key)" 
+                         class="badge bg-warning text-dark small">
+                      {{ getRecommendationBadge(presetEntry.key) }}
+                    </div>
+                  </div>
+
+                  <!-- Title and Description -->
+                  <h6 class="card-title fw-bold">{{ presetEntry.value.name }}</h6>
+                  <p class="card-text text-muted small mb-3">{{ presetEntry.value.description }}</p>
+
+                  <!-- Stats -->
+                  <div class="d-flex justify-content-between align-items-center">
+                    <div class="preset-stats">
+                      <span class="badge bg-light text-dark me-2">
+                        <i class="bi bi-list-ul me-1"></i>
+                        {{ presetEntry.value.field_count }} campos
+                      </span>
+                      <span class="badge bg-success text-white">
+                        <i class="bi bi-calculator me-1"></i>
+                        {{ presetEntry.value.calculated_fields }} calculados
+                      </span>
+                    </div>
+                    <div *ngIf="selectedPreset === presetEntry.key">
+                      <i class="bi bi-check-circle-fill text-primary fs-5"></i>
+                    </div>
+                  </div>
+
+                  <!-- Features -->
+                  <div class="mt-2">
+                    <div class="features-list">
+                      <span *ngFor="let feature of presetEntry.value.features" 
+                            class="badge bg-{{ getPresetColor(presetEntry.value.group_type) }} me-1 mb-1 small">
+                        {{ feature }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Configuration Panel -->
+    <div class="col-lg-4">
+      <div class="card sticky-top" style="top: 20px;">
+        <div class="card-header">
+          <h6 class="mb-0">
+            <i class="bi bi-gear me-2"></i>
+            Configuración
+          </h6>
+        </div>
+        <div class="card-body">
+          <!-- No Selection State -->
+          <div *ngIf="!selectedPreset" class="text-center p-3">
+            <i class="bi bi-arrow-left-circle display-4 text-muted mb-3"></i>
+            <p class="text-muted">Selecciona un template para continuar</p>
+          </div>
+
+          <!-- Selected Preset Configuration -->
+          <div *ngIf="selectedPreset">
+            <!-- Preview -->
+            <div class="selected-preset-preview mb-4">
+              <div class="d-flex align-items-center mb-2">
+                <span class="fs-3 me-2">{{ getPresetIcon(presets[selectedPreset].group_type) }}</span>
+                <div>
+                  <h6 class="mb-0">{{ presets[selectedPreset].name }}</h6>
+                  <small class="text-muted">{{ presets[selectedPreset].group_type }}</small>
+                </div>
+              </div>
+              <p class="text-muted small">{{ presets[selectedPreset].description }}</p>
+            </div>
+
+            <!-- Custom Name -->
+            <div class="mb-4">
+              <label for="customName" class="form-label">
+                Nombre del Template 
+                <span class="text-muted">(opcional)</span>
+              </label>
+              <input type="text" 
+                     class="form-control" 
+                     id="customName"
+                     [(ngModel)]="customName"
+                     [placeholder]="presets[selectedPreset].name"
+                     maxlength="100">
+              <div class="form-text">Si no especificas un nombre, usaremos el nombre por defecto.</div>
+            </div>
+
+            <!-- What You'll Get -->
+            <div class="mb-4">
+              <h6 class="text-muted">Lo que incluye:</h6>
+              <ul class="list-unstyled small">
+                <li class="mb-1">
+                  <i class="bi bi-check-circle-fill text-success me-2"></i>
+                  {{ presets[selectedPreset].field_count }} campos configurados
+                </li>
+                <li class="mb-1">
+                  <i class="bi bi-check-circle-fill text-success me-2"></i>
+                  {{ presets[selectedPreset].calculated_fields }} cálculos automáticos
+                </li>
+                <li class="mb-1">
+                  <i class="bi bi-check-circle-fill text-success me-2"></i>
+                  Formateo y alineación optimizada
+                </li>
+                <li class="mb-1">
+                  <i class="bi bi-check-circle-fill text-success me-2"></i>
+                  Agrupación inteligente de datos
+                </li>
+              </ul>
+            </div>
+
+            <!-- Create Button -->
+            <button class="btn btn-primary w-100" 
+                    (click)="createTemplate()" 
+                    [disabled]="creating">
+              <span *ngIf="creating" class="spinner-border spinner-border-sm me-2" role="status"></span>
+              <i *ngIf="!creating" class="bi bi-magic me-2"></i>
+              {{ creating ? 'Creando Template...' : 'Crear Template' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Benefits Section -->
+  <div *ngIf="!loading" class="row mt-4">
+    <div class="col-12">
+      <div class="card bg-light">
+        <div class="card-body">
+          <div class="row text-center">
+            <div class="col-md-3">
+              <i class="bi bi-lightning-charge display-4 text-warning mb-2"></i>
+              <h6>Configuración Automática</h6>
+              <p class="text-muted small">Campos optimizados para tu caso de uso específico</p>
+            </div>
+            <div class="col-md-3">
+              <i class="bi bi-shield-check display-4 text-success mb-2"></i>
+              <h6>Sin Errores</h6>
+              <p class="text-muted small">Eliminamos duplicaciones y conflictos automáticamente</p>
+            </div>
+            <div class="col-md-3">
+              <i class="bi bi-graph-up display-4 text-primary mb-2"></i>
+              <h6>Cálculos Inteligentes</h6>
+              <p class="text-muted small">Métricas y análisis incluidos según tu necesidad</p>
+            </div>
+            <div class="col-md-3">
+              <i class="bi bi-clock display-4 text-info mb-2"></i>
+              <h6>Listo en Segundos</h6>
+              <p class="text-muted small">De la selección al reporte en menos de 1 minuto</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

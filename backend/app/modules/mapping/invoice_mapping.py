@@ -50,12 +50,12 @@ def map_invoice(invoice: InvoiceData, fuente: str = "") -> InvoiceDocument:
             email=getattr(invoice, "email_cliente", "")
         ),
         totales=Totales(
-            exentas=float(getattr(invoice, "subtotal_exentas", 0) or 0),
-            gravado_5=float(getattr(invoice, "subtotal_5", 0) or 0),
+            exentas=float(getattr(invoice, "exento", 0) or getattr(invoice, "subtotal_exentas", 0) or 0),
+            gravado_5=float(getattr(invoice, "gravado_5", 0) or getattr(invoice, "subtotal_5", 0) or 0),
             iva_5=float(getattr(invoice, "iva_5", 0) or 0),
-            gravado_10=float(getattr(invoice, "subtotal_10", 0) or 0),
+            gravado_10=float(getattr(invoice, "gravado_10", 0) or getattr(invoice, "subtotal_10", 0) or 0),
             iva_10=float(getattr(invoice, "iva_10", 0) or 0),
-            total=float(getattr(invoice, "monto_total", 0) or 0)
+            total=float(getattr(invoice, "monto_total", 0) or getattr(invoice, "total_general", 0) or 0)
         ),
         email_origen=getattr(invoice, "email_origen", ""),
         mes_proceso=getattr(invoice, "mes_proceso", ""),
@@ -66,13 +66,17 @@ def map_invoice(invoice: InvoiceData, fuente: str = "") -> InvoiceDocument:
     productos = getattr(invoice, "productos", []) or []
     for idx, p in enumerate(productos, start=1):
         if isinstance(p, dict):
-            desc = p.get("articulo", "")
+            # Mapeo mejorado para productos desde dict
+            desc = p.get("descripcion") or p.get("articulo") or p.get("nombre") or ""
             cant = float(p.get("cantidad", 0) or 0)
             pu = float(p.get("precio_unitario", 0) or 0)
             tot = float(p.get("total", 0) or 0)
             iva = int(p.get("iva", 0) or 0)
         else:
-            desc = getattr(p, "articulo", "") or ""
+            # Mapeo desde objeto Pydantic
+            desc = (getattr(p, "descripcion", "") or 
+                   getattr(p, "articulo", "") or 
+                   getattr(p, "nombre", "") or "")
             cant = float(getattr(p, "cantidad", 0) or 0)
             pu = float(getattr(p, "precio_unitario", 0) or 0)
             tot = float(getattr(p, "total", 0) or 0)
