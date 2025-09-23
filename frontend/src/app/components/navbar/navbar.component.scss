@@ -2,24 +2,23 @@
   background: white;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.08);
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-  padding: 0.75rem 0;
+  padding: 0.5rem 0;
   position: sticky;
   top: 0;
   z-index: 1030;
-  min-height: 70px; /* Altura mínima consistente */
+  min-height: 65px;
 }
 
 .container-fluid {
-  position: relative;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
 }
 
 .navbar-brand {
   text-decoration: none;
   transition: transform 0.2s ease;
   
-  &:hover {
-    transform: scale(1.02);
-  }
+  &:hover { transform: scale(1.02); }
 }
 
 .brand-icon {
@@ -43,7 +42,6 @@
     font-size: 1.4rem;
     font-weight: 700;
     color: #1f2937;
-    display: block;
     line-height: 1.2;
     letter-spacing: -0.5px;
   }
@@ -54,7 +52,6 @@
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    line-height: 1;
   }
 }
 
@@ -62,16 +59,13 @@
   border: none !important;
   padding: 0.5rem;
   
-  &:focus {
-    box-shadow: none !important;
-  }
+  &:focus { box-shadow: none !important; }
 }
 
 .hamburger {
   width: 24px;
   height: 18px;
   position: relative;
-  cursor: pointer;
   
   span {
     display: block;
@@ -93,7 +87,6 @@
     margin: 0 0.25rem;
     
     .nav-link {
-      position: relative;
       font-size: 0.95rem;
       font-weight: 500;
       color: #4b5563;
@@ -151,158 +144,105 @@
   }
 }
 
-.navbar-status {
-  .status-group {
-    display: flex;
-    gap: 1rem;
-    align-items: center;
+// Status badges - Compact design
+.status-badge {
+  display: flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  
+  &.success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #065f46;
+    border: 1px solid rgba(16, 185, 129, 0.2);
   }
   
-  .status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
-    border-radius: 50px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    transition: all 0.3s ease;
-    cursor: pointer;
-    
-    &.success {
-      background: rgba(16, 185, 129, 0.1);
-      color: #065f46;
-      border: 1px solid rgba(16, 185, 129, 0.2);
-      
-      .status-icon {
-        color: #10b981;
-      }
-    }
-    
-    &.danger {
-      background: rgba(239, 68, 68, 0.1);
-      color: #991b1b;
-      border: 1px solid rgba(239, 68, 68, 0.2);
-      
-      .status-icon {
-        color: #ef4444;
-      }
-    }
-    
-    .status-icon {
-      font-size: 1.1rem;
-      width: 20px;
-      text-align: center;
-    }
-    
-    .status-info {
-      .status-label {
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        opacity: 0.8;
-        line-height: 1;
-      }
-      
-      .status-value {
-        font-size: 0.875rem;
-        font-weight: 600;
-        line-height: 1.2;
-      }
-    }
+  &.danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #991b1b;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+  
+  i {
+    font-size: 0.9rem;
+  }
+  
+  &:hover {
+    transform: scale(1.05);
   }
 }
 
-/* Área de autenticación responsive */
-.navbar-auth {
-  .user-info-container {
-    .user-info-desktop {
-      .user-avatar {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        border: 2px solid rgba(43, 78, 255, 0.1);
-        transition: all 0.3s ease;
-        
-        &:hover {
-          border-color: rgba(43, 78, 255, 0.3);
-          transform: scale(1.05);
-        }
-      }
-      
-      .user-details {
-        .user-name {
-          font-size: 0.875rem;
-          font-weight: 600;
-          color: #1f2937;
-          line-height: 1.2;
-          margin-bottom: 0;
-        }
-        
-        .user-email {
-          font-size: 0.75rem;
-          color: #6b7280;
-          line-height: 1;
-          max-width: 140px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-      }
-      
-      .btn {
-        white-space: nowrap;
-        transition: all 0.3s ease;
-        
-        &:hover {
-          transform: translateY(-1px);
-        }
-      }
-    }
-    
-    .user-info-mobile {
-      margin-top: 1rem;
-      background: rgba(248, 250, 252, 0.5);
-      border-radius: 12px;
-      border-top: 1px solid rgba(0, 0, 0, 0.1) !important;
-      
-      .user-avatar-mobile {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        border: 2px solid rgba(43, 78, 255, 0.1);
-      }
-      
-      .user-details-mobile {
-        .user-name-mobile {
-          font-size: 1rem;
-          font-weight: 600;
-          color: #1f2937;
-          line-height: 1.2;
-          margin-bottom: 0;
-        }
-        
-        .user-email-mobile {
-          font-size: 0.875rem;
-          color: #6b7280;
-          line-height: 1.2;
-          word-break: break-word;
-        }
-      }
-    }
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+// User info - Compact design
+.user-compact {
+  max-width: 180px;
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(43, 78, 255, 0.1);
+  transition: all 0.2s ease;
+  
+  &:hover {
+    border-color: rgba(43, 78, 255, 0.3);
   }
 }
 
-/* Responsive breakpoints específicos para el navbar */
+.user-details {
+  .user-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #1f2937;
+    line-height: 1.2;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .user-email {
+    font-size: 0.7rem;
+    color: #6b7280;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.user-info-mobile {
+  margin-top: 1rem;
+  background: rgba(248, 250, 252, 0.5);
+  border-radius: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1) !important;
+  
+  .user-avatar-mobile {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid rgba(43, 78, 255, 0.1);
+  }
+}
+
+/* Responsive Optimized */
 @media (max-width: 1199.98px) {
-  .navbar-auth {
-    .user-info-desktop {
-      .user-details {
-        .user-email {
-          max-width: 100px;
-        }
-      }
+  .brand-text .brand-name {
+    font-size: 1.2rem;
+  }
+  
+  .navbar-status {
+    .status-badge span {
+      display: none !important;
     }
   }
 }
@@ -315,10 +255,7 @@
     
     .nav-item {
       margin: 0.25rem 0;
-      
-      .nav-link {
-        padding: 1rem;
-      }
+      .nav-link { padding: 1rem; }
     }
   }
   
@@ -328,161 +265,87 @@
     border-top: 1px solid rgba(0, 0, 0, 0.1);
     
     .status-group {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0.75rem;
+      justify-content: center;
+      gap: 1rem;
     }
     
-    .status-indicator {
-      justify-content: center;
-      padding: 1rem;
+    .status-badge {
+      padding: 0.5rem 1rem;
+      
+      span {
+        display: inline !important;
+      }
     }
-  }
-  
-  /* Ocultar el área de auth desktop en mobile */
-  .navbar-auth {
-    margin-left: 0 !important;
   }
 }
 
-/* Breakpoints adicionales para mejor responsive */
-@media (max-width: 575.98px) {
-  .brand-text {
-    .brand-name {
-      font-size: 1.2rem;
-    }
+@media (max-width: 767.98px) {
+  .brand-icon {
+    width: 36px;
+    height: 36px;
     
-    .brand-subtitle {
-      font-size: 0.7rem;
-    }
+    i { font-size: 1.2rem; }
+  }
+  
+  .brand-text .brand-name {
+    font-size: 1.1rem;
+  }
+  
+  .navbar-nav .nav-item .nav-link {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .container-fluid {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+  
+  .brand-text .brand-name {
+    font-size: 1rem;
   }
   
   .brand-icon {
-    width: 40px;
-    height: 40px;
+    width: 32px;
+    height: 32px;
     
-    i {
-      font-size: 1.3rem;
-    }
+    i { font-size: 1.1rem; }
   }
   
-  .navbar-auth {
-    .user-info-mobile {
-      .user-details-mobile {
-        .user-name-mobile {
-          font-size: 0.9rem;
-        }
-        
-        .user-email-mobile {
-          font-size: 0.8rem;
-        }
-      }
-    }
-  }
-}
-
-/* Tablet landscape y desktop pequeño */
-@media (min-width: 768px) and (max-width: 1023.98px) {
-  .navbar-status {
-    .status-indicator {
-      padding: 0.4rem 0.8rem;
-      
-      .status-info {
-        .status-label {
-          font-size: 0.7rem;
-        }
-        
-        .status-value {
-          font-size: 0.8rem;
-        }
-      }
-    }
+  // Hide brand subtitle on very small screens
+  .brand-subtitle {
+    display: none !important;
   }
   
-  .navbar-auth {
-    .user-info-desktop {
-      .user-details {
-        .user-email {
-          max-width: 100px;
-        }
-      }
-    }
-  }
-}
-
-@media (min-width: 992px) and (max-width: 1199.98px) {
-  .navbar-status {
-    .status-indicator {
-      padding: 0.4rem 0.8rem;
-      
-      .status-info {
-        .status-label {
-          font-size: 0.7rem;
-        }
-        
-        .status-value {
-          font-size: 0.8rem;
-        }
-      }
-    }
-  }
-}
-
-/* Pantallas muy grandes */
-@media (min-width: 1400px) {
-  .navbar-auth {
-    .user-info-desktop {
-      .user-details {
-        .user-email {
-          max-width: 180px;
-        }
-      }
-    }
-  }
-}
-
-/* Mejoras para touch devices */
-@media (hover: none) and (pointer: coarse) {
-  .navbar-nav {
-    .nav-item {
-      .nav-link {
-        padding: 1.2rem 1rem;
-        
-        &:hover {
-          transform: none; /* Desactivar hover en touch */
-        }
-        
-        &:active {
-          background: rgba(43, 78, 255, 0.15);
-          transform: scale(0.98);
-        }
-      }
-    }
+  // Compact navbar height
+  .app-navbar {
+    min-height: 60px;
+    padding: 0.4rem 0;
   }
   
-  .navbar-auth {
-    .user-info-desktop {
-      .btn {
-        padding: 0.6rem 1rem;
-        
-        &:hover {
-          transform: none;
-        }
-        
-        &:active {
-          transform: scale(0.95);
-        }
-      }
-    }
+  // Smaller buttons on mobile
+  .btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+  }
+}
+
+// Extra small devices optimizations
+@media (max-width: 400px) {
+  .brand-text .brand-name {
+    font-size: 0.9rem;
+  }
+  
+  .brand-icon {
+    width: 28px;
+    height: 28px;
+    margin-right: 0.5rem !important;
     
-    .user-info-mobile {
-      .btn {
-        padding: 0.8rem 1.2rem;
-        
-        &:active {
-          transform: scale(0.95);
-        }
-      }
-    }
+    i { font-size: 1rem; }
+  }
+  
+  .app-navbar {
+    min-height: 55px;
   }
 }

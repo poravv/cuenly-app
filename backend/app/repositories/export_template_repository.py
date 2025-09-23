@@ -95,6 +95,10 @@ class ExportTemplateRepository:
             
             if doc:
                 doc["id"] = str(doc["_id"])
+                if "_id" in doc:
+                    del doc["_id"]
+                # Migrar datos para compatibilidad
+                doc = self._migrate_template_data(doc)
                 return ExportTemplate(**doc)
             return None
             
@@ -102,6 +106,24 @@ class ExportTemplateRepository:
             logger.error(f"Error obteniendo template {template_id}: {e}")
             return None
     
+    def _migrate_template_data(self, template_dict: dict) -> dict:
+        """
+        Migra datos de template para compatibilidad con versiones anteriores
+        """
+        # Migrar valores de alignment de mayúsculas a minúsculas
+        alignment_mapping = {
+            'LEFT': 'left',
+            'CENTER': 'center', 
+            'RIGHT': 'right'
+        }
+        
+        if 'fields' in template_dict:
+            for field in template_dict['fields']:
+                if 'alignment' in field and field['alignment'] in alignment_mapping:
+                    field['alignment'] = alignment_mapping[field['alignment']]
+        
+        return template_dict
+
     def get_templates_by_user(self, owner_email: str) -> List[ExportTemplate]:
         """
         Obtener todos los templates de un usuario
@@ -119,8 +141,17 @@ class ExportTemplateRepository:
             
             templates = []
             for doc in docs:
-                doc["id"] = str(doc["_id"])
-                templates.append(ExportTemplate(**doc))
+                # Convertir ObjectId a string y agregarlo como id
+                template_dict = dict(doc)
+                template_dict["id"] = str(doc["_id"])
+                # Eliminar el _id original para evitar conflictos
+                if "_id" in template_dict:
+                    del template_dict["_id"]
+                
+                # Migrar datos para compatibilidad
+                template_dict = self._migrate_template_data(template_dict)
+                
+                templates.append(ExportTemplate(**template_dict))
             
             return templates
             
@@ -146,6 +177,10 @@ class ExportTemplateRepository:
             
             if doc:
                 doc["id"] = str(doc["_id"])
+                if "_id" in doc:
+                    del doc["_id"]
+                # Migrar datos para compatibilidad
+                doc = self._migrate_template_data(doc)
                 return ExportTemplate(**doc)
             
             # Si no hay default, tomar el más reciente
@@ -155,8 +190,13 @@ class ExportTemplateRepository:
             
             if docs:
                 doc = docs[0]
-                doc["id"] = str(doc["_id"])
-                return ExportTemplate(**doc)
+                template_dict = dict(doc)
+                template_dict["id"] = str(doc["_id"])
+                if "_id" in template_dict:
+                    del template_dict["_id"]
+                # Migrar datos para compatibilidad
+                template_dict = self._migrate_template_data(template_dict)
+                return ExportTemplate(**template_dict)
                 
             return None
             

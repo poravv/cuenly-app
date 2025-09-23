@@ -1,0 +1,156 @@
+<div class="container-fluid p-4">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-1">
+        <i class="bi bi-file-earmark-excel me-2 text-success"></i>
+        Templates de Exportación
+      </h2>
+      <p class="text-muted mb-0">Gestiona tus templates personalizados para exportar facturas a Excel</p>
+    </div>
+    <div>
+      <div class="btn-group" role="group">
+        <button class="btn btn-primary" (click)="createSmartTemplate()">
+          <i class="bi bi-magic me-2"></i>
+          Template Inteligente
+        </button>
+        <button class="btn btn-outline-primary" (click)="createTemplate()">
+          <i class="bi bi-gear me-2"></i>
+          Personalizado
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading" class="text-center p-5">
+    <div class="spinner-border text-primary mb-3" role="status">
+      <span class="visually-hidden">Cargando...</span>
+    </div>
+    <p class="text-muted">Cargando templates...</p>
+  </div>
+
+  <!-- Error State -->
+  <div *ngIf="error" class="alert alert-danger" role="alert">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    {{ error }}
+    <button class="btn btn-outline-danger btn-sm ms-2" (click)="loadTemplates()">
+      Reintentar
+    </button>
+  </div>
+
+  <!-- Templates Grid -->
+  <div *ngIf="!loading && !error" class="row">
+    <!-- Empty State -->
+    <div *ngIf="templates.length === 0" class="col-12">
+      <div class="text-center p-5">
+        <div class="empty-state-icon mb-3">
+          <i class="bi bi-file-earmark-excel display-1 text-muted"></i>
+        </div>
+        <h4 class="text-muted mb-3">No hay templates creados</h4>
+        <p class="text-muted mb-4">Crea tu primer template personalizado para exportar facturas con el formato que necesites</p>
+        <div class="d-flex gap-2 justify-content-center">
+          <button class="btn btn-primary" (click)="createSmartTemplate()">
+            <i class="bi bi-magic me-2"></i>
+            Template Inteligente
+          </button>
+          <button class="btn btn-outline-primary" (click)="createTemplate()">
+            <i class="bi bi-gear me-2"></i>
+            Personalizado
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Templates Cards -->
+    <div *ngFor="let template of templates" class="col-lg-4 col-md-6 mb-4">
+      <div class="card h-100 template-card" [class.border-success]="template.is_default">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-file-earmark-excel text-success me-2"></i>
+            <h6 class="mb-0 card-title">{{ template.name }}</h6>
+          </div>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" 
+                    data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-three-dots"></i>
+            </button>
+            <ul class="dropdown-menu">
+              <li>
+                <a class="dropdown-item" href="#" (click)="editTemplate(template); $event.preventDefault()">
+                  <i class="bi bi-pencil me-2"></i>Editar
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item" href="#" (click)="duplicateTemplate(template); $event.preventDefault()">
+                  <i class="bi bi-files me-2"></i>Duplicar
+                </a>
+              </li>
+              <li *ngIf="!template.is_default">
+                <a class="dropdown-item" href="#" (click)="setDefaultTemplate(template); $event.preventDefault()">
+                  <i class="bi bi-star me-2"></i>Marcar como por defecto
+                </a>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <a class="dropdown-item text-danger" href="#" (click)="deleteTemplate(template); $event.preventDefault()">
+                  <i class="bi bi-trash me-2"></i>Eliminar
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <!-- Default Badge -->
+          <div *ngIf="template.is_default" class="mb-2">
+            <span class="badge bg-success">
+              <i class="bi bi-star me-1"></i>Por defecto
+            </span>
+          </div>
+
+          <!-- Description -->
+          <p class="card-text text-muted small mb-3">
+            {{ template.description || 'Sin descripción' }}
+          </p>
+
+          <!-- Stats -->
+          <div class="template-stats mb-3">
+            <div class="stat-item">
+              <i class="bi bi-list-ul text-primary"></i>
+              <span class="ms-1">{{ getFieldCount(template) }} campos</span>
+            </div>
+            <div class="stat-item mt-1">
+              <i class="bi bi-calendar text-muted"></i>
+              <span class="ms-1 text-muted small">{{ formatDate(template.created_at) }}</span>
+            </div>
+          </div>
+
+          <!-- Fields Preview -->
+          <div class="fields-preview mb-3">
+            <div class="small text-muted mb-1">Campos incluidos:</div>
+            <div class="field-tags">
+              <span *ngFor="let field of template.fields | slice:0:3" 
+                    class="badge bg-light text-dark me-1 mb-1">
+                {{ field.display_name }}
+              </span>
+              <span *ngIf="template.fields.length > 3" 
+                    class="badge bg-secondary">
+                +{{ template.fields.length - 3 }} más
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-footer bg-transparent">
+          <div class="d-grid gap-2">
+            <button class="btn btn-success btn-sm" (click)="exportWithTemplate(template)">
+              <i class="bi bi-download me-2"></i>
+              Exportar Facturas
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
