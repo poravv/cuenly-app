@@ -129,6 +129,8 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "productos.iva": {"description": "IVA productos", "field_type": FieldType.ARRAY},
     
     # === METADATOS ===
+    "descripcion_factura": {"description": "Descripción de la factura", "field_type": FieldType.TEXT},
+    "mes_proceso": {"description": "Mes de proceso", "field_type": FieldType.TEXT},
     "created_at": {"description": "Fecha de creación", "field_type": FieldType.DATE},
     "updated_at": {"description": "Fecha de actualización", "field_type": FieldType.DATE},
     "owner_email": {"description": "Email propietario", "field_type": FieldType.TEXT},

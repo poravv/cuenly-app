@@ -110,7 +110,7 @@ class InvoiceData(BaseModel):
     timbrado: Optional[str] = ""
     cdc: Optional[str] = ""
     moneda: Optional[str] = "GS"   # "GS" si es PYG, "USD" u otra tal cual en factura
-    tipo_cambio: Optional[float] = 1.0
+    tipo_cambio: Optional[float] = 0.0  # Por defecto 0, se actualiza si hay tipo de cambio específico
 
     descripcion_factura: Optional[str] = ""
     detalle_articulos: Optional[str] = ""

@@ -1,0 +1,223 @@
+<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://ekuatia.set.gov.py/sifen/xsd siRecepDE_v150.xsd">
+  <dVerFor>150</dVerFor>
+  <DE Id="01800092430001001045746222025081119198923040">
+    <dDVId>0</dDVId>
+    <dFecFirma>2025-08-11T09:48:06</dFecFirma>
+    <dSisFact>1</dSisFact>
+    <gOpeDE>
+      <iTipEmi>1</iTipEmi>
+      <dDesTipEmi>Normal</dDesTipEmi>
+      <dCodSeg>919892304</dCodSeg>
+    </gOpeDE>
+    <gTimb>
+      <iTiDE>1</iTiDE>
+      <dDesTiDE>Factura electrónica</dDesTiDE>
+      <dNumTim>15290986</dNumTim>
+      <dEst>001</dEst>
+      <dPunExp>001</dPunExp>
+      <dNumDoc>0457462</dNumDoc>
+      <dFeIniT>2021-12-07</dFeIniT>
+    </gTimb>
+    <gDatGralOpe>
+      <dFeEmiDE>2025-08-11T08:35:00</dFeEmiDE>
+      <gOpeCom>
+        <iTipTra>2</iTipTra>
+        <dDesTipTra>Prestación de servicios</dDesTipTra>
+        <iTImp>1</iTImp>
+        <dDesTImp>IVA</dDesTImp>
+        <cMoneOpe>PYG</cMoneOpe>
+        <dDesMoneOpe>Guarani</dDesMoneOpe>
+        <iCondAnt>1</iCondAnt>
+        <dDesCondAnt>Anticipo Global</dDesCondAnt>
+      </gOpeCom>
+      <gEmis>
+        <dRucEm>80009243</dRucEm>
+        <dDVEmi>0</dDVEmi>
+        <iTipCont>2</iTipCont>
+        <dNomEmi>FORTALEZA INMUEBLES SAE</dNomEmi>
+        <dNomFanEmi>FORTALEZA</dNomFanEmi>
+        <dDirEmi>Quesada 4926 Esq. Tte Zotti</dDirEmi>
+        <dNumCas>4926</dNumCas>
+        <cDepEmi>1</cDepEmi>
+        <dDesDepEmi>CAPITAL</dDesDepEmi>
+        <cCiuEmi>1</cCiuEmi>
+        <dDesCiuEmi>ASUNCION (DISTRITO)</dDesCiuEmi>
+        <dTelEmi>(021) 614 412</dTelEmi>
+        <dEmailE>info@fortalezainmuebles.com</dEmailE>
+        <gActEco>
+          <cActEco>68100</cActEco>
+          <dDesActEco>Actividades inmobiliarias realizadas con bienes propios o arrendados</dDesActEco>
+        </gActEco>
+      </gEmis>
+      <gDatRec>
+        <iNatRec>1</iNatRec>
+        <iTiOpe>1</iTiOpe>
+        <cPaisRec>PRY</cPaisRec>
+        <dDesPaisRe>Paraguay</dDesPaisRe>
+        <iTiContRec>1</iTiContRec>
+        <dRucRec>5379057</dRucRec>
+        <dDVRec>0</dDVRec>
+        <dNomRec>ANDRES VALENTIN VERA CHAVEZ</dNomRec>
+        <dNomFanRec>ANDRES VALENTIN VERA CHAVEZ</dNomFanRec>
+        <dEmailRec>andyvercha@gmail.com</dEmailRec>
+        <dCodCliente>C007304</dCodCliente>
+      </gDatRec>
+    </gDatGralOpe>
+    <gDtipDE>
+      <gCamFE>
+        <iIndPres>1</iIndPres>
+        <dDesIndPres>Operación presencial</dDesIndPres>
+        <dFecEmNR>2025-08-11</dFecEmNR>
+      </gCamFE>
+      <gCamCond>
+        <iCondOpe>1</iCondOpe>
+        <dDCondOpe>Contado</dDCondOpe>
+        <gPaConEIni>
+          <iTiPago>4</iTiPago>
+          <dDesTiPag>Tarjeta de débito</dDesTiPag>
+          <dMonTiPag>1560000.0</dMonTiPag>
+          <cMoneTiPag>PYG</cMoneTiPag>
+          <dDMoneTiPag>Guarani</dDMoneTiPag>
+          <gPagTarCD>
+            <iDenTarj>1</iDenTarj>
+            <dDesDenTarj>Visa</dDesDenTarj>
+            <dRSProTar>BANCARD SA</dRSProTar>
+            <dRUCProTar>80013884</dRUCProTar>
+            <dDVProTar>8</dDVProTar>
+            <iForProPa>1</iForProPa>
+          </gPagTarCD>
+        </gPaConEIni>
+      </gCamCond>
+      <gCamItem>
+        <dCodInt>APORTEDEESPERA20AÑOS</dCodInt>
+        <dDesProSer>APORTE DE ESPERA 20AÑOS Ago/25 14:240 Cto.: 24363</dDesProSer>
+        <cUniMed>77</cUniMed>
+        <dDesUniMed>UNI</dDesUniMed>
+        <dCantProSer>1.0</dCantProSer>
+        <gValorItem>
+          <dPUniProSer>0</dPUniProSer>
+          <dTotBruOpeItem>0</dTotBruOpeItem>
+          <gValorRestaItem>
+            <dDescItem>0</dDescItem>
+            <dDescGloItem>0</dDescGloItem>
+            <dTotOpeItem>0</dTotOpeItem>
+          </gValorRestaItem>
+        </gValorItem>
+        <gCamIVA>
+          <iAfecIVA>3</iAfecIVA>
+          <dDesAfecIVA>Exento</dDesAfecIVA>
+          <dPropIVA>0</dPropIVA>
+          <dTasaIVA>0</dTasaIVA>
+          <dBasGravIVA>0</dBasGravIVA>
+          <dLiqIVAItem>0</dLiqIVAItem>
+          <dBasExe>0</dBasExe>
+        </gCamIVA>
+      </gCamItem>
+      <gCamItem>
+        <dCodInt>ESPERA20EX</dCodInt>
+        <dDesProSer>ESPERA 20 AÑOS</dDesProSer>
+        <cUniMed>77</cUniMed>
+        <dDesUniMed>UNI</dDesUniMed>
+        <dCantProSer>1.0</dCantProSer>
+        <gValorItem>
+          <dPUniProSer>860690.0</dPUniProSer>
+          <dTotBruOpeItem>860690.0</dTotBruOpeItem>
+          <gValorRestaItem>
+            <dDescItem>0</dDescItem>
+            <dDescGloItem>0</dDescGloItem>
+            <dTotOpeItem>860690.0</dTotOpeItem>
+          </gValorRestaItem>
+        </gValorItem>
+        <gCamIVA>
+          <iAfecIVA>3</iAfecIVA>
+          <dDesAfecIVA>Exento</dDesAfecIVA>
+          <dPropIVA>0</dPropIVA>
+          <dTasaIVA>0</dTasaIVA>
+          <dBasGravIVA>0</dBasGravIVA>
+          <dLiqIVAItem>0</dLiqIVAItem>
+          <dBasExe>0</dBasExe>
+        </gCamIVA>
+      </gCamItem>
+      <gCamItem>
+        <dCodInt>ESPERA20IM</dCodInt>
+        <dDesProSer>Gastos Administrativos.</dDesProSer>
+        <cUniMed>77</cUniMed>
+        <dDesUniMed>UNI</dDesUniMed>
+        <dCantProSer>1.0</dCantProSer>
+        <gValorItem>
+          <dPUniProSer>312000.0</dPUniProSer>
+          <dTotBruOpeItem>312000.0</dTotBruOpeItem>
+          <gValorRestaItem>
+            <dDescItem>0</dDescItem>
+            <dDescGloItem>0</dDescGloItem>
+            <dTotOpeItem>312000.0</dTotOpeItem>
+          </gValorRestaItem>
+        </gValorItem>
+        <gCamIVA>
+          <iAfecIVA>1</iAfecIVA>
+          <dDesAfecIVA>Gravado IVA</dDesAfecIVA>
+          <dPropIVA>100</dPropIVA>
+          <dTasaIVA>10</dTasaIVA>
+          <dBasGravIVA>283636.36363636</dBasGravIVA>
+          <dLiqIVAItem>28363.63636364</dLiqIVAItem>
+          <dBasExe>0</dBasExe>
+        </gCamIVA>
+      </gCamItem>
+      <gCamItem>
+        <dCodInt>ESPERA20IMP5</dCodInt>
+        <dDesProSer>ESPERA 20 AÑOS</dDesProSer>
+        <cUniMed>77</cUniMed>
+        <dDesUniMed>UNI</dDesUniMed>
+        <dCantProSer>1.0</dCantProSer>
+        <gValorItem>
+          <dPUniProSer>387310.0</dPUniProSer>
+          <dTotBruOpeItem>387310.0</dTotBruOpeItem>
+          <gValorRestaItem>
+            <dDescItem>0</dDescItem>
+            <dDescGloItem>0</dDescGloItem>
+            <dTotOpeItem>387310.0</dTotOpeItem>
+          </gValorRestaItem>
+        </gValorItem>
+        <gCamIVA>
+          <iAfecIVA>1</iAfecIVA>
+          <dDesAfecIVA>Gravado IVA</dDesAfecIVA>
+          <dPropIVA>100</dPropIVA>
+          <dTasaIVA>5</dTasaIVA>
+          <dBasGravIVA>368866.66666667</dBasGravIVA>
+          <dLiqIVAItem>18443.33333333</dLiqIVAItem>
+          <dBasExe>0</dBasExe>
+        </gCamIVA>
+      </gCamItem>
+      <gCamEsp>
+        <gGrupAdi>
+          <dSalAnt>0</dSalAnt>
+        </gGrupAdi>
+      </gCamEsp>
+    </gDtipDE>
+    <gTotSub>
+      <dSubExe>860690.0</dSubExe>
+      <dSubExo>0</dSubExo>
+      <dSub5>387310.0</dSub5>
+      <dSub10>312000.0</dSub10>
+      <dTotOpe>1560000.0</dTotOpe>
+      <dTotDesc>0</dTotDesc>
+      <dTotDescGlotem>0</dTotDescGlotem>
+      <dTotAntItem>0</dTotAntItem>
+      <dTotAnt>0</dTotAnt>
+      <dPorcDescTotal>0</dPorcDescTotal>
+      <dDescTotal>0</dDescTotal>
+      <dAnticipo>0</dAnticipo>
+      <dRedon>0</dRedon>
+      <dTotGralOpe>1560000.0</dTotGralOpe>
+      <dIVA5>18443.3333</dIVA5>
+      <dIVA10>28363.6364</dIVA10>
+      <dTotIVA>46806.9697</dTotIVA>
+      <dBaseGrav5>368866.66666667</dBaseGrav5>
+      <dBaseGrav10>283636.36363636</dBaseGrav10>
+      <dTBasGraIVA>652503.03030303</dTBasGraIVA>
+    </gTotSub>
+  </DE><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI="#01800092430001001045746222025081119198923040"><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>ER0BMm1xovZEvQDfqtSnkwO1yx8mjWg8ZfzDjlkoFZs=</DigestValue></Reference></SignedInfo><SignatureValue>fSFSU7G1mx+LCykJeqJmMOMOU2JAAnLtiYGlL9jWinptjaPkyQxdCE4RE2IpCIVfjU3BH4jZ4TMff3WLB+1TedlrObFXW3otHeuVtVVbxdByczEuCLcZBa5JRnkDvsfpEE1WS8zfu4ciBfqM6Y+/YNTJU5k0smyJ8AndugBw3v0QxPE+wiAxmEn0/EEJGZT5HcuNS3TDA23ouYz9J3BH2rVdHm3fJz98zyXZGqHR422NKJ6eCgjRzR2p77bsYYZSby0ODvv3FX9/GDLAdcP40Jz929JrFxMboYaF+YtkRJmnKudK+NmnWwDbSiDoW5BFK8WgxKISkg3h6ye1+sy8Hw==</SignatureValue><KeyInfo><X509Data><X509Certificate>MIIIxzCCBq+gAwIBAgIUbT/p+H1SxZCrDRMRJEtgz+YWTCMwDQYJKoZIhvcNAQELBQAwgYMxCzAJBgNVBAYTAlBZMQ0wCwYDVQQKDARJQ1BQMTgwNgYDVQQLDC9QcmVzdGFkb3IgQ3VhbGlmaWNhZG8gZGUgU2VydmljaW9zIGRlIENvbmZpYW56YTEWMBQGA1UEBRMNUlVDODAwMjgzNTUtNDETMBEGA1UEAwwKSVRUSSBTQUVDQTAeFw0yNTA3MDEyMDM5MTVaFw0yNjA3MDEyMDM5MTRaMIG6MQswCQYDVQQGEwJQWTErMCkGA1UECgwiQ0VSVElGSUNBRE8gQ1VBTElGSUNBRE8gVFJJQlVUQVJJTzELMAkGA1UECwwCRjExETAPBgNVBAUTCENJNjIzNTE4MRwwGgYDVQQEDBNBTFZBUkVOR0EgQVJHw5xFTExPMRUwEwYDVQQqDAxMVUlTIEFMQkVSVE8xKTAnBgNVBAMMIExVSVMgQUxCRVJUTyBBTFZBUkVOR0EgQVJHw5xFTExPMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArC7/kuayrpLKTqjWQxG8MeHCsGffsx2mhMsY/R+lyDP1cAZewV6/sy6gpDu04RL5GkHIO5QfyY3YLO2+VLqkg6O2F2ypvmaPY2fPKVvW0uq+6hiPBiMnwg1+SaY3U6potMdJjvuL8mljee+AeI+bhcXepk2/6MsGmnEliukWK3w4JEgPxCN4a9vG8a7yLcxj6eXbMO2zNdUNEqlPSQcb+8XymT9I17Pb5i+WJWU+/g/F3pZGuf4zYEOARJvtnT7sZNim9FYQnNEs/wP0BnIu5ozlossQ90OOlGCj6IZKS4RFsLYC6IVWOKpy2Dy3Bj9QwhSPT+K5xacuKQfbPM3REQIDAQABo4ID+DCCA/QwDAYDVR0TAQH/BAIwADAfBgNVHSMEGDAWgBTf9P4fMxfzeBFwDwLBlBzj4FzU/TB7BggrBgEFBQcBAQRvMG0wPQYIKwYBBQUHMAKGMWh0dHBzOi8vd3d3LnNlY3VyZS5pdHRpLmRpZ2l0YWwvY2VydHMvY2EtaXR0aS5jZXIwLAYIKwYBBQUHMAGGIGh0dHBzOi8vb2NzcC5zZWN1cmUuaXR0aS5kaWdpdGFsMIGsBgNVHREEgaQwgaGBIWxhbHZhcmVuZ2FAZm9ydGFsZXphaW5tdWVibGVzLmNvbaR8MHoxKTAnBgNVBA0MIEZJUk1BIEVMRUNUUk9OSUNBIGRlIG5pdmVsIG1lZGlvMRYwFAYDVQQFEw1SVUM4MDAwOTI0My0wMTUwMwYDVQQKDCxGT1JUQUxFWkEgSU5NVUVCTEVTIFNPQ0lFREFEIEFOT05JTUEgRU1JU09SQTCCAdEGA1UdIASCAcgwggHEMIIBwAYMKwYBBAGD3XcBAgEBMIIBrjA8BggrBgEFBQcCARYwaHR0cHM6Ly93d3cuc2VjdXJlLml0dGkuZGlnaXRhbC9jcHMvaXR0aV9jcHMucGRmMIHOBggrBgEFBQcCAjCBwQyBvkNlcnRpZmljYWRvIGN1YWxpZmljYWRvIGRlIGZpcm1hIGVsZWN0cm9uaWNhIHRpcG8gRjEgKGNsYXZlcyBlbiBtw7NkdWxvIHNvZnR3YXJlKSwgc3VqZXRhIGEgbGFzIGNvbmRpY2lvbmVzIGRlIHVzbyBleHB1ZXN0YXMgZW4gbGEgRGVjbGFyYWNpw7NuIGRlIFByw6FjdGljYXMgZGUgQ2VydGlmaWNhY2nDs24gZGUgSVRUSSBTQUVDQS4wgZwGCCsGAQUFBwICMIGPDIGMUXVhbGlmaWVkIGVsZWN0cm9uaWMgc2lnbmF0dXJlIGNlcnRpZmljYXRlIHR5cGUgRjEgKGtleXMgaW4gc29mdHdhcmUgbW9kdWxlKSwgc3ViamVjdCB0byB0aGUgY29uZGl0aW9ucyBvZiB1c2Ugc2V0IG91dCBpbiB0aGUgSVRUSSBTQUVDQSBDUFMwIAYDVR0lAQH/BBYwFAYIKwYBBQUHAwIGCCsGAQUFBwMBMHEGA1UdHwRqMGgwMqAwoC6GLGh0dHBzOi8vY3JsMS5zZWN1cmUuaXR0aS5kaWdpdGFsL2l0dGktY2EuY3JsMDKgMKAuhixodHRwczovL2NybDIuc2VjdXJlLml0dGkuZGlnaXRhbC9pdHRpLWNhLmNybDAdBgNVHQ4EFgQUssIelibElEVfA0rBPXgcwvNmnHUwDgYDVR0PAQH/BAQDAgXgMA0GCSqGSIb3DQEBCwUAA4ICAQAPrw1MAUubELSby74QrK6FjNcvbmnC+HzcNdc+8sVa4I2GHRSFI64Q0P0L0ZD+dpgb+OkpfMMNSHwE+WgAZwcqPiElUuGah0NPZVFIPx5edQbUST+akj7wt0tfITscF0WV4/Th3Y1FQQv7BPyKSctU/g45tWPu8L7dcwJCnjdOm0xyo/hT82dBDKL+JdYAlD+is35v8L7t2Z3PAMetkej9EvqaT199PU+P3veyDkIZp3n8bww9cwm+ZGkb7475lcIlxcsOW8Vg+55CjiqNmb/m1IWQxHPPKOw2+5yrqWeJM/gJj/AvH2GFNJHg7tZ1Vf0LMt6F6yhMgVVl1Q0nKKiqD7F06eZ2cvR4NDRGBWJ/8Om/+LAMM87edK/6aqe8PITH9SC/tv18yURAHJDq1PtWG3qfntTxoy9LM3a21Ztth3UoeNInbpHfliqa4Fv6fQLaOv9NDvgbqcX/8Dzg99EaaiOguoWnOEdn6cZ1eVlgQvEfSM1Taod+zOVl06E/dsLJA5uJep2BSaYtRk/dLjHcNmguwtJFADoFPx/yW9kjKdtW2OCkrlgtdqdrlH8Ff0QzgpjWmAyR71M6pbsmWbEsn9HOBnjCGQzOSqjKzi0iHAwJ78xXOJrmmP8PtGP+JpUTTme+TWnU8L/hhtTtdTxvnonCcKXo36J4XhrxcAzjUA==</X509Certificate></X509Data></KeyInfo></Signature>
+  <gCamFuFD>
+    <dCarQR>https://ekuatia.set.gov.py/consultas/qr?nVersion=150&amp;Id=01800092430001001045746222025081119198923040&amp;dFeEmiDE=323032352d30382d31315430383a33353a3030&amp;dRucRec=5379057&amp;dTotGralOpe=1560000.0&amp;dTotIVA=46806.9697&amp;cItems=4&amp;DigestValue=455230424d6d31786f765a45765144667174536e6b774f317978386d6a5767385a667a446a6c6b6f465a733d&amp;IdCSC=0001&amp;cHashQR=5b061f2690e33167f05cb74a28ca7028bdac1bc2574c39bee4fd7fda40c60ce8</dCarQR>
+  </gCamFuFD>
+</rDE>
