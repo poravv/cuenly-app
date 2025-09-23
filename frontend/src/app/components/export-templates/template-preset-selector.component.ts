@@ -92,6 +92,16 @@ export class TemplatePresetSelectorComponent implements OnInit {
     return colors[groupType] || 'light';
   }
 
+  getPresetColorHex(groupType: string): string {
+    const colors: { [key: string]: string } = {
+      'contable': '#198754',  // green
+      'ejecutivo': '#0d6efd', // blue
+      'detallado': '#0dcaf0', // cyan
+      'simple': '#6c757d'     // gray
+    };
+    return colors[groupType] || '#6c757d';
+  }
+
   getRecommendationBadge(presetKey: string): string | null {
     for (const [userType, recommendedPreset] of Object.entries(this.recommendations)) {
       if (recommendedPreset === presetKey) {

@@ -1977,7 +1977,7 @@ async def get_recent_activity(days: int = Query(default=7, description="Días ha
 async def export_excel_from_mongodb(request: Request,
                                    year_month: str, 
                                    export_type: str = Query(default="completo", 
-                                                          description="Tipo de export: ascont, completo")):
+                                                          description="Tipo de export: completo")):
     raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
 
 def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
@@ -2034,16 +2034,28 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
             nombre_cliente=doc.get("nombre_cliente", ""),
             email_cliente=doc.get("email_cliente", ""),
             monto_total=doc.get("monto_total", 0) or totales_data.get("total", 0),
-            # Mapeo correcto desde modelo v2
+            
+            # Mapeo correcto desde modelo v2 - NOMBRES CORRECTOS DEL XML
+            monto_exento=totales_data.get("exentas", 0),  # monto_exento en lugar de subtotal_exentas
+            base_gravada_5=totales_data.get("gravado_5", 0),  # base_gravada_5 del XML
+            base_gravada_10=totales_data.get("gravado_10", 0),  # base_gravada_10 del XML
+            iva_5=totales_data.get("iva_5", 0),
+            iva_10=totales_data.get("iva_10", 0),
+            
+            # Campos adicionales del XML que faltaban
+            total_operacion=doc.get("total_operacion", 0),
+            total_descuento=doc.get("total_descuento", 0),
+            total_iva=totales_data.get("iva_5", 0) + totales_data.get("iva_10", 0),
+            anticipo=doc.get("anticipo", 0),
+            
+            # Compatibilidad (campos legacy)
             subtotal_exentas=totales_data.get("exentas", 0),
             gravado_5=totales_data.get("gravado_5", 0),
-            subtotal_5=totales_data.get("gravado_5", 0),  # Para compatibilidad ASCONT
-            iva_5=totales_data.get("iva_5", 0),
+            subtotal_5=totales_data.get("gravado_5", 0),
             gravado_10=totales_data.get("gravado_10", 0),
-            subtotal_10=totales_data.get("gravado_10", 0),  # Para compatibilidad ASCONT
-            iva_10=totales_data.get("iva_10", 0),
-            # Fallback a campos legacy
+            subtotal_10=totales_data.get("gravado_10", 0),
             iva=doc.get("iva", 0),
+            
             productos=[clean_product(p) for p in productos]
         )
         
@@ -2105,34 +2117,17 @@ async def get_export_templates(user: Dict[str, Any] = Depends(_get_current_user)
 
 @app.get("/export-templates/available-fields")
 async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Obtener lista de campos disponibles para templates incluyendo campos calculados"""
+    """Obtener lista de campos disponibles para templates - SOLO CAMPOS REALES"""
     try:
-        from app.models.export_template import AVAILABLE_FIELDS, get_calculated_fields_by_category
+        from app.models.export_template import AVAILABLE_FIELDS
         
-        # Obtener campos calculados organizados por categoría
-        calculated_fields_by_category = get_calculated_fields_by_category()
-        
-        # Convertir definiciones de campos calculados a formato de API
-        calculated_fields = {}
-        for category, field_definitions in calculated_fields_by_category.items():
-            for field_def in field_definitions:
-                calculated_fields[f"calculated_{field_def.field_type.value}"] = {
-                    "description": field_def.description,
-                    "field_type": field_def.data_type,
-                    "display_name": field_def.display_name,
-                    "is_calculated": True,
-                    "calculated_type": field_def.field_type.value,
-                    "example_value": field_def.example_value,
-                    "category": field_def.category
-                }
-        
+        # Solo devolver campos reales de la base de datos - sin campos calculados
         return {
             "fields": AVAILABLE_FIELDS,
-            "calculated_fields": calculated_fields,
             "categories": {
                 "basic": [
-                    "numero_factura", "fecha", "cdc", "timbrado", "establecimiento", 
-                    "punto_expedicion", "tipo_documento", "condicion_venta", "moneda", "tipo_cambio"
+                    "numero_factura", "fecha", "cdc", "timbrado", "tipo_documento", 
+                    "condicion_venta", "moneda", "tipo_cambio"
                 ],
                 "emisor": [
                     "ruc_emisor", "nombre_emisor", "direccion_emisor", "telefono_emisor", 
@@ -2154,24 +2149,6 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
                 "metadata": [
                     "fuente", "processing_quality", "email_origen", "mes_proceso", 
                     "created_at", "descripcion_factura"
-                ],
-                # Categorías de campos calculados
-                "calculated_iva_montos": [
-                    "calculated_MONTO_CON_IVA_5", "calculated_MONTO_CON_IVA_10",
-                    "calculated_MONTO_SIN_IVA_5", "calculated_MONTO_SIN_IVA_10",
-                    "calculated_TOTAL_IVA_5_ONLY", "calculated_TOTAL_IVA_10_ONLY", 
-                    "calculated_TOTAL_IVA_GENERAL"
-                ],
-                "calculated_analisis": [
-                    "calculated_PORCENTAJE_IVA_5", "calculated_PORCENTAJE_IVA_10", 
-                    "calculated_PORCENTAJE_EXENTO"
-                ],
-                "calculated_totales": [
-                    "calculated_SUBTOTAL_GRAVADO", "calculated_SUBTOTAL_NO_GRAVADO", 
-                    "calculated_TOTAL_ANTES_IVA"
-                ],
-                "calculated_productos": [
-                    "calculated_CANTIDAD_PRODUCTOS", "calculated_VALOR_PROMEDIO_PRODUCTO"
                 ]
             }
         }
@@ -2180,134 +2157,24 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
         logger.error(f"Error obteniendo campos disponibles: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/export-templates/calculated-fields/preview")
-async def preview_calculated_fields(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Preview de campos calculados con datos de ejemplo"""
-    try:
-        from app.models.export_template import CALCULATED_FIELDS_DEFINITIONS, calculate_field
-        
-        # Datos de ejemplo para preview
-        sample_invoice = {
-            "numero_factura": "001-001-0001234",
-            "base_gravada_5": 1000000,
-            "base_gravada_10": 2000000,
-            "iva_5": 50000,
-            "iva_10": 200000,
-            "monto_exento": 500000,
-            "monto_exonerado": 0,
-            "monto_total": 3750000,
-            "total_operacion": 3500000,
-            "productos": [
-                {"nombre": "Producto A", "precio_unitario": 150000, "cantidad": 5},
-                {"nombre": "Producto B", "precio_unitario": 300000, "cantidad": 3},
-                {"nombre": "Producto C", "precio_unitario": 100000, "cantidad": 2}
-            ]
-        }
-        
-        # Calcular todos los campos con datos de ejemplo
-        calculated_examples = {}
-        for field_type, definition in CALCULATED_FIELDS_DEFINITIONS.items():
-            try:
-                calculated_value = calculate_field(field_type, sample_invoice)
-                
-                # Formatear el valor según el tipo
-                if definition.data_type.value == "CURRENCY":
-                    formatted_value = f"₲ {calculated_value:,.0f}" if calculated_value else "₲ 0"
-                elif definition.data_type.value == "PERCENTAGE":
-                    formatted_value = f"{calculated_value:.2f}%" if calculated_value else "0.00%"
-                else:
-                    formatted_value = str(calculated_value) if calculated_value is not None else "0"
-                
-                calculated_examples[field_type.value] = {
-                    "display_name": definition.display_name,
-                    "description": definition.description,
-                    "category": definition.category,
-                    "calculated_value": calculated_value,
-                    "formatted_value": formatted_value,
-                    "data_type": definition.data_type.value
-                }
-            except Exception as calc_error:
-                logger.warning(f"Error calculando {field_type}: {calc_error}")
-                calculated_examples[field_type.value] = {
-                    "display_name": definition.display_name,
-                    "description": definition.description,
-                    "category": definition.category,
-                    "calculated_value": None,
-                    "formatted_value": "Error",
-                    "data_type": definition.data_type.value,
-                    "error": str(calc_error)
-                }
-        
-        return {
-            "sample_invoice": sample_invoice,
-            "calculated_fields": calculated_examples,
-            "summary": {
-                "total_fields": len(calculated_examples),
-                "categories": list(set([definition.category for definition in CALCULATED_FIELDS_DEFINITIONS.values()]))
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error en preview de campos calculados: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# === RUTA DE CAMPOS CALCULADOS ELIMINADA ===
+# @app.get("/export-templates/calculated-fields/preview")
+# async def preview_calculated_fields(user: Dict[str, Any] = Depends(_get_current_user)):
+#     """Preview de campos calculados - ELIMINADO"""
+#     return {"error": "Campos calculados eliminados"}
 
-@app.get("/export-templates/presets")
-async def get_template_presets(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Obtener templates predefinidos inteligentes"""
-    try:
-        from app.utils.smart_template_generator import SmartTemplateGenerator
-        
-        generator = SmartTemplateGenerator()
-        presets = generator.get_available_presets()
-        
-        return {
-            "presets": presets,
-            "recommendations": {
-                "new_user": "simple",
-                "accountant": "contable", 
-                "business_owner": "ejecutivo",
-                "auditor": "detallado"
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error obteniendo presets: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# === RUTAS DE TEMPLATES PREDEFINIDOS ELIMINADAS ===
+# Ya no hay templates predefinidos, solo creación personalizada
 
-@app.post("/export-templates/create-from-preset")
-async def create_template_from_preset(
-    preset_request: dict,
-    user: Dict[str, Any] = Depends(_get_current_user)
-):
-    """Crear template a partir de un preset inteligente"""
-    try:
-        from app.utils.smart_template_generator import SmartTemplateGenerator
-        
-        preset_name = preset_request.get('preset')
-        custom_name = preset_request.get('name')
-        
-        if not preset_name:
-            raise HTTPException(status_code=400, detail="Preset name required")
-        
-        generator = SmartTemplateGenerator()
-        template = generator.create_template_from_preset(preset_name, custom_name)
-        template.owner_email = user.get('email')
-        
-        # Guardar en base de datos
-        from app.repositories.export_template_repository import ExportTemplateRepository
-        repo = ExportTemplateRepository()
-        template_id = repo.create_template(template)
-        
-        return {
-            "success": True,
-            "template_id": template_id,
-            "message": f"Template '{template.name}' creado exitosamente",
-            "preset_used": preset_name
-        }
-        
-    except Exception as e:
-        logger.error(f"Error creando template desde preset: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# @app.post("/export-templates/create-from-preset")
+# async def create_template_from_preset(
+#     preset_request: dict,
+#     user: Dict[str, Any] = Depends(_get_current_user)
+# ):
+#     """Crear template a partir de un preset inteligente - ELIMINADO"""
+#     return {"error": "Templates predefinidos eliminados"}
+
+# === TEMPLATES PREDEFINIDOS ELIMINADOS ===
 
 @app.post("/export-templates")
 async def create_export_template(

@@ -99,9 +99,7 @@ export class ExportTemplateService {
   /**
    * Obtener templates predefinidos inteligentes
    */
-  getTemplatePresets(): Observable<any> {
-    return this.http.get<any>(`${this.baseUrl}/export-templates/presets`);
-  }
+  // Ya no hay presets predefinidos - solo templates personalizados
 
   /**
    * Crear template a partir de preset inteligente
