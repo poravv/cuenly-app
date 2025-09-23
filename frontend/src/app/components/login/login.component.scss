@@ -11,3 +11,27 @@
   height: 18px;
   display: inline-block;
 }
+
+.login-logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  
+  .logo-image {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    transition: transform 0.3s ease;
+    
+    &:hover {
+      transform: scale(1.05);
+    }
+  }
+}
+
+@media (max-width: 576px) {
+  .login-logo .logo-image {
+    width: 60px;
+    height: 60px;
+  }
+}

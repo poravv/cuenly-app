@@ -18,6 +18,7 @@ import { TrialBannerComponent } from './components/trial-banner/trial-banner.com
 import { ExportTemplatesComponent } from './components/export-templates/export-templates.component';
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
+import { NotificationContainerComponent } from './components/shared/notification-container/notification-container.component';
 import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
@@ -39,7 +40,8 @@ import { TrialInterceptor } from './interceptors/trial.interceptor';
     TrialBannerComponent,
     ExportTemplatesComponent,
     TemplateEditorComponent,
-    TemplateExportComponent
+    TemplateExportComponent,
+    NotificationContainerComponent
   ],
   imports: [
     BrowserModule,

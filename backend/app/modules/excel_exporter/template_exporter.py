@@ -274,7 +274,7 @@ class ExcelExporter:
                         if field.field_key.endswith('.cantidad'):
                             str_values.append(f"{item:.1f}")
                         elif field.field_key.endswith(('.precio_unitario', '.total')):
-                            str_values.append(f"{item:.0f}")  # Sin comas
+                            str_values.append(f"{round(item)}")  # Redondear en lugar de truncar
                         else:
                             str_values.append(str(item))
                     else:
@@ -288,7 +288,7 @@ class ExcelExporter:
                     numeric_values = [float(item) for item in array_value if item is not None]
                     total = sum(numeric_values)
                     if field.field_type == FieldType.CURRENCY:
-                        return f"{total:.0f}"  # Sin comas y sin símbolo de moneda
+                        return f"{round(total)}"  # Redondear totales también
                     else:
                         return f"{total:.2f}"  # Sin comas
                 except:
@@ -305,7 +305,7 @@ class ExcelExporter:
     
     def _format_field_value(self, value: Any, field: ExportField) -> str:
         """
-        Formatear valor según tipo de campo - CORREGIDO para Excel
+        Formatear valor según tipo de campo - CORREGIDO para usar redondeo apropiado
         
         Args:
             value: Valor a formatear
@@ -320,15 +320,16 @@ class ExcelExporter:
         try:
             if field.field_type == FieldType.CURRENCY:
                 if isinstance(value, (int, float)):
-                    # Devolver número entero sin decimales para Excel
-                    return str(int(value))
+                    # CORREGIDO: Usar redondeo en lugar de truncamiento
+                    # round() redondea al entero más cercano (comportamiento estándar)
+                    return str(round(value))
                 return str(value)
             
             elif field.field_type == FieldType.NUMBER:
                 if isinstance(value, (int, float)):
-                    # CORREGIDO: Para cantidades, devolver entero sin decimales
+                    # CORREGIDO: Para cantidades, usar redondeo apropiado
                     if field.field_key in ['productos.cantidad', 'cantidad']:
-                        return str(int(value))
+                        return str(round(value))  # Redondear cantidades también
                     else:
                         return str(value)  # Otros números como están
                 return str(value)
@@ -452,7 +453,8 @@ class ExcelExporter:
                 cell.value = "TOTALES"
             elif field.field_key in totals:
                 if field.field_type == FieldType.CURRENCY:
-                    cell.value = f"{totals[field.field_key]:.0f}"  # Sin comas y sin símbolo ₲
+                    # CORREGIDO: Usar redondeo en lugar de truncamiento para totales
+                    cell.value = f"{round(totals[field.field_key])}"  # Sin comas y sin símbolo ₲
                 else:
                     cell.value = f"{totals[field.field_key]:.2f}"  # Sin comas
             else:
