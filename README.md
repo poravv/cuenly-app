@@ -31,28 +31,25 @@ CuenlyApp es una herramienta automatizada para extraer información de facturas 
 - Tesseract OCR instalado en el sistema
 - Docker y Kubernetes (para deployment en producción)
 
-## 🚀 Deployment Rápido
+## 🚀 Deployment
 
-### Kubernetes (Producción)
+### Automático (GitHub Actions)
+Los deployments se ejecutan automáticamente al hacer push a `main`. El sistema usa tags únicos basados en SHA para garantizar actualizaciones.
 
-Para deployment forzado (garantiza actualización de imágenes latest):
+### Manual (Comandos directos)
+Para deployments manuales, usa comandos transparentes de kubectl:
 
 ```bash
-# Deployment completo de ambos componentes
-./force-deploy.sh all
+# Actualizar frontend
+kubectl set image deployment/cuenly-frontend cuenly-frontend=ghcr.io/poravv/cuenly-app-frontend:latest -n cuenly-frontend
+kubectl patch deployment cuenly-frontend -n cuenly-frontend -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}}}}"
 
-# Solo frontend
-./force-deploy.sh frontend
-
-# Solo backend
-./force-deploy.sh backend
-
-# Restart rápido (sin recrear deployment)
-./force-deploy.sh restart-frontend
-./force-deploy.sh restart-backend
+# Actualizar backend  
+kubectl set image deployment/cuenly-backend cuenly-backend=ghcr.io/poravv/cuenly-app-backend:latest -n cuenly-backend
+kubectl patch deployment cuenly-backend -n cuenly-backend -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}}}}"
 ```
 
-Ver [Guía de Deployment](DEPLOYMENT_GUIDE.md) para más detalles.
+Ver [comandos de deployment manual](MANUAL_DEPLOYMENT_COMMANDS.md) para más opciones.
 - Docker y Docker Compose (opcional, para despliegue)
 
 ## 🛠️ Instalación

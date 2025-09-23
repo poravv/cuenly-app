@@ -1,0 +1,241 @@
+<div class="container-fluid p-4">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-1">
+        <i class="bi bi-download me-2 text-success"></i>
+        Exportar Facturas
+      </h2>
+      <p class="text-muted mb-0">Exporte sus facturas a Excel usando templates personalizados</p>
+    </div>
+    <div>
+      <button class="btn btn-outline-secondary" (click)="goBack()">
+        <i class="bi bi-arrow-left me-2"></i>
+        Volver
+      </button>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading" class="text-center p-5">
+    <div class="spinner-border text-primary mb-3" role="status">
+      <span class="visually-hidden">Cargando...</span>
+    </div>
+    <p class="text-muted">Cargando templates...</p>
+  </div>
+
+  <!-- Export Interface -->
+  <div *ngIf="!loading" class="row">
+    <!-- Left Panel - Template Selection -->
+    <div class="col-lg-4 mb-4">
+      <!-- Template Selection -->
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="bi bi-file-earmark-excel me-2"></i>
+            Seleccionar Template
+          </h5>
+        </div>
+        <div class="card-body">
+          <div *ngIf="templates.length === 0" class="text-center p-3">
+            <i class="bi bi-exclamation-triangle text-warning"></i>
+            <p class="text-muted mt-2">No hay templates disponibles</p>
+            <button class="btn btn-primary btn-sm" routerLink="/templates-export/create">
+              Crear Template
+            </button>
+          </div>
+
+          <div *ngIf="templates.length > 0">
+            <div *ngFor="let template of templates" 
+                 class="template-option mb-2"
+                 [class.selected]="selectedTemplate?.id === template.id"
+                 (click)="selectTemplate(template)">
+              <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1">
+                  <div class="template-name">
+                    {{ template.name }}
+                    <span *ngIf="template.is_default" class="badge bg-success ms-2">
+                      <i class="bi bi-star"></i>
+                    </span>
+                  </div>
+                  <div class="template-description text-muted small">
+                    {{ template.description || 'Sin descripción' }}
+                  </div>
+                  <div class="template-stats text-muted small mt-1">
+                    <i class="bi bi-list-ul me-1"></i>
+                    {{ getFieldCount() }} campos
+                  </div>
+                </div>
+                <div class="template-actions">
+                  <button class="btn btn-outline-secondary btn-sm" 
+                          (click)="editTemplate(); $event.stopPropagation()"
+                          title="Editar template">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Selected Template Details -->
+      <div *ngIf="selectedTemplate" class="card mt-4">
+        <div class="card-header">
+          <h6 class="mb-0">
+            <i class="bi bi-info-circle me-2"></i>
+            Detalles del Template
+          </h6>
+        </div>
+        <div class="card-body">
+          <div class="template-detail">
+            <strong>{{ selectedTemplate.name }}</strong>
+            <span *ngIf="selectedTemplate.is_default" class="badge bg-success ms-2">Por defecto</span>
+          </div>
+          <p class="text-muted small mt-1">{{ selectedTemplate.description }}</p>
+          
+          <div class="template-meta mt-3">
+            <div class="row g-2 text-center">
+              <div class="col-6">
+                <div class="stat-box">
+                  <div class="stat-value">{{ getFieldCount() }}</div>
+                  <div class="stat-label">Campos</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="stat-box">
+                  <div class="stat-value">Excel</div>
+                  <div class="stat-label">Formato</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Fields Preview -->
+          <div class="fields-preview mt-3">
+            <div class="small text-muted mb-2">Campos incluidos:</div>
+            <div class="field-tags">
+              <span *ngFor="let field of selectedTemplate.fields | slice:0:4" 
+                    class="badge bg-light text-dark me-1 mb-1">
+                {{ field.display_name }}
+              </span>
+              <span *ngIf="selectedTemplate.fields.length > 4" 
+                    class="badge bg-secondary">
+                +{{ selectedTemplate.fields.length - 4 }} más
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel - Export Configuration -->
+    <div class="col-lg-8">
+      <!-- Export Settings -->
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="bi bi-gear me-2"></i>
+            Configuración de Exportación
+          </h5>
+        </div>
+        <div class="card-body">
+          <!-- File Name -->
+          <div class="row mb-4">
+            <div class="col-md-8">
+              <label for="filename" class="form-label">Nombre del archivo *</label>
+              <input type="text" 
+                     class="form-control" 
+                     id="filename"
+                     [(ngModel)]="exportRequest.filename"
+                     placeholder="nombre_archivo.xlsx">
+            </div>
+            <div class="col-md-4 d-flex align-items-end">
+              <button class="btn btn-outline-secondary" 
+                      (click)="generateDefaultFilename()"
+                      title="Generar nombre automático">
+                <i class="bi bi-arrow-clockwise me-2"></i>
+                Regenerar
+              </button>
+            </div>
+          </div>
+
+          <!-- Filters Section -->
+          <div class="filters-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="mb-0">
+                <i class="bi bi-funnel me-2"></i>
+                Filtros de Facturas
+              </h6>
+              <button *ngIf="hasActiveFilters()" 
+                      class="btn btn-outline-danger btn-sm" 
+                      (click)="clearFilters()">
+                <i class="bi bi-x-circle me-1"></i>
+                Limpiar
+              </button>
+            </div>
+
+            <div class="row g-3">
+              <!-- Date Range -->
+              <div class="col-md-6">
+                <label for="fechaInicio" class="form-label">Fecha desde</label>
+                <input type="date" 
+                       class="form-control" 
+                       id="fechaInicio"
+                       [(ngModel)]="filters.fecha_inicio">
+              </div>
+              <div class="col-md-6">
+                <label for="fechaFin" class="form-label">Fecha hasta</label>
+                <input type="date" 
+                       class="form-control" 
+                       id="fechaFin"
+                       [(ngModel)]="filters.fecha_fin">
+              </div>
+
+              <!-- RUC Filters -->
+              <div class="col-md-6">
+                <label for="rucEmisor" class="form-label">RUC Emisor</label>
+                <input type="text" 
+                       class="form-control" 
+                       id="rucEmisor"
+                       [(ngModel)]="filters.ruc_emisor"
+                       placeholder="Ej: 80012345-6">
+              </div>
+              <div class="col-md-6">
+                <label for="rucCliente" class="form-label">RUC Cliente</label>
+                <input type="text" 
+                       class="form-control" 
+                       id="rucCliente"
+                       [(ngModel)]="filters.ruc_cliente"
+                       placeholder="Ej: 80012345-6">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Export Action -->
+      <div class="card mt-4">
+        <div class="card-body text-center">
+          <div class="export-action">
+            <div class="mb-3">
+              <i class="bi bi-download display-4 text-success"></i>
+            </div>
+            <h5 class="mb-2">Listo para Exportar</h5>
+            <p class="text-muted mb-4">
+              Se exportarán las facturas que coincidan con los filtros seleccionados 
+              usando el template "{{ selectedTemplate?.name }}"
+            </p>
+            <button class="btn btn-success btn-lg" 
+                    (click)="exportFacturas()"
+                    [disabled]="!selectedTemplate || exporting || !exportRequest.filename?.trim()">
+              <span *ngIf="exporting" class="spinner-border spinner-border-sm me-2" role="status"></span>
+              <i *ngIf="!exporting" class="bi bi-download me-2"></i>
+              {{ exporting ? 'Exportando...' : 'Exportar a Excel' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
