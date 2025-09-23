@@ -120,6 +120,18 @@ class MongoInvoiceRepository(InvoiceRepository):
                     "gravado_10": header.get("totales", {}).get("gravado_10", 0),
                     "iva_10": header.get("totales", {}).get("iva_10", 0),
                     "monto_total": header.get("totales", {}).get("total", 0),
+                    # CRÍTICO: Campos faltantes para template export
+                    "total_operacion": header.get("totales", {}).get("total_operacion", 0),
+                    "monto_exento": header.get("totales", {}).get("exentas", 0),  # Usar exentas como fuente principal
+                    "exonerado": header.get("totales", {}).get("exonerado", 0),
+                    "total_iva": header.get("totales", {}).get("total_iva", 0),
+                    "total_descuento": header.get("totales", {}).get("total_descuento", 0),
+                    "anticipo": header.get("totales", {}).get("anticipo", 0),
+                    "base_gravada_5": header.get("totales", {}).get("gravado_5", 0),
+                    "base_gravada_10": header.get("totales", {}).get("gravado_10", 0),
+                    "total_base_gravada": header.get("totales", {}).get("total_base_gravada", 0) or (
+                        header.get("totales", {}).get("gravado_5", 0) + header.get("totales", {}).get("gravado_10", 0)
+                    ),
                     "condicion_venta": header.get("condicion_venta", ""),
                     "moneda": header.get("moneda", "PYG"),
                     "tipo_cambio": header.get("tipo_cambio", 0.0),

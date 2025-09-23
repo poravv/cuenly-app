@@ -55,7 +55,14 @@ def map_invoice(invoice: InvoiceData, fuente: str = "") -> InvoiceDocument:
             iva_5=float(getattr(invoice, "iva_5", 0) or 0),
             gravado_10=float(getattr(invoice, "gravado_10", 0) or getattr(invoice, "subtotal_10", 0) or 0),
             iva_10=float(getattr(invoice, "iva_10", 0) or 0),
-            total=float(getattr(invoice, "monto_total", 0) or getattr(invoice, "total_general", 0) or 0)
+            total=float(getattr(invoice, "monto_total", 0) or getattr(invoice, "total_general", 0) or 0),
+            # CRÍTICO: Mapear campos faltantes para template export
+            total_operacion=float(getattr(invoice, "total_operacion", 0) or 0),
+            monto_exento=float(getattr(invoice, "monto_exento", 0) or 0),
+            exonerado=float(getattr(invoice, "exonerado", 0) or 0),
+            total_iva=float(getattr(invoice, "total_iva", 0) or 0),
+            total_descuento=float(getattr(invoice, "total_descuento", 0) or 0),
+            anticipo=float(getattr(invoice, "anticipo", 0) or 0)
         ),
         email_origen=getattr(invoice, "email_origen", ""),
         mes_proceso=getattr(invoice, "mes_proceso", ""),

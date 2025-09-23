@@ -2137,8 +2137,8 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
                     "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente"
                 ],
                 "montos": [
-                    "base_gravada_5", "base_gravada_10", "iva_5", "iva_10", "total_iva",
-                    "monto_exento", "monto_exonerado", "total_operacion", "monto_total", 
+                    "gravado_5", "gravado_10", "iva_5", "iva_10", "total_iva",
+                    "monto_exento", "exonerado", "monto_total", 
                     "total_base_gravada", "total_descuento", "anticipo"
                 ],
                 "productos": [
@@ -2147,8 +2147,7 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
                     "productos.total", "productos.iva", "productos.base_gravada", "productos.monto_iva"
                 ],
                 "metadata": [
-                    "fuente", "processing_quality", "email_origen", "mes_proceso", 
-                    "created_at", "descripcion_factura"
+                    "mes_proceso", "created_at", "descripcion_factura"
                 ]
             }
         }

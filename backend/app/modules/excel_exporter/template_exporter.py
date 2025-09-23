@@ -126,6 +126,12 @@ class ExcelExporter:
                 value = self._extract_field_value(invoice_dict, field)
                 formatted_value = self._format_field_value(value, field)
                 row_data[field.field_key] = formatted_value
+                
+                # Debug específico después del formateo
+                if field.field_key in ['monto_exento', 'exonerado', 'total_base_gravada']:
+                    logger.info(f"DEBUG FORMAT - Campo {field.field_key}: "
+                               f"valor extraído={value} → valor formateado={formatted_value}")
+            
             
             processed_data.append(row_data)
         
@@ -148,12 +154,17 @@ class ExcelExporter:
             field_mappings = {
                 "base_gravada_5": ["gravado_5", "subtotal_5"],
                 "base_gravada_10": ["gravado_10", "subtotal_10"],
-                "monto_exento": ["exento", "subtotal_exentas"],
-                "monto_exonerado": ["exonerado"],
+                # Eliminado mapeos incorrectos - usar campos directos
                 "productos.nombre": ["productos.articulo", "productos.descripcion", "productos.nombre"],
             }
             
             field_key = field.field_key
+            
+            # Debug específico para campos problemáticos
+            if field_key in ['monto_exento', 'exonerado', 'total_base_gravada']:
+                logger.info(f"DEBUG EXPORT - Campo {field_key}: "
+                           f"valor directo={invoice_dict.get(field_key)}, "
+                           f"disponible en invoice: {field_key in invoice_dict}")
             
             # Manejo especial para campos de productos
             if field_key.startswith('productos.'):

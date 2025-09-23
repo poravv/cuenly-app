@@ -226,7 +226,8 @@ export class TemplateEditorComponent implements OnInit {
       
       // Montos - Nomenclatura XML SIFEN
       'subtotal_exentas': 'Subtotal Exentas',
-      'exento': 'Exento',
+      // 'exento' eliminado por redundancia con 'monto_exento'
+      'monto_exento': 'Monto Exento',
       'exonerado': 'Exonerado',
       'subtotal_5': 'Base Gravada 5%',
       'gravado_5': 'Base Gravada 5%',
@@ -235,7 +236,7 @@ export class TemplateEditorComponent implements OnInit {
       'gravado_10': 'Base Gravada 10%',
       'iva_10': 'IVA 10%',
       'total_iva': 'Total IVA',
-      'total_operacion': 'Total Operación',
+      // 'total_operacion' eliminado por redundancia con 'monto_total'
       'monto_total': 'Monto Total',
       'total_general': 'Total General',
       'total_descuento': 'Total Descuento',
