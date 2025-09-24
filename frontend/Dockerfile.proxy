@@ -11,43 +11,97 @@ RUN npm run build --prod
 # Nginx con configuración de proxy
 FROM nginx:alpine
 
-# Add curl for exec probes (if used)
+# Add curl for exec probes
 RUN apk add --no-cache curl
 
 # Copiar archivos del frontend construido
 COPY --from=build /app/dist/cuenlyapp-frontend /usr/share/nginx/html
 
-# Copiar configuración de nginx proxy (se monta como volumen)
-# La configuración se montará desde nginx/nginx-proxy.conf
-
 # Crear página de error personalizada
-RUN echo '<html><body><h1>CuenlyApp Temporalmente No Disponible</h1><p>El servicio se está reiniciando...</p></body></html>' > /usr/share/nginx/html/50x.html && \
-    echo 'server { \
-    listen 80; \
-    server_name localhost; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    \
-    # API proxy para Docker Compose \
-    location ~ ^/(api|user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|export-templates|export|invoices) { \
-        proxy_pass http://cuenlyapp-backend:8000; \
-        proxy_http_version 1.1; \
-        proxy_set_header Upgrade $http_upgrade; \
-        proxy_set_header Connection "upgrade"; \
-        proxy_set_header Host $host; \
-        proxy_set_header X-Real-IP $remote_addr; \
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
-        proxy_set_header X-Forwarded-Proto $scheme; \
-        proxy_cache_bypass $http_upgrade; \
-        client_max_body_size 50M; \
-    } \
-    \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-    } \
-    \
-    location /health { return 200; } \
-}' > /etc/nginx/conf.d/default.conf
+RUN echo '<html><body><h1>CuenlyApp Temporalmente No Disponible</h1><p>El servicio se está reiniciando...</p></body></html>' > /usr/share/nginx/html/50x.html
+
+# Crear script de entrada dinámico
+RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
+    echo 'set -e' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo 'echo "🔧 Configurando proxy nginx para CuenlyApp..."' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '# Determinar el backend host basado en el entorno' >> /docker-entrypoint.sh && \
+    echo 'if [ -n "$BACKEND_HOST" ]; then' >> /docker-entrypoint.sh && \
+    echo '    BACKEND_URL="$BACKEND_HOST"' >> /docker-entrypoint.sh && \
+    echo '    echo "🔍 Modo Kubernetes: $BACKEND_URL"' >> /docker-entrypoint.sh && \
+    echo 'else' >> /docker-entrypoint.sh && \
+    echo '    BACKEND_URL="cuenlyapp-backend:8000"' >> /docker-entrypoint.sh && \
+    echo '    echo "🔍 Modo Docker Compose: $BACKEND_URL"' >> /docker-entrypoint.sh && \
+    echo 'fi' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '# Crear configuración nginx dinámica usando sed para sustitución' >> /docker-entrypoint.sh && \
+    echo 'cat > /etc/nginx/conf.d/default.conf << '\''EOF'\''' >> /docker-entrypoint.sh && \
+    echo 'server {' >> /docker-entrypoint.sh && \
+    echo '    listen 80;' >> /docker-entrypoint.sh && \
+    echo '    server_name localhost;' >> /docker-entrypoint.sh && \
+    echo '    root /usr/share/nginx/html;' >> /docker-entrypoint.sh && \
+    echo '    index index.html;' >> /docker-entrypoint.sh && \
+    echo '    client_max_body_size 100M;' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '    # API proxy - endpoints directos (sin /api prefix)' >> /docker-entrypoint.sh && \
+    echo '    location ~ ^/(user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|export-templates|export|invoices|health|cache|imap|docs|openapi.json) {' >> /docker-entrypoint.sh && \
+    echo '        proxy_pass http://BACKEND_URL_PLACEHOLDER;' >> /docker-entrypoint.sh && \
+    echo '        proxy_http_version 1.1;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Upgrade $http_upgrade;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Connection "upgrade";' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Host $host;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Real-IP $remote_addr;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Forwarded-Proto $scheme;' >> /docker-entrypoint.sh && \
+    echo '        proxy_cache_bypass $http_upgrade;' >> /docker-entrypoint.sh && \
+    echo '        proxy_connect_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '        proxy_send_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '        proxy_read_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '    }' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '    # API proxy - con /api prefix (compatibilidad)' >> /docker-entrypoint.sh && \
+    echo '    location /api/ {' >> /docker-entrypoint.sh && \
+    echo '        rewrite ^/api/(.*)$ /$1 break;' >> /docker-entrypoint.sh && \
+    echo '        proxy_pass http://BACKEND_URL_PLACEHOLDER;' >> /docker-entrypoint.sh && \
+    echo '        proxy_http_version 1.1;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Upgrade $http_upgrade;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Connection "upgrade";' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Host $host;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Real-IP $remote_addr;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Forwarded-Proto $scheme;' >> /docker-entrypoint.sh && \
+    echo '        proxy_cache_bypass $http_upgrade;' >> /docker-entrypoint.sh && \
+    echo '        proxy_connect_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '        proxy_send_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '        proxy_read_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '    }' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '    # Servir archivos estáticos del frontend - SPA' >> /docker-entrypoint.sh && \
+    echo '    location / {' >> /docker-entrypoint.sh && \
+    echo '        try_files $uri $uri/ /index.html;' >> /docker-entrypoint.sh && \
+    echo '        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {' >> /docker-entrypoint.sh && \
+    echo '            expires 1M;' >> /docker-entrypoint.sh && \
+    echo '            add_header Cache-Control "public, immutable";' >> /docker-entrypoint.sh && \
+    echo '        }' >> /docker-entrypoint.sh && \
+    echo '        add_header X-Content-Type-Options nosniff;' >> /docker-entrypoint.sh && \
+    echo '        add_header X-Frame-Options DENY;' >> /docker-entrypoint.sh && \
+    echo '        add_header X-XSS-Protection "1; mode=block";' >> /docker-entrypoint.sh && \
+    echo '    }' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '    location /health { return 200 "OK"; add_header Content-Type text/plain; }' >> /docker-entrypoint.sh && \
+    echo '    error_page 500 502 503 504 /50x.html;' >> /docker-entrypoint.sh && \
+    echo '    location = /50x.html { root /usr/share/nginx/html; }' >> /docker-entrypoint.sh && \
+    echo '}' >> /docker-entrypoint.sh && \
+    echo 'EOF' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '# Reemplazar el placeholder con la URL real del backend' >> /docker-entrypoint.sh && \
+    echo 'sed -i "s|BACKEND_URL_PLACEHOLDER|$BACKEND_URL|g" /etc/nginx/conf.d/default.conf' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo 'echo "📋 Configuración nginx generada para: $BACKEND_URL"' >> /docker-entrypoint.sh && \
+    echo 'echo "🚀 Iniciando nginx..."' >> /docker-entrypoint.sh && \
+    echo 'exec nginx -g "daemon off;"' >> /docker-entrypoint.sh && \
+    chmod +x /docker-entrypoint.sh
 
 # Exponer puerto 80
 EXPOSE 80
@@ -56,4 +110,4 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost/ || exit 1
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/docker-entrypoint.sh"]
