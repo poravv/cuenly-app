@@ -8,6 +8,7 @@ import { HelpComponent } from './components/help/help.component';
 import { InvoiceExplorerComponent } from './components/invoice-explorer/invoice-explorer.component';
 import { InvoicesV2Component } from './components/invoices-v2/invoices-v2.component';
 import { LoginComponent } from './components/login/login.component';
+import { SubscriptionComponent } from './components/subscription/subscription.component';
 import { ExportTemplatesComponent } from './components/export-templates/export-templates.component';
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
@@ -28,6 +29,7 @@ const routes: Routes = [
   { path: 'templates-export/edit/:id', component: TemplateEditorComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/export/:id', component: TemplateExportComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/export', component: TemplateExportComponent, canActivate: [AuthGuard] },
+  { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard] },
   { path: 'ayuda', component: HelpComponent, canActivate: [AuthGuard] },
   { path: '**', redirectTo: '', pathMatch: 'full' }
 ];
