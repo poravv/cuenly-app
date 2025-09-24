@@ -21,33 +21,58 @@ COPY --from=build /app/dist/cuenlyapp-frontend /usr/share/nginx/html
 # La configuración se montará desde nginx/nginx-proxy.conf
 
 # Crear página de error personalizada
-RUN echo '<html><body><h1>CuenlyApp Temporalmente No Disponible</h1><p>El servicio se está reiniciando...</p></body></html>' > /usr/share/nginx/html/50x.html && \
-    echo 'server { \
+RUN echo '<html><body><h1>CuenlyApp Temporalmente No Disponible</h1><p>El servicio se está reiniciando...</p></body></html>' > /usr/share/nginx/html/50x.html
+
+# Crear directorio para templates de nginx
+RUN mkdir -p /etc/nginx/templates
+
+# Crear template de configuración nginx
+RUN echo 'server { \
     listen 80; \
     server_name localhost; \
     root /usr/share/nginx/html; \
     index index.html; \
     \
-    # API proxy para Docker Compose \
+    # Configuración resolver para K8s \
+    resolver 10.96.0.10 valid=30s; \
+    \
+    # API proxy configurable \
     location ~ ^/(api|user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|export-templates|export|invoices) { \
-        proxy_pass http://cuenlyapp-backend:8000; \
+        set $$backend_upstream $${BACKEND_HOST}; \
+        proxy_pass http://$$backend_upstream; \
         proxy_http_version 1.1; \
-        proxy_set_header Upgrade $http_upgrade; \
+        proxy_set_header Upgrade $$http_upgrade; \
         proxy_set_header Connection "upgrade"; \
-        proxy_set_header Host $host; \
-        proxy_set_header X-Real-IP $remote_addr; \
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
-        proxy_set_header X-Forwarded-Proto $scheme; \
-        proxy_cache_bypass $http_upgrade; \
+        proxy_set_header Host $$host; \
+        proxy_set_header X-Real-IP $$remote_addr; \
+        proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $$scheme; \
+        proxy_cache_bypass $$http_upgrade; \
         client_max_body_size 50M; \
     } \
     \
     location / { \
-        try_files $uri $uri/ /index.html; \
+        try_files $$uri $$uri/ /index.html; \
     } \
     \
     location /health { return 200; } \
-}' > /etc/nginx/conf.d/default.conf
+}' > /etc/nginx/templates/default.conf.template
+
+# Script de inicio personalizado
+RUN echo '#!/bin/sh \
+set -e \
+echo "🔧 Configurando nginx proxy..." \
+echo "Backend host: ${BACKEND_HOST:-cuenlyapp-backend:8000}" \
+# Usar envsubst para reemplazar variables \
+envsubst '"'"'$BACKEND_HOST'"'"' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf \
+echo "📋 Configuración nginx generada:" \
+cat /etc/nginx/conf.d/default.conf \
+echo "🚀 Iniciando nginx..." \
+exec nginx -g "daemon off;"' > /docker-entrypoint-custom.sh && \
+chmod +x /docker-entrypoint-custom.sh
+
+# Variable de entorno por defecto para Docker Compose
+ENV BACKEND_HOST=cuenlyapp-backend:8000
 
 # Exponer puerto 80
 EXPOSE 80
@@ -56,4 +81,4 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost/ || exit 1
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/docker-entrypoint-custom.sh"]
