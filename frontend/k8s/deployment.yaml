@@ -33,6 +33,9 @@ spec:
         ports:
         - containerPort: 80
           name: http
+        env:
+        - name: BACKEND_HOST
+          value: "cuenly-backend-service.cuenly-backend.svc.cluster.local:8000"
         envFrom:
         - configMapRef:
             name: frontend-config
