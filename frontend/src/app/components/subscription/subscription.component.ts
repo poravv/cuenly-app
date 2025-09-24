@@ -112,43 +112,18 @@ export class SubscriptionComponent implements OnInit {
   }
 
   selectPlan(planId: string): void {
-    this.selectedPlan = planId;
+    // Temporalmente deshabilitado - página de próximamente
+    this.showAlert('info', 'Las suscripciones estarán disponibles próximamente. ¡Mantente atento!');
   }
 
   subscribeToPlan(planId: string): void {
-    this.selectedPlan = planId;
-    this.subscribe();
-  }
-
-  subscribe(): void {
-    if (this.isProcessing) return;
-    
-    this.isProcessing = true;
-    console.log('Iniciando suscripción para plan:', this.selectedPlan);
-    
-    // Simulación de proceso de pago
-    setTimeout(() => {
-      this.isProcessing = false;
-      const planName = this.getPlanName(this.selectedPlan);
-      this.showAlert('success', `¡Suscripción exitosa a ${planName}! Ahora tienes acceso completo.`);
-    }, 2000);
-  }
-
-  private proceedToPayment(planId: string): void {
-    // Integración con pasarela de pago (Stripe, PayPal, etc.)
-    console.log('Proceeding to payment for plan:', planId);
-    
-    // Simulación de redirección a pago
-    alert(`Redirigiendo a la página de pago para el ${this.getPlanName(planId)}...`);
-    
-    // Aquí implementarías:
-    // 1. Crear sesión de pago con Stripe/PayPal
-    // 2. Redirigir al usuario
-    // 3. Manejar el callback de éxito/error
+    // Temporalmente deshabilitado - página de próximamente
+    this.showAlert('info', 'Las suscripciones están en desarrollo. Te notificaremos cuando estén listas.');
   }
 
   public contactSales(): void {
-    this.showAlert('info', 'Contacta con nuestro equipo de ventas: ventas@cuenlyapp.com');
+    // Actualizado el dominio
+    window.open('mailto:soporte@cuenly.com?subject=Consulta sobre Suscripciones&body=Hola, me gustaría obtener más información sobre los planes de suscripción cuando estén disponibles.', '_blank');
   }
 
   private getPlanName(planId: string): string {
