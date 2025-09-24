@@ -23,6 +23,9 @@ COPY --from=build /app/dist/cuenlyapp-frontend /usr/share/nginx/html
 # Crear página de error personalizada
 RUN echo '<html><body><h1>CuenlyApp Temporalmente No Disponible</h1><p>El servicio se está reiniciando...</p></body></html>' > /usr/share/nginx/html/50x.html
 
+# Crear directorio para templates de nginx
+RUN mkdir -p /etc/nginx/templates
+
 # Crear template de configuración nginx
 RUN echo 'server { \
     listen 80; \
@@ -35,21 +38,21 @@ RUN echo 'server { \
     \
     # API proxy configurable \
     location ~ ^/(api|user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|export-templates|export|invoices) { \
-        set $backend_upstream ${BACKEND_HOST}; \
-        proxy_pass http://$backend_upstream; \
+        set $$backend_upstream $${BACKEND_HOST}; \
+        proxy_pass http://$$backend_upstream; \
         proxy_http_version 1.1; \
-        proxy_set_header Upgrade $http_upgrade; \
+        proxy_set_header Upgrade $$http_upgrade; \
         proxy_set_header Connection "upgrade"; \
-        proxy_set_header Host $host; \
-        proxy_set_header X-Real-IP $remote_addr; \
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
-        proxy_set_header X-Forwarded-Proto $scheme; \
-        proxy_cache_bypass $http_upgrade; \
+        proxy_set_header Host $$host; \
+        proxy_set_header X-Real-IP $$remote_addr; \
+        proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $$scheme; \
+        proxy_cache_bypass $$http_upgrade; \
         client_max_body_size 50M; \
     } \
     \
     location / { \
-        try_files $uri $uri/ /index.html; \
+        try_files $$uri $$uri/ /index.html; \
     } \
     \
     location /health { return 200; } \
