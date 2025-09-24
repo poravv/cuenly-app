@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
-import { tap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
 export interface UserProfile {
@@ -16,6 +15,7 @@ export interface UserProfile {
   ai_invoices_processed: number;
   ai_invoices_limit: number;
   ai_limit_reached: boolean;
+  email_processing_start_date?: string;
 }
 
 @Injectable({
@@ -26,12 +26,16 @@ export class UserService {
   private userProfileSubject = new BehaviorSubject<UserProfile | null>(null);
   public userProfile$ = this.userProfileSubject.asObservable();
 
-  constructor(private http: HttpClient) { }
+  constructor(private http: HttpClient) { 
+    console.log('🔍 UserService: Inicializado con baseUrl:', this.baseUrl);
+  }
 
   getUserProfile(): Observable<UserProfile> {
-    return this.http.get<UserProfile>(`${this.baseUrl}/user/profile`).pipe(
-      tap(profile => this.userProfileSubject.next(profile))
-    );
+    // Usar /api como prefijo que ya está configurado en el proxy
+    const url = `/api/user/profile`;
+    console.log('🔍 UserService: Llamando a getUserProfile()');
+    console.log('🔍 API URL:', url);
+    return this.http.get<UserProfile>(url);
   }
 
   refreshUserProfile(): Observable<UserProfile> {

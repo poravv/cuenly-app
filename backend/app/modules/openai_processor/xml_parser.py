@@ -5,7 +5,7 @@ Más rápido y eficiente que OpenAI para estructuras estándar
 """
 
 import xml.etree.ElementTree as ET
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 import logging
 from datetime import datetime
 import re
@@ -57,14 +57,21 @@ class ParaguayanXMLParser:
                 return 0.0
 
     def can_parse(self, xml_content: str) -> bool:
+        """Verifica si el XML es compatible con el parser SIFEN."""
         try:
             root = ET.fromstring(xml_content)
+            
+            # Verificar si es estructura SIFEN (rLoteDE o rDE)
             if any(tag in root.tag for tag in ['rDE', 'rLoteDE']):
                 return True
-            if self._find_element_by_name(root, 'DE') is not None:
+                
+            # Buscar elemento DE en cualquier lugar del documento
+            if self._find_de_element_anywhere(root) is not None:
                 return True
-            logger.warning("XML nativo: no se encontró nodo 'DE' ni raíz compatible (rDE/rLoteDE)")
+                
+            logger.warning("XML nativo: no se encontró estructura SIFEN compatible")
             return False
+            
         except Exception as e:
             logger.warning(f"XML nativo: error al parsear/leer XML: {e}")
             # Intento de recuperación: parsear solo el fragmento <DE>...</DE>
@@ -78,18 +85,34 @@ class ParaguayanXMLParser:
                     logger.warning(f"XML nativo: recuperación por fragmento falló: {e2}")
             return False
 
+    def _find_de_element_anywhere(self, element: ET.Element) -> Optional[ET.Element]:
+        """Busca el elemento DE en cualquier parte del árbol XML."""
+        # Verificar si el elemento actual es DE
+        if isinstance(element.tag, str) and element.tag.split('}')[-1] == 'DE':
+            return element
+        
+        # Buscar recursivamente en los hijos
+        for child in element:
+            result = self._find_de_element_anywhere(child)
+            if result is not None:
+                return result
+        
+        return None
+
     def _find_element_by_name(self, element: ET.Element, name: str) -> Optional[ET.Element]:
-        """Busca por localname exacto (ignora namespace). Evita confundir rDE con DE."""
-        try:
-            local = element.tag.split('}')[-1] if isinstance(element.tag, str) else ''
-            if local == name:
-                return element
-            for child in element:
-                result = self._find_element_by_name(child, name)
-                if result is not None:
-                    return result
-        except Exception as e:
-            logger.error(f"Error buscando el elemento {name}: {e}")
+        """Busca un elemento por nombre sin namespace."""
+        for child in element:
+            if isinstance(child.tag, str) and child.tag.split('}')[-1] == name:
+                return child
+        return None
+
+    def _find_elements_by_name(self, element: ET.Element, name: str) -> List[ET.Element]:
+        """Busca todos los elementos con el nombre especificado."""
+        elements = []
+        for child in element:
+            if isinstance(child.tag, str) and child.tag.split('}')[-1] == name:
+                elements.append(child)
+        return elements
 
     def _find_element_by_name_in_de(self, de_element: ET.Element, name: str) -> Optional[ET.Element]:
         """
@@ -131,10 +154,13 @@ class ParaguayanXMLParser:
                     logger.warning("XML nativo: no se pudo recuperar fragmento <DE>")
                     return False, {}
                 root = ET.fromstring(frag)
-            de_element = self._find_element_by_name(root, 'DE')
+                
+            # Buscar elemento DE usando la nueva función mejorada
+            de_element = self._find_de_element_anywhere(root)
             if de_element is None:
                 logger.warning("XML nativo: estructura SIFEN inválida: falta elemento 'DE'")
                 return False, {}
+                
             data = self._extract_basic_data(de_element)
             self._extract_operation_data(de_element, data)
             self._extract_entity_data(de_element, data)
@@ -245,25 +271,54 @@ class ParaguayanXMLParser:
         en formato compatible con ProductoFactura (modelo Pydantic).
         """
         productos = []
+        # Buscar elementos gCamItem
+        items_elements = self._find_elements_by_name(de_element, 'gCamItem')
         # Iterar ignorando namespace
-        for item_element in de_element.iter():
-            if not (isinstance(item_element.tag, str) and item_element.tag.endswith('gCamItem')):
-                continue
-            desc = self._get_text(item_element, 'dDesProSer')
-            producto = {
-                'articulo': desc or '',
-                'cantidad': self._get_float(item_element, 'dCantProSer'),
-                'precio_unitario': self._get_float(item_element, 'dPUniProSer'),
-                'total': self._get_float(item_element, 'dTotBruOpeItem'),
-            }
-
+        for item_element in items_elements:
+            producto = {}
+            # Mapeo directo XML SIFEN -> Modelo unificado
+            # dCodInt -> codigo
+            producto['codigo'] = self._get_text(item_element, 'dCodInt') or ""
+            
+            # dDesProSer -> articulo/descripcion/nombre
+            desc = self._get_text(item_element, 'dDesProSer') or ""
+            producto['articulo'] = desc
+            producto['descripcion'] = desc  # Campo descripción
+            producto['nombre'] = desc  # Para modelo v2
+            
+            # dCantProSer -> cantidad
+            producto['cantidad'] = self._get_float(item_element, 'dCantProSer') or 0.0
+            
+            # dDesUniMed -> unidad
+            producto['unidad'] = self._get_text(item_element, 'dDesUniMed') or ""
+            
+            # Valores del ítem desde gValorItem
+            valor_item = self._find_element_by_name(item_element, 'gValorItem')
+            if valor_item is not None:
+                # dPUniProSer -> precio_unitario
+                producto['precio_unitario'] = self._get_float(valor_item, 'dPUniProSer') or 0.0
+                
+                # Buscar total en gValorRestaItem primero, luego dTotBruOpeItem
+                valor_resta = self._find_element_by_name(valor_item, 'gValorRestaItem')
+                if valor_resta is not None:
+                    producto['total'] = self._get_float(valor_resta, 'dTotOpeItem') or 0.0
+                else:
+                    producto['total'] = self._get_float(valor_item, 'dTotBruOpeItem') or 0.0
+            
+            # Información de IVA desde gCamIVA
             cam_iva = self._find_element_by_name(item_element, 'gCamIVA')
             if cam_iva is not None:
+                # dTasaIVA -> iva (como entero: 0, 5, 10)
                 tasa = self._get_float(cam_iva, 'dTasaIVA')
                 try:
                     producto['iva'] = int(float(tasa or 0))
                 except Exception:
                     producto['iva'] = 0
+                    
+                # Agregar campos adicionales de IVA
+                producto['afecta_iva'] = self._get_text(cam_iva, 'dDesAfecIVA') or ""
+                producto['base_gravada'] = self._get_float(cam_iva, 'dBasGravIVA') or 0.0
+                producto['monto_iva'] = self._get_float(cam_iva, 'dLiqIVAItem') or 0.0
 
             productos.append(producto)
 
@@ -299,7 +354,7 @@ class ParaguayanXMLParser:
 
     def _extract_items_and_totals(self, de_element: ET.Element, data: Dict[str, Any]):
         """
-        Extrae items y totales del XML con mapeo optimizado para el modelo ASCONT.
+        Extrae items y totales del XML con mapeo optimizado para el modelo de datos.
         Manejo robusto de namespaces para todos los campos.
         """
         # Extraer items
@@ -334,7 +389,7 @@ class ParaguayanXMLParser:
         
         data['items'] = items
         
-        # Extraer totales con mapeo optimizado para ASCONT
+        # Extraer totales con mapeo optimizado
         totals = self._extract_totals_optimized(de_element)
         data.update(totals)
         
@@ -402,42 +457,70 @@ class ParaguayanXMLParser:
     
     def _extract_totals_optimized(self, de_element: ET.Element) -> Dict[str, Any]:
         """
-        Extrae totales con mapeo optimizado para el modelo ASCONT.
+        Extrae totales con mapeo optimizado para el modelo de datos.
+        Prioriza gTotSubGua (guaraníes) sobre gTotSub cuando esté disponible.
         """
         totals = {}
         
-        # Buscar elemento gTotSub
+        # Buscar primero gTotSubGua (valores en guaraníes - más preciso)
         totals_element = None
         try:
-            totals_element = de_element.find(f'.//{{{self.namespaces["sifen"]}}}gTotSub')
+            totals_element = de_element.find(f'.//{{{self.namespaces["sifen"]}}}gTotSubGua')
         except Exception:
             pass
         
         if totals_element is None:
-            totals_element = self._find_element_by_name_in_de(de_element, 'gTotSub')
+            totals_element = self._find_element_by_name_in_de(de_element, 'gTotSubGua')
+        
+        # Si no hay gTotSubGua, usar gTotSub como fallback
+        if totals_element is None:
+            try:
+                totals_element = de_element.find(f'.//{{{self.namespaces["sifen"]}}}gTotSub')
+            except Exception:
+                pass
+            
+            if totals_element is None:
+                totals_element = self._find_element_by_name_in_de(de_element, 'gTotSub')
         
         if totals_element is not None:
-            # Mapeo directo para modelo ASCONT
-            totals['exento'] = self._get_float(totals_element, 'dSubExe') or 0.0
-            totals['exonerado'] = self._get_float(totals_element, 'dSubExo') or 0.0
+            # Mapeo directo XML SIFEN -> Modelo de datos
+            # dSubExe -> subtotal_exentas/exento
+            exento = self._get_float(totals_element, 'dSubExe') or 0.0
+            totals['exento'] = exento
+            totals['subtotal_exentas'] = exento  # Subtotal exento
             
-            # Bases gravadas (mapeadas a gravado_5 y gravado_10)
-            totals['gravado_5'] = self._get_float(totals_element, 'dBaseGrav5') or 0.0
-            totals['gravado_10'] = self._get_float(totals_element, 'dBaseGrav10') or 0.0
+            # dBaseGrav5 -> gravado_5/subtotal_5 (base sin IVA)
+            base5 = self._get_float(totals_element, 'dBaseGrav5') or 0.0
+            totals['gravado_5'] = base5
+            totals['subtotal_5'] = base5  # Subtotal gravado 5%
             
-            # IVAs (mapeados a iva_5 e iva_10)
+            # dBaseGrav10 -> gravado_10/subtotal_10 (base sin IVA)
+            base10 = self._get_float(totals_element, 'dBaseGrav10') or 0.0
+            totals['gravado_10'] = base10
+            totals['subtotal_10'] = base10  # Subtotal gravado 10%
+            
+            # dIVA5 -> iva_5
             totals['iva_5'] = self._get_float(totals_element, 'dIVA5') or 0.0
+            
+            # dIVA10 -> iva_10
             totals['iva_10'] = self._get_float(totals_element, 'dIVA10') or 0.0
             
-            # Subtotales (para compatibilidad)
-            totals['subtotal_5'] = self._get_float(totals_element, 'dSub5') or 0.0
-            totals['subtotal_10'] = self._get_float(totals_element, 'dSub10') or 0.0
+            # dTotGralOpe -> monto_total/total_general
+            total_general = self._get_float(totals_element, 'dTotGralOpe') or 0.0
+            totals['total_general'] = total_general
+            totals['monto_total'] = total_general  # Monto total de la factura
             
-            # Totales generales
-            totals['total_operacion'] = self._get_float(totals_element, 'dTotOpe') or 0.0
-            totals['total_general'] = self._get_float(totals_element, 'dTotGralOpe') or 0.0
+            # Campos adicionales del XML SIFEN
+            totals['exonerado'] = self._get_float(totals_element, 'dSubExo') or 0.0
             totals['total_iva'] = self._get_float(totals_element, 'dTotIVA') or 0.0
+            totals['total_operacion'] = self._get_float(totals_element, 'dTotOpe') or 0.0
+            totals['total_descuento'] = self._get_float(totals_element, 'dTotDesc') or 0.0
+            totals['anticipo'] = self._get_float(totals_element, 'dAnticipo') or 0.0
             totals['total_base_gravada'] = self._get_float(totals_element, 'dTBasGraIVA') or 0.0
+            
+            # Log para debug de totales extraídos
+            logger.info(f"XML totales extraídos - dSubExe: {exento}, dTotOpe: {totals['total_operacion']}, "
+                       f"dTotGralOpe: {total_general}, dBaseGrav5: {base5}, dBaseGrav10: {base10}")
         
         return totals
 
@@ -452,7 +535,7 @@ class ParaguayanXMLParser:
     def normalize_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Normaliza al contrato esperado por InvoiceData.from_dict con mapeo optimizado.
-        Mapea correctamente gravado_5/10 e iva_5/10 desde XML SIFEN a modelo ASCONT.
+        Mapea correctamente gravado_5/10 e iva_5/10 desde XML SIFEN al modelo de datos.
         'subtotal_5' y 'subtotal_10' representan la BASE (gravado), sin IVA.
         'gravado_5' y 'gravado_10' son los mismos valores para compatibilidad.
         """
@@ -461,9 +544,22 @@ class ParaguayanXMLParser:
         # Copiar campos directos
         for k in ['fecha', 'numero_factura', 'ruc_emisor', 'nombre_emisor',
                   'condicion_venta', 'moneda', 'tipo_cambio', 'monto_total',
-                  'timbrado', 'cdc', 'ruc_cliente', 'nombre_cliente', 'email_cliente']:
+                  'timbrado', 'cdc', 'ruc_cliente', 'nombre_cliente', 'email_cliente',
+                  'total_operacion', 'total_descuento', 'anticipo', 'actividad_economica']:
             if k in data:
                 normalized[k] = data[k]
+        
+        # Campos especiales para template export
+        # mes_proceso: generar desde fecha si no existe
+        if 'mes_proceso' in data:
+            normalized['mes_proceso'] = data['mes_proceso']
+        elif 'fecha' in data and data['fecha']:
+            try:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(data['fecha'][:10], '%Y-%m-%d')
+                normalized['mes_proceso'] = fecha_obj.strftime('%Y-%m')
+            except:
+                normalized['mes_proceso'] = data['fecha'][:7] if len(data['fecha']) >= 7 else ''
 
         # Mapeo optimizado de bases e IVA desde XML
         # Preferir campos directos del XML (gravado_5/10, iva_5/10)
@@ -487,14 +583,14 @@ class ParaguayanXMLParser:
         # Asignar bases gravadas (valores sin IVA)
         if base5 is not None:
             normalized['subtotal_5'] = float(base5) if base5 else 0.0
-            normalized['gravado_5'] = normalized['subtotal_5']  # Compatibilidad ASCONT
+            normalized['gravado_5'] = normalized['subtotal_5']  # Campo gravado 5%
         else:
             normalized['subtotal_5'] = 0.0
             normalized['gravado_5'] = 0.0
 
         if base10 is not None:
             normalized['subtotal_10'] = float(base10) if base10 else 0.0
-            normalized['gravado_10'] = normalized['subtotal_10']  # Compatibilidad ASCONT
+            normalized['gravado_10'] = normalized['subtotal_10']  # Campo gravado 10%
         else:
             normalized['subtotal_10'] = 0.0
             normalized['gravado_10'] = 0.0
@@ -509,6 +605,7 @@ class ParaguayanXMLParser:
         
         # Para compatibilidad con campos legacy
         normalized['subtotal_exentas'] = normalized['exento']
+        normalized['monto_exento'] = normalized['exento']  # Mapeo para template export (siempre incluir)
 
         # Totales calculados
         total_iva = normalized['iva_5'] + normalized['iva_10']
@@ -558,7 +655,12 @@ class ParaguayanXMLParser:
                    f"Base 10%: {normalized.get('gravado_10', 0)}, "
                    f"IVA 5%: {normalized.get('iva_5', 0)}, "
                    f"IVA 10%: {normalized.get('iva_10', 0)}, "
-                   f"Exento: {normalized.get('exento', 0)}")
+                   f"Exento: {normalized.get('exento', 0)}, "
+                   f"Total operación: {normalized.get('total_operacion', 0)}, "
+                   f"Monto exento: {normalized.get('monto_exento', 0)}")
+
+        # CRÍTICO: Asegurar campos para template export
+        normalized['monto_exento'] = normalized.get('exento', 0.0)
 
         return normalized
 

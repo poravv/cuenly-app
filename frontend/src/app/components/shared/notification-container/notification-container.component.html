@@ -1,0 +1,43 @@
+<div class="notification-container">
+  <div 
+    *ngFor="let notification of notifications; trackBy: trackByNotification" 
+    class="notification"
+    [ngClass]="getThemeClass(notification.type)"
+    [@slideInOut]>
+    
+    <div class="notification-content">
+      <div class="notification-icon">
+        <i [class]="getIcon(notification.type)"></i>
+      </div>
+      
+      <div class="notification-body">
+        <div class="notification-title" *ngIf="notification.title">
+          {{ notification.title }}
+        </div>
+        <div class="notification-message">
+          {{ notification.message }}
+        </div>
+      </div>
+
+      <div class="notification-actions">
+        <button 
+          *ngIf="notification.action" 
+          class="btn btn-sm notification-action-btn"
+          (click)="onAction(notification)">
+          {{ notification.action.label }}
+        </button>
+        
+        <button 
+          class="btn-close notification-close"
+          type="button"
+          (click)="remove(notification.id)"
+          aria-label="Cerrar">
+        </button>
+      </div>
+    </div>
+
+    <div class="notification-progress" *ngIf="!notification.persistent">
+      <div class="progress-bar" [style.animation-duration]="(notification.duration || 5000) + 'ms'"></div>
+    </div>
+  </div>
+</div>

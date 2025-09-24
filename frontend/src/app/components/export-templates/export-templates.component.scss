@@ -1,0 +1,55 @@
+.template-card {
+  transition: all 0.3s ease;
+  border: 1px solid #e9ecef;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  &.border-success {
+    border-color: #198754 !important;
+    box-shadow: 0 0 0 0.1rem rgba(25, 135, 84, 0.25);
+  }
+
+  .card-title {
+    font-weight: 600;
+    color: #333;
+  }
+}
+
+.empty-state-icon {
+  opacity: 0.5;
+}
+
+.template-stats {
+  .stat-item {
+    display: flex;
+    align-items: center;
+    font-size: 0.9rem;
+    
+    i {
+      width: 16px;
+      font-size: 0.8rem;
+    }
+  }
+}
+
+.fields-preview {
+  .field-tags {
+    .badge {
+      font-size: 0.7rem;
+      font-weight: normal;
+    }
+  }
+}
+
+.dropdown-toggle::after {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .template-card {
+    margin-bottom: 1rem;
+  }
+}

@@ -43,7 +43,7 @@ def safe_float(value, default=0.0) -> float:
 # -----------------------
 class ProductoFactura(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    articulo: Optional[str] = ""
+    nombre: Optional[str] = ""
     cantidad: Optional[float] = 0.0
     precio_unitario: Optional[float] = 0.0
     total: Optional[float] = 0.0
@@ -88,9 +88,9 @@ class ClienteData(BaseModel):
     email: Optional[str] = ""
 
 # -----------------------
-# Modelo principal (ASCONT)
+# Modelo principal de factura (mapeo directo del XML)
 # -----------------------
-class InvoiceDataASCONT(BaseModel):
+class InvoiceData(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     fecha: Optional[datetime] = None
@@ -110,7 +110,7 @@ class InvoiceDataASCONT(BaseModel):
     timbrado: Optional[str] = ""
     cdc: Optional[str] = ""
     moneda: Optional[str] = "GS"   # "GS" si es PYG, "USD" u otra tal cual en factura
-    tipo_cambio: Optional[float] = 1.0
+    tipo_cambio: Optional[float] = 0.0  # Por defecto 0, se actualiza si hay tipo de cambio específico
 
     descripcion_factura: Optional[str] = ""
     detalle_articulos: Optional[str] = ""
@@ -135,6 +135,17 @@ class InvoiceDataASCONT(BaseModel):
     subtotal_exentas: Optional[float] = 0.0
     subtotal_5: Optional[float] = 0.0
     subtotal_10: Optional[float] = 0.0
+
+    # === CAMPOS CON NOMBRES EXACTOS DEL XML ===
+    base_gravada_5: Optional[float] = 0.0   # Nombre exacto del XML
+    base_gravada_10: Optional[float] = 0.0  # Nombre exacto del XML
+    monto_exento: Optional[float] = 0.0     # Nombre exacto del XML
+    exonerado: Optional[float] = 0.0        # dSubExo del XML
+    total_operacion: Optional[float] = 0.0  # dTotOpe del XML
+    total_descuento: Optional[float] = 0.0  # dTotDesc del XML 
+    total_iva: Optional[float] = 0.0        # dTotIVA del XML
+    total_base_gravada: Optional[float] = 0.0  # Total bases gravadas
+    anticipo: Optional[float] = 0.0         # dAnticipo del XML
 
     actividad_economica: Optional[str] = ""
     empresa: Optional[EmpresaData] = None
@@ -189,7 +200,7 @@ class InvoiceDataASCONT(BaseModel):
             iva_10=safe_float(data.get("iva_10")),
             gravado_5=safe_float(data.get("subtotal_5")),
             iva_5=safe_float(data.get("iva_5")),
-            exento=safe_float(data.get("subtotal_exentas")),
+            exento=safe_float(data.get("exento") or data.get("subtotal_exentas")),  # Preferir "exento" del XML
             total_factura=safe_float(data.get("monto_total")),
 
             timbrado=timbrado,
@@ -210,9 +221,20 @@ class InvoiceDataASCONT(BaseModel):
             email_cliente=data.get("email_cliente"),
             condicion_venta=condicion_venta,
 
-            subtotal_exentas=safe_float(data.get("subtotal_exentas")),
+            subtotal_exentas=safe_float(data.get("exento") or data.get("subtotal_exentas")),  # Usar "exento" del XML
             subtotal_5=safe_float(data.get("subtotal_5")),
             subtotal_10=safe_float(data.get("subtotal_10")),
+
+            # === CAMPOS CRÍTICOS PARA TEMPLATE EXPORT ===
+            base_gravada_5=safe_float(data.get("gravado_5")),  # Mapeo correcto XML
+            base_gravada_10=safe_float(data.get("gravado_10")),  # Mapeo correcto XML
+            monto_exento=safe_float(data.get("monto_exento") or data.get("exento")),  # Campo crítico
+            exonerado=safe_float(data.get("exonerado")),  # Campo dSubExo del XML
+            total_operacion=safe_float(data.get("total_operacion")),  # Campo crítico  
+            total_descuento=safe_float(data.get("total_descuento")),  
+            total_iva=safe_float(data.get("total_iva")),
+            total_base_gravada=safe_float(data.get("total_base_gravada")),
+            anticipo=safe_float(data.get("anticipo")),
 
             actividad_economica=data.get("actividad_economica"),
             empresa=EmpresaData(**data["empresa"]) if data.get("empresa") else None,
@@ -226,8 +248,7 @@ class InvoiceDataASCONT(BaseModel):
             mes_proceso=fecha_parsed.strftime("%Y-%m") if fecha_parsed else datetime.now().strftime("%Y-%m"),
         )
 
-# Alias para compatibilidad (¡esto arregla tu ImportError!)
-InvoiceData = InvoiceDataASCONT
+# Modelo principal - mapea directamente desde XML
 
 # -----------------------
 # Configs y resultados

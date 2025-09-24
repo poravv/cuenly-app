@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../../services/api.service';
+import { NotificationService } from '../../services/notification.service';
 import { EmailConfig, EmailTestResult } from '../../models/invoice.model';
 
 @Component({
@@ -44,7 +45,10 @@ export class EmailConfigComponent implements OnInit {
     }
   ];
 
-  constructor(private apiService: ApiService) { }
+  constructor(
+    private apiService: ApiService,
+    private notificationService: NotificationService
+  ) { }
 
   ngOnInit(): void {
     // Cargar configuraciones desde el backend

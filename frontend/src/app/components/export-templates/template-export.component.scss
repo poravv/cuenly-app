@@ -1,0 +1,98 @@
+.template-option {
+  padding: 1rem;
+  border: 2px solid #e9ecef;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+
+  &:hover {
+    border-color: #0d6efd;
+    background-color: #f8f9fa;
+  }
+
+  &.selected {
+    border-color: #0d6efd;
+    background-color: #e7f1ff;
+    box-shadow: 0 0 0 0.1rem rgba(13, 110, 253, 0.25);
+  }
+
+  .template-name {
+    font-weight: 600;
+    color: #333;
+  }
+
+  .template-description {
+    margin-top: 0.25rem;
+  }
+
+  .template-stats {
+    margin-top: 0.5rem;
+  }
+
+  .template-actions {
+    .btn {
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+
+    &:hover .btn {
+      opacity: 1;
+    }
+  }
+}
+
+.stat-box {
+  background-color: #f8f9fa;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  
+  .stat-value {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: #333;
+  }
+  
+  .stat-label {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-top: 0.25rem;
+  }
+}
+
+.fields-preview {
+  .field-tags {
+    .badge {
+      font-size: 0.7rem;
+      font-weight: normal;
+    }
+  }
+}
+
+.filters-section {
+  background-color: #f8f9fa;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-top: 1rem;
+}
+
+.export-action {
+  padding: 2rem 1rem;
+  
+  .display-4 {
+    opacity: 0.8;
+  }
+}
+
+@media (max-width: 768px) {
+  .template-option {
+    margin-bottom: 1rem;
+    
+    .template-actions {
+      margin-top: 0.5rem;
+    }
+  }
+  
+  .export-action {
+    padding: 1.5rem 0.5rem;
+  }
+}

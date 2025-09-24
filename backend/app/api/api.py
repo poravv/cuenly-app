@@ -20,7 +20,7 @@ from app.config.settings import settings
 from app.utils.firebase_auth import verify_firebase_token, extract_bearer_token
 from app.utils.trial_middleware import check_trial_limits_optional, check_trial_limits, check_ai_limits
 from app.repositories.user_repository import UserRepository
-from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig
+from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura
 from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
@@ -107,7 +107,7 @@ def _get_current_user(request: Request) -> Dict[str, Any]:
             'email': claims.get('email'),
             'uid': claims.get('user_id'),
             'name': claims.get('name'),
-            'picture': claims.get('picture'),
+            'picture': claims.get('picture') or claims.get('photoURL'),
         })
         logger.info(f"Usuario autenticado y registrado: {claims.get('email')}")
     except Exception as e:
@@ -164,6 +164,7 @@ async def root():
     return {"message": "CuenlyApp API está en funcionamiento"}
 
 @app.get("/user/profile")
+@app.get("/api/user/profile")  # Alias para compatibilidad con proxy
 async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get_current_user_with_trial_info)):
     """
     Obtiene el perfil del usuario autenticado incluyendo información del trial
@@ -173,33 +174,33 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     
     trial_info = user.get('trial_info', {})
     
+    # Obtener información completa del usuario desde la base de datos
+    user_repo = UserRepository()
+    db_user = user_repo.get_by_email(user.get('email', ''))
+    
     # Obtener fecha de inicio de procesamiento de correos
     processing_start_date = None
     try:
-        user_repo = UserRepository()
         processing_start_date = user_repo.get_email_processing_start_date(user.get('email', ''))
         if processing_start_date:
             processing_start_date = processing_start_date.isoformat()
     except Exception as e:
         logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
     
+    # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
-        "user": {
-            "email": user.get('email'),
-            "name": user.get('name'),
-            "picture": user.get('picture'),
-            "uid": user.get('user_id'),
-            "email_processing_start_date": processing_start_date
-        },
-        "trial": {
-            "is_trial_user": trial_info.get('is_trial_user', True),
-            "trial_expired": trial_info.get('trial_expired', True),
-            "days_remaining": trial_info.get('days_remaining', 0),
-            "trial_expires_at": trial_info.get('trial_expires_at'),
-            "ai_invoices_processed": trial_info.get('ai_invoices_processed', 0),
-            "ai_invoices_limit": trial_info.get('ai_invoices_limit', 50),
-            "ai_limit_reached": trial_info.get('ai_limit_reached', True)
-        }
+        "email": db_user.get('email') if db_user else user.get('email'),
+        "name": db_user.get('name') if db_user else user.get('name'),
+        "picture": db_user.get('picture') if db_user else user.get('picture'),
+        "is_trial": trial_info.get('is_trial_user', True),
+        "trial_expires_at": trial_info.get('trial_expires_at'),
+        "trial_expired": trial_info.get('trial_expired', True),
+        "trial_days_remaining": trial_info.get('days_remaining', 0),
+        "can_process": not trial_info.get('trial_expired', True),
+        "ai_invoices_processed": trial_info.get('ai_invoices_processed', 0),
+        "ai_invoices_limit": trial_info.get('ai_invoices_limit', 50),
+        "ai_limit_reached": trial_info.get('ai_limit_reached', True),
+        "email_processing_start_date": processing_start_date
     }
 
 class UpdateProcessingStartDatePayload(BaseModel):
@@ -947,6 +948,19 @@ async def health_check():
             status_code=503,
             content={"status": "unhealthy", "reason": str(e), "timestamp": datetime.now().isoformat()}
         )
+
+@app.get("/email-processing/config")
+async def get_email_processing_config(user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Obtiene la configuración actual de procesamiento de emails.
+    """
+    from app.config.settings import settings
+    
+    return {
+        "process_all_dates": settings.EMAIL_PROCESS_ALL_DATES,
+        "description": "Si es true, procesa todos los correos sin restricción de fecha. Si es false, solo procesa desde fecha de alta del usuario.",
+        "current_setting": "Procesando TODOS los correos" if settings.EMAIL_PROCESS_ALL_DATES else "Procesando solo desde fecha de alta"
+    }
 
 @app.get("/status")
 async def get_status(user: Dict[str, Any] = Depends(_get_current_user)):
@@ -1964,7 +1978,7 @@ async def get_recent_activity(days: int = Query(default=7, description="Días ha
 async def export_excel_from_mongodb(request: Request,
                                    year_month: str, 
                                    export_type: str = Query(default="completo", 
-                                                          description="Tipo de export: ascont, completo")):
+                                                          description="Tipo de export: completo")):
     raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
 
 def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
@@ -1972,44 +1986,91 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
     Convierte documento MongoDB a InvoiceData para compatibilidad con exportadores existentes.
     """
     try:
-        # Extraer datos principales
-        factura = doc.get("factura", {})
-        emisor = doc.get("emisor", {})
-        receptor = doc.get("receptor", {})
-        montos = doc.get("montos", {})
+        # DEBUG: Log de la estructura del documento
+        logger.info(f"🔍 Estructura del documento MongoDB: {list(doc.keys())}")
+        if "factura" in doc:
+            logger.info(f"🔍 Keys en factura: {list(doc['factura'].keys())}")
+        
+        # Extraer datos principales - Los datos están directamente en el doc según los logs
         productos = doc.get("productos", [])
+        
+        # Función para limpiar datos de productos
+        def clean_product(p):
+            try:
+                return ProductoFactura(
+                    nombre=p.get("articulo", p.get("nombre", "")),
+                    cantidad=float(p.get("cantidad", 0)) if p.get("cantidad") not in ['', None] else 0.0,
+                    precio_unitario=float(p.get("precio_unitario", 0)) if p.get("precio_unitario") not in ['', None] else 0.0,
+                    total=float(p.get("total", 0)) if p.get("total") not in ['', None] else 0.0,
+                    iva=int(float(p.get("iva", 0))) if p.get("iva") not in ['', None] else 0
+                )
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error limpiando producto {p}: {e}")
+                return ProductoFactura(nombre="Error en producto", cantidad=0, precio_unitario=0, total=0, iva=0)
         
         # Convertir fecha
         fecha = None
-        if factura.get("fecha"):
+        fecha_raw = doc.get("fecha")
+        if fecha_raw:
             try:
-                fecha = datetime.fromisoformat(factura["fecha"].replace("Z", "+00:00"))
+                if isinstance(fecha_raw, str):
+                    fecha = datetime.fromisoformat(fecha_raw.replace("Z", "+00:00"))
+                else:
+                    fecha = fecha_raw
             except:
                 pass
         
-        # Crear InvoiceData
+        # Crear InvoiceData usando datos del modelo v2 correctamente mapeados
+        logger.info(f"🔍 Valores específicos: numero_factura='{doc.get('numero_factura')}', cdc='{doc.get('cdc')}'")
+        
+        # Obtener totales desde el modelo v2 estructura
+        totales_data = doc.get("totales", {})
+        
         invoice = InvoiceData(
-            numero_factura=factura.get("numero", ""),
+            numero_factura=doc.get("numero_factura", "") or doc.get("numero_documento", ""),
             fecha=fecha,
-            ruc_emisor=emisor.get("ruc", ""),
-            nombre_emisor=emisor.get("nombre", ""),
-            ruc_cliente=receptor.get("ruc", ""),
-            nombre_cliente=receptor.get("nombre", ""),
-            email_cliente=receptor.get("email", ""),
-            monto_total=montos.get("monto_total", 0),
-            subtotal_exentas=montos.get("subtotal_exentas", 0),
-            subtotal_5=montos.get("subtotal_5", 0),
-            subtotal_10=montos.get("subtotal_10", 0),
-            iva_5=montos.get("iva_5", 0),
-            iva_10=montos.get("iva_10", 0),
-            iva=montos.get("total_iva", 0)
+            ruc_emisor=doc.get("ruc_emisor", ""),
+            nombre_emisor=doc.get("nombre_emisor", ""),
+            ruc_cliente=doc.get("ruc_cliente", ""),
+            nombre_cliente=doc.get("nombre_cliente", ""),
+            email_cliente=doc.get("email_cliente", ""),
+            monto_total=doc.get("monto_total", 0) or totales_data.get("total", 0),
+            
+            # Mapeo correcto desde modelo v2 - NOMBRES CORRECTOS DEL XML
+            monto_exento=totales_data.get("exentas", 0),  # monto_exento en lugar de subtotal_exentas
+            base_gravada_5=totales_data.get("gravado_5", 0),  # base_gravada_5 del XML
+            base_gravada_10=totales_data.get("gravado_10", 0),  # base_gravada_10 del XML
+            iva_5=totales_data.get("iva_5", 0),
+            iva_10=totales_data.get("iva_10", 0),
+            
+            # Campos adicionales del XML que faltaban
+            total_operacion=doc.get("total_operacion", 0),
+            total_descuento=doc.get("total_descuento", 0),
+            total_iva=totales_data.get("iva_5", 0) + totales_data.get("iva_10", 0),
+            anticipo=doc.get("anticipo", 0),
+            
+            # Compatibilidad (campos legacy)
+            subtotal_exentas=totales_data.get("exentas", 0),
+            gravado_5=totales_data.get("gravado_5", 0),
+            subtotal_5=totales_data.get("gravado_5", 0),
+            gravado_10=totales_data.get("gravado_10", 0),
+            subtotal_10=totales_data.get("gravado_10", 0),
+            iva=doc.get("iva", 0),
+            
+            productos=[clean_product(p) for p in productos]
         )
         
-        # Agregar campos adicionales si están disponibles
+        # Agregar campos adicionales directamente del documento
+        invoice.cdc = doc.get("cdc", "")
+        invoice.timbrado = doc.get("timbrado", "")
+        
+        # También verificar en datos_tecnicos por compatibilidad
         if "datos_tecnicos" in doc:
             datos_tec = doc["datos_tecnicos"]
-            invoice.cdc = datos_tec.get("cdc", "")
-            invoice.timbrado = datos_tec.get("timbrado", "")
+            if not invoice.cdc:
+                invoice.cdc = datos_tec.get("cdc", "")
+            if not invoice.timbrado:
+                invoice.timbrado = datos_tec.get("timbrado", "")
         
         # Agregar metadata
         if "metadata" in doc:
@@ -2032,3 +2093,311 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
             email_cliente="",
             monto_total=0
         )
+
+# ================================
+# ENDPOINTS PARA TEMPLATES DE EXPORTACIÓN
+# ================================
+
+@app.get("/export-templates")
+async def get_export_templates(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtener todos los templates de exportación del usuario"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        repo = ExportTemplateRepository()
+        templates = repo.get_templates_by_user(user["email"])
+        
+        return {
+            "templates": [template.model_dump() for template in templates],
+            "count": len(templates)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo templates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/export-templates/available-fields")
+async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtener lista de campos disponibles para templates - SOLO CAMPOS REALES"""
+    try:
+        from app.models.export_template import AVAILABLE_FIELDS
+        
+        # Solo devolver campos reales de la base de datos - sin campos calculados
+        return {
+            "fields": AVAILABLE_FIELDS,
+            "categories": {
+                "basic": [
+                    "numero_factura", "fecha", "cdc", "timbrado", "tipo_documento", 
+                    "condicion_venta", "moneda", "tipo_cambio"
+                ],
+                "emisor": [
+                    "ruc_emisor", "nombre_emisor", "direccion_emisor", "telefono_emisor", 
+                    "email_emisor", "actividad_economica"
+                ],
+                "cliente": [
+                    "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente"
+                ],
+                "montos": [
+                    "gravado_5", "gravado_10", "iva_5", "iva_10", "total_iva",
+                    "monto_exento", "exonerado", "monto_total", 
+                    "total_base_gravada", "total_descuento", "anticipo"
+                ],
+                "productos": [
+                    "productos", "productos.codigo", "productos.nombre", 
+                    "productos.cantidad", "productos.unidad", "productos.precio_unitario", 
+                    "productos.total", "productos.iva", "productos.base_gravada", "productos.monto_iva"
+                ],
+                "metadata": [
+                    "mes_proceso", "created_at", "descripcion_factura"
+                ]
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo campos disponibles: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# === RUTA DE CAMPOS CALCULADOS ELIMINADA ===
+# @app.get("/export-templates/calculated-fields/preview")
+# async def preview_calculated_fields(user: Dict[str, Any] = Depends(_get_current_user)):
+#     """Preview de campos calculados - ELIMINADO"""
+#     return {"error": "Campos calculados eliminados"}
+
+# === RUTAS DE TEMPLATES PREDEFINIDOS ELIMINADAS ===
+# Ya no hay templates predefinidos, solo creación personalizada
+
+# @app.post("/export-templates/create-from-preset")
+# async def create_template_from_preset(
+#     preset_request: dict,
+#     user: Dict[str, Any] = Depends(_get_current_user)
+# ):
+#     """Crear template a partir de un preset inteligente - ELIMINADO"""
+#     return {"error": "Templates predefinidos eliminados"}
+
+# === TEMPLATES PREDEFINIDOS ELIMINADOS ===
+
+@app.post("/export-templates")
+async def create_export_template(
+    template_data: Dict[str, Any],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Crear un nuevo template de exportación"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        from app.models.export_template import ExportTemplate
+        
+        # Agregar owner_email
+        template_data["owner_email"] = user["email"]
+        
+        # Crear template
+        template = ExportTemplate(**template_data)
+        repo = ExportTemplateRepository()
+        template_id = repo.create_template(template)
+        
+        return {
+            "success": True,
+            "template_id": template_id,
+            "message": f"Template '{template.name}' creado exitosamente"
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creando template: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/export-templates/{template_id}")
+async def get_export_template(
+    template_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Obtener un template específico"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        repo = ExportTemplateRepository()
+        template = repo.get_template_by_id(template_id, user["email"])
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+        return template.model_dump()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/export-templates/{template_id}")
+async def update_export_template(
+    template_id: str,
+    template_data: Dict[str, Any],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Actualizar un template existente"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        from app.models.export_template import ExportTemplate
+        
+        # Agregar owner_email
+        template_data["owner_email"] = user["email"]
+        
+        # Actualizar template
+        template = ExportTemplate(**template_data)
+        repo = ExportTemplateRepository()
+        
+        if repo.update_template(template_id, template):
+            return {
+                "success": True,
+                "message": f"Template '{template.name}' actualizado exitosamente"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error actualizando template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/export-templates/{template_id}")
+async def delete_export_template(
+    template_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Eliminar un template"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        repo = ExportTemplateRepository()
+        
+        if repo.delete_template(template_id, user["email"]):
+            return {
+                "success": True,
+                "message": "Template eliminado exitosamente"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error eliminando template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/export-templates/{template_id}/duplicate")
+async def duplicate_export_template(
+    template_id: str,
+    request_data: Dict[str, str],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Duplicar un template existente"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        new_name = request_data.get("name")
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Nombre requerido para el template duplicado")
+        
+        repo = ExportTemplateRepository()
+        new_template_id = repo.duplicate_template(template_id, new_name, user["email"])
+        
+        if new_template_id:
+            return {
+                "success": True,
+                "template_id": new_template_id,
+                "message": f"Template duplicado como '{new_name}'"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Template original no encontrado")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error duplicando template {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/export-templates/{template_id}/set-default")
+async def set_default_export_template(
+    template_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Establecer un template como por defecto"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        
+        repo = ExportTemplateRepository()
+        
+        if repo.set_default_template(template_id, user["email"]):
+            return {
+                "success": True,
+                "message": "Template establecido como por defecto"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error estableciendo template por defecto {template_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/export/custom")
+async def export_invoices_with_template(
+    export_request: Dict[str, Any],
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Exportar facturas usando un template personalizado"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+        from app.modules.excel_exporter.template_exporter import ExcelExporter
+        from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+        
+        template_id = export_request.get("template_id")
+        filters = export_request.get("filters", {})
+        filename = export_request.get("filename", f"facturas_custom_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        
+        if not template_id:
+            raise HTTPException(status_code=400, detail="template_id requerido")
+        
+        # Obtener template
+        template_repo = ExportTemplateRepository()
+        template = template_repo.get_template_by_id(template_id, user["email"])
+        
+        if not template:
+            raise HTTPException(status_code=404, detail="Template no encontrado")
+        
+        # Obtener facturas
+        invoice_repo = MongoInvoiceRepository()
+        invoices_raw = invoice_repo.get_invoices_by_user(user["email"], filters)
+        
+        if not invoices_raw:
+            raise HTTPException(status_code=404, detail="No se encontraron facturas con los filtros especificados")
+        
+        # Convertir diccionarios a InvoiceData
+        invoices = [_mongo_doc_to_invoice_data(invoice) for invoice in invoices_raw]
+        
+        # Generar Excel
+        exporter = ExcelExporter()
+        excel_data = exporter.export_invoices(invoices, template)
+        
+        # Retornar archivo
+        headers = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+        
+        return Response(
+            content=excel_data,
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            headers=headers
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exportando con template: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

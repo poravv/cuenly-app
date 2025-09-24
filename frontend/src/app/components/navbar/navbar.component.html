@@ -2,12 +2,12 @@
   <div class="container-fluid px-4">
     <!-- Brand/Logo -->
     <a class="navbar-brand d-flex align-items-center" routerLink="/">
-      <div class="brand-icon me-3">
-        <i class="bi bi-receipt"></i>
+      <div class="brand-logo me-3">
+        <img src="assets/logo.png" alt="CuenlyApp Logo" class="logo-image">
       </div>
       <div class="brand-text">
         <span class="brand-name">CuenlyApp</span>
-        <div class="brand-subtitle">Sistema de Gestión</div>
+        <div class="brand-subtitle d-none d-md-block">Sistema de Gestión</div>
       </div>
     </a>
 
@@ -48,6 +48,15 @@
           </a>
         </li>
         
+        <li class="nav-item">
+          <a class="nav-link" routerLink="/templates-export" routerLinkActive="active">
+            <div class="nav-item-content">
+              <i class="bi bi-file-earmark-excel"></i>
+              <span>Exportar</span>
+            </div>
+          </a>
+        </li>
+        
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" id="uploadDropdown">
               <i class="bi bi-upload"></i>
@@ -68,55 +77,186 @@
             </li>
           </ul>
         </li>
-        <li class="nav-item">
-          <a class="nav-link" routerLink="/ayuda" routerLinkActive="active">
-            <div class="nav-item-content">
-              <i class="bi bi-question-circle"></i>
-              <span>Ayuda</span>
-            </div>
-          </a>
-        </li>
+
       </ul>
 
-      <!-- Status Indicators -->
-      <div class="navbar-status ms-lg-4">
-        <div class="status-group">
-          <!-- OpenAI Status -->
-          <div class="status-indicator" [ngClass]="status?.openai_configured ? 'success' : 'danger'"
-               [title]="'OpenAI: ' + (status?.openai_configured ? 'Configurado correctamente' : 'No configurado')">
-            <div class="status-icon">
-              <i class="bi bi-robot"></i>
-            </div>
-            <div class="status-info d-none d-xl-block">
-              <div class="status-label">OpenAI</div>
-              <div class="status-value">{{ status?.openai_configured ? 'Activo' : 'Inactivo' }}</div>
+
+
+      <!-- User Profile Dropdown -->
+      <div class="navbar-auth ms-lg-3">
+        <ng-container *ngIf="user; else loginBtn">
+          <!-- Desktop Profile Dropdown -->
+          <div class="user-profile-dropdown d-none d-lg-block">
+            <div class="dropdown">
+              <button class="btn profile-dropdown-btn d-flex align-items-center" 
+                      type="button" 
+                      data-bs-toggle="dropdown" 
+                      aria-expanded="false"
+                      id="profileDropdown">
+                <img *ngIf="userProfile?.picture || user.photoURL" 
+                     [src]="userProfile?.picture || user.photoURL!" 
+                     alt="avatar" 
+                     class="profile-avatar me-2"
+                     (load)="onImageLoad('desktop-main')"
+                     (error)="onImageError('desktop-main', $event)"
+                     style="min-width: 32px; min-height: 32px;">
+                <div *ngIf="!userProfile?.picture && !user.photoURL" class="profile-avatar-placeholder me-2">
+                  <i class="bi bi-person-fill"></i>
+                </div>
+                <div class="profile-info d-none d-xl-block">
+                  <div class="profile-name">{{ (userProfile?.name || user.displayName || 'Usuario') | slice:0:12 }}<span *ngIf="(userProfile?.name || user.displayName || 'Usuario').length > 12">...</span></div>
+                  <div class="profile-email">{{ (userProfile?.email || user.email || '') | slice:0:20 }}<span *ngIf="(userProfile?.email || user.email || '').length > 20">...</span></div>
+                </div>
+                <i class="bi bi-chevron-down ms-2"></i>
+              </button>
+              
+              <ul class="dropdown-menu dropdown-menu-end profile-dropdown-menu" aria-labelledby="profileDropdown">
+                <li class="dropdown-header">
+                  <div class="d-flex align-items-center">
+                    <img *ngIf="userProfile?.picture || user.photoURL" 
+                         [src]="userProfile?.picture || user.photoURL!" 
+                         alt="avatar" 
+                         class="dropdown-avatar me-2"
+                         (load)="onImageLoad('dropdown-header')"
+                         (error)="onImageError('dropdown-header', $event)">
+                    <div *ngIf="!userProfile?.picture && !user.photoURL" class="dropdown-avatar-placeholder me-2">
+                      <i class="bi bi-person-fill"></i>
+                    </div>
+                    <div>
+                      <div class="dropdown-user-name">{{ userProfile?.name || user.displayName || 'Usuario' }}</div>
+                      <div class="dropdown-user-email">{{ userProfile?.email || user.email || '' }}</div>
+                    </div>
+                  </div>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                  <a class="dropdown-item" routerLink="/ayuda">
+                    <i class="bi bi-robot me-2"></i>
+                    Ayuda AI
+                    <span class="status-indicator ms-auto" 
+                          [ngClass]="status?.openai_configured ? 'success' : 'danger'"
+                          [title]="'OpenAI: ' + (status?.openai_configured ? 'Configurado' : 'No configurado')">
+                      <i class="bi bi-circle-fill"></i>
+                    </span>
+                  </a>
+                </li>
+                <li *ngIf="userProfile && userProfile.is_trial">
+                  <div class="dropdown-item-text trial-info">
+                    <i class="bi bi-clock-history me-2"></i>
+                    <div class="trial-details">
+                      <div class="trial-status" 
+                           [ngClass]="{'text-danger': userProfile.trial_expired, 'text-warning': !userProfile.trial_expired}">
+                        <strong *ngIf="!userProfile.trial_expired">Período de Prueba</strong>
+                        <strong *ngIf="userProfile.trial_expired">Prueba Expirada</strong>
+                      </div>
+                      <div class="trial-stats" *ngIf="!userProfile.trial_expired">
+                        <small>{{ userProfile.trial_days_remaining }} días restantes</small>
+                      </div>
+                      <div class="trial-ai-usage">
+                        <small>IA: {{ userProfile.ai_invoices_processed }}/{{ userProfile.ai_invoices_limit }}</small>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+                <li *ngIf="userProfile && userProfile.is_trial">
+                  <a class="dropdown-item subscription-link" routerLink="/subscription">
+                    <i class="bi bi-credit-card me-2"></i>
+                    <span *ngIf="!userProfile.trial_expired">Obtener Suscripción</span>
+                    <span *ngIf="userProfile.trial_expired">Suscribirse Ahora</span>
+                    <i class="bi bi-arrow-right ms-auto"></i>
+                  </a>
+                </li>
+                <li>
+                  <span class="dropdown-item-text">
+                    <i class="bi bi-shield-check me-2"></i>
+                    Estado del Sistema
+                    <span class="status-indicator success ms-auto" title="Sistema funcionando correctamente">
+                      <i class="bi bi-check-circle-fill"></i>
+                      <span class="ms-1">OK</span>
+                    </span>
+                  </span>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                  <button class="dropdown-item text-danger" (click)="signOut()">
+                    <i class="bi bi-box-arrow-right me-2"></i>
+                    Cerrar sesión
+                  </button>
+                </li>
+              </ul>
             </div>
           </div>
-
-          <!-- System Health (optional - can be added later) -->
-          <div class="status-indicator success d-none d-xxl-block" title="Sistema funcionando correctamente">
-            <div class="status-info">
-              <div class="status-label">
-                <i class="bi bi-shield-check me-1"></i>
-                Sistema Saludable
+          
+          <!-- Mobile Profile Section -->
+          <div class="user-profile-mobile d-lg-none">
+            <div class="profile-mobile-container p-3 border-top">
+              <div class="d-flex align-items-center mb-3">
+                <img *ngIf="userProfile?.picture || user.photoURL" 
+                     [src]="userProfile?.picture || user.photoURL!" 
+                     alt="avatar" 
+                     class="profile-avatar-mobile me-3"
+                     (load)="onImageLoad('mobile')"
+                     (error)="onImageError('mobile', $event)">
+                <div *ngIf="!userProfile?.picture && !user.photoURL" class="profile-avatar-placeholder-mobile me-3">
+                  <i class="bi bi-person-fill"></i>
+                </div>
+                <div class="flex-grow-1">
+                  <div class="profile-name-mobile">{{ userProfile?.name || user.displayName || 'Usuario' }}</div>
+                  <div class="profile-email-mobile">{{ userProfile?.email || user.email || '' }}</div>
+                </div>
+              </div>
+              
+              <div class="profile-options">
+                <div *ngIf="userProfile && userProfile.is_trial" class="profile-option-item trial-info-mobile">
+                  <i class="bi bi-clock-history me-2"></i>
+                  <div class="trial-details-mobile">
+                    <div class="trial-status-mobile" 
+                         [ngClass]="{'text-danger': userProfile.trial_expired, 'text-warning': !userProfile.trial_expired}">
+                      <strong *ngIf="!userProfile.trial_expired">{{ userProfile.trial_days_remaining }} días restantes</strong>
+                      <strong *ngIf="userProfile.trial_expired">Prueba Expirada</strong>
+                    </div>
+                    <small>IA: {{ userProfile.ai_invoices_processed }}/{{ userProfile.ai_invoices_limit }}</small>
+                  </div>
+                </div>
+                
+                <a *ngIf="userProfile && userProfile.is_trial" class="profile-option-item subscription-link-mobile" routerLink="/subscription">
+                  <i class="bi bi-credit-card me-2"></i>
+                  <span *ngIf="!userProfile.trial_expired">Obtener Suscripción</span>
+                  <span *ngIf="userProfile.trial_expired">Suscribirse Ahora</span>
+                  <i class="bi bi-arrow-right ms-auto"></i>
+                </a>
+                
+                <a class="profile-option-item" routerLink="/ayuda">
+                  <i class="bi bi-robot me-2"></i>
+                  Ayuda AI
+                  <span class="status-indicator ms-auto" 
+                        [ngClass]="status?.openai_configured ? 'success' : 'danger'">
+                    <i class="bi bi-circle-fill"></i>
+                  </span>
+                </a>
+                
+                <div class="profile-option-item">
+                  <i class="bi bi-shield-check me-2"></i>
+                  Estado del Sistema
+                  <span class="status-indicator success ms-auto">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <span class="ms-1">OK</span>
+                  </span>
+                </div>
+                
+                <button class="profile-option-item text-danger w-100 text-start" (click)="signOut()">
+                  <i class="bi bi-box-arrow-right me-2"></i>
+                  Cerrar sesión
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Auth area -->
-      <div class="ms-3 d-flex align-items-center">
-        <ng-container *ngIf="user; else loginBtn">
-          <div class="d-flex align-items-center gap-2">
-            <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="rounded-circle" width="28" height="28">
-            <span class="small text-truncate" style="max-width: 160px;" [title]="user.email || user.displayName">{{ user.email || user.displayName }}</span>
-            <button class="btn btn-sm btn-outline-secondary" (click)="signOut()">Salir</button>
-          </div>
         </ng-container>
+        
         <ng-template #loginBtn>
-          <button class="btn btn-sm btn-outline-primary" routerLink="/login">
-            <i class="bi bi-box-arrow-in-right me-1"></i> Entrar
+          <button class="btn btn-outline-primary btn-sm" routerLink="/login">
+            <i class="bi bi-box-arrow-in-right me-1"></i> 
+            <span class="d-none d-sm-inline">Entrar</span>
           </button>
         </ng-template>
       </div>

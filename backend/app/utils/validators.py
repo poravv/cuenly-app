@@ -72,7 +72,7 @@ class SecurityValidators:
         Raises:
             ValidationError: Si el tipo no es válido
         """
-        allowed_types = ["ascont", "completo", "mongodb"]
+        allowed_types = ["template", "completo", "mongodb"]
         
         if not export_type:
             raise ValidationError("export_type no puede estar vacío")
