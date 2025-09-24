@@ -1,0 +1,277 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+.notification-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  max-width: 400px;
+  width: 100%;
+  pointer-events: none;
+  
+  @media (max-width: 768px) {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
+}
+
+.notification {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15), 0 4px 15px rgba(0, 0, 0, 0.1);
+  margin-bottom: 12px;
+  overflow: hidden;
+  position: relative;
+  pointer-events: auto;
+  border-left: 4px solid;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2), 0 6px 20px rgba(0, 0, 0, 0.15);
+  }
+  
+  // Notification types
+  &.notification-success {
+    border-left-color: #22c55e;
+    
+    .notification-icon {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: white;
+    }
+  }
+  
+  &.notification-error {
+    border-left-color: #ef4444;
+    
+    .notification-icon {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+    }
+  }
+  
+  &.notification-warning {
+    border-left-color: #f59e0b;
+    
+    .notification-icon {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: white;
+    }
+  }
+  
+  &.notification-info {
+    border-left-color: #3b82f6;
+    
+    .notification-icon {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: white;
+    }
+  }
+}
+
+.notification-content {
+  display: flex;
+  align-items: flex-start;
+  padding: 16px;
+  gap: 12px;
+}
+
+.notification-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  
+  i {
+    font-size: 1.1rem;
+  }
+}
+
+.notification-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-title {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #1f2937;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.notification-message {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: #6b7280;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.notification-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.notification-action-btn {
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 4px 12px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    color: #111827;
+  }
+}
+
+.notification-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #9ca3af;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: #f3f4f6;
+    color: #6b7280;
+  }
+  
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+  }
+}
+
+.notification-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.3));
+  animation: progress-countdown linear forwards;
+  transform-origin: left;
+}
+
+@keyframes progress-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+// Animations
+@keyframes slideInOut {
+  0% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  10% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  90% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+// Responsive adjustments
+@media (max-width: 576px) {
+  .notification {
+    margin-bottom: 8px;
+  }
+  
+  .notification-content {
+    padding: 12px;
+    gap: 10px;
+  }
+  
+  .notification-icon {
+    width: 32px;
+    height: 32px;
+    
+    i {
+      font-size: 1rem;
+    }
+  }
+  
+  .notification-title {
+    font-size: 0.85rem;
+  }
+  
+  .notification-message {
+    font-size: 0.8rem;
+  }
+}
+
+// Dark mode support
+@media (prefers-color-scheme: dark) {
+  .notification {
+    background: #1f2937;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 4px 15px rgba(0, 0, 0, 0.2);
+  }
+  
+  .notification-title {
+    color: #f9fafb;
+  }
+  
+  .notification-message {
+    color: #d1d5db;
+  }
+  
+  .notification-action-btn {
+    background: #374151;
+    border-color: #4b5563;
+    color: #d1d5db;
+    
+    &:hover {
+      background: #4b5563;
+      border-color: #6b7280;
+      color: #f9fafb;
+    }
+  }
+  
+  .notification-close {
+    color: #9ca3af;
+    
+    &:hover {
+      background: #374151;
+      color: #d1d5db;
+    }
+  }
+  
+  .notification-progress {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}

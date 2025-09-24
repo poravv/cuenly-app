@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "cuenly-app")
     MULTI_TENANT_ENFORCE: bool = os.getenv("MULTI_TENANT_ENFORCE", "true").lower() in ("1", "true", "yes")
     
+    # Email Processing
+    EMAIL_PROCESS_ALL_DATES: bool = os.getenv("EMAIL_PROCESS_ALL_DATES", "true").lower() in ("1", "true", "yes")
+    
     model_config = {
         "env_file": ".env",
         "extra": "ignore"  # Ignorar campos adicionales en lugar de lanzar un error

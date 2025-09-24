@@ -21,6 +21,13 @@ class Totales(BaseModel):
     gravado_10: float = 0.0
     iva_10: float = 0.0
     total: float = 0.0
+    # CRÍTICO: Campos faltantes para template export
+    total_operacion: float = 0.0
+    monto_exento: float = 0.0
+    exonerado: float = 0.0
+    total_iva: float = 0.0
+    total_descuento: float = 0.0
+    anticipo: float = 0.0
 
 
 class InvoiceHeader(BaseModel):

@@ -1,0 +1,348 @@
+<div class="container-fluid p-4">
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-1">
+        <i class="bi bi-pencil-square me-2 text-primary"></i>
+        {{ isEditMode ? 'Editar Template' : 'Crear Template' }}
+      </h2>
+      <p class="text-muted mb-0">Configure los campos y formato para la exportación de facturas</p>
+    </div>
+    <div>
+      <button class="btn btn-outline-secondary me-2" (click)="cancel()" [disabled]="saving">
+        <i class="bi bi-x-circle me-2"></i>
+        Cancelar
+      </button>
+      <button class="btn btn-primary" (click)="saveTemplate()" [disabled]="saving">
+        <span *ngIf="saving" class="spinner-border spinner-border-sm me-2" role="status"></span>
+        <i *ngIf="!saving" class="bi bi-check-circle me-2"></i>
+        {{ saving ? 'Guardando...' : 'Guardar' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading" class="text-center p-5">
+    <div class="spinner-border text-primary mb-3" role="status">
+      <span class="visually-hidden">Cargando...</span>
+    </div>
+    <p class="text-muted">Cargando template...</p>
+  </div>
+
+  <!-- Template Editor -->
+  <div *ngIf="!loading" class="row">
+    <!-- Left Panel - Template Configuration -->
+    <div class="col-lg-4 mb-4">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="bi bi-gear me-2"></i>
+            Configuración del Template
+          </h5>
+        </div>
+        <div class="card-body">
+          <!-- Template Name -->
+          <div class="mb-3">
+            <label for="templateName" class="form-label">Nombre del Template *</label>
+            <input type="text" 
+                   class="form-control" 
+                   id="templateName"
+                   [(ngModel)]="template.name"
+                   placeholder="Ej: Reporte Mensual"
+                   maxlength="100">
+          </div>
+
+          <!-- Template Description -->
+          <div class="mb-3">
+            <label for="templateDescription" class="form-label">Descripción</label>
+            <textarea class="form-control" 
+                      id="templateDescription"
+                      [(ngModel)]="template.description"
+                      placeholder="Descripción opcional del template"
+                      rows="3"
+                      maxlength="500"></textarea>
+          </div>
+
+          <!-- Sheet Name -->
+          <div class="mb-3">
+            <label for="sheetName" class="form-label">Nombre de la hoja Excel</label>
+            <input type="text" 
+                   class="form-control" 
+                   id="sheetName"
+                   [(ngModel)]="template.sheet_name"
+                   placeholder="Facturas (opcional)"
+                   maxlength="31">
+            <div class="form-text">Máximo 31 caracteres. Si no se especifica, usará el nombre del template.</div>
+          </div>
+
+          <!-- Default Template -->
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" 
+                     type="checkbox" 
+                     id="isDefault"
+                     [(ngModel)]="template.is_default">
+              <label class="form-check-label" for="isDefault">
+                <i class="bi bi-star me-1"></i>
+                Establecer como template por defecto
+              </label>
+            </div>
+          </div>
+
+          <!-- Include Header -->
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" 
+                     type="checkbox" 
+                     id="includeHeader"
+                     [(ngModel)]="template.include_header">
+              <label class="form-check-label" for="includeHeader">
+                <i class="bi bi-table me-1"></i>
+                Incluir fila de encabezados
+              </label>
+            </div>
+          </div>
+
+          <!-- Include Totals -->
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" 
+                     type="checkbox" 
+                     id="includeTotals"
+                     [(ngModel)]="template.include_totals">
+              <label class="form-check-label" for="includeTotals">
+                <i class="bi bi-calculator me-1"></i>
+                Incluir fila de totales
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Available Fields -->
+      <div class="card mt-4">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="bi bi-plus-circle me-2"></i>
+            Campos Disponibles
+          </h5>
+        </div>
+        <div class="card-body">
+          <!-- Field Categories -->
+          <div class="accordion" id="fieldsAccordion">
+            <!-- CAMPOS NORMALES -->
+            <div *ngFor="let category of ['basic', 'emisor', 'cliente', 'montos', 'productos', 'metadata']; let i = index" 
+                 class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button" 
+                        [class.collapsed]="i !== 0"
+                        type="button" 
+                        data-bs-toggle="collapse" 
+                        [attr.data-bs-target]="'#collapse' + i"
+                        [attr.aria-expanded]="i === 0"
+                        [attr.aria-controls]="'collapse' + i">
+                  {{ getCategoryName(category) }}
+                  <span class="badge bg-secondary ms-2">
+                    {{ getAvailableCategoryFields(category).length }}
+                  </span>
+                </button>
+              </h2>
+              <div [id]="'collapse' + i" 
+                   class="accordion-collapse collapse"
+                   [class.show]="i === 0"
+                   data-bs-parent="#fieldsAccordion">
+                <div class="accordion-body">
+                  <!-- Ayuda especial para productos -->
+                  <div *ngIf="category === 'productos'" class="alert alert-info small mb-3">
+                    <strong><i class="bi bi-info-circle me-1"></i> Diferencia importante:</strong><br>
+                    • <strong>"Productos (todos agrupados)"</strong>: Todos los productos en una sola celda<br>
+                    • <strong>"Campos individuales"</strong>: Cada producto en una fila separada (multiplica las filas)
+                  </div>
+                  
+                  <div *ngFor="let fieldKey of getAvailableCategoryFields(category)" 
+                       class="field-item mb-2">
+                    <!-- Mostrar advertencia si hay conflicto -->
+                    <div *ngIf="hasConflictingProductFields(fieldKey)" 
+                         class="alert alert-warning alert-sm mb-1 py-1 px-2 small">
+                      <i class="bi bi-exclamation-triangle me-1"></i>
+                      {{ getConflictMessage(fieldKey) }}
+                    </div>
+                    
+                    <button class="btn btn-outline-primary btn-sm w-100 text-start"
+                            [class.btn-warning]="hasConflictingProductFields(fieldKey)"
+                            [disabled]="isFieldAlreadyAdded(fieldKey)"
+                            (click)="addField(fieldKey)">
+                      <i class="bi bi-plus me-2" *ngIf="!isFieldAlreadyAdded(fieldKey)"></i>
+                      <i class="bi bi-check me-2 text-success" *ngIf="isFieldAlreadyAdded(fieldKey)"></i>
+                      <i class="bi bi-exclamation-triangle me-1 text-warning" *ngIf="hasConflictingProductFields(fieldKey) && !isFieldAlreadyAdded(fieldKey)"></i>
+                      {{ getFieldDisplayName(fieldKey) }}
+                      <span *ngIf="isFieldAlreadyAdded(fieldKey)" class="text-success ms-auto">✓ Agregado</span>
+                    </button>
+                  </div>
+                  <div *ngIf="getAvailableCategoryFields(category).length === 0" 
+                       class="text-muted small">
+                    Todos los campos de esta categoría ya están agregados
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Ya no hay campos calculados - solo campos reales -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel - Selected Fields -->
+    <div class="col-lg-8">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">
+            <i class="bi bi-list-ul me-2"></i>
+            Campos Seleccionados
+          </h5>
+          <span class="badge bg-primary">
+            {{ template.fields?.length || 0 }} campos
+          </span>
+        </div>
+        <div class="card-body">
+          <!-- Empty State -->
+          <div *ngIf="!template.fields || template.fields.length === 0" 
+               class="text-center p-4">
+            <div class="empty-fields-icon mb-3">
+              <i class="bi bi-list-ul display-4 text-muted"></i>
+            </div>
+            <h6 class="text-muted">No hay campos seleccionados</h6>
+            <p class="text-muted small">Agregue campos desde el panel izquierdo para configurar su template</p>
+          </div>
+
+          <!-- Fields List -->
+          <div *ngIf="template.fields && template.fields.length > 0">
+            <div *ngFor="let field of template.fields; let i = index" 
+                 class="field-config-item mb-3 p-3 border rounded">
+              <div class="row align-items-center">
+                <!-- Field Info -->
+                <div class="col-md-3">
+                  <div class="field-info">
+                    <div class="field-name fw-bold">
+                      {{ field.display_name }}
+                    </div>
+                    <div class="field-key text-muted small">{{ field.field_key }}</div>
+                  </div>
+                </div>
+
+                <!-- Field Configuration -->
+                <div class="col-md-6">
+                  <div class="row g-2">
+                    <!-- Display Name -->
+                    <div class="col-12">
+                      <label class="form-label small">Nombre a mostrar</label>
+                      <input type="text" 
+                             class="form-control form-control-sm"
+                             [(ngModel)]="field.display_name"
+                             placeholder="Nombre en Excel">
+                    </div>
+
+                    <!-- Type and Alignment -->
+                    <div class="col-4">
+                      <label class="form-label small">Tipo</label>
+                      <select class="form-select form-select-sm" 
+                              [(ngModel)]="field.field_type">
+                        <option [value]="FieldType.TEXT">Texto</option>
+                        <option [value]="FieldType.NUMBER">Número</option>
+                        <option [value]="FieldType.CURRENCY">Moneda</option>
+                        <option [value]="FieldType.DATE">Fecha</option>
+                        <option [value]="FieldType.PERCENTAGE">Porcentaje</option>
+                        <option [value]="FieldType.ARRAY">Array</option>
+                      </select>
+                    </div>
+
+                    <div class="col-4">
+                      <label class="form-label small">Alineación</label>
+                      <select class="form-select form-select-sm" 
+                              [(ngModel)]="field.alignment">
+                        <option [value]="FieldAlignment.LEFT">Izquierda</option>
+                        <option [value]="FieldAlignment.CENTER">Centro</option>
+                        <option [value]="FieldAlignment.RIGHT">Derecha</option>
+                      </select>
+                    </div>
+
+                    <!-- Width -->
+                    <div class="col-4">
+                      <label class="form-label small">Ancho</label>
+                      <input type="number" 
+                             class="form-control form-control-sm"
+                             [(ngModel)]="field.width"
+                             placeholder="Auto"
+                             min="50"
+                             max="500">
+                    </div>
+
+                    <!-- Visible Checkbox -->
+                    <div class="col-4">
+                      <label class="form-label small">Visible</label>
+                      <div class="form-check">
+                        <input class="form-check-input" 
+                               type="checkbox" 
+                               [(ngModel)]="field.is_visible">
+                        <label class="form-check-label small">
+                          Mostrar en Excel
+                        </label>
+                      </div>
+                    </div>
+
+                    <!-- Array Configuration -->
+                    <div *ngIf="isFieldTypeArray(field.field_type)" class="col-12">
+                      <div class="row g-2">
+                        <div class="col-6">
+                          <label class="form-label small">Agrupación</label>
+                          <select class="form-select form-select-sm" 
+                                  [(ngModel)]="field.grouping_type">
+                            <option [value]="GroupingType.CONCATENATE">Concatenar</option>
+                            <option [value]="GroupingType.SEPARATE_ROWS">Filas Separadas</option>
+                            <option [value]="GroupingType.SUMMARY">Resumen</option>
+                          </select>
+                        </div>
+                        <div class="col-6" *ngIf="field.grouping_type === GroupingType.CONCATENATE">
+                          <label class="form-label small">Separador</label>
+                          <input type="text" 
+                                 class="form-control form-control-sm"
+                                 [(ngModel)]="field.separator"
+                                 placeholder="Ej: , | ; | \n">
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="col-md-3">
+                  <div class="d-flex flex-column gap-1">
+                    <div class="btn-group btn-group-sm">
+                      <button class="btn btn-outline-secondary" 
+                              (click)="moveFieldUp(i)"
+                              [disabled]="i === 0"
+                              title="Mover arriba">
+                        <i class="bi bi-chevron-up"></i>
+                      </button>
+                      <button class="btn btn-outline-secondary" 
+                              (click)="moveFieldDown(i)"
+                              [disabled]="i === template.fields!.length - 1"
+                              title="Mover abajo">
+                        <i class="bi bi-chevron-down"></i>
+                      </button>
+                    </div>
+                    <button class="btn btn-outline-danger btn-sm" 
+                            (click)="removeField(i)"
+                            title="Eliminar campo">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

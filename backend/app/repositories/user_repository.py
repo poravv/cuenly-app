@@ -34,7 +34,8 @@ class UserRepository:
         existing_user = self._coll().find_one({'email': email})
         is_new_user = existing_user is None
         
-        payload = {
+        # Datos básicos del usuario que siempre se actualizan
+        basic_payload = {
             'email': email,
             'uid': user.get('uid') or user.get('user_id'),
             'name': user.get('name') or user.get('displayName'),
@@ -42,30 +43,50 @@ class UserRepository:
             'last_login': now,
         }
         
-        # Configurar trial para nuevos usuarios
-        if payload.get('is_trial_user', False):
-            payload['trial_expires_at'] = now + timedelta(days=15)
-            payload['ai_invoices_processed'] = 0    # Contador de facturas procesadas por IA
-            payload['ai_invoices_limit'] = 50     # Límite de facturas con IA para trial
-        
-        # Establecer fecha de inicio de procesamiento de correos (desde hoy)
-        payload['email_processing_start_date'] = now
-        
-        self._coll().update_one(
-            {'email': email}, 
-            {
-                '$setOnInsert': {
-                    'created_at': now,
-                    'trial_expires_at': payload.get('trial_expires_at'),
-                    'is_trial_user': payload.get('is_trial_user', False),
-                    'ai_invoices_processed': payload.get('ai_invoices_processed', 0),
-                    'ai_invoices_limit': payload.get('ai_invoices_limit', 50),
-                    'email_processing_start_date': payload.get('email_processing_start_date')
-                }, 
-                '$set': {k: v for k, v in payload.items() if k not in ['trial_expires_at', 'is_trial_user', 'ai_invoices_processed', 'ai_invoices_limit', 'email_processing_start_date']}
-            }, 
-            upsert=True
-        )
+        if is_new_user:
+            # Para nuevos usuarios, configurar como trial por defecto
+            trial_payload = {
+                'created_at': now,
+                'is_trial_user': True,
+                'trial_expires_at': now + timedelta(days=15),
+                'ai_invoices_processed': 0,
+                'ai_invoices_limit': 50,
+                'email_processing_start_date': now
+            }
+            
+            # Combinar todos los datos para nuevos usuarios
+            full_payload = {**basic_payload, **trial_payload}
+            
+            self._coll().insert_one(full_payload)
+        else:
+            # Para usuarios existentes, verificar si necesitan información de trial
+            needs_trial_setup = (
+                existing_user.get('trial_expires_at') is None and 
+                existing_user.get('is_trial_user') is None
+            )
+            
+            if needs_trial_setup:
+                # Usuario existente sin información de trial - configurar automáticamente
+                trial_payload = {
+                    'is_trial_user': True,
+                    'trial_expires_at': now + timedelta(days=15),
+                    'ai_invoices_processed': existing_user.get('ai_invoices_processed', 0),
+                    'ai_invoices_limit': 50,
+                    'email_processing_start_date': existing_user.get('email_processing_start_date', existing_user.get('created_at', now))
+                }
+                
+                # Actualizar con datos básicos + información de trial
+                update_payload = {**basic_payload, **trial_payload}
+                print(f"Configurando trial automático para usuario existente: {email}")
+            else:
+                # Usuario existente con información de trial ya configurada
+                # Solo actualizar datos básicos
+                update_payload = basic_payload
+            
+            self._coll().update_one(
+                {'email': email},
+                {'$set': update_payload}
+            )
 
     def get_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         return self._coll().find_one({'email': email.lower()})

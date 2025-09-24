@@ -426,8 +426,12 @@ class EmailProcessor:
             return []
 
         # Obtener fecha de inicio de procesamiento para este usuario
+        # Filtro de fecha de procesamiento configurable
         start_date = None
-        if self.owner_email:
+        
+        # Verificar si debe aplicar filtro de fecha (configurable)
+        from app.config.settings import settings
+        if not settings.EMAIL_PROCESS_ALL_DATES and self.owner_email:
             try:
                 from app.repositories.user_repository import UserRepository
                 user_repo = UserRepository()
@@ -436,13 +440,15 @@ class EmailProcessor:
                     logger.info(f"📅 Filtrando correos desde: {start_date.strftime('%Y-%m-%d %H:%M:%S')} para usuario {self.owner_email}")
             except Exception as e:
                 logger.warning(f"No se pudo obtener fecha de inicio para {self.owner_email}: {e}")
-
+        else:
+            logger.info(f"📮 Procesando TODOS los correos sin restricción de fecha (EMAIL_PROCESS_ALL_DATES=true)")
+        
         # Pasamos la lista de términos directamente al nuevo IMAPClient.search()
         unread_only = (str(self.config.search_criteria or 'UNSEEN').upper() != 'ALL')
         uids = self.client.search(terms, unread_only=unread_only, since_date=start_date)
 
         logger.info(f"Se encontraron {len(uids)} correos combinando términos: {terms}" + 
-                   (f" desde {start_date.strftime('%Y-%m-%d')}" if start_date else ""))
+                   (f" desde {start_date.strftime('%Y-%m-%d')}" if start_date else " (sin restricción de fecha)"))
         return uids
 
     # --------- Fetch + parse ---------
