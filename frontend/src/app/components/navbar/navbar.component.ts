@@ -70,9 +70,11 @@ export class NavbarComponent implements OnInit, OnDestroy {
           trial_expired: profile.trial_expired,
           trial_days_remaining: profile.trial_days_remaining
         });
+        console.log('🔍 Profile picture from API:', profile.picture);
+        console.log('🔍 Profile picture from Firebase:', this.user?.photoURL);
         this.userProfile = profile;
       },
-      error: (error) => {
+      error: (error: any) => {
         console.error('❌ NavbarComponent: Error cargando perfil:', error);
       }
     });
@@ -89,5 +91,15 @@ export class NavbarComponent implements OnInit, OnDestroy {
     console.log('UserProfile:', this.userProfile);
     console.log('Cargando perfil manualmente...');
     this.loadUserProfile();
+  }
+
+  // Métodos para debugging de imágenes
+  onImageLoad(location: string): void {
+    console.log(`✅ Imagen cargada correctamente en: ${location}`);
+  }
+
+  onImageError(location: string, event: any): void {
+    console.error(`❌ Error cargando imagen en: ${location}`, event);
+    console.error('URL de la imagen que falló:', event.target?.src);
   }
 }

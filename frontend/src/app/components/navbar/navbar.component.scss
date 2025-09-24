@@ -163,6 +163,8 @@
   border-radius: 50%;
   border: 2px solid rgba(43, 78, 255, 0.1);
   object-fit: cover;
+  display: block; /* Forzar display block */
+  max-width: none; /* Asegurar que no haya restricciones de ancho */
 }
 
 .profile-avatar-placeholder {
@@ -212,6 +214,8 @@
   border-radius: 50%;
   border: 2px solid rgba(43, 78, 255, 0.1);
   object-fit: cover;
+  display: block; /* Forzar display block */
+  max-width: none; /* Asegurar que no haya restricciones de ancho */
 }
 
 .dropdown-avatar-placeholder {
@@ -290,6 +294,8 @@
   border-radius: 50%;
   border: 2px solid rgba(43, 78, 255, 0.1);
   object-fit: cover;
+  display: block; /* Forzar display block */
+  max-width: none; /* Asegurar que no haya restricciones de ancho */
 }
 
 .profile-avatar-placeholder-mobile {
