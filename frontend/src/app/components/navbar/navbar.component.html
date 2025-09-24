@@ -77,73 +77,166 @@
             </li>
           </ul>
         </li>
-        <li class="nav-item">
-          <a class="nav-link" routerLink="/ayuda" routerLinkActive="active">
-            <div class="nav-item-content">
-              <i class="bi bi-question-circle"></i>
-              <span>Ayuda</span>
-            </div>
-          </a>
-        </li>
+
       </ul>
 
-      <!-- Status Indicators Optimized -->
-      <div class="navbar-status ms-lg-3">
-        <div class="status-group d-flex align-items-center gap-2">
-          <!-- OpenAI Status - Compact -->
-          <div class="status-badge" 
-               [ngClass]="status?.openai_configured ? 'success' : 'danger'"
-               [title]="'OpenAI: ' + (status?.openai_configured ? 'Configurado' : 'No configurado')">
-            <i class="bi bi-robot"></i>
-            <span class="d-none d-lg-inline ms-1">AI</span>
-          </div>
 
-          <!-- System Health - More compact -->
-          <div class="status-badge success d-none d-lg-flex" 
-               title="Sistema funcionando correctamente">
-            <i class="bi bi-shield-check"></i>
-            <span class="d-none d-xl-inline ms-1">OK</span>
-          </div>
-        </div>
-      </div>
 
-      <!-- Auth area Optimized -->
-      <div class="navbar-auth ms-lg-2">
+      <!-- User Profile Dropdown -->
+      <div class="navbar-auth ms-lg-3">
         <ng-container *ngIf="user; else loginBtn">
-          <div class="user-info-container">
-            <!-- Desktop user info - Compact -->
-            <div class="user-info-desktop d-none d-lg-flex align-items-center">
-              <div class="user-compact d-flex align-items-center me-2">
-                <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="user-avatar me-2">
-                <div class="user-details d-none d-xl-block">
-                  <div class="user-name">{{ (user.displayName || 'Usuario') | slice:0:12 }}<span *ngIf="(user.displayName || 'Usuario').length > 12">...</span></div>
-                  <div class="user-email">{{ (user.email || '') | slice:0:20 }}<span *ngIf="(user.email || '').length > 20">...</span></div>
+          <!-- Desktop Profile Dropdown -->
+          <div class="user-profile-dropdown d-none d-lg-block">
+            <div class="dropdown">
+              <button class="btn profile-dropdown-btn d-flex align-items-center" 
+                      type="button" 
+                      data-bs-toggle="dropdown" 
+                      aria-expanded="false"
+                      id="profileDropdown">
+                <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="profile-avatar me-2">
+                <div *ngIf="!user.photoURL" class="profile-avatar-placeholder me-2">
+                  <i class="bi bi-person-fill"></i>
+                </div>
+                <div class="profile-info d-none d-xl-block">
+                  <div class="profile-name">{{ (user.displayName || 'Usuario') | slice:0:12 }}<span *ngIf="(user.displayName || 'Usuario').length > 12">...</span></div>
+                  <div class="profile-email">{{ (user.email || '') | slice:0:20 }}<span *ngIf="(user.email || '').length > 20">...</span></div>
+                </div>
+                <i class="bi bi-chevron-down ms-2"></i>
+              </button>
+              
+              <ul class="dropdown-menu dropdown-menu-end profile-dropdown-menu" aria-labelledby="profileDropdown">
+                <li class="dropdown-header">
+                  <div class="d-flex align-items-center">
+                    <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="dropdown-avatar me-2">
+                    <div *ngIf="!user.photoURL" class="dropdown-avatar-placeholder me-2">
+                      <i class="bi bi-person-fill"></i>
+                    </div>
+                    <div>
+                      <div class="dropdown-user-name">{{ user.displayName || 'Usuario' }}</div>
+                      <div class="dropdown-user-email">{{ user.email || '' }}</div>
+                    </div>
+                  </div>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                  <a class="dropdown-item" routerLink="/ayuda">
+                    <i class="bi bi-robot me-2"></i>
+                    Ayuda AI
+                    <span class="status-indicator ms-auto" 
+                          [ngClass]="status?.openai_configured ? 'success' : 'danger'"
+                          [title]="'OpenAI: ' + (status?.openai_configured ? 'Configurado' : 'No configurado')">
+                      <i class="bi bi-circle-fill"></i>
+                    </span>
+                  </a>
+                </li>
+                <li *ngIf="userProfile && userProfile.is_trial">
+                  <div class="dropdown-item-text trial-info">
+                    <i class="bi bi-clock-history me-2"></i>
+                    <div class="trial-details">
+                      <div class="trial-status" 
+                           [ngClass]="{'text-danger': userProfile.trial_expired, 'text-warning': !userProfile.trial_expired}">
+                        <strong *ngIf="!userProfile.trial_expired">Período de Prueba</strong>
+                        <strong *ngIf="userProfile.trial_expired">Prueba Expirada</strong>
+                      </div>
+                      <div class="trial-stats" *ngIf="!userProfile.trial_expired">
+                        <small>{{ userProfile.trial_days_remaining }} días restantes</small>
+                      </div>
+                      <div class="trial-ai-usage">
+                        <small>IA: {{ userProfile.ai_invoices_processed }}/{{ userProfile.ai_invoices_limit }}</small>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+                <li *ngIf="userProfile && userProfile.is_trial">
+                  <a class="dropdown-item subscription-link" routerLink="/subscription">
+                    <i class="bi bi-credit-card me-2"></i>
+                    <span *ngIf="!userProfile.trial_expired">Obtener Suscripción</span>
+                    <span *ngIf="userProfile.trial_expired">Suscribirse Ahora</span>
+                    <i class="bi bi-arrow-right ms-auto"></i>
+                  </a>
+                </li>
+                <li>
+                  <span class="dropdown-item-text">
+                    <i class="bi bi-shield-check me-2"></i>
+                    Estado del Sistema
+                    <span class="status-indicator success ms-auto" title="Sistema funcionando correctamente">
+                      <i class="bi bi-check-circle-fill"></i>
+                      <span class="ms-1">OK</span>
+                    </span>
+                  </span>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                  <button class="dropdown-item text-danger" (click)="signOut()">
+                    <i class="bi bi-box-arrow-right me-2"></i>
+                    Cerrar sesión
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
+          
+          <!-- Mobile Profile Section -->
+          <div class="user-profile-mobile d-lg-none">
+            <div class="profile-mobile-container p-3 border-top">
+              <div class="d-flex align-items-center mb-3">
+                <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="profile-avatar-mobile me-3">
+                <div *ngIf="!user.photoURL" class="profile-avatar-placeholder-mobile me-3">
+                  <i class="bi bi-person-fill"></i>
+                </div>
+                <div class="flex-grow-1">
+                  <div class="profile-name-mobile">{{ user.displayName || 'Usuario' }}</div>
+                  <div class="profile-email-mobile">{{ user.email || '' }}</div>
                 </div>
               </div>
-              <button class="btn btn-outline-secondary btn-sm" (click)="signOut()" title="Cerrar sesión">
-                <i class="bi bi-box-arrow-right"></i>
-                <span class="d-none d-xxl-inline ms-1">Salir</span>
-              </button>
-            </div>
-            
-            <!-- Mobile user info -->
-            <div class="user-info-mobile d-lg-none">
-              <div class="d-flex align-items-center justify-content-between w-100 p-3 border-top">
-                <div class="d-flex align-items-center">
-                  <img *ngIf="user.photoURL" [src]="user.photoURL!" alt="avatar" class="user-avatar-mobile me-2">
-                  <div class="user-details-mobile">
-                    <div class="user-name-mobile">{{ user.displayName || 'Usuario' }}</div>
-                    <div class="user-email-mobile">{{ user.email || '' }}</div>
+              
+              <div class="profile-options">
+                <div *ngIf="userProfile && userProfile.is_trial" class="profile-option-item trial-info-mobile">
+                  <i class="bi bi-clock-history me-2"></i>
+                  <div class="trial-details-mobile">
+                    <div class="trial-status-mobile" 
+                         [ngClass]="{'text-danger': userProfile.trial_expired, 'text-warning': !userProfile.trial_expired}">
+                      <strong *ngIf="!userProfile.trial_expired">{{ userProfile.trial_days_remaining }} días restantes</strong>
+                      <strong *ngIf="userProfile.trial_expired">Prueba Expirada</strong>
+                    </div>
+                    <small>IA: {{ userProfile.ai_invoices_processed }}/{{ userProfile.ai_invoices_limit }}</small>
                   </div>
                 </div>
-                <button class="btn btn-outline-danger btn-sm" (click)="signOut()">
-                  <i class="bi bi-box-arrow-right"></i>
-                  Salir
+                
+                <a *ngIf="userProfile && userProfile.is_trial" class="profile-option-item subscription-link-mobile" routerLink="/subscription">
+                  <i class="bi bi-credit-card me-2"></i>
+                  <span *ngIf="!userProfile.trial_expired">Obtener Suscripción</span>
+                  <span *ngIf="userProfile.trial_expired">Suscribirse Ahora</span>
+                  <i class="bi bi-arrow-right ms-auto"></i>
+                </a>
+                
+                <a class="profile-option-item" routerLink="/ayuda">
+                  <i class="bi bi-robot me-2"></i>
+                  Ayuda AI
+                  <span class="status-indicator ms-auto" 
+                        [ngClass]="status?.openai_configured ? 'success' : 'danger'">
+                    <i class="bi bi-circle-fill"></i>
+                  </span>
+                </a>
+                
+                <div class="profile-option-item">
+                  <i class="bi bi-shield-check me-2"></i>
+                  Estado del Sistema
+                  <span class="status-indicator success ms-auto">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <span class="ms-1">OK</span>
+                  </span>
+                </div>
+                
+                <button class="profile-option-item text-danger w-100 text-start" (click)="signOut()">
+                  <i class="bi bi-box-arrow-right me-2"></i>
+                  Cerrar sesión
                 </button>
               </div>
             </div>
           </div>
         </ng-container>
+        
         <ng-template #loginBtn>
           <button class="btn btn-outline-primary btn-sm" routerLink="/login">
             <i class="bi bi-box-arrow-in-right me-1"></i> 
