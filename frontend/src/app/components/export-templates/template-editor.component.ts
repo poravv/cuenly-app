@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ExportTemplateService } from '../../services/export-template.service';
+import { NotificationService } from '../../services/notification.service';
 import { 
   ExportTemplate, 
   ExportField, 
@@ -46,7 +47,8 @@ export class TemplateEditorComponent implements OnInit {
   constructor(
     private route: ActivatedRoute,
     private router: Router,
-    private exportTemplateService: ExportTemplateService
+    private exportTemplateService: ExportTemplateService,
+    private notificationService: NotificationService
   ) {}
 
   ngOnInit(): void {
@@ -85,7 +87,10 @@ export class TemplateEditorComponent implements OnInit {
       },
       error: (error) => {
         console.error('Error cargando template:', error);
-        alert('Error al cargar el template');
+        this.notificationService.error(
+          'No se pudo cargar el template solicitado. Verifique que el ID sea correcto.',
+          'Error al cargar template'
+        );
         this.router.navigate(['/templates-export']);
       }
     });
@@ -97,10 +102,26 @@ export class TemplateEditorComponent implements OnInit {
     // Verificar conflictos con campos de productos
     if (this.hasConflictingProductFields(fieldKey)) {
       const message = this.getConflictMessage(fieldKey);
-      if (!confirm(`⚠️ ADVERTENCIA: ${message}\n\n¿Deseas continuar agregando este campo de todas formas?`)) {
-        return; // Usuario canceló
-      }
+      this.notificationService.warning(
+        `${message}\n\n¿Deseas continuar agregando este campo de todas formas?`,
+        '⚠️ Conflicto detectado',
+        {
+          persistent: true,
+          action: {
+            label: 'Continuar',
+            handler: () => {
+              this.doAddField(fieldKey);
+            }
+          }
+        }
+      );
+      return;
     }
+    
+    this.doAddField(fieldKey);
+  }
+  
+  private doAddField(fieldKey: string): void {
     
     // Obtener campo disponible
     const availableField = this.availableFields[fieldKey];
@@ -296,7 +317,10 @@ export class TemplateEditorComponent implements OnInit {
   saveTemplate(): void {
     const errors = this.exportTemplateService.validateTemplate(this.template);
     if (errors.length > 0) {
-      alert('Errores de validación:\n' + errors.join('\n'));
+      this.notificationService.error(
+        'Por favor, corrija los siguientes errores:\n• ' + errors.join('\n• '),
+        'Errores de validación'
+      );
       return;
     }
 
@@ -308,12 +332,18 @@ export class TemplateEditorComponent implements OnInit {
 
     operation.subscribe({
       next: (response) => {
-        alert(response.message);
+        this.notificationService.success(
+          response.message || 'Template guardado correctamente',
+          this.isEditMode ? 'Template actualizado' : 'Template creado'
+        );
         this.router.navigate(['/templates-export']);
       },
       error: (error) => {
         console.error('Error guardando template:', error);
-        alert('Error al guardar el template');
+        this.notificationService.error(
+          'No se pudo guardar el template. Por favor, intente nuevamente.',
+          'Error al guardar'
+        );
         this.saving = false;
       }
     });

@@ -1,0 +1,236 @@
+<div class="subscription-page">
+  <!-- Loading State -->
+  <div *ngIf="loading" class="loading-container">
+    <div class="d-flex justify-content-center">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Cargando...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div *ngIf="!loading" class="container-fluid px-4 py-5">
+    
+    <!-- Header Section -->
+    <div class="row justify-content-center mb-5">
+      <div class="col-lg-8 text-center">
+        <!-- Alert Component -->
+<div *ngIf="showAlertFlag" class="alert-container">
+  <div class="alert" [ngClass]="'alert-' + alertType" role="alert">
+    <div class="d-flex align-items-center">
+      <i class="bi" [ngClass]="{
+        'bi-check-circle-fill': alertType === 'success',
+        'bi-exclamation-circle-fill': alertType === 'warning',
+        'bi-x-circle-fill': alertType === 'error',
+        'bi-info-circle-fill': alertType === 'info'
+      }" style="font-size: 1.2rem; margin-right: 0.5rem;"></i>
+      <span class="flex-grow-1">{{ alertMessage }}</span>
+      <button type="button" class="btn-close" aria-label="Close" (click)="hideAlert()"></button>
+    </div>
+  </div>
+</div>
+
+<div class="subscription-container">
+  <div class="container-fluid py-5">
+    <div class="row justify-content-center">
+      <div class="col-12">
+        <!-- Header -->
+        <div class="text-center mb-5">
+          <h1 class="display-4 fw-bold mb-3">Elige tu Plan</h1>
+          <p class="lead text-muted">Desbloquea todo el potencial de CuenlyApp</p>
+          
+          <!-- Trial Status Banner -->
+          <div *ngIf="userProfile && userProfile.is_trial" 
+               class="trial-status-banner" 
+               [ngClass]="{'expired': isTrialExpired(), 'active': !isTrialExpired()}">
+            <div class="trial-icon">
+              <i class="bi bi-clock-history" *ngIf="!isTrialExpired()"></i>
+              <i class="bi bi-exclamation-triangle" *ngIf="isTrialExpired()"></i>
+            </div>
+            <div class="trial-message">
+              <strong>{{ getTrialMessage() }}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plans Section -->
+    <div class="row justify-content-center">
+      <div class="col-12">
+        <div class="plans-container">
+          <div class="row g-4">
+            <div *ngFor="let plan of plans" class="col-lg-4 col-md-6">
+              <div class="plan-card" 
+                   [ngClass]="{'popular': plan.popular, 'highlight': plan.highlight, 'selected': selectedPlan === plan.id}"
+                   (click)="selectPlan(plan.id)">
+                
+                <!-- Popular Badge -->
+                <div *ngIf="plan.popular" class="popular-badge">
+                  <i class="bi bi-star-fill me-1"></i>
+                  Más Popular
+                </div>
+
+                <!-- Plan Header -->
+                <div class="plan-header">
+                  <h3 class="plan-name">{{ plan.name }}</h3>
+                  <p class="plan-description">{{ plan.description }}</p>
+                  
+                  <div class="plan-pricing">
+                    <div class="price-container">
+                      <span class="price">{{ plan.price }}</span>
+                      <span class="period">{{ plan.period }}</span>
+                    </div>
+                    <div *ngIf="plan.originalPrice" class="original-price">
+                      <span class="text-decoration-line-through text-muted">{{ plan.originalPrice }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Plan Features -->
+                <div class="plan-features">
+                  <ul class="features-list">
+                    <li *ngFor="let feature of plan.features" class="feature-item">
+                      <i class="bi bi-check-circle-fill me-2"></i>
+                      {{ feature }}
+                    </li>
+                  </ul>
+                </div>
+
+                <!-- Plan Action -->
+                <div class="plan-action">
+                  <button class="btn plan-btn w-100" 
+                          [ngClass]="plan.highlight ? 'btn-primary' : 'btn-outline-primary'"
+                          (click)="subscribeToPlan(plan.id)">
+                    <span *ngIf="plan.id !== 'enterprise'">Seleccionar Plan</span>
+                    <span *ngIf="plan.id === 'enterprise'">Contactar Ventas</span>
+                    <i class="bi bi-arrow-right ms-2"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features Comparison Section -->
+    <div class="row justify-content-center mt-5">
+      <div class="col-lg-10">
+        <div class="features-comparison">
+          <h2 class="text-center mb-4">¿Por qué elegir CuenlyApp?</h2>
+          
+          <div class="row g-4">
+            <div class="col-md-4">
+              <div class="feature-highlight">
+                <div class="feature-icon">
+                  <i class="bi bi-lightning-charge"></i>
+                </div>
+                <h4>Procesamiento Rápido</h4>
+                <p class="text-muted">
+                  Procesa miles de facturas XML en segundos con nuestra tecnología optimizada.
+                </p>
+              </div>
+            </div>
+            
+            <div class="col-md-4">
+              <div class="feature-highlight">
+                <div class="feature-icon">
+                  <i class="bi bi-robot"></i>
+                </div>
+                <h4>IA Avanzada</h4>
+                <p class="text-muted">
+                  Extrae datos de facturas PDF automáticamente usando inteligencia artificial.
+                </p>
+              </div>
+            </div>
+            
+            <div class="col-md-4">
+              <div class="feature-highlight">
+                <div class="feature-icon">
+                  <i class="bi bi-shield-check"></i>
+                </div>
+                <h4>Seguridad Total</h4>
+                <p class="text-muted">
+                  Tus datos están protegidos con encriptación de nivel empresarial.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FAQ Section -->
+    <div class="row justify-content-center mt-5">
+      <div class="col-lg-8">
+        <div class="faq-section">
+          <h2 class="text-center mb-4">Preguntas Frecuentes</h2>
+          
+          <div class="accordion" id="faqAccordion">
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                  ¿Puedo cambiar mi plan en cualquier momento?
+                </button>
+              </h2>
+              <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                  Sí, puedes actualizar o degradar tu plan en cualquier momento. Los cambios se aplicarán en tu próximo ciclo de facturación.
+                </div>
+              </div>
+            </div>
+            
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                  ¿Qué pasa con mis datos si cancelo?
+                </button>
+              </h2>
+              <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                  Mantenemos tus datos por 30 días después de la cancelación para que puedas reactivar tu cuenta si cambias de opinión.
+                </div>
+              </div>
+            </div>
+            
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                  ¿Ofrecen reembolsos?
+                </button>
+              </h2>
+              <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                  Ofrecemos una garantía de reembolso de 7 días para nuevas suscripciones. Contáctanos si no estás satisfecho.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contact Section -->
+    <div class="row justify-content-center mt-5">
+      <div class="col-lg-6 text-center">
+        <div class="contact-section">
+          <h3>¿Necesitas ayuda para elegir?</h3>
+          <p class="text-muted mb-4">
+            Nuestro equipo está aquí para ayudarte a encontrar el plan perfecto para tu negocio.
+          </p>
+          <div class="contact-options">
+            <a href="mailto:soporte@cuenlyapp.com" class="btn btn-outline-primary me-3">
+              <i class="bi bi-envelope me-2"></i>
+              Enviar Email
+            </a>
+            <button class="btn btn-outline-secondary" (click)="contactSales()">
+              <i class="bi bi-telephone me-2"></i>
+              Solicitar Llamada
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

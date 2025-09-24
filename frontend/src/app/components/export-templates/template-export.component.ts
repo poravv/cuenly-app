@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ExportTemplateService } from '../../services/export-template.service';
+import { NotificationService } from '../../services/notification.service';
 import { 
   ExportTemplate, 
   ExportRequest, 
@@ -32,7 +33,8 @@ export class TemplateExportComponent implements OnInit {
   constructor(
     private route: ActivatedRoute,
     private router: Router,
-    private exportTemplateService: ExportTemplateService
+    private exportTemplateService: ExportTemplateService,
+    private notificationService: NotificationService
   ) {}
 
   ngOnInit(): void {
@@ -63,7 +65,10 @@ export class TemplateExportComponent implements OnInit {
       },
       error: (error) => {
         console.error('Error cargando templates:', error);
-        alert('Error al cargar los templates');
+        this.notificationService.error(
+          'No se pudieron cargar los templates. Por favor, intente nuevamente.',
+          'Error al cargar templates'
+        );
         this.router.navigate(['/templates-export']);
       }
     });
@@ -83,12 +88,12 @@ export class TemplateExportComponent implements OnInit {
 
   exportFacturas(): void {
     if (!this.selectedTemplate) {
-      alert('Debe seleccionar un template');
+      this.notificationService.warning('Debe seleccionar un template antes de exportar.');
       return;
     }
 
     if (!this.exportRequest.filename?.trim()) {
-      alert('Debe especificar un nombre de archivo');
+      this.notificationService.warning('Debe especificar un nombre de archivo.');
       return;
     }
 
@@ -109,11 +114,17 @@ export class TemplateExportComponent implements OnInit {
       next: (blob: Blob) => {
         this.exportTemplateService.downloadExcelFile(blob, this.exportRequest.filename!);
         this.exporting = false;
-        alert('Exportación completada exitosamente');
+        this.notificationService.success(
+          `El archivo "${this.exportRequest.filename}" se ha descargado correctamente.`,
+          'Exportación completada'
+        );
       },
       error: (error) => {
         console.error('Error exportando:', error);
-        alert('Error al exportar las facturas');
+        this.notificationService.error(
+          'No se pudo completar la exportación. Verifique su conexión e intente nuevamente.',
+          'Error en la exportación'
+        );
         this.exporting = false;
       }
     });
