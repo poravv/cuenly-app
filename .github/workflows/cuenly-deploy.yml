@@ -3,7 +3,7 @@ name: Unified CI/CD - Backend & Frontend
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, feat/navbar-page-suscription ]
     paths:
       - 'backend/**'
       - 'frontend/**'
@@ -453,7 +453,7 @@ jobs:
           exit 1
 
   debug-conditions:
-    needs: [detect-changes, deploy-backend]
+    needs: [detect-changes, build-frontend, deploy-backend]
     if: always()
     runs-on: self-hosted
     steps:
@@ -461,27 +461,20 @@ jobs:
         run: |
           echo "🔍 DEBUGGING FRONTEND DEPLOY CONDITIONS"
           echo "======================================"
-          echo "always(): true (this job is running)"
+          echo "needs.build-frontend.result: ${{ needs.build-frontend.result }}"
           echo "needs.deploy-backend.result: ${{ needs.deploy-backend.result }}"
           echo "needs.deploy-backend.outputs.backend-ready: '${{ needs.deploy-backend.outputs.backend-ready }}'"
-          echo "needs.detect-changes.outputs.backend-changed: '${{ needs.detect-changes.outputs.backend-changed }}'"
           echo "needs.detect-changes.outputs.frontend-changed: '${{ needs.detect-changes.outputs.frontend-changed }}'"
           echo "needs.detect-changes.outputs.config-changed: '${{ needs.detect-changes.outputs.config-changed }}'"
           echo ""
-          echo "🧮 EVALUATING FRONTEND CONDITION:"
-          echo "always() = true"
-          echo "backend-ready == 'true': ${{ needs.deploy-backend.outputs.backend-ready == 'true' }}"
-          echo "frontend-changed == 'true': ${{ needs.detect-changes.outputs.frontend-changed == 'true' }}"
-          echo "config-changed == 'true': ${{ needs.detect-changes.outputs.config-changed == 'true' }}"
-          echo "frontend OR config changed: ${{ needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true' }}"
-          echo ""
-          echo "🎯 FINAL CONDITION:"
-          echo "Should deploy frontend: ${{ needs.deploy-backend.outputs.backend-ready == 'true' && (needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') }}"
+          echo "🎯 SHOULD DEPLOY FRONTEND:"
+          SHOULD_DEPLOY=${{ (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true')) }}
+          echo "Result: $SHOULD_DEPLOY"
 
   deploy-frontend:
-    needs: [detect-changes, deploy-backend]
-    # Simplificado: Frontend se despliega si backend está listo Y hay algún cambio relevante
-    if: always() && needs.deploy-backend.outputs.backend-ready == 'true' && (needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true')
+    needs: [detect-changes, build-frontend, deploy-backend]
+    # Frontend se despliega si cambió O si backend cambió (para mantener sincronización)
+    if: always() && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true'))
     runs-on: self-hosted
     environment: ${{ github.event.inputs.environment || 'development' }}
     env:
@@ -489,65 +482,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Build frontend image if needed
+      - name: Log in to GHCR
         run: |
-          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
-          
-          # Log in to GHCR
           echo "${{ secrets.GHCR_PAT }}" | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
-          
-          # Verificar si la imagen ya existe
-          if docker manifest inspect ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA} > /dev/null 2>&1; then
-            echo "✅ Imagen frontend ya existe para SHA ${SHORT_SHA}"
-          else
-            echo "🔨 Construyendo imagen frontend para SHA ${SHORT_SHA}..."
-            
-            # Generar archivos de entorno
-            mkdir -p frontend/src/environments
-            
-            cat > frontend/src/environments/environment.ts << 'EOF'
-          export const environment = {
-            production: false,
-            apiUrl: '',
-            firebase: {
-              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
-              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
-              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
-              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
-              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
-              appId: "${{ secrets.FIREBASE_APP_ID }}",
-              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
-            }
-          };
-          EOF
-            
-            cat > frontend/src/environments/environment.prod.ts << 'EOF'
-          export const environment = {
-            production: true,
-            apiUrl: '',
-            firebase: {
-              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
-              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
-              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
-              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
-              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
-              appId: "${{ secrets.FIREBASE_APP_ID }}",
-              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
-            }
-          };
-          EOF
-            
-            # Build and push
-            docker build \
-              --tag ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA} \
-              --tag ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:latest \
-              ./frontend
-            
-            docker push ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:sha-${SHORT_SHA}
-            docker push ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:latest
-            
-            echo "✅ Imagen frontend construida y subida"
-          fi
       
       - name: Ensure namespace exists
         run: |
@@ -651,7 +588,7 @@ jobs:
           fi
 
   deployment-summary:
-    needs: [detect-changes, deploy-backend, deploy-frontend]
+    needs: [detect-changes, build-backend, build-frontend, deploy-backend, deploy-frontend]
     if: always()
     runs-on: self-hosted
     steps:
