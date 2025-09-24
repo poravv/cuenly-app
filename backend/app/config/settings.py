@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # Email Processing
     EMAIL_PROCESS_ALL_DATES: bool = os.getenv("EMAIL_PROCESS_ALL_DATES", "true").lower() in ("1", "true", "yes")
     
+    # Email Processing - Multiusuario optimizado
+    EMAIL_BATCH_SIZE: int = int(os.getenv("EMAIL_BATCH_SIZE", 5))  # Correos por lote (reducido para multiusuario)
+    EMAIL_BATCH_DELAY: float = float(os.getenv("EMAIL_BATCH_DELAY", 3.0))  # Segundos entre lotes
+    EMAIL_PROCESSING_DELAY: float = float(os.getenv("EMAIL_PROCESSING_DELAY", 0.5))  # Segundos entre correos
+    
     model_config = {
         "env_file": ".env",
         "extra": "ignore"  # Ignorar campos adicionales en lugar de lanzar un error
