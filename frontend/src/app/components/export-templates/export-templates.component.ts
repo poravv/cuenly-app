@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { ExportTemplateService } from '../../services/export-template.service';
+import { NotificationService } from '../../services/notification.service';
 import { ExportTemplate } from '../../models/export-template.model';
 
 @Component({
@@ -15,7 +16,8 @@ export class ExportTemplatesComponent implements OnInit {
 
   constructor(
     private exportTemplateService: ExportTemplateService,
-    private router: Router
+    private router: Router,
+    private notificationService: NotificationService
   ) {}
 
   ngOnInit(): void {
@@ -52,45 +54,83 @@ export class ExportTemplatesComponent implements OnInit {
     if (newName && newName.trim()) {
       this.exportTemplateService.duplicateTemplate(template.id!, newName.trim()).subscribe({
         next: (response) => {
-          alert(response.message);
+          this.notificationService.success(
+            response.message || 'Template duplicado correctamente',
+            'Template duplicado'
+          );
           this.loadTemplates();
         },
         error: (error) => {
           console.error('Error duplicando template:', error);
-          alert('Error al duplicar el template');
+          this.notificationService.error(
+            'No se pudo duplicar el template. Por favor, intente nuevamente.',
+            'Error al duplicar'
+          );
         }
       });
     }
   }
 
   setDefaultTemplate(template: ExportTemplate): void {
-    if (confirm(`¿Establecer "${template.name}" como template por defecto?`)) {
-      this.exportTemplateService.setDefaultTemplate(template.id!).subscribe({
-        next: (response) => {
-          alert(response.message);
-          this.loadTemplates();
-        },
-        error: (error) => {
-          console.error('Error estableciendo template por defecto:', error);
-          alert('Error al establecer template por defecto');
+    this.notificationService.warning(
+      `¿Establecer "${template.name}" como template por defecto?`,
+      'Confirmar acción',
+      {
+        persistent: true,
+        action: {
+          label: 'Establecer',
+          handler: () => {
+            this.exportTemplateService.setDefaultTemplate(template.id!).subscribe({
+              next: (response) => {
+                this.notificationService.success(
+                  response.message || 'Template establecido como predeterminado',
+                  'Template actualizado'
+                );
+                this.loadTemplates();
+              },
+              error: (error) => {
+                console.error('Error estableciendo template por defecto:', error);
+                this.notificationService.error(
+                  'No se pudo establecer el template como predeterminado.',
+                  'Error al actualizar'
+                );
+              }
+            });
+          }
         }
-      });
-    }
+      }
+    );
   }
 
   deleteTemplate(template: ExportTemplate): void {
-    if (confirm(`¿Está seguro de eliminar el template "${template.name}"?`)) {
-      this.exportTemplateService.deleteTemplate(template.id!).subscribe({
-        next: (response) => {
-          alert(response.message);
-          this.loadTemplates();
-        },
-        error: (error) => {
-          console.error('Error eliminando template:', error);
-          alert('Error al eliminar el template');
+    this.notificationService.warning(
+      `¿Está seguro de eliminar el template "${template.name}"?\n\nEsta acción no se puede deshacer.`,
+      '⚠️ Confirmar eliminación',
+      {
+        persistent: true,
+        action: {
+          label: 'Eliminar',
+          handler: () => {
+            this.exportTemplateService.deleteTemplate(template.id!).subscribe({
+              next: (response) => {
+                this.notificationService.success(
+                  response.message || 'Template eliminado correctamente',
+                  'Template eliminado'
+                );
+                this.loadTemplates();
+              },
+              error: (error) => {
+                console.error('Error eliminando template:', error);
+                this.notificationService.error(
+                  'No se pudo eliminar el template. Por favor, intente nuevamente.',
+                  'Error al eliminar'
+                );
+              }
+            });
+          }
         }
-      });
-    }
+      }
+    );
   }
 
   exportWithTemplate(template: ExportTemplate): void {

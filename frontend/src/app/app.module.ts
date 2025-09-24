@@ -14,10 +14,12 @@ import { HelpComponent } from './components/help/help.component';
 import { InvoiceExplorerComponent } from './components/invoice-explorer/invoice-explorer.component';
 import { InvoicesV2Component } from './components/invoices-v2/invoices-v2.component';
 import { LoginComponent } from './components/login/login.component';
+import { SubscriptionComponent } from './components/subscription/subscription.component';
 import { TrialBannerComponent } from './components/trial-banner/trial-banner.component';
 import { ExportTemplatesComponent } from './components/export-templates/export-templates.component';
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
+import { NotificationContainerComponent } from './components/shared/notification-container/notification-container.component';
 import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
@@ -36,10 +38,12 @@ import { TrialInterceptor } from './interceptors/trial.interceptor';
     InvoiceExplorerComponent,
     InvoicesV2Component,
     LoginComponent,
+    SubscriptionComponent,
     TrialBannerComponent,
     ExportTemplatesComponent,
     TemplateEditorComponent,
-    TemplateExportComponent
+    TemplateExportComponent,
+    NotificationContainerComponent
   ],
   imports: [
     BrowserModule,

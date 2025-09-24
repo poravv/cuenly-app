@@ -107,7 +107,7 @@ def _get_current_user(request: Request) -> Dict[str, Any]:
             'email': claims.get('email'),
             'uid': claims.get('user_id'),
             'name': claims.get('name'),
-            'picture': claims.get('picture'),
+            'picture': claims.get('picture') or claims.get('photoURL'),
         })
         logger.info(f"Usuario autenticado y registrado: {claims.get('email')}")
     except Exception as e:
@@ -164,6 +164,7 @@ async def root():
     return {"message": "CuenlyApp API está en funcionamiento"}
 
 @app.get("/user/profile")
+@app.get("/api/user/profile")  # Alias para compatibilidad con proxy
 async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get_current_user_with_trial_info)):
     """
     Obtiene el perfil del usuario autenticado incluyendo información del trial
@@ -173,33 +174,33 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     
     trial_info = user.get('trial_info', {})
     
+    # Obtener información completa del usuario desde la base de datos
+    user_repo = UserRepository()
+    db_user = user_repo.get_by_email(user.get('email', ''))
+    
     # Obtener fecha de inicio de procesamiento de correos
     processing_start_date = None
     try:
-        user_repo = UserRepository()
         processing_start_date = user_repo.get_email_processing_start_date(user.get('email', ''))
         if processing_start_date:
             processing_start_date = processing_start_date.isoformat()
     except Exception as e:
         logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
     
+    # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
-        "user": {
-            "email": user.get('email'),
-            "name": user.get('name'),
-            "picture": user.get('picture'),
-            "uid": user.get('user_id'),
-            "email_processing_start_date": processing_start_date
-        },
-        "trial": {
-            "is_trial_user": trial_info.get('is_trial_user', True),
-            "trial_expired": trial_info.get('trial_expired', True),
-            "days_remaining": trial_info.get('days_remaining', 0),
-            "trial_expires_at": trial_info.get('trial_expires_at'),
-            "ai_invoices_processed": trial_info.get('ai_invoices_processed', 0),
-            "ai_invoices_limit": trial_info.get('ai_invoices_limit', 50),
-            "ai_limit_reached": trial_info.get('ai_limit_reached', True)
-        }
+        "email": db_user.get('email') if db_user else user.get('email'),
+        "name": db_user.get('name') if db_user else user.get('name'),
+        "picture": db_user.get('picture') if db_user else user.get('picture'),
+        "is_trial": trial_info.get('is_trial_user', True),
+        "trial_expires_at": trial_info.get('trial_expires_at'),
+        "trial_expired": trial_info.get('trial_expired', True),
+        "trial_days_remaining": trial_info.get('days_remaining', 0),
+        "can_process": not trial_info.get('trial_expired', True),
+        "ai_invoices_processed": trial_info.get('ai_invoices_processed', 0),
+        "ai_invoices_limit": trial_info.get('ai_invoices_limit', 50),
+        "ai_limit_reached": trial_info.get('ai_limit_reached', True),
+        "email_processing_start_date": processing_start_date
     }
 
 class UpdateProcessingStartDatePayload(BaseModel):
