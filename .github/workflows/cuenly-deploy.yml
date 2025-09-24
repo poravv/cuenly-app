@@ -3,7 +3,7 @@ name: Unified CI/CD - Backend & Frontend
 
 on:
   push:
-    branches: [ main, master, develop, feat/navbar-page-suscription ]
+    branches: [ main, master, develop ]
     paths:
       - 'backend/**'
       - 'frontend/**'
@@ -248,8 +248,8 @@ jobs:
 
   deploy-backend:
     needs: [detect-changes, build-backend]
-    # Backend se despliega si cambió backend O config Y el build fue exitoso
-    if: always() && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped')
+    # Backend se despliega si cambió backend O config Y el build fue exitoso Y estamos en rama principal
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped')
     runs-on: self-hosted
     environment: ${{ github.event.inputs.environment || 'development' }}
     env:
@@ -459,22 +459,29 @@ jobs:
     steps:
       - name: Debug all conditions
         run: |
-          echo "🔍 DEBUGGING FRONTEND DEPLOY CONDITIONS"
-          echo "======================================"
-          echo "needs.build-frontend.result: ${{ needs.build-frontend.result }}"
-          echo "needs.deploy-backend.result: ${{ needs.deploy-backend.result }}"
-          echo "needs.deploy-backend.outputs.backend-ready: '${{ needs.deploy-backend.outputs.backend-ready }}'"
-          echo "needs.detect-changes.outputs.frontend-changed: '${{ needs.detect-changes.outputs.frontend-changed }}'"
-          echo "needs.detect-changes.outputs.config-changed: '${{ needs.detect-changes.outputs.config-changed }}'"
+          echo "🔍 DEBUGGING DEPLOY CONDITIONS"
+          echo "=============================="
+          echo "🌿 Branch info:"
+          echo "  github.ref: ${{ github.ref }}"
+          echo "  Is main/master: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}"
           echo ""
-          echo "🎯 SHOULD DEPLOY FRONTEND:"
-          SHOULD_DEPLOY=${{ (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true')) }}
-          echo "Result: $SHOULD_DEPLOY"
+          echo "📦 Build results:"
+          echo "  build-frontend.result: ${{ needs.build-frontend.result }}"
+          echo "  deploy-backend.result: ${{ needs.deploy-backend.result }}"
+          echo "  backend-ready: '${{ needs.deploy-backend.outputs.backend-ready }}'"
+          echo ""
+          echo "🔄 Changes detected:"
+          echo "  frontend-changed: '${{ needs.detect-changes.outputs.frontend-changed }}'"
+          echo "  config-changed: '${{ needs.detect-changes.outputs.config-changed }}'"
+          echo ""
+          echo "🎯 SHOULD DEPLOY:"
+          echo "  Backend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') }}"
+          echo "  Frontend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true')) }}"
 
   deploy-frontend:
     needs: [detect-changes, build-frontend, deploy-backend]
-    # Frontend se despliega si cambió O si backend cambió (para mantener sincronización)
-    if: always() && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true'))
+    # Frontend se despliega si cambió O si backend cambió (para mantener sincronización) Y estamos en rama principal
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true'))
     runs-on: self-hosted
     environment: ${{ github.event.inputs.environment || 'development' }}
     env:
@@ -596,17 +603,29 @@ jobs:
         run: |
           echo "🎯 Deployment Summary"
           echo "=================="
-          echo "Backend changed: ${{ needs.detect-changes.outputs.backend-changed }}"
-          echo "Frontend changed: ${{ needs.detect-changes.outputs.frontend-changed }}"
-          echo "Config changed: ${{ needs.detect-changes.outputs.config-changed }}"
-          echo "Backend deployment: ${{ needs.deploy-backend.result || 'skipped' }}"
-          echo "Frontend deployment: ${{ needs.deploy-frontend.result || 'skipped' }}"
-          echo "Backend ready: ${{ needs.deploy-backend.outputs.backend-ready || 'false' }}"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+          echo "📦 Changes:"
+          echo "  Backend changed: ${{ needs.detect-changes.outputs.backend-changed }}"
+          echo "  Frontend changed: ${{ needs.detect-changes.outputs.frontend-changed }}"
+          echo "  Config changed: ${{ needs.detect-changes.outputs.config-changed }}"
           echo ""
-          echo "📋 Cluster Status:"
-          kubectl get pods -n cuenly-backend -o wide || echo "No backend pods"
-          kubectl get pods -n cuenly-frontend -o wide || echo "No frontend pods"
+          echo "🏗️  Build results:"
+          echo "  Backend build: ${{ needs.build-backend.result || 'skipped' }}"
+          echo "  Frontend build: ${{ needs.build-frontend.result || 'skipped' }}"
           echo ""
-          echo "🌐 Services:"
-          kubectl get svc -n cuenly-backend || echo "No backend services"
-          kubectl get svc -n cuenly-frontend || echo "No frontend services"
+          echo "🚀 Deploy results:"
+          echo "  Backend deployment: ${{ needs.deploy-backend.result || 'skipped' }}"
+          echo "  Frontend deployment: ${{ needs.deploy-frontend.result || 'skipped' }}"
+          echo "  Backend ready: ${{ needs.deploy-backend.outputs.backend-ready || 'false' }}"
+          echo ""
+          if [ "${{ github.ref }}" == "refs/heads/main" ] || [ "${{ github.ref }}" == "refs/heads/master" ]; then
+            echo "📋 Cluster Status:"
+            kubectl get pods -n cuenly-backend -o wide || echo "No backend pods"
+            kubectl get pods -n cuenly-frontend -o wide || echo "No frontend pods"
+            echo ""
+            echo "🌐 Services:"
+            kubectl get svc -n cuenly-backend || echo "No backend services"
+            kubectl get svc -n cuenly-frontend || echo "No frontend services"
+          else
+            echo "ℹ️  Deploy skipped - not on main/master branch"
+          fi
