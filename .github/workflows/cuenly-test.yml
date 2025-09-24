@@ -152,7 +152,8 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          npm ci
+          # Intentar npm ci primero, si falla usar npm install
+          npm ci || npm install
           
       - name: Run frontend tests
         run: |
