@@ -103,6 +103,12 @@ class MultiEmailProcessor:
 
         for idx, cfg in enumerate(self.email_configs):
             logger.info(f"Procesando cuenta {idx + 1}/{len(self.email_configs)}: {cfg.username}")
+            
+            # Pausa entre cuentas para reducir carga del sistema (multiusuario)
+            if idx > 0:
+                time.sleep(2)  # 2 segundos entre cuentas
+                logger.info(f"⏳ Pausa de 2s antes de procesar cuenta {cfg.username}")
+            
             try:
                 # Usar threading con timeout para evitar bloqueos indefinidos
                 import threading
@@ -127,13 +133,13 @@ class MultiEmailProcessor:
                 thread = threading.Thread(target=process_account, daemon=True)
                 thread.start()
                 
-                # Timeout de 180 segundos (3 minutos) por cuenta
-                thread.join(timeout=180)
+                # Timeout de 300 segundos (5 minutos) por cuenta para permitir procesamiento suave
+                thread.join(timeout=300)
                 
                 if thread.is_alive():
                     # Thread aún ejecutándose - timeout
-                    errors.append(f"Timeout en {cfg.username}: procesamiento tomó más de 180 segundos")
-                    logger.error(f"❌ Timeout al procesar cuenta {cfg.username}: procesamiento tomó más de 180 segundos")
+                    errors.append(f"Timeout en {cfg.username}: procesamiento tomó más de 300 segundos")
+                    logger.error(f"❌ Timeout al procesar cuenta {cfg.username}: procesamiento tomó más de 300 segundos")
                     # Forzar terminación del thread (no es ideal pero evita cuelgues)
                     continue
                 
@@ -524,14 +530,18 @@ class EmailProcessor:
                 return ProcessResult(success=True, message="No se encontraron correos con facturas", invoice_count=0)
 
             total_emails = len(email_ids)
-            batch_size = getattr(settings, 'EMAIL_BATCH_SIZE', 10)  # Por defecto 10 correos por lote
+            # Configuración para procesamiento suave multiusuario
+            batch_size = getattr(settings, 'EMAIL_BATCH_SIZE', 5)  # Reducido a 5 correos por lote para ser más suave
+            batch_delay = getattr(settings, 'EMAIL_BATCH_DELAY', 3)  # 3 segundos entre lotes
+            email_delay = getattr(settings, 'EMAIL_PROCESSING_DELAY', 0.5)  # 0.5 segundos entre correos
             
-            logger.info(f"🔄 Procesando {total_emails} correos en lotes de {batch_size}")
+            logger.info(f"🔄 Procesando {total_emails} correos en lotes de {batch_size} (multiusuario suave)")
+            logger.info(f"⏱️ Configuración: {batch_delay}s entre lotes, {email_delay}s entre correos")
 
             abort_run = False
             processed_emails = 0
 
-            # Procesar en lotes pequeños
+            # Procesar en lotes pequeños con pausas
             for batch_start in range(0, total_emails, batch_size):
                 if abort_run:
                     break
@@ -542,6 +552,11 @@ class EmailProcessor:
                 total_batches = (total_emails + batch_size - 1) // batch_size
                 
                 logger.info(f"📦 Procesando lote {batch_num}/{total_batches} ({len(batch_ids)} correos)")
+                
+                # Pausa entre lotes para ser multiusuario-friendly
+                if batch_num > 1:
+                    logger.info(f"⏳ Pausa de {batch_delay}s entre lotes para procesamiento multiusuario suave...")
+                    time.sleep(batch_delay)
                 
                 # Procesar correos del lote
                 batch_invoices = []
@@ -569,6 +584,10 @@ class EmailProcessor:
                             logger.debug(f"📧 Correo {eid} marcado como leído")
                         except Exception as mark_err:
                             logger.warning(f"⚠️ No se pudo marcar correo {eid} como leído: {mark_err}")
+                        
+                        # Pausa suave entre correos para procesamiento multiusuario
+                        if i < len(batch_ids) - 1:  # No pausar después del último correo del lote
+                            time.sleep(email_delay)
                         
                         # Liberar memoria del invoice procesado
                         if 'invoice' in locals():
