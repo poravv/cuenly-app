@@ -111,6 +111,9 @@ class InvoiceData(BaseModel):
     cdc: Optional[str] = ""
     moneda: Optional[str] = "GS"   # "GS" si es PYG, "USD" u otra tal cual en factura
     tipo_cambio: Optional[float] = 0.0  # Por defecto 0, se actualiza si hay tipo de cambio específico
+    direccion_emisor: Optional[str] = ""
+    telefono_emisor: Optional[str] = ""
+    email_emisor: Optional[str] = ""
 
     descripcion_factura: Optional[str] = ""
     detalle_articulos: Optional[str] = ""
@@ -130,6 +133,8 @@ class InvoiceData(BaseModel):
     ruc_cliente: Optional[str] = ""
     nombre_cliente: Optional[str] = ""
     email_cliente: Optional[str] = ""
+    direccion_cliente: Optional[str] = ""
+    telefono_cliente: Optional[str] = ""
     condicion_venta: Optional[str] = ""  # CONTADO | CREDITO
 
     subtotal_exentas: Optional[float] = 0.0
@@ -155,6 +160,7 @@ class InvoiceData(BaseModel):
     totales: Optional[TotalesData] = None
     cliente: Optional[ClienteData] = None
     observacion: Optional[str] = ""
+    created_at: Optional[datetime] = None
 
     @classmethod
     def from_dict(cls, data: dict, email_metadata: dict = None):
@@ -182,10 +188,18 @@ class InvoiceData(BaseModel):
 
         condicion_venta = (data.get("condicion_venta") or "CONTADO").upper()
         condicion_compra = condicion_venta  # mismo valor
-        tipo_documento = "CR" if "CREDITO" in condicion_venta else "CO"
+        
+        # Fix: mapear correctamente Crédito/Contado a CR/CO
+        tipo_documento = "CR" if any(word in condicion_venta for word in ["CREDITO", "CRÉDITO", "CREDIT"]) else "CO"
 
+        # Fix: mapear correctamente monedas USD/PYG a valores finales
         moneda = (data.get("moneda") or "GS").upper()
-        if moneda == "PYG":
+        if moneda in ["PYG", "GUARANI", "GUARANÍES"]:
+            moneda = "GS"
+        elif moneda in ["USD", "DOLLAR", "DOLAR"]:
+            moneda = "USD"
+        else:
+            # Default para valores desconocidos
             moneda = "GS"
 
         return cls(
@@ -209,6 +223,9 @@ class InvoiceData(BaseModel):
             tipo_cambio=safe_float(data.get("tipo_cambio", 0.0)),
 
             descripcion_factura=data.get("descripcion_factura", ""),
+            direccion_emisor=data.get("direccion_emisor", ""),
+            telefono_emisor=data.get("telefono_emisor", ""),
+            email_emisor=data.get("email_emisor", ""),
 
             ruc_emisor=data.get("ruc_emisor"),
             nombre_emisor=data.get("nombre_emisor"),
@@ -219,6 +236,8 @@ class InvoiceData(BaseModel):
             ruc_cliente=data.get("ruc_cliente"),
             nombre_cliente=data.get("nombre_cliente"),
             email_cliente=data.get("email_cliente"),
+            direccion_cliente=data.get("direccion_cliente", ""),
+            telefono_cliente=data.get("telefono_cliente", ""),
             condicion_venta=condicion_venta,
 
             subtotal_exentas=safe_float(data.get("exento") or data.get("subtotal_exentas")),  # Usar "exento" del XML
@@ -246,6 +265,7 @@ class InvoiceData(BaseModel):
 
             email_origen=(email_metadata or {}).get("sender"),
             mes_proceso=fecha_parsed.strftime("%Y-%m") if fecha_parsed else datetime.now().strftime("%Y-%m"),
+            created_at=data.get("created_at") if isinstance(data.get("created_at"), datetime) else None,
         )
 
 # Modelo principal - mapea directamente desde XML

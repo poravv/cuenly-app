@@ -26,7 +26,6 @@ from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
 from app.modules.email_processor.storage import save_binary
 from app.modules.prefs.prefs import get_auto_refresh as prefs_get_auto_refresh, set_auto_refresh as prefs_set_auto_refresh
-from app.modules.mongo_exporter import MongoDBExporter
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.modules.mapping.invoice_mapping import map_invoice
 from app.modules.mongo_query_service import get_mongo_query_service
@@ -734,17 +733,7 @@ async def enqueue_upload_xml(
         logger.error(f"Error al encolar XML: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/excel")
-async def get_excel(user: Dict[str, Any] = Depends(_get_current_user)):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.get("/excel/list")
-async def list_excel_files(user: Dict[str, Any] = Depends(_get_current_user)):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.get("/excel/{year_month}")
-async def get_excel_by_month(year_month: str, user: Dict[str, Any] = Depends(_get_current_user)):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
+    # Endpoints legacy de Excel eliminados
 
 @app.post("/email-config/test")
 async def test_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Depends(_get_current_user)):
@@ -1514,9 +1503,7 @@ async def imap_pool_stats():
         logger.error(f"Error obteniendo estadísticas del pool IMAP: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas del pool: {str(e)}")
 
-@app.get("/excel/stats")
-async def excel_stats():
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
+    # Endpoint legacy /excel/stats eliminado
 
 @app.get("/health/detailed")
 async def detailed_health():
@@ -1704,143 +1691,41 @@ async def set_auto_refresh(payload: AutoRefreshPayload):
         logger.error(f"Error al guardar preferencia auto-refresh: {e}")
         raise HTTPException(status_code=500, detail="No se pudo guardar preferencia")
 
-# -----------------------------
-# Exportadores Avanzados 
-# -----------------------------
-
-@app.post("/export/excel-completo")
-async def export_excel_completo(background_tasks: BackgroundTasks, run_async: bool = False):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.post("/export/mongodb")
-async def export_to_mongodb(background_tasks: BackgroundTasks, run_async: bool = False):
-    """
-    Exporta TODAS las facturas a MongoDB en formato documental optimizado.
-    Ideal para análisis avanzado, reporting y consultas complejas.
-    """
-    try:
-        if run_async:
-            background_tasks.add_task(_export_mongodb_task)
-            return {
-                "success": True,
-                "message": "Exportación a MongoDB iniciada en segundo plano",
-                "export_type": "mongodb"
-            }
-        else:
-            return await _export_mongodb_task()
-    except Exception as e:
-        logger.error(f"Error en export MongoDB: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error en export MongoDB: {str(e)}")
-
-@app.get("/export/excel-completo/list")
-async def list_excel_completo_files():
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.get("/export/excel-completo/{year_month}")
-async def download_excel_completo(year_month: str):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.post("/export/excel-completo/{year_month}")
-async def export_excel_completo_month(year_month: str, background_tasks: BackgroundTasks, run_async: bool = False):
-    """
-    Exporta facturas de un mes específico desde MongoDB al formato Excel completo.
-    Args:
-        year_month: Mes en formato YYYY-MM (ej: 2025-01)
-        run_async: Si true, ejecuta en segundo plano
-    """
-    try:
-        # Validar formato de fecha
-        try:
-            datetime.strptime(year_month, "%Y-%m")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Formato de mes inválido. Use YYYY-MM")
-        
-        if run_async:
-            background_tasks.add_task(_export_completo_month_task, year_month)
-            return {
-                "success": True,
-                "message": f"Exportación completa del mes {year_month} iniciada en segundo plano",
-                "export_type": "excel_completo",
-                "year_month": year_month
-            }
-        else:
-            return await _export_completo_month_task(year_month)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error en export completo por mes: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error en export completo: {str(e)}")
+# Endpoints legacy de exportación eliminados (Excel/Documental)
 
 @app.get("/export/mongodb/stats")
 async def mongodb_export_stats():
-    """
-    Obtiene estadísticas de la base de datos MongoDB.
-    """
+    """Estadísticas básicas de la base de facturas (v2)."""
     try:
-        exporter = MongoDBExporter()
-        try:
-            stats = exporter.get_statistics()
-            return {
-                "success": True,
-                "export_type": "mongodb",
-                "database_stats": stats
-            }
-        finally:
-            exporter.close_connections()
+        from app.modules.mongo_query_service import MongoQueryService
+        from app.config.export_config import get_mongodb_config
+        config = get_mongodb_config()
+        service = MongoQueryService(connection_string=config["connection_string"])  # fuerza v2 internamente
+        client = service._get_client()
+        db = client[config["database"]]
+        headers = db["invoice_headers"]
+        items = db["invoice_items"]
+        total_headers = headers.count_documents({})
+        total_items = items.count_documents({})
+        total_amount = list(headers.aggregate([
+            {"$group": {"_id": None, "sum": {"$sum": "$totales.total"}}}
+        ]))
+        return {
+            "success": True,
+            "collection": "invoice_headers",
+            "total_invoices": total_headers,
+            "total_items": total_items,
+            "total_amount": float(total_amount[0]["sum"]) if total_amount else 0.0
+        }
     except Exception as e:
-        logger.error(f"Error obteniendo stats MongoDB: {str(e)}")
+        logger.error(f"Error obteniendo stats MongoDB v2: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas: {str(e)}")
 
-@app.post("/export/process-and-export")
-async def process_and_export_all(
-    background_tasks: BackgroundTasks,
-    export_types: List[str] = Query(default=["mongodb"], description="Tipos de export soportados"),
-    run_async: bool = False
-):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
+    # Endpoint legacy process-and-export eliminado
 
 # Funciones auxiliares para tareas en segundo plano
 
-async def _export_completo_task():
-    return {"success": False, "message": "Exportación a Excel deshabilitada"}
-
-async def _export_mongodb_task():
-    """Tarea para exportar a MongoDB"""
-    try:
-        # Obtener facturas para exportar
-        invoices = getattr(invoice_sync, '_last_processed_invoices', [])
-        
-        if not invoices:
-            return {
-                "success": False,
-                "message": "No hay facturas disponibles para exportar a MongoDB. Procese emails primero.",
-                "export_type": "mongodb"
-            }
-        
-        exporter = MongoDBExporter()
-        try:
-            result = exporter.export_invoices(invoices)
-            
-            return {
-                "success": True,
-                "message": f"Exportación a MongoDB completada: {result['inserted']} insertados, {result['updated']} actualizados",
-                "export_type": "mongodb",
-                "mongo_result": result,
-                "invoice_count": len(invoices)
-            }
-        finally:
-            exporter.close_connections()
-            
-    except Exception as e:
-        logger.error(f"Error en export MongoDB task: {e}")
-        return {
-            "success": False,
-            "message": f"Error en exportación MongoDB: {str(e)}",
-            "export_type": "mongodb"
-        }
-
-async def _process_and_export_task(export_types: List[str]):
-    return {"success": False, "message": "Exportación deshabilitada"}
+    # Tareas legacy de exportación eliminadas
 
 async def _export_completo_month_task(year_month: str):
     return {"success": False, "message": "Exportación a Excel deshabilitada"}
@@ -1985,12 +1870,7 @@ async def get_recent_activity(days: int = Query(default=7, description="Días ha
         logger.error(f"Error obteniendo actividad reciente: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo actividad: {str(e)}")
 
-@app.get("/export/excel-from-mongodb/{year_month}")
-async def export_excel_from_mongodb(request: Request,
-                                   year_month: str, 
-                                   export_type: str = Query(default="completo", 
-                                                          description="Tipo de export: completo")):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
+    # Endpoint legacy /export/excel-from-mongodb eliminado
 
 def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
     """
@@ -2074,6 +1954,83 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
         # Agregar campos adicionales directamente del documento
         invoice.cdc = doc.get("cdc", "")
         invoice.timbrado = doc.get("timbrado", "")
+
+        # Normalizar y mapear campos críticos faltantes para exportación
+        # Moneda: mapear PYG/GS → GS, USD/DOLAR → USD, default GS
+        moneda_raw = (doc.get("moneda") or "GS")
+        try:
+            moneda_norm = str(moneda_raw).upper()
+        except Exception:
+            moneda_norm = "GS"
+        if moneda_norm in ["PYG", "GS", None, ""]:
+            invoice.moneda = "GS"
+        elif moneda_norm in ["USD", "DOLLAR", "DOLAR"]:
+            invoice.moneda = "USD"
+        else:
+            # Mantener el valor normalizado si viene otra moneda conocida
+            invoice.moneda = moneda_norm or "GS"
+
+        # Tipo de cambio (si existe en el documento)
+        try:
+            invoice.tipo_cambio = float(doc.get("tipo_cambio", 0.0) or 0.0)
+        except Exception:
+            pass
+
+        # Condición de venta y tipo de documento
+        condicion_raw = (doc.get("condicion_venta") or "CONTADO")
+        try:
+            condicion_norm = str(condicion_raw).upper()
+        except Exception:
+            condicion_norm = "CONTADO"
+        invoice.condicion_venta = condicion_norm
+        # CR si contiene CREDITO/CRÉDITO/CREDIT, caso contrario CO
+        invoice.tipo_documento = "CR" if any(word in condicion_norm for word in ["CREDITO", "CRÉDITO", "CREDIT"]) else "CO"
+
+        # Datos del emisor adicionales
+        try:
+            invoice.direccion_emisor = doc.get("direccion_emisor", "")
+        except Exception:
+            pass
+        try:
+            invoice.telefono_emisor = doc.get("telefono_emisor", "")
+        except Exception:
+            pass
+        try:
+            invoice.actividad_economica = doc.get("actividad_economica", "")
+        except Exception:
+            pass
+        try:
+            invoice.email_emisor = doc.get("email_emisor", "")
+        except Exception:
+            pass
+
+        # Datos del receptor adicionales
+        try:
+            invoice.direccion_cliente = doc.get("direccion_cliente", "")
+        except Exception:
+            pass
+        try:
+            invoice.telefono_cliente = doc.get("telefono_cliente", "")
+        except Exception:
+            pass
+
+        # Mes de proceso y fecha de creación
+        try:
+            if not getattr(invoice, 'mes_proceso', None):
+                invoice.mes_proceso = doc.get("mes_proceso", "")
+        except Exception:
+            pass
+        try:
+            invoice.created_at = doc.get("created_at")
+        except Exception:
+            pass
+
+        # Descripción de la factura (si viene precomputada)
+        try:
+            if doc.get("descripcion_factura"):
+                invoice.descripcion_factura = doc.get("descripcion_factura")
+        except Exception:
+            pass
         
         # También verificar en datos_tecnicos por compatibilidad
         if "datos_tecnicos" in doc:
@@ -2146,7 +2103,7 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
                     "email_emisor", "actividad_economica"
                 ],
                 "cliente": [
-                    "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente"
+                    "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente", "telefono_cliente"
                 ],
                 "montos": [
                     "gravado_5", "gravado_10", "iva_5", "iva_10", "total_iva",
@@ -2159,7 +2116,7 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
                     "productos.total", "productos.iva", "productos.base_gravada", "productos.monto_iva"
                 ],
                 "metadata": [
-                    "mes_proceso", "created_at", "descripcion_factura"
+                    "mes_proceso", "created_at"
                 ]
             }
         }

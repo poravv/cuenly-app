@@ -42,12 +42,18 @@ def map_invoice(invoice: InvoiceData, fuente: str = "") -> InvoiceDocument:
         timbrado=getattr(invoice, "timbrado", ""),
         emisor=Party(
             ruc=getattr(invoice, "ruc_emisor", ""),
-            nombre=getattr(invoice, "nombre_emisor", "")
+            nombre=getattr(invoice, "nombre_emisor", ""),
+            direccion=getattr(invoice, "direccion_emisor", ""),
+            telefono=getattr(invoice, "telefono_emisor", ""),
+            email=getattr(invoice, "email_emisor", ""),
+            actividad_economica=getattr(invoice, "actividad_economica", "")
         ),
         receptor=Party(
             ruc=getattr(invoice, "ruc_cliente", ""),
             nombre=getattr(invoice, "nombre_cliente", ""),
-            email=getattr(invoice, "email_cliente", "")
+            email=getattr(invoice, "email_cliente", ""),
+            direccion=getattr(invoice, "direccion_cliente", ""),
+            telefono=getattr(invoice, "telefono_cliente", "")
         ),
         totales=Totales(
             exentas=float(getattr(invoice, "exento", 0) or getattr(invoice, "subtotal_exentas", 0) or 0),
@@ -99,4 +105,3 @@ def map_invoice(invoice: InvoiceData, fuente: str = "") -> InvoiceDocument:
         ))
 
     return InvoiceDocument(header=header, items=items)
-

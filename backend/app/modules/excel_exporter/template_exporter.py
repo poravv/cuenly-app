@@ -128,7 +128,7 @@ class ExcelExporter:
                 row_data[field.field_key] = formatted_value
                 
                 # Debug específico después del formateo
-                if field.field_key in ['monto_exento', 'exonerado', 'total_base_gravada']:
+                if field.field_key in ['monto_exento', 'exonerado', 'total_base_gravada', 'direccion_emisor', 'telefono_emisor', 'email_emisor', 'direccion_cliente']:
                     logger.info(f"DEBUG FORMAT - Campo {field.field_key}: "
                                f"valor extraído={value} → valor formateado={formatted_value}")
             
