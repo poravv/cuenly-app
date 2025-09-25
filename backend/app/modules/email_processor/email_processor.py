@@ -3,7 +3,6 @@ import re
 import time
 import threading
 import logging
-import schedule
 import queue
 import pickle
 import email.utils
@@ -59,14 +58,10 @@ class MultiEmailProcessor:
 
         ensure_dirs()
 
-        # Scheduler legado (basado en 'schedule')
-        self._job_running = False
-        self._job_thread: Optional[threading.Thread] = None
-
-        # NUEVO: runner moderno para API /job/start|/job/stop
+        # Scheduler moderno (ScheduledJobRunner)
         self._scheduler: Optional[ScheduledJobRunner] = None
 
-        logger.info(f"MultiEmailProcessor inicializado con {len(self.email_configs)} cuentas de correo")
+        logger.info(f"✅ MultiEmailProcessor inicializado con {len(self.email_configs)} cuentas de correo")
 
     def process_all(self) -> Dict[str, Any]:
         """Método breve para un endpoint /run-once (compat)."""
@@ -233,43 +228,8 @@ class MultiEmailProcessor:
             invoices=all_invoices
         )
 
-    # ----------------------------
-    # Scheduler LEGADO (schedule)
-    # ----------------------------
-    def start(self):
-        if self._job_running:
-            logger.warning("El scheduler ya está en ejecución")
-            return
-        interval = settings.JOB_INTERVAL_MINUTES
-        logger.info(f"Iniciando scheduler cada {interval} minutos")
-        schedule.every(interval).minutes.do(self._run_job)
-        self._job_running = True
-        self._job_thread = threading.Thread(target=self._loop, daemon=True)
-        self._job_thread.start()
-
-    def stop(self):
-        if not self._job_running:
-            logger.warning("El scheduler no está en ejecución")
-            return
-        logger.info("Deteniendo scheduler")
-        self._job_running = False
-        schedule.clear()
-        if self._job_thread and self._job_thread.is_alive():
-            self._job_thread.join(timeout=2)
-
-    def _loop(self):
-        while self._job_running:
-            schedule.run_pending()
-            time.sleep(1)
-
-    def _run_job(self):
-        logger.info("Ejecutando job programado para procesar múltiples correos")
-        res = self.process_all_emails()
-        (logger.info if res.success else logger.error)(res.message)
-        return res
-
     # ------------------------------------------
-    # NUEVO: API esperada por /job/start y /job/stop
+    # Scheduler Moderno (ScheduledJobRunner)
     # ------------------------------------------
     def start_scheduled_job(self):
         """
@@ -876,96 +836,6 @@ class EmailProcessor:
             self.disconnect()
             return ProcessResult(success=False, message=f"Error en el procesamiento: {str(e)}")
 
-    # ------------- (Opcional) scheduler single -------------
-    def start_scheduled_job(self):
-        """
-        Conservamos esta API por compatibilidad, pero recomendamos usar MultiEmailProcessor.start_scheduled_job().
-        """
-        if getattr(self, "_job_running", False):
-            logger.warning("El job ya está en ejecución")
-            return
-        interval = settings.JOB_INTERVAL_MINUTES
-        logger.info(f"Iniciando job programado para ejecutarse cada {interval} minutos")
-        schedule.every(interval).minutes.do(self._run_job)
-        self._interval_minutes = interval
-        self._job_running = True
-        self._job_thread = threading.Thread(target=self._schedule_loop, daemon=True)
-        self._job_thread.start()
-
-    def stop_scheduled_job(self):
-        if not getattr(self, "_job_running", False):
-            logger.warning("El job no está en ejecución")
-            return
-        logger.info("Deteniendo job programado")
-        self._job_running = False
-        schedule.clear()
-        if getattr(self, "_job_thread", None) and self._job_thread.is_alive():
-            self._job_thread.join(timeout=2)
-
-    def _schedule_loop(self):
-        while getattr(self, "_job_running", False):
-            schedule.run_pending()
-            time.sleep(1)
-
-    def _run_job(self):
-        logger.info("Ejecutando job programado para procesar correos")
-        try:
-            from datetime import datetime
-            self._last_run_iso = datetime.now().isoformat()
-        except Exception:
-            self._last_run_iso = None
-        res = self.process_emails()
-        (logger.info if res.success else logger.error)(res.message)
-        return res
-
-    # Permitir ajustar el intervalo para el scheduler basado en 'schedule'
-    def set_interval_minutes(self, minutes: int):
-        from app.config.settings import settings as _settings
-        try:
-            minutes = max(1, int(minutes))
-        except Exception:
-            minutes = _settings.JOB_INTERVAL_MINUTES
-        _settings.JOB_INTERVAL_MINUTES = minutes
-        if getattr(self, "_job_running", False):
-            try:
-                import schedule
-                schedule.clear()
-            except Exception:
-                pass
-            # reiniciar con nuevo intervalo
-            logger.info(f"Reiniciando job con nuevo intervalo: {minutes} min")
-            schedule.every(minutes).minutes.do(self._run_job)
-        return {"ok": True, "interval_minutes": minutes}
-
-    def scheduled_job_status(self):
-        """Snapshot del scheduler legacy (schedule)."""
-        try:
-            import schedule
-            next_run_iso = None
-            if getattr(self, "_job_running", False) and getattr(schedule, "next_run", None):
-                try:
-                    # schedule.next_run es una función en esta versión;
-                    nr = schedule.next_run() if callable(getattr(schedule, 'next_run', None)) else getattr(schedule, 'next_run', None)
-                    if nr is not None:
-                        next_run_iso = getattr(nr, 'isoformat', lambda: str(nr))()
-                except Exception:
-                    try:
-                        next_run_iso = str(schedule.next_run())
-                    except Exception:
-                        next_run_iso = None
-            return {
-                "running": bool(getattr(self, "_job_running", False)),
-                "next_run": next_run_iso,
-                "last_run": self._last_run_iso,
-                "interval_minutes": getattr(self, "_interval_minutes", settings.JOB_INTERVAL_MINUTES),
-                "last_result": None
-            }
-        except Exception:
-            return {
-                "running": bool(getattr(self, "_job_running", False)),
-                "next_run": None,
-                "last_run": self._last_run_iso,
-                "interval_minutes": getattr(self, "_interval_minutes", settings.JOB_INTERVAL_MINUTES),
-                "last_result": None
-            }
+    # ------------- EmailProcessor solo para single processing -------------
+    # Los jobs programados ahora se manejan por MultiEmailProcessor.start_scheduled_job()
     
