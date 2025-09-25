@@ -242,8 +242,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+          no-cache: true
           platforms: linux/amd64
 
   deploy-backend:
