@@ -112,4 +112,3 @@ ng build --prod
 ```
 
 Los archivos de build se guardarán en el directorio `dist/`.
-# Trigger workflow sábado, 24 de septiembre de 2025, 14:46# Force rebuild jueves, 25 de septiembre de 2025, 10:54:32 -03
