@@ -112,7 +112,7 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     # === TOTALES DEL XML ===
     # "total_operacion" eliminado por redundancia con "monto_total"
     "total_descuento": {"description": "Total descuento", "field_type": FieldType.CURRENCY},
-    "total_base_gravada": {"description": "Total base gravada", "field_type": FieldType.CURRENCY},
+    # "total_base_gravada": {"description": "Total base gravada", "field_type": FieldType.CURRENCY},
     "anticipo": {"description": "Anticipo recibido", "field_type": FieldType.CURRENCY},
     
     # === IDENTIFICADORES ===
