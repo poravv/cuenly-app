@@ -262,7 +262,7 @@ export class TemplateEditorComponent implements OnInit {
       'total_general': 'Total General',
       'total_descuento': 'Total Descuento',
       'anticipo': 'Anticipo',
-      'total_base_gravada': 'Total Base Gravada',
+      // 'total_base_gravada': 'Total Base Gravada',
       
       // Productos
       'productos': 'Productos',
