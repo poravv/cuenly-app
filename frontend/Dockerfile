@@ -27,13 +27,33 @@ RUN echo 'server { \
     root /usr/share/nginx/html; \
     index index.html; \
     \
-    # API proxy (in-cluster)
-    location ~ ^/(v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|invoices) { \
+    # API proxy (in-cluster) - TODOS los endpoints del backend
+    location ~ ^/(user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|invoices|export-templates|export|health|cache|imap|docs|openapi.json|system|debug|email-processing) { \
         proxy_pass http://cuenly-backend-service.cuenly-backend.svc.cluster.local:8000; \
+        proxy_http_version 1.1; \
         proxy_set_header Host $host; \
         proxy_set_header X-Real-IP $remote_addr; \
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
         proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_set_header Upgrade $http_upgrade; \
+        proxy_set_header Connection "upgrade"; \
+        proxy_cache_bypass $http_upgrade; \
+        client_max_body_size 50M; \
+    } \
+    \
+    # API proxy con /api prefix (compatibilidad) \
+    location /api/ { \
+        rewrite ^/api/(.*)$ /\$1 break; \
+        proxy_pass http://cuenly-backend-service.cuenly-backend.svc.cluster.local:8000; \
+        proxy_http_version 1.1; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_set_header Upgrade $http_upgrade; \
+        proxy_set_header Connection "upgrade"; \
+        proxy_cache_bypass $http_upgrade; \
+        client_max_body_size 50M; \
     } \
     \
     # App routes -> SPA

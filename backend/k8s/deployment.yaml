@@ -35,28 +35,28 @@ spec:
             name: backend-env-secrets
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "300m"
-          limits:
             memory: "2Gi"
-            cpu: "1000m"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /health
             port: http
-          initialDelaySeconds: 120   # Dar más tiempo para inicialización completa
+          initialDelaySeconds: 180   # Más tiempo para inicialización con EmailProcessor
           periodSeconds: 30          # Verificar cada 30 segundos
-          timeoutSeconds: 10         # Timeout de respuesta
+          timeoutSeconds: 30         # Timeout más largo para procesos intensivos
           failureThreshold: 5        # Permitir más fallos antes de reiniciar
           successThreshold: 1        # Una respuesta exitosa confirma salud
         readinessProbe:
           httpGet:
             path: /health
             port: http
-          initialDelaySeconds: 30    # Verificar readiness más temprano
-          periodSeconds: 10          # Verificar cada 10 segundos
-          timeoutSeconds: 5          # Timeout más corto para readiness
-          failureThreshold: 3        # Máximo 3 fallos antes de marcar como no ready
+          initialDelaySeconds: 60    # Más tiempo para que EmailProcessor se inicialice
+          periodSeconds: 15          # Verificar cada 15 segundos
+          timeoutSeconds: 15         # Timeout más largo para readiness
+          failureThreshold: 5        # Más fallos permitidos para procesos batch
           successThreshold: 1        # Una respuesta exitosa confirma readiness
         startupProbe:
           httpGet:
