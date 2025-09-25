@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     EMAIL_BATCH_DELAY: float = float(os.getenv("EMAIL_BATCH_DELAY", 3.0))  # Segundos entre lotes
     EMAIL_PROCESSING_DELAY: float = float(os.getenv("EMAIL_PROCESSING_DELAY", 0.5))  # Segundos entre correos
     
+    # Job Processing Limits
+    JOB_MAX_RUNTIME_HOURS: int = int(os.getenv("JOB_MAX_RUNTIME_HOURS", 24))  # Parar job después de 24 horas
+    JOB_REST_PERIOD_HOURS: int = int(os.getenv("JOB_REST_PERIOD_HOURS", 2))  # Descansar 2 horas después de 24h
+    MANUAL_PROCESS_LIMIT: int = int(os.getenv("MANUAL_PROCESS_LIMIT", 10))  # Límite de facturas por proceso manual
+    
     model_config = {
         "env_file": ".env",
         "extra": "ignore"  # Ignorar campos adicionales en lugar de lanzar un error

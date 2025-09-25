@@ -80,7 +80,7 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "fecha": {"description": "Fecha de emisión", "field_type": FieldType.DATE},
     "numero_factura": {"description": "Número de factura", "field_type": FieldType.TEXT},
     "tipo_documento": {"description": "Tipo de documento", "field_type": FieldType.TEXT},
-    "condicion_venta": {"description": "Condición de venta", "field_type": FieldType.TEXT},
+    #"condicion_venta": {"description": "Condición de venta", "field_type": FieldType.TEXT},
     "moneda": {"description": "Tipo de moneda", "field_type": FieldType.TEXT},
     "tipo_cambio": {"description": "Tipo de cambio", "field_type": FieldType.NUMBER},
     

@@ -227,7 +227,7 @@ export class TemplateEditorComponent implements OnInit {
       'establecimiento': 'Establecimiento',
       'punto_expedicion': 'Punto de Expedición',
       'tipo_documento': 'Tipo de Documento',
-      'condicion_venta': 'Condición de Venta',
+      // 'condicion_venta': 'Condición de Venta',
       'moneda': 'Moneda',
       'tipo_cambio': 'Tipo de Cambio',
       
