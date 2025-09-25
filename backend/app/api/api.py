@@ -324,10 +324,19 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
         )
 
 @app.post("/process-direct")
-async def process_emails_direct(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Procesa correos directamente sin cola de tareas (modo simple)."""
+async def process_emails_direct(
+    limit: Optional[int] = 10,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Procesa correos directamente con límite (máximo 10 para procesamiento manual)."""
     try:
-        # Ejecutar procesamiento directamente
+        # Validar límite
+        if limit is None or limit <= 0:
+            limit = 10
+        if limit > 50:  # Límite máximo de seguridad
+            limit = 50
+            
+        # Ejecutar procesamiento limitado
         from app.modules.email_processor.config_store import get_enabled_configs
         from app.modules.email_processor.email_processor import MultiEmailProcessor
         owner_email = (user.get('email') or '').lower()
@@ -343,13 +352,14 @@ async def process_emails_direct(user: Dict[str, Any] = Depends(_get_current_user
             email_configs.append(MultiEmailConfig(**config_data))
             
         mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
-        result = mp.process_all_emails()
+        result = mp.process_limited_emails(limit=limit)
         
         if result and hasattr(result, 'success') and result.success:
             return {
                 "success": True,
                 "message": result.message,
-                "invoice_count": getattr(result, 'invoice_count', 0)
+                "invoice_count": getattr(result, 'invoice_count', 0),
+                "limit_used": limit
             }
         else:
             return {
@@ -359,6 +369,7 @@ async def process_emails_direct(user: Dict[str, Any] = Depends(_get_current_user
             }
             
     except Exception as e:
+        logger.error(f"Error en process-direct: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/tasks/process")

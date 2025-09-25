@@ -73,6 +73,96 @@ class MultiEmailProcessor:
     def _remove_duplicate_invoices(self, invoices: List[InvoiceData]) -> List[InvoiceData]:
         return deduplicate_invoices(invoices)
 
+    def process_limited_emails(self, limit: int = 10) -> ProcessResult:
+        """Procesa un número limitado de correos para procesamiento manual"""
+        logger.info(f"🔄 Iniciando procesamiento manual limitado a {limit} facturas")
+        
+        all_invoices: List[InvoiceData] = []
+        success_count = 0
+        errors: List[str] = []
+        total_processed = 0
+        remaining_emails = 0
+        
+        if not self.email_configs:
+            return ProcessResult(
+                success=False,
+                message="No hay cuentas de correo configuradas",
+                invoice_count=0,
+                invoices=[]
+            )
+
+        for idx, cfg in enumerate(self.email_configs):
+            if total_processed >= limit:
+                break
+                
+            logger.info(f"Procesando cuenta {idx + 1}/{len(self.email_configs)}: {cfg.username}")
+            
+            try:
+                # Crear procesador para esta cuenta
+                single = EmailProcessor(EmailConfig(
+                    host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
+                    search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                ), owner_email=cfg.owner_email)
+                
+                # Conectar y buscar correos
+                if not single.connect():
+                    errors.append(f"Error conectando a {cfg.username}")
+                    continue
+                
+                # Buscar correos disponibles
+                email_ids = single.search_emails()
+                if not email_ids:
+                    single.disconnect()
+                    continue
+                
+                # Calcular cuántos correos procesar de esta cuenta
+                emails_to_process = min(len(email_ids), limit - total_processed)
+                remaining_emails += len(email_ids) - emails_to_process
+                
+                logger.info(f"📮 Encontrados {len(email_ids)} correos, procesando {emails_to_process}")
+                
+                # Procesar solo los correos necesarios
+                account_invoices = []
+                for i in range(emails_to_process):
+                    try:
+                        invoice = single._process_single_email(email_ids[i])
+                        if invoice:
+                            single._store_invoice_v2(invoice)
+                            account_invoices.append(invoice)
+                            total_processed += 1
+                            logger.info(f"✅ Factura {total_processed}/{limit}: {invoice.numero_factura}")
+                        
+                        # Marcar como leído
+                        try:
+                            single.mark_as_read(email_ids[i])
+                        except:
+                            logger.warning(f"⚠️ No se pudo marcar correo como leído")
+                            
+                    except Exception as e:
+                        logger.error(f"Error procesando correo individual: {e}")
+                
+                single.disconnect()
+                all_invoices.extend(account_invoices)
+                success_count += 1
+                
+            except Exception as e:
+                errors.append(f"Error en cuenta {cfg.username}: {str(e)}")
+                logger.error(f"❌ Error procesando cuenta {cfg.username}: {e}")
+
+        # Preparar mensaje de resultado
+        message_parts = [f"Procesamiento manual completado: {total_processed} facturas procesadas"]
+        if remaining_emails > 0:
+            message_parts.append(f"Quedan {remaining_emails} correos más por procesar")
+        if errors:
+            message_parts.append(f"Errores en {len(errors)} cuentas")
+            
+        return ProcessResult(
+            success=True,
+            message=". ".join(message_parts),
+            invoice_count=total_processed,
+            invoices=all_invoices
+        )
+
     def process_all_emails(self) -> ProcessResult:
         # Refrescar configuración en cada corrida para reflejar cambios dinámicos desde el frontend
         # Usar check_trial=True para que automáticamente filtre usuarios con trial expirado
