@@ -43,16 +43,13 @@ class CuenlyApp:
             logger.warning(f"No se pudieron cargar configuraciones de correo desde MongoDB: {e}")
             email_configs = []
 
+        # Siempre usar MultiEmailProcessor para compatibilidad con jobs programados
+        self.email_processor = MultiEmailProcessor()
         if len(email_configs) > 1:
-            self.email_processor = MultiEmailProcessor()
             logger.info(f"Usando MultiEmailProcessor con {len(email_configs)} cuentas de correo")
         elif len(email_configs) == 1:
-            # EmailProcessor sin args carga primera config habilitada desde MongoDB
-            self.email_processor = EmailProcessor()
-            logger.info("Usando EmailProcessor para una sola cuenta de correo (MongoDB)")
+            logger.info("Usando MultiEmailProcessor para una sola cuenta de correo")
         else:
-            # Sin configuraciones: permitir inicialización y esperar que el usuario configure vía UI
-            self.email_processor = MultiEmailProcessor()
             logger.info("No hay cuentas configuradas aún. MultiEmailProcessor inicializado sin cuentas")
         
         self.openai_processor = OpenAIProcessor()
