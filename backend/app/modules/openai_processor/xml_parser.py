@@ -248,9 +248,24 @@ class ParaguayanXMLParser:
         nom_em = self._find_element_by_name_in_de(de_element, 'dNomEmi')
         if nom_em is not None and nom_em.text:
             data['nombre_emisor'] = nom_em.text
-        act_eco = self._find_element_by_name_in_de(de_element, 'cActEco')
-        if act_eco is not None and act_eco.text:
-            data['actividad_economica'] = act_eco.text
+        # Dirección y teléfono del emisor
+        dir_em = self._find_element_by_name_in_de(de_element, 'dDirEmi')
+        if dir_em is not None and dir_em.text:
+            data['direccion_emisor'] = dir_em.text
+        tel_em = self._find_element_by_name_in_de(de_element, 'dTelEmi')
+        if tel_em is not None and tel_em.text:
+            data['telefono_emisor'] = tel_em.text
+        email_em = self._find_element_by_name_in_de(de_element, 'dEmailE')
+        if email_em is not None and email_em.text:
+            data['email_emisor'] = email_em.text
+        # Actividad económica: preferir descripción (dDesActEco), si no existe usar código (cActEco)
+        act_eco_desc = self._find_element_by_name_in_de(de_element, 'dDesActEco')
+        if act_eco_desc is not None and act_eco_desc.text:
+            data['actividad_economica'] = act_eco_desc.text
+        else:
+            act_eco = self._find_element_by_name_in_de(de_element, 'cActEco')
+            if act_eco is not None and act_eco.text:
+                data['actividad_economica'] = act_eco.text
         ruc_rec = self._find_element_by_name_in_de(de_element, 'dRucRec')
         dv_rec = self._find_element_by_name_in_de(de_element, 'dDVRec')
         if ruc_rec is not None and ruc_rec.text:
@@ -264,6 +279,13 @@ class ParaguayanXMLParser:
         email_rec = self._find_element_by_name_in_de(de_element, 'dEmailRec')
         if email_rec is not None and email_rec.text:
             data['email_cliente'] = email_rec.text
+        # Dirección y teléfono del receptor (si existen en el XML)
+        dir_rec = self._find_element_by_name_in_de(de_element, 'dDirRec')
+        if dir_rec is not None and dir_rec.text:
+            data['direccion_cliente'] = dir_rec.text
+        tel_rec = self._find_element_by_name_in_de(de_element, 'dTelRec')
+        if tel_rec is not None and tel_rec.text:
+            data['telefono_cliente'] = tel_rec.text
 
     def _extract_items(self, de_element: ET.Element, data: Dict[str, Any]):
         """
@@ -541,11 +563,15 @@ class ParaguayanXMLParser:
         """
         normalized: Dict[str, Any] = {}
 
-        # Copiar campos directos
-        for k in ['fecha', 'numero_factura', 'ruc_emisor', 'nombre_emisor',
-                  'condicion_venta', 'moneda', 'tipo_cambio', 'monto_total',
-                  'timbrado', 'cdc', 'ruc_cliente', 'nombre_cliente', 'email_cliente',
-                  'total_operacion', 'total_descuento', 'anticipo', 'actividad_economica']:
+        # Copiar campos directos (incluye datos de emisor y receptor)
+        for k in [
+            'fecha', 'numero_factura',
+            'ruc_emisor', 'nombre_emisor', 'direccion_emisor', 'telefono_emisor', 'email_emisor',
+            'ruc_cliente', 'nombre_cliente', 'email_cliente', 'direccion_cliente', 'telefono_cliente',
+            'condicion_venta', 'moneda', 'tipo_cambio', 'monto_total',
+            'timbrado', 'cdc',
+            'total_operacion', 'total_descuento', 'anticipo', 'actividad_economica'
+        ]:
             if k in data:
                 normalized[k] = data[k]
         

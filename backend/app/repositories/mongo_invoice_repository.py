@@ -106,8 +106,14 @@ class MongoInvoiceRepository(InvoiceRepository):
                     "timbrado": header.get("timbrado", ""),
                     "ruc_emisor": header.get("emisor", {}).get("ruc", ""),
                     "nombre_emisor": header.get("emisor", {}).get("nombre", ""),
+                    "direccion_emisor": header.get("emisor", {}).get("direccion", ""),
+                    "telefono_emisor": header.get("emisor", {}).get("telefono", ""),
+                    "email_emisor": header.get("emisor", {}).get("email", ""),
+                    "actividad_economica": header.get("emisor", {}).get("actividad_economica", ""),
                     "ruc_cliente": header.get("receptor", {}).get("ruc", ""),
                     "nombre_cliente": header.get("receptor", {}).get("nombre", ""),
+                    "direccion_cliente": header.get("receptor", {}).get("direccion", ""),
+                    "telefono_cliente": header.get("receptor", {}).get("telefono", ""),
                     "email_cliente": header.get("receptor", {}).get("email", ""),
                     # Mapeo correcto desde modelo v2
                     "totales": header.get("totales", {}),
@@ -137,7 +143,8 @@ class MongoInvoiceRepository(InvoiceRepository):
                     "fuente": header.get("fuente", ""),
                     "processing_quality": header.get("processing_quality", ""),
                     "created_at": header.get("created_at"),
-                    "productos": []
+                    "mes_proceso": header.get("mes_proceso", ""),
+                    "productos": [],
                 }
                 
                 # Agregar productos con mapeo correcto
@@ -154,6 +161,14 @@ class MongoInvoiceRepository(InvoiceRepository):
                         "iva": item.get("iva", 0)  # Esto ya es el tipo (5, 10)
                     }
                     invoice["productos"].append(producto)
+                
+                # Descripción de la factura (concatenación de productos)
+                try:
+                    descripciones = [p.get("descripcion", "") for p in invoice["productos"] if p.get("descripcion")]
+                    if descripciones:
+                        invoice["descripcion_factura"] = ", ".join(descripciones[:10])
+                except Exception:
+                    pass
                 
                 invoices.append(invoice)
             

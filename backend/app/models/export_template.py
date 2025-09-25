@@ -80,7 +80,7 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "fecha": {"description": "Fecha de emisión", "field_type": FieldType.DATE},
     "numero_factura": {"description": "Número de factura", "field_type": FieldType.TEXT},
     "tipo_documento": {"description": "Tipo de documento", "field_type": FieldType.TEXT},
-    #"condicion_venta": {"description": "Condición de venta", "field_type": FieldType.TEXT},
+    "condicion_venta": {"description": "Condición de venta", "field_type": FieldType.TEXT},
     "moneda": {"description": "Tipo de moneda", "field_type": FieldType.TEXT},
     "tipo_cambio": {"description": "Tipo de cambio", "field_type": FieldType.NUMBER},
     
@@ -89,6 +89,7 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "nombre_emisor": {"description": "Nombre del emisor", "field_type": FieldType.TEXT},
     "direccion_emisor": {"description": "Dirección del emisor", "field_type": FieldType.TEXT},
     "telefono_emisor": {"description": "Teléfono del emisor", "field_type": FieldType.TEXT},
+    "email_emisor": {"description": "Email del emisor", "field_type": FieldType.TEXT},
     
     # === CLIENTE ===
     "ruc_cliente": {"description": "RUC del cliente", "field_type": FieldType.TEXT},
@@ -112,7 +113,7 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     # === TOTALES DEL XML ===
     # "total_operacion" eliminado por redundancia con "monto_total"
     "total_descuento": {"description": "Total descuento", "field_type": FieldType.CURRENCY},
-    # "total_base_gravada": {"description": "Total base gravada", "field_type": FieldType.CURRENCY},
+    "total_base_gravada": {"description": "Total base gravada", "field_type": FieldType.CURRENCY},
     "anticipo": {"description": "Anticipo recibido", "field_type": FieldType.CURRENCY},
     
     # === IDENTIFICADORES ===
@@ -123,14 +124,18 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "productos": {"description": "Productos (todos juntos)", "field_type": FieldType.ARRAY},
     
     # === PRODUCTOS INDIVIDUALES ===
+    "productos.codigo": {"description": "Código productos", "field_type": FieldType.ARRAY},
+    "productos.nombre": {"description": "Nombre productos", "field_type": FieldType.ARRAY},
     "productos.descripcion": {"description": "Descripción productos", "field_type": FieldType.ARRAY},
     "productos.cantidad": {"description": "Cantidad productos", "field_type": FieldType.ARRAY},
+    "productos.unidad": {"description": "Unidad productos", "field_type": FieldType.ARRAY},
     "productos.precio_unitario": {"description": "Precio unitario productos", "field_type": FieldType.ARRAY},
     "productos.total": {"description": "Total productos", "field_type": FieldType.ARRAY},
     "productos.iva": {"description": "IVA productos", "field_type": FieldType.ARRAY},
+    "productos.base_gravada": {"description": "Base gravada productos", "field_type": FieldType.ARRAY},
+    "productos.monto_iva": {"description": "Monto IVA productos", "field_type": FieldType.ARRAY},
     
     # === METADATOS ===
-    "descripcion_factura": {"description": "Descripción de la factura", "field_type": FieldType.TEXT},
     "mes_proceso": {"description": "Mes de proceso", "field_type": FieldType.TEXT},
     "created_at": {"description": "Fecha de creación", "field_type": FieldType.DATE},
     "updated_at": {"description": "Fecha de actualización", "field_type": FieldType.DATE},

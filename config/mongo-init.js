@@ -6,117 +6,7 @@ db = db.getSiblingDB('cuenlyapp_warehouse');
 
 print('🔧 Inicializando base de datos cuenlyapp_warehouse...');
 
-// Crear la colección principal con validación de esquema (idempotente)
-try {
-  db.createCollection('facturas_completas', {
-  validator: {
-    $jsonSchema: {
-      bsonType: 'object',
-      required: ['_id', 'factura_id', 'metadata', 'factura', 'emisor', 'montos'],
-      properties: {
-        _id: {
-          bsonType: 'string',
-          description: 'ID único de la factura'
-        },
-        factura_id: {
-          bsonType: 'string',
-          description: 'ID alternativo para búsquedas'
-        },
-        metadata: {
-          bsonType: 'object',
-          required: ['fecha_procesado', 'fuente'],
-          properties: {
-            fecha_procesado: {
-              bsonType: 'string',
-              description: 'Fecha de procesamiento ISO'
-            },
-            fuente: {
-              bsonType: 'string',
-              enum: ['XML_NATIVO', 'OPENAI_VISION'],
-              description: 'Fuente de extracción de datos'
-            },
-            calidad_datos: {
-              bsonType: 'string',
-              enum: ['ALTA', 'MEDIA', 'BAJA'],
-              description: 'Evaluación de calidad'
-            }
-          }
-        },
-        factura: {
-          bsonType: 'object',
-          required: ['numero'],
-          properties: {
-            numero: {
-              bsonType: 'string',
-              description: 'Número de factura'
-            },
-            fecha: {
-              bsonType: ['string', 'null'],
-              description: 'Fecha de factura ISO'
-            }
-          }
-        },
-        emisor: {
-          bsonType: 'object',
-          required: ['ruc'],
-          properties: {
-            ruc: {
-              bsonType: 'string',
-              description: 'RUC del emisor'
-            },
-            nombre: {
-              bsonType: 'string',
-              description: 'Nombre del emisor'
-            }
-          }
-        },
-        montos: {
-          bsonType: 'object',
-          required: ['monto_total'],
-          properties: {
-            monto_total: {
-              bsonType: 'number',
-              minimum: 0,
-              description: 'Monto total de la factura'
-            }
-          }
-        }
-      }
-    }
-  }
-});
-
-print('✅ Colección facturas_completas creada');
-} catch (e) {
-  print('⚠️ facturas_completas ya existe: ' + e.message);
-}
-
-// Crear índices optimizados para consultas frecuentes (idempotente)
-try {
-  db.facturas_completas.createIndex({ 'factura.fecha': 1 });
-  db.facturas_completas.createIndex({ 'emisor.ruc': 1 });
-  db.facturas_completas.createIndex({ 'receptor.ruc': 1 });
-  db.facturas_completas.createIndex({ 'metadata.fecha_procesado': 1 });
-  db.facturas_completas.createIndex({ 'indices.year_month': 1 });
-  db.facturas_completas.createIndex({ 'datos_tecnicos.cdc': 1 });
-
-  // Índices compuestos para consultas complejas
-  db.facturas_completas.createIndex({ 'emisor.ruc': 1, 'factura.fecha': -1 });
-  db.facturas_completas.createIndex({ 'indices.year_month': 1, 'montos.monto_total': -1 });
-  db.facturas_completas.createIndex({ 'metadata.calidad_datos': 1, 'indices.has_cdc': 1 });
-
-  // Índice de texto para búsquedas generales
-  db.facturas_completas.createIndex({
-    'emisor.nombre': 'text',
-    'receptor.nombre': 'text',
-    'factura.descripcion': 'text',
-    'productos.articulo': 'text'
-  });
-
-  print('✅ Índices principales creados');
-} catch (e) {
-  print('⚠️ Algunos índices ya existen: ' + e.message);
-}
+// Colección legacy 'facturas_completas' eliminada: v2 (invoice_headers/items) es la única fuente
 
 // Crear colección para logs de procesamiento (idempotente)
 try {
@@ -289,7 +179,7 @@ print('==================================');
 print('✅ MongoDB inicializado correctamente para CuenlyApp');
 print('📊 Base de datos: cuenlyapp_warehouse');
 print('👤 Usuario: root (sin usuario adicional por simplicidad)');
-print('📑 Colecciones creadas: facturas_completas, processing_logs, monthly_stats, invoice_headers, invoice_items, auth_users');
+print('📑 Colecciones creadas: processing_logs, monthly_stats, invoice_headers, invoice_items, auth_users');
 print('🔍 Índices optimizados aplicados');
 print('⚙️ Configuración inicial completada');
 print('🎯 Sistema listo para aceptar conexiones de la aplicación');

@@ -267,32 +267,7 @@ class MultiEmailProcessor:
         if all_invoices:
             unique = self._remove_duplicate_invoices(all_invoices)
             logger.info(f"Facturas únicas después de eliminar duplicados: {len(unique)} (originales: {len(all_invoices)})")
-
-            # Persistir en MongoDB (cabecera + detalle)
-            try:
-                repo = MongoInvoiceRepository()
-                docs = [map_invoice(inv, fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION") for inv in unique]
-                # Enriquecer con owner_email si está configurado (multi-tenant)
-                if self.owner_email:
-                    for d in docs:
-                        try:
-                            d.header.owner_email = self.owner_email
-                            for it in d.items:
-                                it.owner_email = self.owner_email
-                        except Exception:
-                            pass
-                for d in docs:
-                    repo.save_document(d)
-                message_suffix = f" | {len(docs)} facturas almacenadas"
-                logger.info(f"💾 MongoDB repo: {len(docs)} documentos (cabecera + detalle)")
-            except Exception as e:
-                logger.error(f"❌ Error persistiendo en MongoDB (repo): {e}")
-                message_suffix = f" | ⚠️ Error MongoDB: {str(e)}"
-            finally:
-                try:
-                    repo.close()
-                except Exception:
-                    pass
+            # La persistencia ya se realizó por-correo en _store_invoice_v2; evitar doble guardado
             all_invoices = unique
 
         if success_count == len(self.email_configs):
@@ -458,6 +433,18 @@ class EmailProcessor:
             else:
                 logger.warning(f"⚠️ No se pudo devolver conexión al pool para {self.config.username}")
             self.current_connection = None
+
+    def mark_as_read(self, email_uid: str) -> bool:
+        """Marca un correo como leído por UID usando el cliente IMAP subyacente."""
+        try:
+            # Asegurar que exista conexión en el cliente legacy
+            if not self.client.conn:
+                # Si no hay conexión establecida, intenta conectar
+                self.client.connect()
+            return self.client.mark_seen(email_uid)
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo marcar correo {email_uid} como leído: {e}")
+            return False
 
     def _get_imap_connection(self):
         """Obtiene la conexión IMAP actual."""
