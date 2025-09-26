@@ -7,6 +7,9 @@ export interface UserProfile {
   email: string;
   name: string;
   picture: string;
+  role: string;
+  is_admin: boolean;
+  status: string;
   is_trial: boolean;
   trial_expires_at: string | null;
   trial_expired: boolean;

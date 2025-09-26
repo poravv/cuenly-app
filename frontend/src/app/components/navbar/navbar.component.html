@@ -129,6 +129,15 @@
                   </div>
                 </li>
                 <li><hr class="dropdown-divider"></li>
+                <li *ngIf="userProfile?.is_admin">
+                  <a class="dropdown-item admin-dropdown-link" routerLink="/admin">
+                    <i class="bi bi-shield-lock me-2"></i>
+                    Panel Admin
+                    <span class="admin-badge ms-auto">
+                      <i class="bi bi-star-fill"></i>
+                    </span>
+                  </a>
+                </li>
                 <li>
                   <a class="dropdown-item" routerLink="/ayuda">
                     <i class="bi bi-robot me-2"></i>

@@ -1,0 +1,247 @@
+<div class="admin-panel">
+  <div class="admin-header">
+    <h1 class="admin-title">
+      <i class="bi bi-shield-check"></i>
+      Panel de Administración
+    </h1>
+    <p class="admin-subtitle">Gestión de usuarios y estadísticas del sistema</p>
+  </div>
+
+  <!-- Loading spinner -->
+  <div *ngIf="loading" class="loading-container">
+    <div class="spinner"></div>
+    <p>Cargando datos del sistema...</p>
+  </div>
+
+  <!-- Main content -->
+  <div *ngIf="!loading" class="admin-content">
+    
+    <!-- Navigation tabs -->
+    <div class="tab-navigation">
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'stats'"
+        (click)="setActiveTab('stats')">
+        <i class="bi bi-graph-up"></i>
+        Estadísticas
+      </button>
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'users'"
+        (click)="setActiveTab('users')">
+        <i class="bi bi-people"></i>
+        Usuarios
+      </button>
+    </div>
+
+    <!-- Stats Tab -->
+    <div *ngIf="activeTab === 'stats'" class="tab-content">
+      
+      <!-- Summary cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon users">
+            <i class="bi bi-people"></i>
+          </div>
+          <div class="stat-content">
+            <h3>{{formatNumber(userStats.total_users)}}</h3>
+            <p>Total Usuarios</p>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon active">
+            <i class="bi bi-person-check"></i>
+          </div>
+          <div class="stat-content">
+            <h3>{{formatNumber(userStats.active_users)}}</h3>
+            <p>Usuarios Activos</p>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon invoices">
+            <i class="bi bi-receipt"></i>
+          </div>
+          <div class="stat-content">
+            <h3>{{formatNumber(invoiceStats.total_invoices)}}</h3>
+            <p>Total Facturas</p>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon items">
+            <i class="bi bi-list-check"></i>
+          </div>
+          <div class="stat-content">
+            <h3>{{formatNumber(invoiceStats.total_items)}}</h3>
+            <p>Ítems Procesados</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts section -->
+      <div class="charts-section">
+        <div class="chart-container">
+          <h3>Facturas por Mes (Últimos 6 meses)</h3>
+          <div class="chart-content">
+            <div *ngIf="getRecentMonths().length === 0" class="no-data">
+              No hay datos disponibles
+            </div>
+            <div *ngIf="getRecentMonths().length > 0" class="simple-chart">
+              <div *ngFor="let month of getRecentMonths()" class="chart-bar">
+                <div class="bar-label">{{month.month}}</div>
+                <div class="bar-container">
+                  <div 
+                    class="bar" 
+                    [style.height.%]="(month.count / getRecentMonths()[0].count) * 100">
+                  </div>
+                </div>
+                <div class="bar-value">{{month.count}}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <h3>Top 5 Usuarios (Facturas procesadas)</h3>
+          <div class="chart-content">
+            <div *ngIf="getTopUsers().length === 0" class="no-data">
+              No hay datos disponibles
+            </div>
+            <div *ngIf="getTopUsers().length > 0" class="user-stats-list">
+              <div *ngFor="let user of getTopUsers()" class="user-stat-item">
+                <div class="user-email">{{user.email}}</div>
+                <div class="user-stats">
+                  <span class="stat-value">{{formatNumber(user.count)}} facturas</span>
+                  <span class="stat-total">{{formatCurrency(user.total)}}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Users Tab -->
+    <div *ngIf="activeTab === 'users'" class="tab-content">
+      
+      <!-- Users table -->
+      <div class="users-section">
+        <div class="section-header">
+          <h3>Gestión de Usuarios</h3>
+          <div class="section-actions">
+            <span class="total-count">Total: {{formatNumber(totalUsers)}} usuarios</span>
+          </div>
+        </div>
+
+        <!-- Loading users -->
+        <div *ngIf="loadingUsers" class="loading-users">
+          <div class="spinner-small"></div>
+          <span>Cargando usuarios...</span>
+        </div>
+
+        <!-- Users table -->
+        <div *ngIf="!loadingUsers" class="users-table-container">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th>Usuario</th>
+                <th>Roles</th>
+                <th>Estado</th>
+                <th>Creado</th>
+                <th>Último Login</th>
+                <th>Trial</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let user of users">
+                <td class="user-info">
+                  <div class="user-details">
+                    <strong>{{user.name || 'Sin nombre'}}</strong>
+                    <small>{{user.email}}</small>
+                  </div>
+                </td>
+                <td>
+                  <span [class]="getRoleClass(user.role)">
+                    {{user.role === 'admin' ? 'Admin' : 'Usuario'}}
+                  </span>
+                </td>
+                <td>
+                  <span [class]="getStatusClass(user.status)">
+                    {{user.status === 'active' ? 'Activo' : 'Suspendido'}}
+                  </span>
+                </td>
+                <td>{{formatDate(user.created_at)}}</td>
+                <td>{{formatDate(user.last_login)}}</td>
+                <td>
+                  <div class="trial-info">
+                    <span *ngIf="user.is_trial_user" class="trial-badge">Trial</span>
+                    <span *ngIf="!user.is_trial_user" class="premium-badge">Premium</span>
+                    <small *ngIf="user.ai_invoices_processed !== undefined">
+                      {{user.ai_invoices_processed}}/{{user.ai_invoices_limit === -1 ? '∞' : user.ai_invoices_limit}}
+                    </small>
+                  </div>
+                </td>
+                <td class="actions">
+                  <div class="action-buttons">
+                    <!-- Role toggle -->
+                    <button 
+                      *ngIf="user.email !== 'andyvercha@gmail.com'"
+                      class="btn-action"
+                      [class.btn-promote]="user.role === 'user'"
+                      [class.btn-demote]="user.role === 'admin'"
+                      (click)="updateUserRole(user, user.role === 'admin' ? 'user' : 'admin')"
+                      [title]="user.role === 'admin' ? 'Quitar admin' : 'Hacer admin'">
+                      <i [class]="user.role === 'admin' ? 'bi bi-person-dash' : 'bi bi-person-plus'"></i>
+                    </button>
+                    
+                    <!-- Status toggle -->
+                    <button 
+                      *ngIf="user.email !== 'andyvercha@gmail.com'"
+                      class="btn-action"
+                      [class.btn-suspend]="user.status === 'active'"
+                      [class.btn-activate]="user.status === 'suspended'"
+                      (click)="updateUserStatus(user, user.status === 'active' ? 'suspended' : 'active')"
+                      [title]="user.status === 'active' ? 'Suspender' : 'Activar'">
+                      <i [class]="user.status === 'active' ? 'bi bi-person-slash' : 'bi bi-person-check'"></i>
+                    </button>
+                    
+                    <!-- Protected admin indicator -->
+                    <span *ngIf="user.email === 'andyvercha@gmail.com'" class="protected-admin">
+                      <i class="bi bi-shield-check" title="Administrador protegido"></i>
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div *ngIf="totalPages > 1" class="pagination">
+          <button 
+            class="btn-page" 
+            [disabled]="currentPage <= 1"
+            (click)="prevPage()">
+            <i class="bi bi-chevron-left"></i>
+            Anterior
+          </button>
+          
+          <span class="page-info">
+            Página {{currentPage}} de {{totalPages}}
+          </span>
+          
+          <button 
+            class="btn-page" 
+            [disabled]="currentPage >= totalPages"
+            (click)="nextPage()">
+            Siguiente
+            <i class="bi bi-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

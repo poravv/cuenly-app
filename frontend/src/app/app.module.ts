@@ -20,6 +20,7 @@ import { ExportTemplatesComponent } from './components/export-templates/export-t
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { NotificationContainerComponent } from './components/shared/notification-container/notification-container.component';
+import { AdminPanelComponent } from './components/admin-panel/admin-panel.component';
 import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
@@ -43,7 +44,8 @@ import { TrialInterceptor } from './interceptors/trial.interceptor';
     ExportTemplatesComponent,
     TemplateEditorComponent,
     TemplateExportComponent,
-    NotificationContainerComponent
+    NotificationContainerComponent,
+    AdminPanelComponent
   ],
   imports: [
     BrowserModule,
