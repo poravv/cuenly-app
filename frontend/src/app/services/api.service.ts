@@ -222,4 +222,27 @@ export class ApiService {
   getV2BulkDeleteInfo(headerIds: string[]): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/v2/invoices/bulk-delete-info`, { header_ids: headerIds });
   }
+
+  // Métodos de administración
+  checkAdminStatus(): Observable<{success: boolean, is_admin: boolean, email: string, message: string}> {
+    return this.http.get<{success: boolean, is_admin: boolean, email: string, message: string}>(`${this.apiUrl}/admin/check`);
+  }
+
+  getAdminUsers(page: number = 1, pageSize: number = 20): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/users`, {
+      params: { page: page.toString(), page_size: pageSize.toString() }
+    });
+  }
+
+  updateUserRole(email: string, role: string): Observable<{success: boolean, message: string}> {
+    return this.http.put<{success: boolean, message: string}>(`${this.apiUrl}/admin/users/${email}/role`, { role });
+  }
+
+  updateUserStatus(email: string, status: string): Observable<{success: boolean, message: string}> {
+    return this.http.put<{success: boolean, message: string}>(`${this.apiUrl}/admin/users/${email}/status`, { status });
+  }
+
+  getAdminStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/stats`);
+  }
 }

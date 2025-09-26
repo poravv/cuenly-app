@@ -112,7 +112,7 @@ try {
     validator: {
       $jsonSchema: {
         bsonType: 'object',
-        required: ['email', 'uid'],
+        required: ['email', 'uid', 'role', 'status'],
         properties: {
           email: {
             bsonType: 'string',
@@ -131,6 +131,16 @@ try {
             bsonType: 'string',
             description: 'URL de la foto de perfil'
           },
+          role: {
+            bsonType: 'string',
+            enum: ['admin', 'user'],
+            description: 'Rol del usuario (admin o user)'
+          },
+          status: {
+            bsonType: 'string',
+            enum: ['active', 'suspended'],
+            description: 'Estado del usuario (activo o suspendido)'
+          },
           created_at: {
             bsonType: 'date',
             description: 'Fecha de creación del usuario'
@@ -139,7 +149,7 @@ try {
             bsonType: 'date',
             description: 'Último login del usuario'
           },
-          is_trial: {
+          is_trial_user: {
             bsonType: 'bool',
             description: 'Si es usuario de prueba'
           },
@@ -154,8 +164,12 @@ try {
           },
           ai_invoices_limit: {
             bsonType: 'int',
-            minimum: 0,
-            description: 'Límite de facturas con IA para usuarios trial'
+            minimum: -1,
+            description: 'Límite de facturas con IA (-1 = sin límite)'
+          },
+          email_processing_start_date: {
+            bsonType: 'date',
+            description: 'Fecha desde la cual procesar correos'
           }
         }
       }
@@ -165,14 +179,60 @@ try {
   // Crear índices para usuarios
   db.auth_users.createIndex({ email: 1 }, { unique: true });
   db.auth_users.createIndex({ uid: 1 });
+  db.auth_users.createIndex({ role: 1 });
+  db.auth_users.createIndex({ status: 1 });
   db.auth_users.createIndex({ trial_expires_at: 1 });
   db.auth_users.createIndex({ ai_invoices_processed: 1 });
-  db.auth_users.createIndex({ is_trial: 1 });
+  db.auth_users.createIndex({ is_trial_user: 1 });
+  db.auth_users.createIndex({ created_at: -1 });
   
   print('✅ Colección auth_users configurada');
   
 } catch (e) { 
   print('⚠️ auth_users ya existe o error: ' + e.message);
+}
+
+// Inicializar usuario administrador principal
+try {
+  const adminEmail = 'andyvercha@gmail.com';
+  const existingAdmin = db.auth_users.findOne({ email: adminEmail });
+  
+  if (!existingAdmin) {
+    // Crear usuario admin inicial
+    db.auth_users.insertOne({
+      email: adminEmail,
+      uid: 'admin-init-' + new Date().getTime(), // UID temporal hasta que se autentique por primera vez
+      name: 'Andy Verchá',
+      picture: '',
+      role: 'admin',
+      status: 'active',
+      created_at: new Date(),
+      last_login: null,
+      is_trial_user: false, // Admin no tiene limitaciones de trial
+      trial_expires_at: null,
+      ai_invoices_processed: 0,
+      ai_invoices_limit: -1, // Sin límite
+      email_processing_start_date: new Date()
+    });
+    print('✅ Usuario administrador creado: ' + adminEmail);
+  } else {
+    // Si ya existe, asegurar que tenga rol admin y no sea trial
+    db.auth_users.updateOne(
+      { email: adminEmail },
+      { 
+        $set: { 
+          role: 'admin',
+          status: 'active',
+          is_trial_user: false,
+          ai_invoices_limit: -1,
+          last_updated: new Date()
+        }
+      }
+    );
+    print('✅ Usuario administrador actualizado: ' + adminEmail);
+  }
+} catch (e) {
+  print('⚠️ Error inicializando admin: ' + e.message);
 }
 
 print('==================================');

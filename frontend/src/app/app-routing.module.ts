@@ -14,6 +14,8 @@ import { TemplateEditorComponent } from './components/export-templates/template-
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { AuthGuard } from './guards/auth.guard';
 import { LoginGuard } from './guards/login.guard';
+import { AdminGuard } from './guards/admin.guard';
+import { AdminPanelComponent } from './components/admin-panel/admin-panel.component';
 
 const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [LoginGuard] },
@@ -30,6 +32,7 @@ const routes: Routes = [
   { path: 'templates-export/export/:id', component: TemplateExportComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/export', component: TemplateExportComponent, canActivate: [AuthGuard] },
   { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard] },
+  { path: 'admin', component: AdminPanelComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'ayuda', component: HelpComponent, canActivate: [AuthGuard] },
   { path: '**', redirectTo: '', pathMatch: 'full' }
 ];
