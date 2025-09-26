@@ -245,4 +245,80 @@ export class ApiService {
   getAdminStats(): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/admin/stats`);
   }
+
+  // =====================================
+  // PLANES Y SUSCRIPCIONES
+  // =====================================
+
+  // API Pública de planes (sin autenticación)
+  getPublicPlans(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/api/plans`);
+  }
+
+  getPublicPlan(planCode: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/api/plans/${planCode}`);
+  }
+
+  // Métodos administrativos para planes
+  getAdminPlans(includeInactive: boolean = false): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/plans`, {
+      params: { include_inactive: includeInactive.toString() }
+    });
+  }
+
+  createPlan(planData: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/plans`, planData);
+  }
+
+  updatePlan(planCode: string, planData: any): Observable<any> {
+    return this.http.put<any>(`${this.apiUrl}/admin/plans/${planCode}`, planData);
+  }
+
+  deletePlan(planCode: string): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/admin/plans/${planCode}`);
+  }
+
+  // Métodos de suscripciones
+  getSubscriptionStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/subscriptions/stats`);
+  }
+
+  assignPlanToUser(subscriptionData: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/subscriptions`, subscriptionData);
+  }
+
+  getUserSubscriptions(userEmail: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/subscriptions/user/${userEmail}`);
+  }
+
+  // Estadísticas filtradas
+  getFilteredStats(filters: {
+    start_date?: string,
+    end_date?: string,
+    user_email?: string
+  }): Observable<any> {
+    let params: any = {};
+    if (filters.start_date) params.start_date = filters.start_date;
+    if (filters.end_date) params.end_date = filters.end_date;
+    if (filters.user_email) params.user_email = filters.user_email;
+
+    return this.http.get<any>(`${this.apiUrl}/admin/stats/filtered`, { params });
+  }
+
+  // Métodos genéricos HTTP para compatibilidad
+  get(url: string, options?: any): Promise<any> {
+    return this.http.get<any>(`${this.apiUrl}${url}`, options).toPromise();
+  }
+
+  post(url: string, data: any, options?: any): Promise<any> {
+    return this.http.post<any>(`${this.apiUrl}${url}`, data, options).toPromise();
+  }
+
+  put(url: string, data: any, options?: any): Promise<any> {
+    return this.http.put<any>(`${this.apiUrl}${url}`, data, options).toPromise();
+  }
+
+  delete(url: string, options?: any): Promise<any> {
+    return this.http.delete<any>(`${this.apiUrl}${url}`, options).toPromise();
+  }
 }

@@ -7,16 +7,15 @@
     <p class="admin-subtitle">Gestión de usuarios y estadísticas del sistema</p>
   </div>
 
-  <!-- Loading spinner -->
   <div *ngIf="loading" class="loading-container">
     <div class="spinner"></div>
     <p>Cargando datos del sistema...</p>
   </div>
+  
+  ---
 
-  <!-- Main content -->
   <div *ngIf="!loading" class="admin-content">
     
-    <!-- Navigation tabs -->
     <div class="tab-navigation">
       <button 
         class="tab-button" 
@@ -32,12 +31,17 @@
         <i class="bi bi-people"></i>
         Usuarios
       </button>
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'plans'"
+        (click)="setActiveTab('plans')">
+        <i class="bi bi-credit-card"></i>
+        Planes
+      </button>
     </div>
-
-    <!-- Stats Tab -->
+    
     <div *ngIf="activeTab === 'stats'" class="tab-content">
       
-      <!-- Summary cards -->
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-icon users">
@@ -80,7 +84,6 @@
         </div>
       </div>
 
-      <!-- Charts section -->
       <div class="charts-section">
         <div class="chart-container">
           <h3>Facturas por Mes (Últimos 6 meses)</h3>
@@ -121,12 +124,112 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Users Tab -->
+      <div class="advanced-stats-section">
+        <h3>Estadísticas Filtradas</h3>
+        
+        <div class="filters-form">
+          <div class="filter-row">
+            <div class="filter-group">
+              <label>Fecha Inicio:</label>
+              <input type="date" [(ngModel)]="statsFilters.start_date" class="form-control">
+            </div>
+            
+            <div class="filter-group">
+              <label>Fecha Fin:</label>
+              <input type="date" [(ngModel)]="statsFilters.end_date" class="form-control">
+            </div>
+            
+            <div class="filter-group">
+              <label>Usuario:</label>
+              <select [(ngModel)]="statsFilters.user_email" class="form-control">
+                <option value="">Todos los usuarios</option>
+                <option *ngFor="let user of users" [value]="user.email">
+                  {{user.name || user.email}}
+                </option>
+              </select>
+            </div>
+            
+            <div class="filter-group">
+              <button class="btn btn-primary" (click)="loadFilteredStats()" [disabled]="loadingFilteredStats">
+                <i class="bi bi-search"></i>
+                Filtrar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="loadingFilteredStats" class="loading-stats">
+          <div class="spinner-small"></div>
+          <span>Cargando estadísticas filtradas...</span>
+        </div>
+
+        <div *ngIf="filteredStats && !loadingFilteredStats" class="filtered-stats-content">
+          <div class="filtered-summary">
+            <div class="summary-card">
+              <h4>{{formatNumber(filteredStats.stats.total_invoices)}}</h4>
+              <p>Facturas</p>
+            </div>
+            <div class="summary-card">
+              <h4>{{formatCurrency(filteredStats.stats.total_amount)}}</h4>
+              <p>Monto Total</p>
+            </div>
+            <div class="summary-card">
+              <h4>{{formatCurrency(filteredStats.stats.avg_amount)}}</h4>
+              <p>Promedio</p>
+            </div>
+          </div>
+
+          <div *ngIf="filteredStats.stats.daily_breakdown.length > 0" class="chart-container">
+            <h4>Distribución Diaria</h4>
+            <div class="daily-chart">
+              <div *ngFor="let day of filteredStats.stats.daily_breakdown" class="daily-bar">
+                <div class="bar-container">
+                  <div class="bar" 
+                       [style.height.%]="getBarHeight(day.count, getMaxDailyCount())">
+                  </div>
+                </div>
+                <div class="bar-label">{{formatShortDate(day._id)}}</div>
+                <div class="bar-value">{{day.count}}</div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="filteredStats.stats.hourly_breakdown.length > 0" class="chart-container">
+            <h4>Distribución por Hora</h4>
+            <div class="hourly-chart">
+              <div *ngFor="let hour of filteredStats.stats.hourly_breakdown" class="hourly-bar">
+                <div class="bar-container">
+                  <div class="bar" 
+                       [style.height.%]="getBarHeight(hour.count, getMaxHourlyCount())">
+                  </div>
+                </div>
+                <div class="bar-label">{{hour._id}}:00</div>
+                <div class="bar-value">{{hour.count}}</div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="filteredStats.stats.user_breakdown.length > 0" class="chart-container">
+            <h4>Por Usuario</h4>
+            <div class="user-breakdown-list">
+              <div *ngFor="let user of filteredStats.stats.user_breakdown" class="user-breakdown-item">
+                <div class="user-info">
+                  <strong>{{user._id}}</strong>
+                </div>
+                <div class="user-metrics">
+                  <span class="metric">{{formatNumber(user.count)}} facturas</span>
+                  <span class="metric">{{formatCurrency(user.total_amount)}}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>        
+
     <div *ngIf="activeTab === 'users'" class="tab-content">
       
-      <!-- Users table -->
       <div class="users-section">
         <div class="section-header">
           <h3>Gestión de Usuarios</h3>
@@ -135,13 +238,11 @@
           </div>
         </div>
 
-        <!-- Loading users -->
         <div *ngIf="loadingUsers" class="loading-users">
           <div class="spinner-small"></div>
           <span>Cargando usuarios...</span>
         </div>
 
-        <!-- Users table -->
         <div *ngIf="!loadingUsers" class="users-table-container">
           <table class="users-table">
             <thead>
@@ -151,7 +252,7 @@
                 <th>Estado</th>
                 <th>Creado</th>
                 <th>Último Login</th>
-                <th>Trial</th>
+                <th>Límite/Trial</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -186,7 +287,6 @@
                 </td>
                 <td class="actions">
                   <div class="action-buttons">
-                    <!-- Role toggle -->
                     <button 
                       *ngIf="user.email !== 'andyvercha@gmail.com'"
                       class="btn-action"
@@ -197,7 +297,6 @@
                       <i [class]="user.role === 'admin' ? 'bi bi-person-dash' : 'bi bi-person-plus'"></i>
                     </button>
                     
-                    <!-- Status toggle -->
                     <button 
                       *ngIf="user.email !== 'andyvercha@gmail.com'"
                       class="btn-action"
@@ -208,7 +307,6 @@
                       <i [class]="user.status === 'active' ? 'bi bi-person-slash' : 'bi bi-person-check'"></i>
                     </button>
                     
-                    <!-- Protected admin indicator -->
                     <span *ngIf="user.email === 'andyvercha@gmail.com'" class="protected-admin">
                       <i class="bi bi-shield-check" title="Administrador protegido"></i>
                     </span>
@@ -219,7 +317,6 @@
           </table>
         </div>
 
-        <!-- Pagination -->
         <div *ngIf="totalPages > 1" class="pagination">
           <button 
             class="btn-page" 
@@ -242,6 +339,10 @@
           </button>
         </div>
       </div>
+    </div>
+    
+    <div *ngIf="activeTab === 'plans'" class="tab-content">
+      <app-plans-management></app-plans-management>
     </div>
   </div>
 </div>

@@ -39,9 +39,10 @@ export class AdminPanelComponent implements OnInit {
   // Estados
   loading = true;
   loadingUsers = false;
+  loadingFilteredStats = false;
   
   // Tabs
-  activeTab = 'stats'; // 'stats', 'users'
+  activeTab = 'stats'; // 'stats', 'users', 'plans'
   
   // Users
   users: User[] = [];
@@ -49,6 +50,16 @@ export class AdminPanelComponent implements OnInit {
   currentPage = 1;
   pageSize = 20;
   totalPages = 0;
+  
+  // Filtros de estadísticas
+  statsFilters = {
+    start_date: '',
+    end_date: '',
+    user_email: ''
+  };
+  
+  // Estadísticas filtradas
+  filteredStats: any = null;
   selectedUser: User | null = null;
   
   // Stats
@@ -231,5 +242,55 @@ export class AdminPanelComponent implements OnInit {
       count: item.count,
       total: item.total_amount
     }));
+  }
+
+  // =====================================
+  // MÉTODOS PARA ESTADÍSTICAS FILTRADAS
+  // =====================================
+
+  async loadFilteredStats(): Promise<void> {
+    this.loadingFilteredStats = true;
+    try {
+      const filters: any = {};
+      if (this.statsFilters.start_date) filters.start_date = this.statsFilters.start_date;
+      if (this.statsFilters.end_date) filters.end_date = this.statsFilters.end_date;
+      if (this.statsFilters.user_email) filters.user_email = this.statsFilters.user_email;
+
+      const response = await this.apiService.getFilteredStats(filters).toPromise();
+      if (response.success) {
+        this.filteredStats = response;
+      }
+    } catch (error) {
+      console.error('Error loading filtered stats:', error);
+    } finally {
+      this.loadingFilteredStats = false;
+    }
+  }
+
+  getMaxDailyCount(): number {
+    if (!this.filteredStats?.stats?.daily_breakdown) return 1;
+    return Math.max(...this.filteredStats.stats.daily_breakdown.map((d: any) => d.count));
+  }
+
+  getMaxHourlyCount(): number {
+    if (!this.filteredStats?.stats?.hourly_breakdown) return 1;
+    return Math.max(...this.filteredStats.stats.hourly_breakdown.map((h: any) => h.count));
+  }
+
+  getBarHeight(value: number, maxValue: number): number {
+    if (maxValue === 0) return 0;
+    return Math.max((value / maxValue) * 100, 5); // Mínimo 5% para visibilidad
+  }
+
+  formatShortDate(dateStr: string): string {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('es-ES', { 
+        month: '2-digit', 
+        day: '2-digit' 
+      });
+    } catch {
+      return dateStr;
+    }
   }
 }

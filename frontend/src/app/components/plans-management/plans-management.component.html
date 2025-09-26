@@ -1,0 +1,363 @@
+<div class="plans-management">
+  <div class="header">
+    <h1 class="title">
+      <i class="bi bi-credit-card"></i>
+      Gestión de Planes y Suscripciones
+    </h1>
+    <p class="subtitle">Administra planes de suscripción y asigna usuarios</p>
+  </div>
+
+  <!-- Navigation tabs -->
+  <div class="tab-navigation">
+    <button 
+      class="tab-button" 
+      [class.active]="activeTab === 'plans'"
+      (click)="setActiveTab('plans')">
+      <i class="bi bi-list-ul"></i>
+      Planes
+    </button>
+    <button 
+      class="tab-button" 
+      [class.active]="activeTab === 'stats'"
+      (click)="setActiveTab('stats')">
+      <i class="bi bi-graph-up"></i>
+      Estadísticas
+    </button>
+    <button 
+      class="tab-button" 
+      [class.active]="activeTab === 'assign'"
+      (click)="setActiveTab('assign')">
+      <i class="bi bi-person-check"></i>
+      Asignar Planes
+    </button>
+  </div>
+
+  <!-- Plans Tab -->
+  <div *ngIf="activeTab === 'plans'" class="tab-content">
+    <div class="section-header">
+      <h3>Administración de Planes</h3>
+      <button class="btn btn-primary" (click)="showCreatePlanForm()">
+        <i class="bi bi-plus-circle"></i>
+        Nuevo Plan
+      </button>
+    </div>
+
+    <!-- Loading plans -->
+    <div *ngIf="loadingPlans" class="loading">
+      <div class="spinner"></div>
+      <span>Cargando planes...</span>
+    </div>
+
+    <!-- Plans table -->
+    <div *ngIf="!loadingPlans" class="plans-table-container">
+      <table class="plans-table">
+        <thead>
+          <tr>
+            <th>Plan</th>
+            <th>Código</th>
+            <th>Precio</th>
+            <th>Período</th>
+            <th>IA Límite</th>
+            <th>Estado</th>
+            <th>Popular</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let plan of plans">
+            <td>
+              <div class="plan-info">
+                <strong>{{plan.name}}</strong>
+                <small>{{plan.description}}</small>
+              </div>
+            </td>
+            <td>
+              <code>{{plan.code}}</code>
+            </td>
+            <td>
+              <span class="price">{{formatCurrency(plan.price, plan.currency)}}</span>
+            </td>
+            <td>
+              <span class="billing-period">{{getBillingPeriodLabel(plan.billing_period)}}</span>
+            </td>
+            <td>
+              <span class="ai-limit">
+                {{plan.features.ai_invoices_limit === -1 ? '∞' : formatNumber(plan.features.ai_invoices_limit)}}
+              </span>
+            </td>
+            <td>
+              <span [class]="'badge ' + getStatusClass(plan.status)">
+                {{plan.status}}
+              </span>
+            </td>
+            <td>
+              <i *ngIf="plan.is_popular" class="bi bi-star-fill popular-star" title="Plan Popular"></i>
+            </td>
+            <td class="actions">
+              <button class="btn-action btn-edit" (click)="editPlan(plan)" title="Editar">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button class="btn-action btn-delete" (click)="deletePlan(plan)" title="Eliminar">
+                <i class="bi bi-trash"></i>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Stats Tab -->
+  <div *ngIf="activeTab === 'stats'" class="tab-content">
+    <div class="section-header">
+      <h3>Estadísticas de Suscripciones</h3>
+    </div>
+
+    <!-- Loading stats -->
+    <div *ngIf="loadingStats" class="loading">
+      <div class="spinner"></div>
+      <span>Cargando estadísticas...</span>
+    </div>
+
+    <!-- Stats content -->
+    <div *ngIf="!loadingStats && subscriptionStats" class="stats-content">
+      <!-- Summary cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon total">
+            <i class="bi bi-receipt-cutoff"></i>
+          </div>
+          <div class="stat-content">
+            <h3>{{formatNumber(subscriptionStats.total_subscriptions)}}</h3>
+            <p>Total Suscripciones</p>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon active">
+            <i class="bi bi-check-circle"></i>
+          </div>
+          <div class="stat-content">
+            <h3>{{formatNumber(subscriptionStats.active_subscriptions)}}</h3>
+            <p>Suscripciones Activas</p>
+          </div>
+        </div>
+        
+        <div class="stat-card">
+          <div class="stat-icon revenue">
+            <i class="bi bi-currency-dollar"></i>
+          </div>
+          <div class="stat-content">
+            <h3>{{formatCurrency(subscriptionStats.total_revenue, 'USD')}}</h3>
+            <p>Ingresos Totales</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Plan stats table -->
+      <div class="plan-stats-section">
+        <h4>Estadísticas por Plan</h4>
+        <table class="plan-stats-table">
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Total Suscripciones</th>
+              <th>Activas</th>
+              <th>Ingreos Totales</th>
+              <th>Precio Promedio</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let stat of subscriptionStats.plan_stats">
+              <td><strong>{{stat.plan_name}}</strong></td>
+              <td>{{formatNumber(stat.total_subscriptions)}}</td>
+              <td>{{formatNumber(stat.active_subscriptions)}}</td>
+              <td>{{formatCurrency(stat.total_revenue, 'USD')}}</td>
+              <td>{{formatCurrency(stat.avg_price, 'USD')}}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assign Tab -->
+  <div *ngIf="activeTab === 'assign'" class="tab-content">
+    <div class="section-header">
+      <h3>Asignar Plan a Usuario</h3>
+    </div>
+
+    <div class="assignment-form">
+      <div class="form-group">
+        <label for="userSelect">Usuario:</label>
+        <select id="userSelect" [(ngModel)]="selectedUser" class="form-control">
+          <option value="">Seleccionar usuario...</option>
+          <option *ngFor="let user of users" [value]="user.email">
+            {{user.name || user.email}} ({{user.email}})
+          </option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="planSelect">Plan:</label>
+        <select id="planSelect" [(ngModel)]="selectedPlan" class="form-control">
+          <option value="">Seleccionar plan...</option>
+          <option *ngFor="let plan of plans" [value]="plan.code" [disabled]="plan.status !== 'active'">
+            {{plan.name}} - {{formatCurrency(plan.price, plan.currency)}} ({{getBillingPeriodLabel(plan.billing_period)}})
+          </option>
+        </select>
+      </div>
+
+      <button 
+        class="btn btn-success" 
+        (click)="assignPlanToUser()"
+        [disabled]="!selectedUser || !selectedPlan">
+        <i class="bi bi-check-circle"></i>
+        Asignar Plan
+      </button>
+    </div>
+
+    <!-- Loading users -->
+    <div *ngIf="loadingUsers" class="loading">
+      <div class="spinner"></div>
+      <span>Cargando usuarios...</span>
+    </div>
+  </div>
+</div>
+
+<!-- Plan Form Modal -->
+<div *ngIf="showPlanForm" class="modal-overlay" (click)="cancelPlanForm()">
+  <div class="modal-content plan-form-modal" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h4>{{editingPlan ? 'Editar Plan' : 'Nuevo Plan'}}</h4>
+      <button class="btn-close" (click)="cancelPlanForm()">
+        <i class="bi bi-x"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body">
+      <form class="plan-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nombre *</label>
+            <input type="text" [(ngModel)]="planForm.name" name="name" class="form-control" required>
+          </div>
+          
+          <div class="form-group">
+            <label>Código *</label>
+            <input type="text" [(ngModel)]="planForm.code" name="code" class="form-control" 
+                   [disabled]="!!editingPlan" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Descripción</label>
+          <textarea [(ngModel)]="planForm.description" name="description" class="form-control" rows="3"></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Precio *</label>
+            <input type="number" [(ngModel)]="planForm.price" name="price" class="form-control" 
+                   min="0" step="0.01" required>
+          </div>
+          
+          <div class="form-group">
+            <label>Moneda</label>
+            <select [(ngModel)]="planForm.currency" name="currency" class="form-control">
+              <option *ngFor="let currency of currencies" [value]="currency.value">
+                {{currency.label}}
+              </option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Período de Facturación</label>
+            <select [(ngModel)]="planForm.billing_period" name="billing_period" class="form-control">
+              <option *ngFor="let period of billingPeriods" [value]="period.value">
+                {{period.label}}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="features-section">
+          <h5>Características</h5>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label>Límite de Facturas IA</label>
+              <input type="number" [(ngModel)]="planForm.features.ai_invoices_limit" 
+                     name="ai_invoices_limit" class="form-control" min="-1">
+              <small class="form-text">(-1 = sin límite)</small>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Formatos de Exportación</label>
+            <div class="checkbox-group">
+              <label *ngFor="let format of availableExportFormats" class="checkbox-label">
+                <input type="checkbox" 
+                       [checked]="isExportFormatSelected(format.value)"
+                       (change)="toggleExportFormat(format.value)">
+                {{format.label}}
+              </label>
+            </div>
+          </div>
+
+          <div class="checkbox-row">
+            <label class="checkbox-label">
+              <input type="checkbox" [(ngModel)]="planForm.features.email_processing" name="email_processing">
+              Procesamiento de Email
+            </label>
+            
+            <label class="checkbox-label">
+              <input type="checkbox" [(ngModel)]="planForm.features.api_access" name="api_access">
+              Acceso a API
+            </label>
+            
+            <label class="checkbox-label">
+              <input type="checkbox" [(ngModel)]="planForm.features.priority_support" name="priority_support">
+              Soporte Prioritario
+            </label>
+            
+            <label class="checkbox-label">
+              <input type="checkbox" [(ngModel)]="planForm.features.custom_templates" name="custom_templates">
+              Plantillas Personalizadas
+            </label>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Estado</label>
+            <select [(ngModel)]="planForm.status" name="status" class="form-control">
+              <option value="active">Activo</option>
+              <option value="inactive">Inactivo</option>
+              <option value="deprecated">Deprecado</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Orden</label>
+            <input type="number" [(ngModel)]="planForm.sort_order" name="sort_order" class="form-control" min="0">
+          </div>
+        </div>
+
+        <div class="checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="planForm.is_popular" name="is_popular">
+            Marcar como Plan Popular
+          </label>
+        </div>
+      </form>
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn btn-secondary" (click)="cancelPlanForm()">Cancelar</button>
+      <button class="btn btn-primary" (click)="savePlan()">
+        {{editingPlan ? 'Actualizar' : 'Crear'}} Plan
+      </button>
+    </div>
+  </div>
+</div>

@@ -20,6 +20,7 @@ from app.config.settings import settings
 from app.utils.firebase_auth import verify_firebase_token, extract_bearer_token
 from app.utils.trial_middleware import check_trial_limits_optional, check_trial_limits, check_ai_limits
 from app.repositories.user_repository import UserRepository
+from app.repositories.subscription_repository import SubscriptionRepository
 from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura
 from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
@@ -1874,6 +1875,385 @@ async def admin_check(user: Dict[str, Any] = Depends(_get_current_user)):
     except Exception as e:
         logger.error(f"Error verificando admin: {e}")
         raise HTTPException(status_code=500, detail="Error verificando permisos")
+
+# =====================================
+# ENDPOINTS DE PLANES Y SUSCRIPCIONES
+# =====================================
+
+# Modelos para planes
+class PlanCreateRequest(BaseModel):
+    name: str
+    code: str
+    description: str
+    price: float
+    currency: str = "USD"
+    billing_period: str  # monthly, yearly, one_time
+    features: Dict[str, Any]
+    status: str = "active"
+    is_popular: bool = False
+    sort_order: int = 0
+
+class PlanUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    currency: Optional[str] = None
+    billing_period: Optional[str] = None
+    features: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    is_popular: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+class SubscriptionCreateRequest(BaseModel):
+    user_email: str
+    plan_code: str
+    payment_method: str = "manual"
+    payment_reference: Optional[str] = None
+
+# API pública para planes (sin autenticación)
+@app.get("/api/plans", tags=["Plans - Public"])
+async def get_public_plans():
+    """Obtiene todos los planes activos - API pública para integración externa"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        plans = await repo.get_all_plans(include_inactive=False)
+        
+        return {
+            "success": True,
+            "data": plans,
+            "count": len(plans)
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo planes públicos: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo planes")
+
+@app.get("/api/plans/{plan_code}", tags=["Plans - Public"])
+async def get_public_plan(plan_code: str):
+    """Obtiene un plan específico - API pública"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        plan = await repo.get_plan_by_code(plan_code)
+        
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        return {
+            "success": True,
+            "data": plan
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo plan {plan_code}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo plan")
+
+# Endpoints administrativos para planes (requieren auth admin)
+@app.get("/admin/plans", tags=["Admin - Plans"])
+async def admin_get_plans(
+    include_inactive: bool = Query(False),
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Obtiene todos los planes (incluye inactivos si se especifica)"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        plans = await repo.get_all_plans(include_inactive=include_inactive)
+        
+        return {
+            "success": True,
+            "data": plans,
+            "count": len(plans)
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo planes admin: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo planes")
+
+@app.post("/admin/plans", tags=["Admin - Plans"])
+async def admin_create_plan(
+    plan: PlanCreateRequest,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Crea un nuevo plan de suscripción"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        # Verificar que el código no exista
+        existing_plan = await repo.get_plan_by_code(plan.code)
+        if existing_plan:
+            raise HTTPException(status_code=400, detail="Ya existe un plan con ese código")
+        
+        success = await repo.create_plan(plan.dict())
+        if not success:
+            raise HTTPException(status_code=500, detail="Error creando plan")
+        
+        return {
+            "success": True,
+            "message": f"Plan '{plan.name}' creado exitosamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creando plan: {e}")
+        raise HTTPException(status_code=500, detail="Error creando plan")
+
+@app.put("/admin/plans/{plan_code}", tags=["Admin - Plans"])
+async def admin_update_plan(
+    plan_code: str,
+    plan: PlanUpdateRequest,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Actualiza un plan existente"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        # Verificar que el plan existe
+        existing_plan = await repo.get_plan_by_code(plan_code)
+        if not existing_plan:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        # Actualizar solo los campos que se enviaron
+        update_data = {k: v for k, v in plan.dict().items() if v is not None}
+        
+        success = await repo.update_plan(plan_code, update_data)
+        if not success:
+            raise HTTPException(status_code=500, detail="Error actualizando plan")
+        
+        return {
+            "success": True,
+            "message": f"Plan '{plan_code}' actualizado exitosamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error actualizando plan: {e}")
+        raise HTTPException(status_code=500, detail="Error actualizando plan")
+
+@app.delete("/admin/plans/{plan_code}", tags=["Admin - Plans"])
+async def admin_delete_plan(
+    plan_code: str,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Elimina un plan (soft delete)"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        success = await repo.delete_plan(plan_code)
+        if not success:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        return {
+            "success": True,
+            "message": f"Plan '{plan_code}' eliminado exitosamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error eliminando plan: {e}")
+        raise HTTPException(status_code=500, detail="Error eliminando plan")
+
+# Endpoints de suscripciones
+@app.get("/admin/subscriptions/stats", tags=["Admin - Subscriptions"])
+async def admin_get_subscription_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene estadísticas de suscripciones"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        stats = await repo.get_subscription_stats()
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas de suscripciones: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
+
+@app.post("/admin/subscriptions", tags=["Admin - Subscriptions"])
+async def admin_create_subscription(
+    subscription: SubscriptionCreateRequest,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Asigna un plan a un usuario"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        success = await repo.assign_plan_to_user(
+            subscription.user_email,
+            subscription.plan_code,
+            subscription.payment_method
+        )
+        
+        if not success:
+            raise HTTPException(status_code=400, detail="Error asignando plan al usuario")
+        
+        return {
+            "success": True,
+            "message": f"Plan '{subscription.plan_code}' asignado a {subscription.user_email}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error asignando plan: {e}")
+        raise HTTPException(status_code=500, detail="Error asignando plan")
+
+@app.get("/admin/subscriptions/user/{user_email}", tags=["Admin - Subscriptions"])
+async def admin_get_user_subscriptions(
+    user_email: str,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Obtiene el historial de suscripciones de un usuario"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        current_subscription = await repo.get_user_subscription(user_email)
+        history = await repo.get_user_subscriptions_history(user_email)
+        
+        return {
+            "success": True,
+            "data": {
+                "current_subscription": current_subscription,
+                "history": history
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo suscripciones de {user_email}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo suscripciones")
+
+# Endpoint para estadísticas filtradas con fecha
+@app.get("/admin/stats/filtered", tags=["Admin - Stats"])
+async def admin_get_filtered_stats(
+    start_date: Optional[str] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Fecha fin (YYYY-MM-DD)"),
+    user_email: Optional[str] = Query(None, description="Email del usuario"),
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Obtiene estadísticas filtradas por fecha y usuario"""
+    try:
+        user_repo = UserRepository()
+        repo = MongoInvoiceRepository()
+        headers_coll = repo._headers()
+        
+        # Construir filtro de fecha
+        date_filter = {}
+        if start_date:
+            from datetime import datetime
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            date_filter["$gte"] = start_dt
+        if end_date:
+            from datetime import datetime
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            # Agregar 1 día para incluir todo el día final
+            from datetime import timedelta
+            end_dt = end_dt + timedelta(days=1)
+            date_filter["$lt"] = end_dt
+        
+        # Construir query principal
+        main_query = {}
+        if date_filter:
+            main_query["fecha_emision"] = date_filter
+        if user_email:
+            main_query["owner_email"] = user_email
+        
+        # Estadísticas básicas
+        total_invoices = headers_coll.count_documents(main_query)
+        
+        # Aggregation para estadísticas detalladas
+        pipeline = [
+            {"$match": main_query},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_amount": {"$sum": "$monto_total"},
+                    "avg_amount": {"$avg": "$monto_total"},
+                    "min_amount": {"$min": "$monto_total"},
+                    "max_amount": {"$max": "$monto_total"}
+                }
+            }
+        ]
+        
+        amount_stats = list(headers_coll.aggregate(pipeline))
+        amount_data = amount_stats[0] if amount_stats else {
+            "total_amount": 0,
+            "avg_amount": 0,
+            "min_amount": 0,
+            "max_amount": 0
+        }
+        
+        # Estadísticas por día
+        daily_pipeline = [
+            {"$match": main_query},
+            {
+                "$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$fecha_emision"}},
+                    "count": {"$sum": 1},
+                    "total_amount": {"$sum": "$monto_total"}
+                }
+            },
+            {"$sort": {"_id": 1}}
+        ]
+        
+        daily_stats = list(headers_coll.aggregate(daily_pipeline))
+        
+        # Estadísticas por hora (si hay datos del mismo día)
+        hourly_stats = []
+        if not user_email and start_date == end_date:  # Solo si es el mismo día
+            hourly_pipeline = [
+                {"$match": main_query},
+                {
+                    "$group": {
+                        "_id": {"$hour": "$fecha_emision"},
+                        "count": {"$sum": 1}
+                    }
+                },
+                {"$sort": {"_id": 1}}
+            ]
+            hourly_stats = list(headers_coll.aggregate(hourly_pipeline))
+        
+        # Estadísticas por usuario (si no se filtró por usuario específico)
+        user_stats = []
+        if not user_email:
+            user_pipeline = [
+                {"$match": main_query},
+                {
+                    "$group": {
+                        "_id": "$owner_email",
+                        "count": {"$sum": 1},
+                        "total_amount": {"$sum": "$monto_total"}
+                    }
+                },
+                {"$sort": {"count": -1}},
+                {"$limit": 20}
+            ]
+            user_stats = list(headers_coll.aggregate(user_pipeline))
+        
+        return {
+            "success": True,
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "user_email": user_email
+            },
+            "stats": {
+                "total_invoices": total_invoices,
+                "total_amount": amount_data["total_amount"],
+                "avg_amount": amount_data["avg_amount"],
+                "min_amount": amount_data["min_amount"],
+                "max_amount": amount_data["max_amount"],
+                "daily_breakdown": daily_stats,
+                "hourly_breakdown": hourly_stats,
+                "user_breakdown": user_stats
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas filtradas: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
 
 def start():
     """Inicia el servidor API."""
