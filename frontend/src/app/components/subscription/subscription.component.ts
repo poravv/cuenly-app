@@ -63,8 +63,10 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   // UI Estado
   activeTab = 'current'; // 'current', 'history', 'plans'
   showPlanChangeModal = false;
+  showCancelConfirmModal = false;
   selectedPlanId = '';
   changeReason = '';
+  cancelling = false;
   
   // Estado de envío
   submittingPlanChange = false;
@@ -217,6 +219,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
         return 'badge-secondary';
       case 'pending':
         return 'badge-warning';
+      case 'cancelled':
+        return 'badge-danger';
       default:
         return 'badge-secondary';
     }
@@ -230,6 +234,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
         return 'Inactivo';
       case 'pending':
         return 'Pendiente';
+      case 'cancelled':
+        return 'Cancelado';
       default:
         return status;
     }
@@ -327,5 +333,35 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     }
 
     return features;
+  }
+
+  openCancelConfirmModal(): void {
+    if (!this.currentSubscription) return;
+    this.showCancelConfirmModal = true;
+  }
+
+  closeCancelConfirmModal(): void {
+    this.showCancelConfirmModal = false;
+  }
+
+  confirmCancel(): void {
+    if (this.cancelling) return;
+    this.cancelling = true;
+    this.apiService.cancelUserSubscription()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response: any) => {
+          this.notificationService.success(response?.message || 'Suscripción cancelada correctamente');
+          this.cancelling = false;
+          this.showCancelConfirmModal = false;
+          this.loadSubscriptionData();
+          this.setActiveTab('plans');
+        },
+        error: (error: any) => {
+          console.error('Error cancelling subscription:', error);
+          this.notificationService.error('No se pudo cancelar la suscripción');
+          this.cancelling = false;
+        }
+      });
   }
 }

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from app.config.settings import settings
+from app.repositories.subscription_repository import SubscriptionRepository
 
 
 class UserRepository:
@@ -206,13 +207,30 @@ class UserRepository:
                 'message': 'Tu período de prueba ha expirado'
             }
         
-        # Si no es usuario de prueba (premium), puede usar sin límites
+        # Si no es usuario de prueba, debe tener suscripción activa
         if not trial_info['is_trial_user']:
-            return {
-                'can_use': True,
-                'reason': 'premium',
-                'message': 'Usuario premium - sin límites'
-            }
+            try:
+                sub_repo = SubscriptionRepository()
+                has_active = sub_repo.has_active_subscription(email)
+                if not has_active:
+                    return {
+                        'can_use': False,
+                        'reason': 'subscription_inactive',
+                        'message': 'No tienes una suscripción activa'
+                    }
+                # Tiene suscripción activa => permitir
+                return {
+                    'can_use': True,
+                    'reason': 'subscription_active',
+                    'message': 'Suscripción activa'
+                }
+            except Exception:
+                # Si por alguna razón no podemos verificar, negar por seguridad
+                return {
+                    'can_use': False,
+                    'reason': 'subscription_check_error',
+                    'message': 'No fue posible verificar tu suscripción'
+                }
         
         # Si es usuario de prueba, verificar límite de IA
         if trial_info['ai_limit_reached']:
@@ -227,6 +245,8 @@ class UserRepository:
             'reason': 'trial_valid',
             'message': f'Puedes procesar {trial_info["ai_invoices_limit"] - trial_info["ai_invoices_processed"]} facturas más con IA'
         }
+
+# Fin UserRepository
 
     def get_email_processing_start_date(self, email: str) -> Optional[datetime]:
         """Obtiene la fecha desde la cual debe procesar correos para este usuario"""

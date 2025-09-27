@@ -440,7 +440,12 @@
       }
     }
     
-    .table {
+    .history-table-wrapper {
+      max-height: 480px;
+      overflow: auto;
+    }
+
+    .table.history-table {
       margin: 0;
       
       thead th {
@@ -451,6 +456,11 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
         padding: 1rem 1.5rem;
+        position: sticky;
+        top: 0;
+        background: #ffffff;
+        z-index: 1;
+        box-shadow: 0 1px 0 #f0f2f5;
       }
       
       tbody td {
@@ -464,8 +474,9 @@
         }
       }
       
-      tr {
+      tbody tr {
         border-bottom: 1px solid #f3f4f6;
+        transition: background 0.2s ease, transform 0.05s ease;
         
         &:last-child {
           border-bottom: none;
@@ -474,9 +485,51 @@
         &:hover {
           background: #f8fafc;
         }
+
+        &.status-active {
+          border-left: 4px solid #10b981;
+        }
+        &.status-pending {
+          border-left: 4px solid #f59e0b;
+        }
+        &.status-inactive {
+          border-left: 4px solid #6b7280;
+        }
+        &.status-cancelled {
+          border-left: 4px solid #ef4444;
+        }
       }
     }
   }
+}
+
+// Enhanced chips and cells
+.date-chip {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  background: #f3f4f6;
+  color: #6b7280;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  line-height: 1;
+  &.subtle {
+    background: #f9fafb;
+  }
+}
+
+.plan-cell {
+  display: flex;
+  align-items: center;
+  .plan-icon {
+    color: #6366f1;
+    opacity: 0.9;
+  }
+}
+
+// Extra badge style for cancelled
+.badge.badge-danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
 }
 
 .feature-highlight {

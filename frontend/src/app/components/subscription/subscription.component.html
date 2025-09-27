@@ -118,6 +118,16 @@
                     <p class="text-center mt-2 mb-0">
                       <strong>{{ remainingUsage | number }}</strong> procesamiento(s) restantes
                     </p>
+                    <hr class="my-3" />
+                    <div class="d-grid">
+                      <button class="btn btn-outline-danger"
+                              (click)="openCancelConfirmModal()"
+                              [disabled]="cancelling">
+                        <span *ngIf="cancelling" class="spinner-border spinner-border-sm me-2"></span>
+                        {{ cancelling ? 'Cancelando...' : 'Cancelar suscripción' }}
+                      </button>
+                      <small class="text-muted mt-2 text-center">Esta acción cancela inmediatamente tu plan actual.</small>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -139,11 +149,17 @@
           <div *ngIf="subscriptionHistory.length > 0" class="subscription-history">
             <div class="card">
               <div class="card-header">
-                <h5 class="card-title mb-0">Historial de Suscripciones</h5>
+                <div class="d-flex align-items-center justify-content-between">
+                  <h5 class="card-title mb-0">Historial de Suscripciones</h5>
+                  <div class="history-meta text-muted small">
+                    <i class="bi bi-journal-text me-1"></i>
+                    {{ subscriptionHistory.length }} registro(s)
+                  </div>
+                </div>
               </div>
               <div class="card-body p-0">
-                <div class="table-responsive">
-                  <table class="table table-hover mb-0">
+                <div class="table-responsive history-table-wrapper">
+                  <table class="table table-hover mb-0 align-middle history-table">
                     <thead class="table-light">
                       <tr>
                         <th>Plan</th>
@@ -154,18 +170,31 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr *ngFor="let history of subscriptionHistory">
-                        <td>
+                      <tr *ngFor="let history of subscriptionHistory" [ngClass]="'status-' + (history.status || 'inactive')">
+                        <td class="plan-cell">
+                          <i class="bi bi-star-fill plan-icon me-2"></i>
                           <strong>{{ history.plan_name }}</strong>
                         </td>
                         <td>
                           <span class="badge" [ngClass]="getStatusBadgeClass(history.status)">
+                            <i class="bi me-1"
+                               [ngClass]="{
+                                 'bi-check-circle': history.status === 'active',
+                                 'bi-clock-history': history.status === 'pending',
+                                 'bi-dash-circle': history.status === 'inactive',
+                                 'bi-x-circle': history.status === 'cancelled'
+                               }"></i>
                             {{ getStatusText(history.status) }}
                           </span>
                         </td>
-                        <td>{{ formatDate(history.start_date) }}</td>
-                        <td>{{ history.end_date ? formatDate(history.end_date) : '-' }}</td>
-                        <td>{{ formatDate(history.created_at) }}</td>
+                        <td><span class="date-chip">{{ formatDate(history.start_date) }}</span></td>
+                        <td>
+                          <span class="date-chip" *ngIf="history.end_date; else noEnd">
+                            {{ formatDate(history.end_date) }}
+                          </span>
+                          <ng-template #noEnd>-</ng-template>
+                        </td>
+                        <td><span class="date-chip subtle">{{ formatDate(history.created_at) }}</span></td>
                       </tr>
                     </tbody>
                   </table>
@@ -275,4 +304,35 @@
 
   <!-- Modal Backdrop -->
   <div class="modal-backdrop fade show" *ngIf="showPlanChangeModal" (click)="closePlanChangeModal()"></div>
+
+  <!-- Cancel Subscription Modal -->
+  <div class="modal fade" [class.show]="showCancelConfirmModal" [style.display]="showCancelConfirmModal ? 'block' : 'none'" 
+       tabindex="-1" *ngIf="showCancelConfirmModal">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Cancelar suscripción</h5>
+          <button type="button" class="btn-close" (click)="closeCancelConfirmModal()"></button>
+        </div>
+        <div class="modal-body">
+          <p>¿Seguro que deseas cancelar tu suscripción actual? No podrás procesar correos ni usar funciones de IA después de cancelar.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" (click)="closeCancelConfirmModal()">
+            Volver
+          </button>
+          <button type="button" 
+                  class="btn btn-danger" 
+                  (click)="confirmCancel()"
+                  [disabled]="cancelling">
+            <span *ngIf="cancelling" class="spinner-border spinner-border-sm me-2"></span>
+            {{ cancelling ? 'Cancelando...' : 'Confirmar cancelación' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Backdrop for Cancel -->
+  <div class="modal-backdrop fade show" *ngIf="showCancelConfirmModal" (click)="closeCancelConfirmModal()"></div>
 </div>

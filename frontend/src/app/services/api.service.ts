@@ -304,6 +304,10 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/user/subscription/change-plan`, { plan_id: planId });
   }
 
+  cancelUserSubscription(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/user/subscription/cancel`, {});
+  }
+
   getSubscriptionPlans(): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/api/plans`);
   }

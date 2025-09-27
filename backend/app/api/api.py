@@ -308,7 +308,7 @@ async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_
         }
 
 @app.post("/process", response_model=ProcessResult)
-async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # Procesamiento mixto - verificar IA internamente
+async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """
     Procesa correos electrónicos para extraer facturas.
     
@@ -357,7 +357,7 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
 @app.post("/process-direct")
 async def process_emails_direct(
     limit: Optional[int] = 10,
-    user: Dict[str, Any] = Depends(_get_current_user)
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
 ):
     """Procesa correos directamente con límite (máximo 10 para procesamiento manual)."""
     try:
@@ -404,7 +404,7 @@ async def process_emails_direct(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/tasks/process")
-async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
+async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """Encola una ejecución de procesamiento de correos y retorna un job_id."""
     
     # Verificar si el job automático está ejecutándose
@@ -595,7 +595,7 @@ async def upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # XMLs usan parser nativo
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """
     Sube un archivo XML SIFEN para procesarlo directamente con el parser nativo (fallback OpenAI).
     """
@@ -718,7 +718,7 @@ async def enqueue_upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # XMLs usan parser nativo
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """Encola el procesamiento de un XML manual y retorna job_id."""
     if not file.filename.lower().endswith('.xml'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
@@ -2052,6 +2052,37 @@ async def request_plan_change(
     except Exception as e:
         logger.error(f"Error procesando cambio de plan para {current_user['email']}: {e}")
         raise HTTPException(status_code=500, detail="Error procesando solicitud")
+
+@app.post("/user/subscription/cancel", tags=["User - Subscription"])
+async def cancel_user_subscription(current_user: dict = Depends(_get_current_user)):
+    """Cancela la suscripción activa del usuario autenticado."""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+
+        # Verificar si el usuario tiene una suscripción activa
+        active = await repo.get_user_active_subscription(current_user["email"])
+        if not active:
+            return {
+                "success": True,
+                "message": "No tienes una suscripción activa para cancelar"
+            }
+
+        # Cancelar suscripciones activas (idempotente)
+        ok = await repo.cancel_user_subscriptions(current_user["email"])
+        if not ok:
+            raise HTTPException(status_code=500, detail="No se pudo cancelar la suscripción")
+
+        logger.info(f"✅ Suscripción cancelada para {current_user['email']}")
+        return {
+            "success": True,
+            "message": "Tu suscripción ha sido cancelada correctamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelando suscripción de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error cancelando suscripción")
 
 # Endpoints administrativos para planes (requieren auth admin)
 @app.get("/admin/plans", tags=["Admin - Plans"])
