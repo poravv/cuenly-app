@@ -1,32 +1,47 @@
 <div class="login-hero d-flex align-items-center">
   <div class="container">
     <div class="row justify-content-center">
-      <div class="col-12 col-md-8 col-lg-6">
-        <div class="card shadow border-0">
-          <div class="card-body p-4 p-lg-5">
-            <div class="text-center mb-4">
+      <div class="col-12 col-lg-10">
+        <div class="login-card glass">
+          <div class="row g-0 align-items-stretch">
+            <!-- Left: Brand and value prop -->
+            <div class="col-12 col-md-6 p-4 p-lg-5 left-pane">
               <div class="login-logo mb-3">
                 <img src="assets/logo.png" alt="CuenlyApp Logo" class="logo-image">
               </div>
-              <div class="display-6 fw-bold mb-1">Cuenly</div>
-              <div class="text-muted">Accede para continuar</div>
+              <h1 class="brand-title mb-2">Cuenly</h1>
+              <p class="text-muted mb-4">Automatiza tus facturas con IA</p>
+              <ul class="benefits list-unstyled mb-4">
+                <li><i class="bi bi-robot me-2 text-primary"></i>Extracción inteligente desde PDF y XML</li>
+                <li><i class="bi bi-envelope-open me-2 text-success"></i>Procesamiento automático desde tu correo</li>
+                <li><i class="bi bi-shield-check me-2 text-info"></i>Datos seguros y centralizados</li>
+                <li><i class="bi bi-speedometer2 me-2 text-warning"></i>Panel para controlar y auditar</li>
+              </ul>
+              <div class="small text-muted">¿Necesitas ayuda? <a routerLink="/ayuda">Visita la ayuda</a></div>
             </div>
-
-            <div *ngIf="error" class="alert alert-danger border-0">{{ error }}</div>
-            <div *ngIf="info" class="alert alert-info border-0">{{ info }}</div>
-
-            <button class="btn btn-primary w-100 d-flex align-items-center justify-content-center" (click)="signInGoogle()" [disabled]="loading">
-              <span *ngIf="loading" class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-              <img *ngIf="!loading" src="assets/google.svg" alt="Google" class="google-icon me-2">
-              <span>Continuar con Google</span>
-            </button>
-
-            <div class="mt-4 small text-muted text-center">
-              Usamos tu correo solo para autenticación y asignar tus datos.
+            <!-- Right: Auth -->
+            <div class="col-12 col-md-6 p-4 p-lg-5 right-pane">
+              <div class="text-center mb-4">
+                <div class="fw-bold h4 mb-1">Accede a tu cuenta</div>
+                <div class="text-muted">Inicia sesión para continuar</div>
+              </div>
+              <div *ngIf="error" class="alert alert-danger border-0">{{ error }}</div>
+              <div *ngIf="info" class="alert alert-info border-0">{{ info }}</div>
+              <button class="btn btn-primary w-100 d-flex align-items-center justify-content-center" (click)="signInGoogle()" [disabled]="loading">
+                <span *ngIf="loading" class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                <img *ngIf="!loading" src="assets/google.svg" alt="Google" class="google-icon me-2">
+                <span>Continuar con Google</span>
+              </button>
+              <div class="mt-4 small text-muted text-center">
+                Al continuar aceptas nuestras políticas. Usamos tu correo solo para autenticación y vincular tus datos.
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </div>
+  <!-- Background accents -->
+  <div class="bg-accent one"></div>
+  <div class="bg-accent two"></div>
 </div>

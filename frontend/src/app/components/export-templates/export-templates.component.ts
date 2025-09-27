@@ -50,25 +50,35 @@ export class ExportTemplatesComponent implements OnInit {
   }
 
   duplicateTemplate(template: ExportTemplate): void {
-    const newName = prompt('Nombre para el template duplicado:', `${template.name} - Copia`);
-    if (newName && newName.trim()) {
-      this.exportTemplateService.duplicateTemplate(template.id!, newName.trim()).subscribe({
-        next: (response) => {
-          this.notificationService.success(
-            response.message || 'Template duplicado correctamente',
-            'Template duplicado'
-          );
-          this.loadTemplates();
-        },
-        error: (error) => {
-          console.error('Error duplicando template:', error);
-          this.notificationService.error(
-            'No se pudo duplicar el template. Por favor, intente nuevamente.',
-            'Error al duplicar'
-          );
+    const suggested = `${template.name} - Copia`;
+    this.notificationService.warning(
+      `Duplicar el template "${template.name}" como "${suggested}"?`,
+      'Confirmar duplicación',
+      {
+        persistent: true,
+        action: {
+          label: 'Duplicar',
+          handler: () => {
+            this.exportTemplateService.duplicateTemplate(template.id!, suggested).subscribe({
+              next: (response) => {
+                this.notificationService.success(
+                  response.message || 'Template duplicado correctamente',
+                  'Template duplicado'
+                );
+                this.loadTemplates();
+              },
+              error: (error) => {
+                console.error('Error duplicando template:', error);
+                this.notificationService.error(
+                  'No se pudo duplicar el template. Por favor, intente nuevamente.',
+                  'Error al duplicar'
+                );
+              }
+            });
+          }
         }
-      });
-    }
+      }
+    );
   }
 
   setDefaultTemplate(template: ExportTemplate): void {

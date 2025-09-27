@@ -14,12 +14,14 @@ import { TemplateEditorComponent } from './components/export-templates/template-
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { AuthGuard } from './guards/auth.guard';
 import { LoginGuard } from './guards/login.guard';
+import { SuspendedComponent } from './components/suspended/suspended.component';
 import { AdminGuard } from './guards/admin.guard';
 import { AdminPanelComponent } from './components/admin-panel/admin-panel.component';
 import { PlansManagementComponent } from './components/plans-management/plans-management.component';
 
 const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [LoginGuard] },
+  { path: 'suspended', component: SuspendedComponent },
   { path: '', component: DashboardComponent, canActivate: [AuthGuard] },
   { path: 'upload', component: UploadComponent, canActivate: [AuthGuard] },
   { path: 'upload-xml', component: UploadXmlComponent, canActivate: [AuthGuard] },

@@ -125,7 +125,17 @@ def _get_current_user(request: Request) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error registrando usuario {claims.get('email')}: {e}")
         # No fallar la autenticación, pero loggear el error para diagnóstico
-        
+    # Realizar verificación de suspensión fuera del try/except
+    try:
+        user_repo = UserRepository()
+        db_user = user_repo.get_by_email(claims.get('email'))
+        if db_user and db_user.get('status') == 'suspended':
+            raise HTTPException(status_code=403, detail="Tu cuenta está suspendida. Contacta al administrador.")
+    except HTTPException:
+        # Propagar bloqueo explícito
+        raise
+    except Exception as e:
+        logger.error(f"Error verificando estado de usuario {claims.get('email')}: {e}")
     return claims
 
 def _get_current_user_with_trial_info(request: Request) -> Dict[str, Any]:
@@ -1779,9 +1789,30 @@ async def admin_update_user_status(
         if not success:
             raise HTTPException(status_code=400, detail="Estado inválido o usuario no encontrado")
         
+        # Si se suspendió al usuario, cancelar sus suscripciones activas (idempotente)
+        cancelled_msg = ""
+        job_msg = ""
+        if request.status == 'suspended':
+            try:
+                sub_repo = SubscriptionRepository()
+                ok = await sub_repo.cancel_user_subscriptions(user_email)
+                if ok:
+                    cancelled_msg = "; suscripciones activas canceladas"
+            except Exception as e:
+                logger.error(f"Error cancelando suscripciones al suspender {user_email}: {e}")
+            
+            # Detener job global de procesamiento si está en ejecución
+            try:
+                current_job = invoice_sync.get_job_status()
+                if getattr(current_job, 'running', False):
+                    invoice_sync.stop_scheduled_job()
+                    job_msg = "; job de ejecución detenido"
+            except Exception as e:
+                logger.error(f"Error deteniendo job al suspender {user_email}: {e}")
+        
         return {
             "success": True,
-            "message": f"Estado actualizado a '{request.status}' para {user_email}"
+            "message": f"Estado actualizado a '{request.status}' para {user_email}{cancelled_msg}{job_msg}"
         }
     except HTTPException:
         raise

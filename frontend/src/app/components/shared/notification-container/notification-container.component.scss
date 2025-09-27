@@ -146,12 +146,21 @@
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: #9ca3af;
+  color: #374151; // más oscuro para mejor contraste en fondo claro
+  opacity: 1; // evitar opacidad por defecto del botón de cierre
+  // Forzar icono de cierre oscuro aun si Bootstrap define otro
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23374151'%3e%3cpath d='M.293 1.707 1.707.293 8 6.586 14.293.293l1.414 1.414L9.414 8l6.293 6.293-1.414 1.414L8 9.414l-6.293 6.293L.293 14.293 6.586 8 .293 1.707z'/%3e%3c/svg%3e") !important;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 1em 1em;
+  filter: none !important;
   transition: all 0.2s ease;
   
+  // Sin efecto hover (mantener apariencia estable)
   &:hover {
-    background: #f3f4f6;
-    color: #6b7280;
+    background: transparent;
+    color: inherit;
+    opacity: 1;
   }
   
   &:focus {
@@ -263,11 +272,19 @@
   }
   
   .notification-close {
-    color: #9ca3af;
+    color: #e5e7eb; // más claro para mejor contraste en fondo oscuro
+    opacity: 1;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23ffffff'%3e%3cpath d='M.293 1.707 1.707.293 8 6.586 14.293.293l1.414 1.414L9.414 8l6.293 6.293-1.414 1.414L8 9.414l-6.293 6.293L.293 14.293 6.586 8 .293 1.707z'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 1em 1em;
+    filter: none !important;
     
+    // Sin efecto hover en oscuro también
     &:hover {
-      background: #374151;
-      color: #d1d5db;
+      background: transparent;
+      color: inherit;
+      opacity: 1;
     }
   }
   
