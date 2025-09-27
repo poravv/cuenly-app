@@ -70,6 +70,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Startup event para inicializar servicios
+@app.on_event("startup")
+async def startup_event():
+    """Inicializa servicios cuando arranca el servidor FastAPI"""
+    try:
+        from app.modules.scheduler import ScheduledTasks
+        scheduler_tasks = ScheduledTasks()
+        scheduler_tasks.start_background_scheduler()
+        logger.info("✅ Scheduler de límites IA iniciado correctamente")
+    except Exception as e:
+        logger.error(f"❌ Error iniciando scheduler de límites IA: {e}")
+
 # Instancia global del procesador
 invoice_sync = CuenlyApp()
 
@@ -2255,10 +2267,123 @@ async def admin_get_filtered_stats(
         logger.error(f"Error obteniendo estadísticas filtradas: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
 
+# =====================================
+# ENDPOINTS DE RESETEO MENSUAL DE IA
+# =====================================
+
+@app.post("/admin/ai-limits/reset-monthly", tags=["Admin - AI Limits"])
+async def admin_reset_monthly_ai_limits(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Ejecuta el reseteo mensual de límites de IA para usuarios con planes activos"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        result = await reset_service.reset_monthly_limits()
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": result["message"],
+                "data": {
+                    "resetted_users": result["resetted_users"],
+                    "total_subscriptions": result.get("total_subscriptions", 0),
+                    "errors": result.get("errors", []),
+                    "execution_date": result.get("execution_date")
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": result["message"]
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en reseteo mensual manual: {e}")
+        raise HTTPException(status_code=500, detail="Error ejecutando reseteo mensual")
+
+@app.post("/admin/ai-limits/reset-user/{user_email}", tags=["Admin - AI Limits"])
+async def admin_reset_user_ai_limits(
+    user_email: str,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Resetea manualmente los límites de IA de un usuario específico"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        result = await reset_service.reset_user_limits_manually(user_email)
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": result["message"],
+                "data": {
+                    "user_email": user_email,
+                    "new_limit": result.get("new_limit")
+                }
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["message"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en reset manual para {user_email}: {e}")
+        raise HTTPException(status_code=500, detail="Error reseteando límites del usuario")
+
+@app.get("/admin/ai-limits/reset-stats", tags=["Admin - AI Limits"])
+async def admin_get_reset_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene estadísticas sobre los resets de límites de IA"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        stats = await reset_service.get_reset_stats()
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas de reset: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
+
+@app.get("/admin/scheduler/status", tags=["Admin - Scheduler"])
+async def admin_get_scheduler_status(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene el estado del scheduler de tareas programadas"""
+    try:
+        from app.services.scheduler import get_scheduler_status
+        from app.services.monthly_reset_service import MonthlyResetService
+        
+        reset_service = MonthlyResetService()
+        scheduler_status = get_scheduler_status()
+        
+        return {
+            "success": True,
+            "data": {
+                "scheduler": scheduler_status,
+                "next_reset_date": reset_service.get_next_reset_date().isoformat(),
+                "should_run_today": reset_service.should_run_today()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo estado del scheduler: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estado del scheduler")
+
 def start():
     """Inicia el servidor API."""
     # Guardar tiempo de inicio
     app.state.start_time = time.time()
+    
+    # Iniciar scheduler para tareas programadas
+    try:
+        from app.services.scheduler import start_background_scheduler
+        start_background_scheduler()
+        logger.info("🚀 Scheduler de tareas programadas iniciado")
+    except Exception as e:
+        logger.error(f"❌ Error iniciando scheduler: {e}")
     
     uvicorn.run(
         "app.api.api:app",

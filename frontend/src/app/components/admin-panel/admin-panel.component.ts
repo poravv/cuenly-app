@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../../services/api.service';
+import { NotificationService } from '../../services/notification.service';
 
 interface User {
   id: string;
@@ -30,6 +31,20 @@ interface InvoiceStats {
   user_invoices: Array<{_id: string; count: number; total_amount: number}>;
 }
 
+interface SchedulerStatus {
+  scheduler: {
+    running: boolean;
+    jobs_count: number;
+  };
+  next_reset_date: string;
+  should_run_today: boolean;
+}
+
+interface ResetStats {
+  active_subscriptions: number;
+  resetted_this_month: number;
+}
+
 @Component({
   selector: 'app-admin-panel',
   templateUrl: './admin-panel.component.html',
@@ -41,8 +56,17 @@ export class AdminPanelComponent implements OnInit {
   loadingUsers = false;
   loadingFilteredStats = false;
   
+  // AI Limits
+  loadingSchedulerStatus = false;
+  loadingResetStats = false;
+  loadingMonthlyReset = false;
+  loadingUserReset = false;
+  schedulerStatus: SchedulerStatus | null = null;
+  resetStats: ResetStats | null = null;
+  selectedUserForReset = '';
+  
   // Tabs
-  activeTab = 'stats'; // 'stats', 'users', 'plans'
+  activeTab = 'stats'; // 'stats', 'users', 'plans', 'ai-limits'
   
   // Users
   users: User[] = [];
@@ -75,7 +99,10 @@ export class AdminPanelComponent implements OnInit {
   // Modals
   showUserModal = false;
 
-  constructor(private apiService: ApiService) {}
+  constructor(
+    private apiService: ApiService,
+    private notificationService: NotificationService
+  ) {}
 
   ngOnInit(): void {
     this.loadData();
@@ -125,44 +152,76 @@ export class AdminPanelComponent implements OnInit {
 
   // Gestión de usuarios
   updateUserRole(user: User, newRole: string): void {
-    if (!confirm(`¿Estás seguro de cambiar el rol de ${user.email} a ${newRole}?`)) {
-      return;
-    }
-
-    this.apiService.updateUserRole(user.email, newRole).subscribe({
-      next: (response) => {
-        if (response.success) {
-          user.role = newRole;
-          this.showSuccess(response.message);
-          this.loadStats(); // Recargar stats
+    const roleText = newRole === 'admin' ? 'administrador' : 'usuario';
+    
+    this.notificationService.warning(
+      `¿Estás seguro de cambiar el rol de ${user.email} a ${roleText}?`,
+      'Confirmar cambio de rol',
+      {
+        persistent: true,
+        action: {
+          label: 'Confirmar',
+          handler: () => {
+            this.apiService.updateUserRole(user.email, newRole).subscribe({
+              next: (response) => {
+                if (response.success) {
+                  user.role = newRole;
+                  this.notificationService.success(
+                    `Rol actualizado correctamente para ${user.email}`,
+                    'Rol actualizado'
+                  );
+                  this.loadStats(); // Recargar stats
+                }
+              },
+              error: (error) => {
+                console.error('Error updating role:', error);
+                this.notificationService.error(
+                  'No se pudo actualizar el rol del usuario',
+                  'Error actualizando rol'
+                );
+              }
+            });
+          }
         }
-      },
-      error: (error) => {
-        console.error('Error updating role:', error);
-        this.showError('Error actualizando rol');
       }
-    });
+    );
   }
 
   updateUserStatus(user: User, newStatus: string): void {
     const action = newStatus === 'suspended' ? 'suspender' : 'activar';
-    if (!confirm(`¿Estás seguro de ${action} a ${user.email}?`)) {
-      return;
-    }
-
-    this.apiService.updateUserStatus(user.email, newStatus).subscribe({
-      next: (response) => {
-        if (response.success) {
-          user.status = newStatus;
-          this.showSuccess(response.message);
-          this.loadStats(); // Recargar stats
+    const statusText = newStatus === 'suspended' ? 'suspendido' : 'activo';
+    
+    this.notificationService.warning(
+      `¿Estás seguro de ${action} a ${user.email}?`,
+      'Confirmar cambio de estado',
+      {
+        persistent: true,
+        action: {
+          label: 'Confirmar',
+          handler: () => {
+            this.apiService.updateUserStatus(user.email, newStatus).subscribe({
+              next: (response) => {
+                if (response.success) {
+                  user.status = newStatus;
+                  this.notificationService.success(
+                    `Usuario ${user.email} marcado como ${statusText}`,
+                    'Estado actualizado'
+                  );
+                  this.loadStats(); // Recargar stats
+                }
+              },
+              error: (error) => {
+                console.error('Error updating status:', error);
+                this.notificationService.error(
+                  'No se pudo actualizar el estado del usuario',
+                  'Error actualizando estado'
+                );
+              }
+            });
+          }
         }
-      },
-      error: (error) => {
-        console.error('Error updating status:', error);
-        this.showError('Error actualizando estado');
       }
-    });
+    );
   }
 
   // Paginación
@@ -186,13 +245,13 @@ export class AdminPanelComponent implements OnInit {
     this.activeTab = tab;
   }
 
-  // Mensajes de alerta simples
+  // Mensajes de notificación
   showSuccess(message: string): void {
-    alert('✅ ' + message);
+    this.notificationService.success(message, 'Operación exitosa');
   }
 
   showError(message: string): void {
-    alert('❌ ' + message);
+    this.notificationService.error(message, 'Error en operación');
   }
 
   // Utileries
@@ -259,9 +318,17 @@ export class AdminPanelComponent implements OnInit {
       const response = await this.apiService.getFilteredStats(filters).toPromise();
       if (response.success) {
         this.filteredStats = response;
+        this.notificationService.info(
+          'Estadísticas actualizadas con los filtros aplicados',
+          'Filtros aplicados'
+        );
       }
     } catch (error) {
       console.error('Error loading filtered stats:', error);
+      this.notificationService.error(
+        'No se pudieron cargar las estadísticas filtradas',
+        'Error cargando estadísticas'
+      );
     } finally {
       this.loadingFilteredStats = false;
     }
@@ -292,5 +359,135 @@ export class AdminPanelComponent implements OnInit {
     } catch {
       return dateStr;
     }
+  }
+
+  // =====================================
+  // MÉTODOS PARA LÍMITES DE IA
+  // =====================================
+
+  async loadAiLimitsData(): Promise<void> {
+    await Promise.all([
+      this.loadSchedulerStatus(),
+      this.loadResetStats()
+    ]);
+  }
+
+  async loadSchedulerStatus(): Promise<void> {
+    this.loadingSchedulerStatus = true;
+    try {
+      const response = await this.apiService.getSchedulerStatus().toPromise();
+      if (response.success) {
+        this.schedulerStatus = response.data;
+      }
+    } catch (error) {
+      console.error('Error loading scheduler status:', error);
+      this.notificationService.error(
+        'No se pudo cargar el estado del scheduler',
+        'Error cargando scheduler'
+      );
+    } finally {
+      this.loadingSchedulerStatus = false;
+    }
+  }
+
+  async loadResetStats(): Promise<void> {
+    this.loadingResetStats = true;
+    try {
+      const response = await this.apiService.getResetStats().toPromise();
+      if (response.success) {
+        this.resetStats = response.data;
+      }
+    } catch (error) {
+      console.error('Error loading reset stats:', error);
+      this.notificationService.error(
+        'No se pudieron cargar las estadísticas de reseteo',
+        'Error cargando estadísticas'
+      );
+    } finally {
+      this.loadingResetStats = false;
+    }
+  }
+
+  async executeMonthlyReset(): Promise<void> {
+    this.notificationService.warning(
+      '¿Estás seguro de ejecutar el reseteo mensual? Esta acción reseteará los límites de IA de todos los usuarios con planes activos.',
+      'Confirmar reseteo mensual',
+      {
+        persistent: true,
+        action: {
+          label: 'Ejecutar Reseteo',
+          handler: async () => {
+            this.loadingMonthlyReset = true;
+            try {
+              const response = await this.apiService.executeMonthlyReset().toPromise();
+              if (response.success) {
+                this.notificationService.success(
+                  `Reseteo mensual completado: ${response.data.users_reset} usuarios reseteados`,
+                  'Reseteo exitoso'
+                );
+                // Recargar estadísticas
+                await this.loadResetStats();
+              }
+            } catch (error) {
+              console.error('Error executing monthly reset:', error);
+              this.notificationService.error(
+                'No se pudo ejecutar el reseteo mensual',
+                'Error en reseteo'
+              );
+            } finally {
+              this.loadingMonthlyReset = false;
+            }
+          }
+        }
+      }
+    );
+  }
+
+  async resetUserLimits(): Promise<void> {
+    if (!this.selectedUserForReset) {
+      this.notificationService.warning(
+        'Por favor selecciona un usuario para resetear',
+        'Usuario requerido'
+      );
+      return;
+    }
+
+    const selectedUser = this.users.find(u => u.email === this.selectedUserForReset);
+    const userName = selectedUser?.name || this.selectedUserForReset;
+
+    this.notificationService.warning(
+      `¿Estás seguro de resetear los límites de IA de ${userName}?`,
+      'Confirmar reseteo individual',
+      {
+        persistent: true,
+        action: {
+          label: 'Resetear Usuario',
+          handler: async () => {
+            this.loadingUserReset = true;
+            try {
+              const response = await this.apiService.resetUserAiLimits(this.selectedUserForReset).toPromise();
+              if (response.success) {
+                this.notificationService.success(
+                  `Límites de IA reseteados correctamente para ${userName}`,
+                  'Usuario reseteado'
+                );
+                // Limpiar selección
+                this.selectedUserForReset = '';
+                // Recargar usuarios para mostrar cambios
+                await this.loadUsers();
+              }
+            } catch (error) {
+              console.error('Error resetting user limits:', error);
+              this.notificationService.error(
+                'No se pudieron resetear los límites del usuario',
+                'Error en reseteo'
+              );
+            } finally {
+              this.loadingUserReset = false;
+            }
+          }
+        }
+      }
+    );
   }
 }

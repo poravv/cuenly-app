@@ -144,6 +144,10 @@ export class PlansManagementComponent implements OnInit {
       }
     } catch (error) {
       console.error('Error loading plans:', error);
+      this.notificationService.error(
+        'No se pudieron cargar los planes',
+        'Error cargando datos'
+      );
     } finally {
       this.loadingPlans = false;
     }
@@ -158,6 +162,10 @@ export class PlansManagementComponent implements OnInit {
       }
     } catch (error) {
       console.error('Error loading subscription stats:', error);
+      this.notificationService.error(
+        'No se pudieron cargar las estadísticas de suscripciones',
+        'Error cargando estadísticas'
+      );
     } finally {
       this.loadingStats = false;
     }
@@ -223,20 +231,34 @@ export class PlansManagementComponent implements OnInit {
   }
 
   async deletePlan(plan: Plan): Promise<void> {
-    if (!confirm(`¿Estás seguro de eliminar el plan "${plan.name}"?`)) {
-      return;
-    }
-
-    try {
-      const response = await this.apiService.delete(`/admin/plans/${plan.code}`);
-      if (response.success) {
-        this.loadPlans();
-        this.notificationService.success(response.message, 'Plan eliminado');
+    this.notificationService.warning(
+      `¿Estás seguro de eliminar el plan "${plan.name}"? Esta acción no se puede deshacer.`,
+      'Confirmar eliminación',
+      {
+        persistent: true,
+        action: {
+          label: 'Eliminar',
+          handler: async () => {
+            try {
+              const response = await this.apiService.delete(`/admin/plans/${plan.code}`);
+              if (response.success) {
+                this.loadPlans();
+                this.notificationService.success(
+                  `Plan "${plan.name}" eliminado correctamente`,
+                  'Plan eliminado'
+                );
+              }
+            } catch (error: any) {
+              console.error('Error deleting plan:', error);
+              this.notificationService.error(
+                'No se pudo eliminar el plan',
+                'Error eliminando plan'
+              );
+            }
+          }
+        }
       }
-    } catch (error: any) {
-      console.error('Error deleting plan:', error);
-      this.notificationService.error('Error eliminando plan: ' + (error.error?.detail || error.message));
-    }
+    );
   }
 
   cancelPlanForm(): void {
