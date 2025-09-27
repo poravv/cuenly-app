@@ -1961,6 +1961,98 @@ async def get_public_plan(plan_code: str):
         logger.error(f"Error obteniendo plan {plan_code}: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo plan")
 
+# Endpoints de suscripción para usuario autenticado
+@app.get("/user/subscription", tags=["User - Subscription"])
+async def get_user_subscription(current_user: dict = Depends(_get_current_user)):
+    """Obtiene la suscripción actual del usuario autenticado"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        subscription = await repo.get_user_active_subscription(current_user["email"])
+        
+        if not subscription:
+            return {
+                "success": True,
+                "data": None,
+                "message": "Usuario sin suscripción activa"
+            }
+        
+        return {
+            "success": True,
+            "data": subscription
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo suscripción de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo suscripción")
+
+@app.get("/user/subscription/history", tags=["User - Subscription"])
+async def get_user_subscription_history(current_user: dict = Depends(_get_current_user)):
+    """Obtiene el historial de suscripciones del usuario"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        history = await repo.get_user_subscriptions_history(current_user["email"])
+        
+        return {
+            "success": True,
+            "data": history,
+            "count": len(history)
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo historial de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo historial")
+
+@app.post("/user/subscription/change-plan", tags=["User - Subscription"])
+async def request_plan_change(
+    request: dict,
+    current_user: dict = Depends(_get_current_user)
+):
+    """Solicita cambio de plan para el usuario"""
+    try:
+        new_plan_id = request.get("plan_id")
+        if not new_plan_id:
+            raise HTTPException(status_code=400, detail="plan_id es requerido")
+        
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        # Verificar que el plan existe (buscar por código)
+        plan = await repo.get_plan_by_code(new_plan_id)
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        # Verificar si el usuario ya tiene este plan
+        current_subscription = await repo.get_user_active_subscription(current_user["email"])
+        if current_subscription and current_subscription.get("plan_code") == new_plan_id:
+            raise HTTPException(status_code=400, detail="Ya tienes este plan activo")
+        
+        # Ejecutar el cambio de plan
+        success = await repo.assign_plan_to_user(
+            user_email=current_user["email"],
+            plan_code=new_plan_id,
+            payment_method="user_request"  # Indicar que fue solicitud del usuario
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Error al cambiar el plan")
+        
+        logger.info(f"✅ Plan cambiado exitosamente: {current_user['email']} -> {plan['name']}")
+        
+        return {
+            "success": True,
+            "message": f"Plan cambiado exitosamente al {plan['name']}. Los cambios son efectivos inmediatamente.",
+            "data": {
+                "new_plan": plan,
+                "user_email": current_user["email"],
+                "change_date": datetime.now().isoformat()
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error procesando cambio de plan para {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error procesando solicitud")
+
 # Endpoints administrativos para planes (requieren auth admin)
 @app.get("/admin/plans", tags=["Admin - Plans"])
 async def admin_get_plans(

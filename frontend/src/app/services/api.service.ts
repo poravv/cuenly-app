@@ -291,6 +291,23 @@ export class ApiService {
     return this.http.get<any>(`${this.apiUrl}/admin/subscriptions/user/${userEmail}`);
   }
 
+  // Suscripción del usuario actual
+  getUserSubscription(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/user/subscription`);
+  }
+
+  getUserSubscriptionHistory(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/user/subscription/history`);
+  }
+
+  requestPlanChange(planId: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/user/subscription/change-plan`, { plan_id: planId });
+  }
+
+  getSubscriptionPlans(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/api/plans`);
+  }
+
   // Estadísticas filtradas
   getFilteredStats(filters: {
     start_date?: string,
