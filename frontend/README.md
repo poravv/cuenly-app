@@ -112,3 +112,5 @@ ng build --prod
 ```
 
 Los archivos de build se guardarán en el directorio `dist/`.
+
+# Marca para deploy forzado
