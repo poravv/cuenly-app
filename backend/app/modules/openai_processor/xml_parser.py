@@ -650,21 +650,26 @@ class ParaguayanXMLParser:
         # Productos al formato del modelo
         productos = []
         for p in data.get('productos', []) or data.get('items', []) or []:
-            # Mapear tanto 'articulo'/'descripcion' como 'codigo'/'descripcion'
-            articulo = (p.get('articulo') or p.get('descripcion') or p.get('codigo') or '')
+            # Extraer descripción del producto/servicio desde XML SIFEN (dDesProSer)
+            desc = (p.get('descripcion') or p.get('articulo') or p.get('nombre') or p.get('codigo') or '').strip()
             try:
-                # Mapear tasa_iva a campo iva
                 iva_val = int(float(p.get('iva', 0) or p.get('tasa_iva', 0) or 0))
             except Exception:
                 iva_val = 0
-            
+
+            # Construir registro consistente para InvoiceData.productos
             producto = {
-                'articulo': articulo,
+                'nombre': desc,           # compatibilidad con ProductoFactura
+                'descripcion': desc,      # mantener trazabilidad del origen (dDesProSer)
+                'articulo': desc,         # compatibilidad adicional
                 'cantidad': p.get('cantidad', 0),
                 'precio_unitario': p.get('precio_unitario', 0),
                 'total': p.get('total', p.get('total_operacion', 0)),
                 'iva': iva_val,
             }
+            # Unidad, si vino del parser
+            if p.get('unidad') is not None:
+                producto['unidad'] = p.get('unidad')
             productos.append(producto)
             
         if productos:

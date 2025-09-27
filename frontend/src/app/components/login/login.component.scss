@@ -2,8 +2,10 @@
 .btn .bi-google { font-size: 1.1rem; }
 
 .login-hero {
-  min-height: 80vh;
-  background: linear-gradient(135deg, #f3f5ff, #fff);
+  min-height: 100vh;
+  background: radial-gradient(1200px 400px at 20% 10%, #eef2ff, transparent), linear-gradient(135deg, #f8fafc 0%, #eef2ff 60%, #ffffff 100%);
+  position: relative;
+  overflow: hidden;
 }
 
 .google-icon {
@@ -18,8 +20,8 @@
   align-items: center;
   
   .logo-image {
-    width: 80px;
-    height: 80px;
+    width: 72px;
+    height: 72px;
     object-fit: contain;
     transition: transform 0.3s ease;
     
@@ -29,9 +31,43 @@
   }
 }
 
+.login-card.glass {
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 30px 80px rgba(2, 6, 23, 0.12);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.brand-title { font-weight: 800; letter-spacing: -0.02em; }
+
+.benefits li { 
+  padding: 0.35rem 0; 
+  color: #374151; 
+  display: flex; 
+  align-items: center;
+}
+
+.left-pane { border-right: 1px solid #eef2f7; }
+
+.right-pane .btn.btn-primary {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border: none;
+}
+
+.bg-accent {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.5;
+  &.one { width: 220px; height: 220px; background: #93c5fd; right: -60px; bottom: 10%; }
+  &.two { width: 280px; height: 280px; background: #a78bfa; left: -80px; top: 20%; }
+}
+
 @media (max-width: 576px) {
   .login-logo .logo-image {
-    width: 60px;
-    height: 60px;
+    width: 56px;
+    height: 56px;
   }
+  .left-pane { border-right: none; border-bottom: 1px solid #eef2f7; }
 }

@@ -125,7 +125,17 @@ def _get_current_user(request: Request) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error registrando usuario {claims.get('email')}: {e}")
         # No fallar la autenticación, pero loggear el error para diagnóstico
-        
+    # Realizar verificación de suspensión fuera del try/except
+    try:
+        user_repo = UserRepository()
+        db_user = user_repo.get_by_email(claims.get('email'))
+        if db_user and db_user.get('status') == 'suspended':
+            raise HTTPException(status_code=403, detail="Tu cuenta está suspendida. Contacta al administrador.")
+    except HTTPException:
+        # Propagar bloqueo explícito
+        raise
+    except Exception as e:
+        logger.error(f"Error verificando estado de usuario {claims.get('email')}: {e}")
     return claims
 
 def _get_current_user_with_trial_info(request: Request) -> Dict[str, Any]:
@@ -578,7 +588,7 @@ async def upload_pdf(
 
         return ProcessResult(
             success=True,
-            message=f"Factura procesada y almacenada (v2)",
+            message=f"Factura procesada y almacenada",
             invoice_count=1,
             invoices=invoices
         )
@@ -649,7 +659,7 @@ async def upload_xml(
 
         return ProcessResult(
             success=True,
-            message=f"Factura XML procesada y almacenada (v2)",
+            message=f"Factura XML procesada y almacenada",
             invoice_count=1,
             invoices=invoices
         )
@@ -702,7 +712,7 @@ async def enqueue_upload_pdf(
                     logger.error(f"❌ Error persistiendo v2 (tasks upload PDF): {e}")
             return ProcessResult(
                 success=bool(invoices),
-                message=("Factura procesada y almacenada (v2)" if invoices else "No se pudo extraer factura"),
+                message=("Factura procesada y almacenada " if invoices else "No se pudo extraer factura"),
                 invoice_count=len(invoices),
                 invoices=invoices
             )
@@ -751,10 +761,10 @@ async def enqueue_upload_xml(
                             pass
                     repo.save_document(doc)
                 except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (tasks upload XML): {e}")
+                    logger.error(f"❌ Error persistiendo (tasks upload XML): {e}")
             return ProcessResult(
                 success=bool(invoices),
-                message=("Factura XML procesada y almacenada (v2)" if invoices else "No se pudo extraer información desde el XML"),
+                message=("Factura XML procesada y almacenada " if invoices else "No se pudo extraer información desde el XML"),
                 invoice_count=len(invoices),
                 invoices=invoices
             )
@@ -1056,6 +1066,7 @@ async def v2_list_headers(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     search: Optional[str] = None,
+    emisor_nombre: Optional[str] = Query(default=None, description="Filtro por nombre del emisor (regex i)"),
     user: Dict[str, Any] = Depends(_get_current_user),
 ):
     try:
@@ -1083,6 +1094,8 @@ async def v2_list_headers(
                     pass
             if rng:
                 q["fecha_emision"] = rng
+        if emisor_nombre:
+            q["emisor.nombre"] = {"$regex": emisor_nombre, "$options": "i"}
         if search:
             q["$or"] = [
                 {"emisor.nombre": {"$regex": search, "$options": "i"}},
@@ -1097,8 +1110,21 @@ async def v2_list_headers(
         total = coll.count_documents(q)
         cursor = coll.find(q).sort("fecha_emision", -1).skip((page-1)*page_size).limit(page_size)
         items = []
+        # Pre-cargar colección de ítems para resumen de descripción
+        items_coll = repo._items()
         for d in cursor:
-            d["id"] = d.get("_id")
+            header_id = d.get("_id")
+            # Generar resumen de descripción a partir de los primeros ítems
+            try:
+                sample_items = list(items_coll.find({"header_id": header_id}, {"descripcion": 1}).sort("linea", 1).limit(5))
+                descripciones = [it.get("descripcion", "") for it in sample_items if it.get("descripcion")]
+                if descripciones:
+                    d["descripcion_factura"] = ", ".join(descripciones[:5])
+                # Contar total de ítems para mostrar en UI
+                d["item_count"] = items_coll.count_documents({"header_id": header_id})
+            except Exception:
+                pass
+            d["id"] = header_id
             d.pop("_id", None)
             items.append(d)
         return {"success": True, "page": page, "page_size": page_size, "total": total, "data": items}
@@ -1124,11 +1150,44 @@ async def v2_get_invoice(header_id: str, user: Dict[str, Any] = Depends(_get_cur
             if owner:
                 iq['owner_email'] = owner
         items = list(repo._items().find(iq).sort("linea", 1))
+        
+        # Ajuste de response: si las descripciones vinieran vacías por datos históricos,
+        # intentar recuperar descripciones desde un header_id sin prefijo de owner (legacy)
+        try:
+            if (not items) or all(not (it.get("descripcion") or "").strip() for it in items):
+                if ":" in header_id:
+                    legacy_id = header_id.split(":", 1)[1]
+                    legacy_items = list(repo._items().find({"header_id": legacy_id}).sort("linea", 1))
+                    if legacy_items:
+                        legacy_by_line = {int(it.get("linea", idx+1)): it for idx, it in enumerate(legacy_items)}
+                        for it in items:
+                            linea = int(it.get("linea", 0) or 0)
+                            src = legacy_by_line.get(linea)
+                            if src and (src.get("descripcion") or "").strip():
+                                it["descripcion"] = src.get("descripcion")
+        except Exception:
+            pass
         h["id"] = h.get("_id")
         h.pop("_id", None)
         for it in items:
             it["id"] = str(it.get("_id"))
             it.pop("_id", None)
+            # Alias de compatibilidad: 'nombre' y 'articulo' = 'descripcion'
+            try:
+                desc = (it.get("descripcion") or "").strip()
+                it.setdefault("nombre", desc)
+                it.setdefault("articulo", desc)
+            except Exception:
+                pass
+        
+        # Agregar descripcion_factura de conveniencia en el response (no en DB)
+        try:
+            descs = [str(it.get("descripcion", "")).strip() for it in items if (it.get("descripcion") or "").strip()]
+            if descs:
+                h["descripcion_factura"] = ", ".join(descs[:10])
+        except Exception:
+            pass
+        
         return {"success": True, "header": h, "items": items}
     except HTTPException:
         raise
@@ -1178,6 +1237,13 @@ async def v2_list_items(
         for d in cursor:
             d["id"] = str(d.get("_id"))
             d.pop("_id", None)
+            # Alias de compatibilidad: 'nombre' y 'articulo' = 'descripcion'
+            try:
+                desc = (d.get("descripcion") or "").strip()
+                d.setdefault("nombre", desc)
+                d.setdefault("articulo", desc)
+            except Exception:
+                pass
             data.append(d)
         return {"success": True, "page": page, "page_size": page_size, "total": total, "data": data}
     except Exception as e:
@@ -1319,6 +1385,14 @@ async def v2_get_delete_info(header_id: str, user: Dict[str, Any] = Depends(_get
         # Contar items
         items_count = repo._items().count_documents({"header_id": header_id})
         
+        # Calcular total con fallback a totales.total si no existe monto_total directo
+        total_monto = header.get("monto_total")
+        if not total_monto:
+            try:
+                total_monto = (header.get("totales", {}) or {}).get("total", 0)
+            except Exception:
+                total_monto = 0
+
         return {
             "success": True,
             "can_delete": True,
@@ -1327,7 +1401,7 @@ async def v2_get_delete_info(header_id: str, user: Dict[str, Any] = Depends(_get
                 "numero_documento": header.get("numero_documento", ""),
                 "emisor": header.get("emisor", {}).get("nombre", ""),
                 "fecha_emision": header.get("fecha_emision"),
-                "monto_total": header.get("monto_total", 0)
+                "monto_total": total_monto
             },
             "items_count": items_count,
             "warning": f"Se eliminará la factura completa con {items_count} ítems. Esta acción no se puede deshacer."
@@ -1365,11 +1439,12 @@ async def v2_get_bulk_delete_info(
         
         # Obtener facturas existentes
         headers = list(repo._headers().find(q, {
-            "_id": 1, 
-            "numero_documento": 1, 
-            "emisor.nombre": 1, 
+            "_id": 1,
+            "numero_documento": 1,
+            "emisor.nombre": 1,
             "fecha_emision": 1,
-            "monto_total": 1
+            "monto_total": 1,
+            "totales.total": 1
         }))
         
         existing_ids = [h["_id"] for h in headers]
@@ -1378,8 +1453,20 @@ async def v2_get_bulk_delete_info(
         # Contar items totales
         total_items = repo._items().count_documents({"header_id": {"$in": existing_ids}})
         
-        # Calcular monto total
-        total_amount = sum(h.get("monto_total", 0) for h in headers)
+        # Calcular monto total con fallback a totales.total
+        def _hdr_total(h: dict) -> float:
+            v = h.get("monto_total")
+            if not v:
+                try:
+                    v = (h.get("totales", {}) or {}).get("total", 0)
+                except Exception:
+                    v = 0
+            try:
+                return float(v or 0)
+            except Exception:
+                return 0.0
+
+        total_amount = sum(_hdr_total(h) for h in headers)
         
         return {
             "success": True,
@@ -1398,7 +1485,7 @@ async def v2_get_bulk_delete_info(
                     "numero_documento": h.get("numero_documento", ""),
                     "emisor": h.get("emisor", {}).get("nombre", "") if h.get("emisor") else "",
                     "fecha_emision": h.get("fecha_emision"),
-                    "monto_total": h.get("monto_total", 0)
+                    "monto_total": _hdr_total(h)
                 }
                 for h in headers
             ],
@@ -1779,9 +1866,30 @@ async def admin_update_user_status(
         if not success:
             raise HTTPException(status_code=400, detail="Estado inválido o usuario no encontrado")
         
+        # Si se suspendió al usuario, cancelar sus suscripciones activas (idempotente)
+        cancelled_msg = ""
+        job_msg = ""
+        if request.status == 'suspended':
+            try:
+                sub_repo = SubscriptionRepository()
+                ok = await sub_repo.cancel_user_subscriptions(user_email)
+                if ok:
+                    cancelled_msg = "; suscripciones activas canceladas"
+            except Exception as e:
+                logger.error(f"Error cancelando suscripciones al suspender {user_email}: {e}")
+            
+            # Detener job global de procesamiento si está en ejecución
+            try:
+                current_job = invoice_sync.get_job_status()
+                if getattr(current_job, 'running', False):
+                    invoice_sync.stop_scheduled_job()
+                    job_msg = "; job de ejecución detenido"
+            except Exception as e:
+                logger.error(f"Error deteniendo job al suspender {user_email}: {e}")
+        
         return {
             "success": True,
-            "message": f"Estado actualizado a '{request.status}' para {user_email}"
+            "message": f"Estado actualizado a '{request.status}' para {user_email}{cancelled_msg}{job_msg}"
         }
     except HTTPException:
         raise
@@ -2545,7 +2653,7 @@ async def set_auto_refresh(payload: AutoRefreshPayload):
 
 @app.get("/export/mongodb/stats")
 async def mongodb_export_stats():
-    """Estadísticas básicas de la base de facturas (v2)."""
+    """Estadísticas básicas de la base de facturas."""
     try:
         from app.modules.mongo_query_service import MongoQueryService
         from app.config.export_config import get_mongodb_config

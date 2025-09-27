@@ -1,0 +1,25 @@
+<div class="suspended-wrapper">
+  <div class="card shadow-sm suspended-card">
+    <div class="card-body text-center p-4 p-md-5">
+      <div class="mb-3">
+        <i class="bi bi-slash-circle text-danger" style="font-size: 3rem;"></i>
+      </div>
+      <h2 class="fw-bold mb-3">Cuenta suspendida</h2>
+      <p class="lead mb-4">
+        Tu cuenta se encuentra suspendida y no puedes acceder a la aplicación por el momento.
+      </p>
+      <p class="text-muted mb-4">
+        Si crees que se trata de un error o deseas restablecer el acceso, por favor contacta al administrador.
+      </p>
+      <div class="d-flex justify-content-center gap-2">
+        <a class="btn btn-outline-primary" href="mailto:soporte@cuenly.com">
+          <i class="bi bi-envelope"></i> Contactar soporte
+        </a>
+        <button class="btn btn-danger" (click)="logout()">
+          <i class="bi bi-box-arrow-right"></i> Cerrar sesión
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
