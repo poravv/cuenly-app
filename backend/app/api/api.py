@@ -70,6 +70,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Startup event para inicializar servicios
+@app.on_event("startup")
+async def startup_event():
+    """Inicializa servicios cuando arranca el servidor FastAPI"""
+    try:
+        from app.modules.scheduler import ScheduledTasks
+        scheduler_tasks = ScheduledTasks()
+        scheduler_tasks.start_background_scheduler()
+        logger.info("✅ Scheduler de límites IA iniciado correctamente")
+    except Exception as e:
+        logger.error(f"❌ Error iniciando scheduler de límites IA: {e}")
+
 # Instancia global del procesador
 invoice_sync = CuenlyApp()
 
@@ -296,7 +308,7 @@ async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_
         }
 
 @app.post("/process", response_model=ProcessResult)
-async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # Procesamiento mixto - verificar IA internamente
+async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """
     Procesa correos electrónicos para extraer facturas.
     
@@ -345,7 +357,7 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
 @app.post("/process-direct")
 async def process_emails_direct(
     limit: Optional[int] = 10,
-    user: Dict[str, Any] = Depends(_get_current_user)
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
 ):
     """Procesa correos directamente con límite (máximo 10 para procesamiento manual)."""
     try:
@@ -392,7 +404,7 @@ async def process_emails_direct(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/tasks/process")
-async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
+async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """Encola una ejecución de procesamiento de correos y retorna un job_id."""
     
     # Verificar si el job automático está ejecutándose
@@ -583,7 +595,7 @@ async def upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # XMLs usan parser nativo
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """
     Sube un archivo XML SIFEN para procesarlo directamente con el parser nativo (fallback OpenAI).
     """
@@ -706,7 +718,7 @@ async def enqueue_upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # XMLs usan parser nativo
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """Encola el procesamiento de un XML manual y retorna job_id."""
     if not file.filename.lower().endswith('.xml'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
@@ -1949,6 +1961,129 @@ async def get_public_plan(plan_code: str):
         logger.error(f"Error obteniendo plan {plan_code}: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo plan")
 
+# Endpoints de suscripción para usuario autenticado
+@app.get("/user/subscription", tags=["User - Subscription"])
+async def get_user_subscription(current_user: dict = Depends(_get_current_user)):
+    """Obtiene la suscripción actual del usuario autenticado"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        subscription = await repo.get_user_active_subscription(current_user["email"])
+        
+        if not subscription:
+            return {
+                "success": True,
+                "data": None,
+                "message": "Usuario sin suscripción activa"
+            }
+        
+        return {
+            "success": True,
+            "data": subscription
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo suscripción de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo suscripción")
+
+@app.get("/user/subscription/history", tags=["User - Subscription"])
+async def get_user_subscription_history(current_user: dict = Depends(_get_current_user)):
+    """Obtiene el historial de suscripciones del usuario"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        history = await repo.get_user_subscriptions_history(current_user["email"])
+        
+        return {
+            "success": True,
+            "data": history,
+            "count": len(history)
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo historial de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo historial")
+
+@app.post("/user/subscription/change-plan", tags=["User - Subscription"])
+async def request_plan_change(
+    request: dict,
+    current_user: dict = Depends(_get_current_user)
+):
+    """Solicita cambio de plan para el usuario"""
+    try:
+        new_plan_id = request.get("plan_id")
+        if not new_plan_id:
+            raise HTTPException(status_code=400, detail="plan_id es requerido")
+        
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        # Verificar que el plan existe (buscar por código)
+        plan = await repo.get_plan_by_code(new_plan_id)
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        # Verificar si el usuario ya tiene este plan
+        current_subscription = await repo.get_user_active_subscription(current_user["email"])
+        if current_subscription and current_subscription.get("plan_code") == new_plan_id:
+            raise HTTPException(status_code=400, detail="Ya tienes este plan activo")
+        
+        # Ejecutar el cambio de plan
+        success = await repo.assign_plan_to_user(
+            user_email=current_user["email"],
+            plan_code=new_plan_id,
+            payment_method="user_request"  # Indicar que fue solicitud del usuario
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Error al cambiar el plan")
+        
+        logger.info(f"✅ Plan cambiado exitosamente: {current_user['email']} -> {plan['name']}")
+        
+        return {
+            "success": True,
+            "message": f"Plan cambiado exitosamente al {plan['name']}. Los cambios son efectivos inmediatamente.",
+            "data": {
+                "new_plan": plan,
+                "user_email": current_user["email"],
+                "change_date": datetime.now().isoformat()
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error procesando cambio de plan para {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error procesando solicitud")
+
+@app.post("/user/subscription/cancel", tags=["User - Subscription"])
+async def cancel_user_subscription(current_user: dict = Depends(_get_current_user)):
+    """Cancela la suscripción activa del usuario autenticado."""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+
+        # Verificar si el usuario tiene una suscripción activa
+        active = await repo.get_user_active_subscription(current_user["email"])
+        if not active:
+            return {
+                "success": True,
+                "message": "No tienes una suscripción activa para cancelar"
+            }
+
+        # Cancelar suscripciones activas (idempotente)
+        ok = await repo.cancel_user_subscriptions(current_user["email"])
+        if not ok:
+            raise HTTPException(status_code=500, detail="No se pudo cancelar la suscripción")
+
+        logger.info(f"✅ Suscripción cancelada para {current_user['email']}")
+        return {
+            "success": True,
+            "message": "Tu suscripción ha sido cancelada correctamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelando suscripción de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error cancelando suscripción")
+
 # Endpoints administrativos para planes (requieren auth admin)
 @app.get("/admin/plans", tags=["Admin - Plans"])
 async def admin_get_plans(
@@ -2255,10 +2390,123 @@ async def admin_get_filtered_stats(
         logger.error(f"Error obteniendo estadísticas filtradas: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
 
+# =====================================
+# ENDPOINTS DE RESETEO MENSUAL DE IA
+# =====================================
+
+@app.post("/admin/ai-limits/reset-monthly", tags=["Admin - AI Limits"])
+async def admin_reset_monthly_ai_limits(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Ejecuta el reseteo mensual de límites de IA para usuarios con planes activos"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        result = await reset_service.reset_monthly_limits()
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": result["message"],
+                "data": {
+                    "resetted_users": result["resetted_users"],
+                    "total_subscriptions": result.get("total_subscriptions", 0),
+                    "errors": result.get("errors", []),
+                    "execution_date": result.get("execution_date")
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": result["message"]
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en reseteo mensual manual: {e}")
+        raise HTTPException(status_code=500, detail="Error ejecutando reseteo mensual")
+
+@app.post("/admin/ai-limits/reset-user/{user_email}", tags=["Admin - AI Limits"])
+async def admin_reset_user_ai_limits(
+    user_email: str,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Resetea manualmente los límites de IA de un usuario específico"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        result = await reset_service.reset_user_limits_manually(user_email)
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": result["message"],
+                "data": {
+                    "user_email": user_email,
+                    "new_limit": result.get("new_limit")
+                }
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["message"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en reset manual para {user_email}: {e}")
+        raise HTTPException(status_code=500, detail="Error reseteando límites del usuario")
+
+@app.get("/admin/ai-limits/reset-stats", tags=["Admin - AI Limits"])
+async def admin_get_reset_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene estadísticas sobre los resets de límites de IA"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        stats = await reset_service.get_reset_stats()
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas de reset: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
+
+@app.get("/admin/scheduler/status", tags=["Admin - Scheduler"])
+async def admin_get_scheduler_status(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene el estado del scheduler de tareas programadas"""
+    try:
+        from app.services.scheduler import get_scheduler_status
+        from app.services.monthly_reset_service import MonthlyResetService
+        
+        reset_service = MonthlyResetService()
+        scheduler_status = get_scheduler_status()
+        
+        return {
+            "success": True,
+            "data": {
+                "scheduler": scheduler_status,
+                "next_reset_date": reset_service.get_next_reset_date().isoformat(),
+                "should_run_today": reset_service.should_run_today()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo estado del scheduler: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estado del scheduler")
+
 def start():
     """Inicia el servidor API."""
     # Guardar tiempo de inicio
     app.state.start_time = time.time()
+    
+    # Iniciar scheduler para tareas programadas
+    try:
+        from app.services.scheduler import start_background_scheduler
+        start_background_scheduler()
+        logger.info("🚀 Scheduler de tareas programadas iniciado")
+    except Exception as e:
+        logger.error(f"❌ Error iniciando scheduler: {e}")
     
     uvicorn.run(
         "app.api.api:app",
