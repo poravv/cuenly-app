@@ -15,10 +15,11 @@ export class InvoicesV2Component implements OnInit {
   search: string = '';
   rucEmisor: string = '';
   rucReceptor: string = '';
+  emisorNombre: string = '';
 
   // Paginación
   page = 1;
-  pageSize = 20;
+  pageSize = 10;
   total = 0;
 
   headers: any[] = [];
@@ -59,6 +60,7 @@ export class InvoicesV2Component implements OnInit {
       search: this.search || undefined,
       ruc_emisor: this.rucEmisor || undefined,
       ruc_receptor: this.rucReceptor || undefined,
+      emisor_nombre: this.emisorNombre || undefined,
     }).subscribe({
       next: (res) => {
         this.headers = res?.data || [];
@@ -86,6 +88,38 @@ export class InvoicesV2Component implements OnInit {
     const max = this.pageCount();
     if (this.page >= max) return;
     this.page = Math.min(max, this.page + 1);
+    this.loadHeaders();
+  }
+
+  goToPage(p: number): void {
+    const max = this.pageCount();
+    if (p < 1 || p > max) return;
+    this.page = p;
+    this.loadHeaders();
+  }
+
+  getPageNumbers(): number[] {
+    const totalPages = this.pageCount();
+    if (totalPages === 0) return [];
+    const windowSize = 10;
+    if (totalPages <= windowSize) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    // Ventana móvil centrada en la página actual cuando sea posible
+    let start = Math.max(1, this.page - Math.floor(windowSize / 2));
+    let end = start + windowSize - 1;
+    if (end > totalPages) {
+      end = totalPages;
+      start = end - windowSize + 1;
+    }
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }
+
+  setPageSize(size: number | string): void {
+    const n = Number(size);
+    if (!n || n < 1) return;
+    this.pageSize = n;
+    this.page = 1;
     this.loadHeaders();
   }
 
@@ -140,6 +174,7 @@ export class InvoicesV2Component implements OnInit {
     const chips: { key: string; label: string; value: string }[] = [];
     if (this.month) chips.push({ key: 'month', label: 'Mes', value: this.month });
     if (this.search) chips.push({ key: 'search', label: 'Texto', value: this.search });
+    if (this.emisorNombre) chips.push({ key: 'emisorNombre', label: 'Emisor', value: this.emisorNombre });
     if (this.rucEmisor) chips.push({ key: 'rucEmisor', label: 'RUC Emisor', value: this.rucEmisor });
     if (this.rucReceptor) chips.push({ key: 'rucReceptor', label: 'RUC Receptor', value: this.rucReceptor });
     this.chips = chips;
@@ -149,6 +184,7 @@ export class InvoicesV2Component implements OnInit {
     switch (key) {
       case 'month': this.month = ''; break;
       case 'search': this.search = ''; break;
+      case 'emisorNombre': this.emisorNombre = ''; break;
       case 'rucEmisor': this.rucEmisor = ''; break;
       case 'rucReceptor': this.rucReceptor = ''; break;
     }

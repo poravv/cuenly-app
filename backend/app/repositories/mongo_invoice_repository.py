@@ -37,6 +37,8 @@ class MongoInvoiceRepository(InvoiceRepository):
         try:
             coll.create_index("_id", unique=True)
             coll.create_index([("emisor.ruc", 1), ("fecha_emision", -1)])
+            coll.create_index("emisor.nombre")
+            coll.create_index("receptor.nombre")
             coll.create_index("mes_proceso")
             coll.create_index("owner_email")
         except Exception:
@@ -192,6 +194,41 @@ class MongoInvoiceRepository(InvoiceRepository):
         to_insert = [it.model_dump() for it in items]
         res = items_coll.insert_many(to_insert)
         return len(res.inserted_ids)
+
+    # Override: asegurar unicidad por usuario + factura
+    def save_document(self, doc: InvoiceDocument) -> None:
+        """
+        Guarda una factura asegurando que el _id del header sea único por usuario.
+        Evita que el mismo comprobante entre distintos usuarios se reemplace entre sí.
+        """
+        # Determinar owner
+        owner = (getattr(doc.header, 'owner_email', '') or '').lower()
+        # Si no viene owner en header, intentar deducir desde items
+        if not owner and doc.items:
+            try:
+                owner = (getattr(doc.items[0], 'owner_email', '') or '').lower()
+            except Exception:
+                owner = ''
+
+        original_id = doc.header.id
+        # Construir ID compuesto solo si hay owner; si no, mantener comportamiento actual
+        combined_id = f"{owner}:{original_id}" if owner else original_id
+
+        # Mutar documento en memoria para mantener consistencia
+        doc.header.id = combined_id
+        if owner:
+            doc.header.owner_email = owner
+        # Asegurar que los items apunten al header_id combinado y tengan owner
+        new_items: List[InvoiceDetail] = []
+        for it in doc.items:
+            it.header_id = combined_id
+            if owner:
+                it.owner_email = owner
+            new_items.append(it)
+
+        # Upsert de header e items
+        self.upsert_header(doc.header)
+        self.replace_items(doc.header.id, new_items)
 
     def close(self):
         try:

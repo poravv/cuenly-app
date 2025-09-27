@@ -272,18 +272,50 @@
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">Solicitar Cambio de Plan</h5>
+          <h5 class="modal-title">Confirmar cambio de plan</h5>
           <button type="button" class="btn-close" (click)="closePlanChangeModal()"></button>
         </div>
         <div class="modal-body">
-          <p>¿Estás seguro de que deseas solicitar un cambio a este plan?</p>
+          <div class="plan-compare mb-3" *ngIf="currentSubscription && selectedPlan">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="compare-card current">
+                  <div class="compare-title"><i class="bi bi-badge-ad me-2"></i>Plan actual</div>
+                  <div class="compare-name">{{ currentSubscription.plan_name }}</div>
+                  <div class="compare-meta">
+                    <span class="chip">Límite IA: {{ currentSubscription.monthly_ai_limit | number }}/mes</span>
+                    <span class="chip muted" *ngIf="currentSubscription.end_date">Vence: {{ formatDate(currentSubscription.end_date) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="compare-card new">
+                  <div class="compare-title"><i class="bi bi-stars me-2"></i>Nuevo plan</div>
+                  <div class="compare-name">{{ selectedPlan.name }}</div>
+                  <div class="compare-meta">
+                    <span class="chip">Límite IA: {{ selectedPlan.monthly_ai_limit | number }}/mes</span>
+                    <span class="chip muted">Precio: {{ formatPrice(selectedPlan.price, selectedPlan.currency) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-warning border-0">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            El cambio es inmediato y reemplaza tu plan actual. No hay prorrateo y el conteo de uso sigue vigente según tus límites.
+          </div>
+
+          <div class="form-check my-3">
+            <input class="form-check-input" type="checkbox" id="confirmChangeCheck" [(ngModel)]="confirmChangeAcknowledged">
+            <label class="form-check-label" for="confirmChangeCheck">
+              Entiendo las implicaciones del cambio de plan y deseo continuar.
+            </label>
+          </div>
+
           <div class="mb-3">
             <label for="changeReason" class="form-label">Motivo del cambio (opcional)</label>
-            <textarea class="form-control" 
-                      id="changeReason" 
-                      rows="3" 
-                      [(ngModel)]="changeReason"
-                      placeholder="Explica por qué deseas cambiar de plan..."></textarea>
+            <textarea class="form-control" id="changeReason" rows="2" [(ngModel)]="changeReason" placeholder="Opcional: detalla el motivo del cambio"></textarea>
           </div>
         </div>
         <div class="modal-footer">
@@ -293,9 +325,9 @@
           <button type="button" 
                   class="btn btn-primary" 
                   (click)="submitPlanChange()"
-                  [disabled]="submittingPlanChange">
+                  [disabled]="submittingPlanChange || !confirmChangeAcknowledged">
             <span *ngIf="submittingPlanChange" class="spinner-border spinner-border-sm me-2"></span>
-            {{ submittingPlanChange ? 'Enviando...' : 'Confirmar Cambio' }}
+            {{ submittingPlanChange ? 'Enviando...' : 'Confirmar cambio' }}
           </button>
         </div>
       </div>

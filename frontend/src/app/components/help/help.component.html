@@ -82,6 +82,34 @@
       <div class="card border-0 shadow-sm">
         <div class="card-body">
           
+          <!-- Subscription & Limits Section -->
+          <section id="subscription" class="help-section">
+            <div class="section-header">
+              <div class="d-flex align-items-center mb-3">
+                <div class="text-danger me-3" style="font-size: 1.5rem;">
+                  <i class="bi bi-credit-card-2-front" style="display: inline-block;"></i>
+                </div>
+                <h3 class="fw-bold mb-0">Suscripción y límites</h3>
+              </div>
+            </div>
+            <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#sub-requirements" aria-expanded="true">
+                <h5 class="fw-semibold mb-0">Requisitos para procesar</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="sub-requirements" class="collapse show help-item-content">
+                <ul class="mb-3">
+                  <li>Tener un período de prueba vigente <strong>o</strong> una <strong>suscripción activa</strong>.</li>
+                  <li>Si tu suscripción está <strong>cancelada o expirada</strong>, no podrás procesar correos ni cargar PDF/XML.</li>
+                  <li>Los límites de IA dependen de tu plan actual.</li>
+                </ul>
+                <div class="alert alert-warning border-0">
+                  <i class="bi bi-exclamation-triangle me-2"></i>
+                  Puedes revisar o gestionar tu plan desde <a routerLink="/subscription">Mi Suscripción</a>.
+                </div>
+              </div>
+            </div>
+          </section>
           <!-- Getting Started Section -->
           <section id="getting-started" class="help-section">
             <div class="section-header">
@@ -211,7 +239,7 @@
               </div>
               <div id="upload-pdf" class="collapse help-item-content">
                 <p class="text-muted">
-                  Los archivos PDF se procesan utilizando inteligencia artificial para extraer la información de la factura.
+                  Los archivos PDF se procesan utilizando inteligencia artificial para extraer la información de la factura. Requiere prueba vigente o suscripción activa.
                 </p>
                 <div class="upload-steps">
                   <div class="step">
@@ -246,8 +274,7 @@
               </div>
               <div id="upload-xml" class="collapse help-item-content">
                 <p class="text-muted">
-                  Los archivos XML (facturas electrónicas) se procesan de forma nativa y suelen tener mayor precisión 
-                  en la extracción de datos.
+                  Los archivos XML (facturas electrónicas) se procesan de forma nativa y suelen tener mayor precisión en la extracción de datos. Requiere prueba vigente o suscripción activa.
                 </p>
                 <div class="alert alert-success border-0">
                   <i class="bi bi-check-circle text-success me-2"></i>

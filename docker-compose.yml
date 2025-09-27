@@ -17,6 +17,8 @@ services:
     volumes:
       - mongodb_data:/data/db
       - ./config/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    ports:
+      - "27017:27017"  # Exponer MongoDB para conexión externa
     networks:
       - cuenlyapp-network
     healthcheck:

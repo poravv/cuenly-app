@@ -5,6 +5,7 @@ import { ApiService } from '../../services/api.service';
 import { UserService } from '../../services/user.service';
 import { ProcessResult, TaskSubmitResponse, TaskStatusResponse } from '../../models/invoice.model';
 import { Subscription, interval } from 'rxjs';
+import { NotificationService } from '../../services/notification.service';
 
 @Component({
   selector: 'app-upload-xml',
@@ -25,7 +26,8 @@ export class UploadXmlComponent implements OnInit {
     private fb: FormBuilder,
     private apiService: ApiService,
     private userService: UserService,
-    private router: Router
+    private router: Router,
+    private notificationService: NotificationService
   ) {
     this.uploadForm = this.fb.group({
       sender: ['', [Validators.maxLength(100)]],
@@ -74,7 +76,20 @@ export class UploadXmlComponent implements OnInit {
         this.pollingSub = interval(2000).subscribe(() => this.pollJob());
       },
       error: (err) => {
-        this.error = 'Error al encolar el archivo XML: ' + (err.error?.message || err.message || 'Error desconocido');
+        // Mensaje claro para usuario suspendido
+        if (err?.status === 403) {
+          this.error = 'No se pudo encolar el archivo XML: tu cuenta está suspendida. Contacta al administrador.';
+          this.notificationService.error('Tu cuenta está suspendida. Contacta al administrador.', 'Cuenta suspendida');
+        } else if (err?.status === 402) {
+          // Aunque XML no consume IA, por coherencia mostramos el detalle del backend si llega 402
+          const detail = err.error?.detail || err.error?.message || err.message || 'Pago requerido o límite alcanzado';
+          this.error = 'No se pudo encolar el archivo XML: ' + detail;
+          this.notificationService.warning(detail, 'Límite alcanzado');
+        } else {
+          const detail = err.error?.detail || err.error?.message || err.message || 'Error desconocido';
+          this.error = 'Error al encolar el archivo XML: ' + detail;
+          this.notificationService.error('No se pudo encolar el archivo XML', 'Error');
+        }
         this.loading = false;
         console.error(err);
       }

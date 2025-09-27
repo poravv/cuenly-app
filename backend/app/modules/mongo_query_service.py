@@ -382,7 +382,7 @@ class MongoQueryService:
             db = client[self.database_name]
             collection = db[self.collection_name]
             
-            # Construir filtros (v2)
+            # Construir filtros 
             filters: Dict[str, Any] = {}
             
             # Texto libre: usar OR en campos relevantes
@@ -427,7 +427,7 @@ class MongoQueryService:
                     amount_filter["$lte"] = float(max_amount)
                 filters["totales.total"] = amount_filter
             
-            # Proyección optimizada (v2)
+            # Proyección optimizada 
             projection = {
                 "_id": 1,
                 "numero_documento": 1,

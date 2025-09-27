@@ -154,8 +154,9 @@ class ExcelExporter:
             field_mappings = {
                 "base_gravada_5": ["gravado_5", "subtotal_5"],
                 "base_gravada_10": ["gravado_10", "subtotal_10"],
-                # Eliminado mapeos incorrectos - usar campos directos
-                "productos.nombre": ["productos.articulo", "productos.descripcion", "productos.nombre"],
+                # Mapeo robusto para productos: usar claves internas del producto
+                "productos.nombre": ["nombre", "descripcion", "articulo"],
+                "productos.descripcion": ["descripcion", "nombre", "articulo"],
             }
             
             field_key = field.field_key
@@ -189,12 +190,11 @@ class ExcelExporter:
                                 valor = producto.get(posible_campo)
                                 break
                         
-                        # Mapeo adicional para compatibilidad de nombres
-                        if valor is None:
-                            if subcampo in ['articulo', 'descripcion', 'nombre']:
-                                valor = (producto.get('nombre') or 
-                                       producto.get('descripcion') or 
-                                       producto.get('articulo'))
+                        # Compatibilidad adicional por si no se encontró
+                        if valor is None and subcampo in ['articulo', 'descripcion', 'nombre']:
+                            valor = (producto.get('nombre') or 
+                                     producto.get('descripcion') or 
+                                     producto.get('articulo'))
                         
                         if valor is not None:
                             valores.append(valor)
