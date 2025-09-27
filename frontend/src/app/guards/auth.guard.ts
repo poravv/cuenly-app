@@ -11,7 +11,19 @@ export class AuthGuard implements CanActivate {
     return combineLatest([this.auth.ready$, this.auth.user$]).pipe(
       filter(([ready]) => ready),
       take(1),
-      map(([_, user]) => user ? true : this.router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } }))
+      map(([_, user]) => {
+        if (!user) {
+          return this.router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+        }
+        // Si hay bandera local de cuenta suspendida, redirigir a la página correspondiente
+        try {
+          const suspended = localStorage.getItem('account_suspended') === 'true';
+          if (suspended && state.url !== '/suspended') {
+            return this.router.createUrlTree(['/suspended']);
+          }
+        } catch {}
+        return true;
+      })
     );
   }
 }

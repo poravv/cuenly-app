@@ -29,23 +29,27 @@
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
       <div class="row g-3 align-items-end">
-        <div class="col-md-3">
+        <div class="col-12 col-md-3">
           <label class="form-label small fw-semibold">Mes</label>
           <input type="month" class="form-control" [(ngModel)]="month" (change)="refresh()">
         </div>
-        <div class="col-md-3">
+        <div class="col-12 col-md-3">
           <label class="form-label small fw-semibold">Buscar</label>
           <input type="text" class="form-control" placeholder="Texto (emisor/receptor/nro)" [(ngModel)]="search" (keyup.enter)="refresh()">
         </div>
-        <div class="col-md-2">
+        <div class="col-12 col-md-3">
+          <label class="form-label small fw-semibold">Nombre Emisor</label>
+          <input type="text" class="form-control" placeholder="Ej: FARMACIA..." [(ngModel)]="emisorNombre" (keyup.enter)="refresh()">
+        </div>
+        <div class="col-12 col-md-2">
           <label class="form-label small fw-semibold">RUC Emisor</label>
           <input type="text" class="form-control" [(ngModel)]="rucEmisor" (keyup.enter)="refresh()">
         </div>
-        <div class="col-md-2">
+        <div class="col-12 col-md-2">
           <label class="form-label small fw-semibold">RUC Receptor</label>
           <input type="text" class="form-control" [(ngModel)]="rucReceptor" (keyup.enter)="refresh()">
         </div>
-        <div class="col-md-2 d-grid">
+        <div class="col-12 col-md-2 d-grid">
           <button class="btn btn-primary" (click)="refresh()" [disabled]="loading">
             <i class="bi bi-filter-circle me-1"></i> Filtrar
           </button>
@@ -125,6 +129,52 @@
                       <div class="d-flex justify-content-between align-items-center mb-2">
                         <div class="fw-semibold">Detalle: {{ h.numero_documento }}</div>
                       </div>
+                      <!-- Resumen útil para el usuario -->
+                      <div class="row g-3 mb-2 small text-muted">
+                        <div class="col-12 col-lg-6">
+                          <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <span class="badge bg-light text-dark border">Emisor RUC: {{ h.emisor?.ruc || '-' }}</span>
+                            <span class="badge bg-light text-dark border">Receptor RUC: {{ h.receptor?.ruc || '-' }}</span>
+                            <span class="badge" [ngClass]="condBadgeClass(h.condicion_venta)">Condición: {{ h.condicion_venta || 'CONTADO' }}</span>
+                            <span class="badge bg-secondary">Moneda: {{ h.moneda || 'GS' }}</span>
+                          </div>
+                        </div>
+                        <div class="col-12 col-lg-6">
+                          <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+                            <span class="badge bg-info text-dark" *ngIf="h.cdc">CDC: {{ (h.cdc || '').slice(0,8) }}…</span>
+                            <span class="badge bg-secondary" *ngIf="h.timbrado">Timbrado: {{ h.timbrado }}</span>
+                            <span class="badge bg-light text-dark border">Ítems: {{ h.item_count || (itemsCache[h.id]?.length || 0) }}</span>
+                            <span class="badge bg-light text-dark border" *ngIf="h.fuente">Fuente: {{ h.fuente }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <!-- Totales desglosados -->
+                      <div class="row g-2 mb-2 small">
+                        <div class="col-6 col-md-3">
+                          <div class="bg-white rounded-2 p-2 border">
+                            <div class="text-muted">Exentas</div>
+                            <div class="fw-semibold">{{ toCurrency(h.totales?.exentas || 0) }}</div>
+                          </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <div class="bg-white rounded-2 p-2 border">
+                            <div class="text-muted">Grav. 5%</div>
+                            <div class="fw-semibold">{{ toCurrency(h.totales?.gravado_5 || 0) }}</div>
+                          </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <div class="bg-white rounded-2 p-2 border">
+                            <div class="text-muted">Grav. 10%</div>
+                            <div class="fw-semibold">{{ toCurrency(h.totales?.gravado_10 || 0) }}</div>
+                          </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <div class="bg-white rounded-2 p-2 border">
+                            <div class="text-muted">Total</div>
+                            <div class="fw-bold text-primary">{{ toCurrency(h.totales?.total || 0) }}</div>
+                          </div>
+                        </div>
+                      </div>
                       <div *ngIf="itemsLoading[h.id]" class="d-flex justify-content-center align-items-center py-3">
                         <div class="spinner-border text-primary me-2" role="status" style="width: 1.5rem; height: 1.5rem;">
                           <span class="visually-hidden">Cargando...</span>
@@ -141,7 +191,7 @@
                           <thead>
                             <tr>
                               <th>#</th>
-                              <th>Descripción</th>
+                              <th>Descripción (Producto/Servicio)</th>
                               <th class="text-end">Cant.</th>
                               <th>Unidad</th>
                               <th class="text-end">P. Unit</th>
@@ -174,11 +224,25 @@
         </div>
 
         <!-- Paginación simple -->
-        <div class="d-flex justify-content-between align-items-center mt-3">
+        <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
           <div class="text-muted">Total: {{ total }}</div>
-          <div class="btn-group">
-            <button class="btn btn-outline-secondary" (click)="prevPage()" [disabled]="page <= 1">Anterior</button>
-            <button class="btn btn-outline-secondary" (click)="nextPage()" [disabled]="page >= pageCount()">Siguiente</button>
+          <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center gap-2">
+              <label class="text-muted small mb-0">Por página</label>
+              <select class="form-select form-select-sm w-auto" [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
+                <option [ngValue]="10">10</option>
+                <option [ngValue]="20">20</option>
+                <option [ngValue]="50">50</option>
+                <option [ngValue]="100">100</option>
+              </select>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-outline-secondary" (click)="prevPage()" [disabled]="page <= 1">Anterior</button>
+              <ng-container *ngFor="let p of getPageNumbers()">
+                <button class="btn" [ngClass]="p === page ? 'btn-primary' : 'btn-outline-secondary'" (click)="goToPage(p)">{{ p }}</button>
+              </ng-container>
+              <button class="btn btn-outline-secondary" (click)="nextPage()" [disabled]="page >= pageCount()">Siguiente</button>
+            </div>
           </div>
         </div>
       </div>

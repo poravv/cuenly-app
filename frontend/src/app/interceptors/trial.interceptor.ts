@@ -3,11 +3,12 @@ import { HttpInterceptor, HttpRequest, HttpHandler, HttpEvent, HttpErrorResponse
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { Router } from '@angular/router';
+import { NotificationService } from '../services/notification.service';
 
 @Injectable()
 export class TrialInterceptor implements HttpInterceptor {
   
-  constructor(private router: Router) {}
+  constructor(private router: Router, private notificationService: NotificationService) {}
 
   intercept(req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
     return next.handle(req).pipe(
@@ -16,6 +17,21 @@ export class TrialInterceptor implements HttpInterceptor {
         if (error.status === 402) {
           // Mostrar mensaje de error o redirigir a página de upgrade
           this.handleTrialExpired(error);
+        }
+        // Verificar si el usuario está suspendido (HTTP 403)
+        if (error.status === 403) {
+          const detail = (error?.error && (error.error.detail || error.error.message)) || error.message || 'Acceso denegado';
+          // Si parece ser el mensaje de suspensión, mostrar notificación clara
+          if ((detail || '').toLowerCase().includes('suspendid')) {
+            this.notificationService.error(
+              'Tu cuenta está suspendida. Contacta al administrador.',
+              'Cuenta suspendida',
+              { duration: 12000 }
+            );
+            try { localStorage.setItem('account_suspended', 'true'); } catch {}
+            // Redirigir a la página de cuenta suspendida
+            this.router.navigateByUrl('/suspended');
+          }
         }
         return throwError(() => error);
       })
@@ -34,13 +50,18 @@ export class TrialInterceptor implements HttpInterceptor {
   }
 
   private showTrialExpiredNotification(message: string): void {
-    // Implementar notificación toast aquí
-    // Por ahora usamos alert simple
-    alert(message + '\n\nContacta al administrador para continuar usando el sistema.');
+    this.notificationService.error(
+      message + '\n\nContacta al administrador para continuar usando el sistema.',
+      'Período de prueba expirado',
+      { duration: 12000 }
+    );
   }
 
   private showAILimitNotification(message: string): void {
-    // Notificación específica para límite de IA
-    alert(message + '\n\n💡 Tip: Puedes seguir procesando facturas XML de forma ilimitada usando el procesador nativo SIFEN.');
+    this.notificationService.warning(
+      message + '\n\n💡 Tip: Puedes seguir procesando facturas XML de forma ilimitada usando el procesador nativo SIFEN.',
+      'Límite de IA alcanzado',
+      { duration: 12000 }
+    );
   }
 }

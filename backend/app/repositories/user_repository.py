@@ -40,6 +40,7 @@ class UserRepository:
         role = 'admin' if is_admin else 'user'
         
         # Datos básicos del usuario que siempre se actualizan
+        # IMPORTANTE: No forzar 'status' para usuarios existentes, para respetar suspensiones.
         basic_payload = {
             'email': email,
             'uid': user.get('uid') or user.get('user_id'),
@@ -47,7 +48,6 @@ class UserRepository:
             'picture': user.get('picture') or user.get('photoURL'),
             'last_login': now,
             'role': role,
-            'status': 'active',  # active, suspended
         }
         
         if is_new_user:
@@ -58,7 +58,8 @@ class UserRepository:
                 'trial_expires_at': now + timedelta(days=15),
                 'ai_invoices_processed': 0,
                 'ai_invoices_limit': 50,
-                'email_processing_start_date': now
+                'email_processing_start_date': now,
+                'status': 'active',  # Nuevo usuario comienza activo
             }
             
             # Combinar todos los datos para nuevos usuarios
@@ -82,13 +83,13 @@ class UserRepository:
                     'email_processing_start_date': existing_user.get('email_processing_start_date', existing_user.get('created_at', now))
                 }
                 
-                # Actualizar con datos básicos + información de trial
-                update_payload = {**basic_payload, **trial_payload}
+                # Actualizar con datos básicos + información de trial (preservando 'status')
+                update_payload = {**basic_payload, **trial_payload, 'status': existing_user.get('status', 'active')}
                 print(f"Configurando trial automático para usuario existente: {email}")
             else:
                 # Usuario existente con información de trial ya configurada
-                # Solo actualizar datos básicos
-                update_payload = basic_payload
+                # Solo actualizar datos básicos (preservando 'status')
+                update_payload = {**basic_payload, 'status': existing_user.get('status', 'active')}
             
             self._coll().update_one(
                 {'email': email},
