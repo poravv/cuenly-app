@@ -202,6 +202,22 @@ class SubscriptionRepository:
         except Exception as e:
             logger.error(f"Error obteniendo suscripción activa de {user_email}: {e}")
             return None
+
+    def has_active_subscription(self, user_email: str) -> bool:
+        """Versión síncrona y ligera para verificar si existe una suscripción activa no expirada."""
+        try:
+            s = self.subscriptions_collection.find_one(
+                {
+                    "user_email": user_email,
+                    "status": "active",
+                    "expires_at": {"$gt": datetime.utcnow()}
+                },
+                {"_id": 1}
+            )
+            return bool(s)
+        except Exception as e:
+            logger.error(f"Error verificando suscripción activa de {user_email}: {e}")
+            return False
     
     async def create_subscription(self, subscription_data: Dict[str, Any]) -> bool:
         """Crear una nueva suscripción."""
@@ -337,7 +353,12 @@ class SubscriptionRepository:
                 {"user_email": user_email},
                 {"_id": 0}
             ).sort("created_at", -1))
-            
+            # Normalizar campos para frontend
+            for s in subscriptions:
+                s.setdefault("plan_name", s.get("plan_code", "Plan"))
+                s["start_date"] = s.get("started_at") or s.get("created_at")
+                end = s.get("cancelled_at") or s.get("expires_at")
+                s["end_date"] = end
             return subscriptions
             
         except Exception as e:

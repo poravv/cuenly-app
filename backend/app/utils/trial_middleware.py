@@ -79,6 +79,8 @@ def check_ai_limits(user_claims: Dict[str, Any]) -> Dict[str, Any]:
             raise TrialLimitError(ai_check['message'])
         elif ai_check['reason'] == 'ai_limit_reached':
             raise AILimitError(ai_check['message'])
+        elif ai_check['reason'] in ['subscription_inactive', 'subscription_check_error']:
+            raise HTTPException(status_code=402, detail=ai_check['message'])
     
     return trial_info
 
