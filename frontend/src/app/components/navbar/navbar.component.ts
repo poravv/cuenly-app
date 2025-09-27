@@ -57,7 +57,24 @@ export class NavbarComponent implements OnInit, OnDestroy {
   signIn(): void { this.auth.signInWithGoogle(); }
   
   async signOut(): Promise<void> {
-    try { await this.auth.signOut(); } finally { this.router.navigateByUrl('/login'); }
+    try {
+      console.log('🔐 Cerrando sesión...');
+      await this.auth.signOut();
+      console.log('✅ Sesión cerrada correctamente');
+      
+      // Pequeña pausa para asegurar que la limpieza esté completa
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Opcional: Mostrar mensaje al usuario
+      console.log('💡 La próxima vez que inicies sesión podrás seleccionar una cuenta diferente');
+      
+    } catch (error) {
+      console.error('❌ Error al cerrar sesión:', error);
+    } finally {
+      // Siempre redirigir al login, incluso si hay error
+      console.log('🔄 Redirigiendo al login...');
+      this.router.navigateByUrl('/login');
+    }
   }
 
   private loadUserProfile(): void {

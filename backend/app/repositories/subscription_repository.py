@@ -72,6 +72,20 @@ class SubscriptionRepository:
             logger.error(f"Error obteniendo plan {code}: {e}")
             return None
     
+    async def get_plan_by_id(self, plan_id: str) -> Optional[Dict[str, Any]]:
+        """Obtener un plan específico por ID."""
+        try:
+            from bson import ObjectId
+            plan = self.plans_collection.find_one(
+                {"_id": ObjectId(plan_id)},
+                {"_id": 0}
+            )
+            return plan
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo plan {plan_id}: {e}")
+            return None
+    
     async def create_plan(self, plan_data: Dict[str, Any]) -> bool:
         """Crear un nuevo plan."""
         try:
@@ -136,6 +150,57 @@ class SubscriptionRepository:
             
         except Exception as e:
             logger.error(f"Error obteniendo suscripción de {user_email}: {e}")
+            return None
+
+    async def get_user_active_subscription(self, user_email: str) -> Optional[Dict[str, Any]]:
+        """Obtener la suscripción activa de un usuario con detalles completos."""
+        try:
+            # Obtener la suscripción activa
+            subscription = self.subscriptions_collection.find_one(
+                {
+                    "user_email": user_email,
+                    "status": "active",
+                    "expires_at": {"$gt": datetime.utcnow()}  # No expirada
+                },
+                {"_id": 0}
+            )
+            
+            if not subscription:
+                return None
+                
+            # Si encontramos una suscripción, agregar información adicional
+            # Obtener el plan actual para obtener el límite correcto
+            plan = await self.get_plan_by_code(subscription.get("plan_code"))
+            
+            # Obtener uso actual de IA del usuario
+            user = self.users_collection.find_one(
+                {"email": user_email},
+                {"ai_invoices_used": 1}
+            )
+            
+            # Usar límite del plan, no del usuario
+            if plan and plan.get("features"):
+                subscription["monthly_ai_limit"] = plan["features"].get("ai_invoices_limit", 50)
+            else:
+                subscription["monthly_ai_limit"] = 50
+                
+            # Uso actual del usuario
+            if user:
+                subscription["current_ai_usage"] = user.get("ai_invoices_used", 0)
+            else:
+                subscription["current_ai_usage"] = 0
+            
+            # Agregar información del plan si es necesario
+            subscription["plan_id"] = subscription.get("plan_code", "unknown")
+            subscription["plan_name"] = subscription.get("plan_name", "Plan Desconocido")
+            subscription["user_id"] = user_email  # Usar email como user_id
+            subscription["start_date"] = subscription.get("started_at", subscription.get("created_at"))
+            subscription["end_date"] = subscription.get("expires_at")
+            
+            return subscription
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo suscripción activa de {user_email}: {e}")
             return None
     
     async def create_subscription(self, subscription_data: Dict[str, Any]) -> bool:
