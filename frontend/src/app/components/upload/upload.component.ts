@@ -5,6 +5,7 @@ import { ApiService } from '../../services/api.service';
 import { UserService } from '../../services/user.service';
 import { ProcessResult, TaskSubmitResponse, TaskStatusResponse } from '../../models/invoice.model';
 import { Subscription, interval } from 'rxjs';
+import { NotificationService } from '../../services/notification.service';
 
 @Component({
   selector: 'app-upload',
@@ -25,7 +26,8 @@ export class UploadComponent implements OnInit {
     private fb: FormBuilder,
     private apiService: ApiService,
     private userService: UserService,
-    private router: Router
+    private router: Router,
+    private notificationService: NotificationService
   ) {
     this.uploadForm = this.fb.group({
       sender: ['', [Validators.maxLength(100)]],
@@ -76,7 +78,18 @@ export class UploadComponent implements OnInit {
         this.pollingSub = interval(2000).subscribe(() => this.pollJob());
       },
       error: (err) => {
-        this.error = 'Error al encolar el archivo: ' + (err.error?.message || err.message || 'Error desconocido');
+        if (err?.status === 403) {
+          this.error = 'No se pudo encolar el archivo: tu cuenta está suspendida. Contacta al administrador.';
+          this.notificationService.error('Tu cuenta está suspendida. Contacta al administrador.', 'Cuenta suspendida');
+        } else if (err?.status === 402) {
+          const detail = err.error?.detail || err.error?.message || err.message || 'Pago requerido o límite alcanzado';
+          this.error = 'No se pudo encolar el archivo: ' + detail;
+          this.notificationService.warning(detail, 'Límite alcanzado');
+        } else {
+          const detail = err.error?.detail || err.error?.message || err.message || 'Error desconocido';
+          this.error = 'Error al encolar el archivo: ' + detail;
+          this.notificationService.error('No se pudo encolar el archivo', 'Error');
+        }
         this.loading = false;
         console.error(err);
       }

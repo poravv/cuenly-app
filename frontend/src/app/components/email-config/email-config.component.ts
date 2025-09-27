@@ -143,7 +143,7 @@ export class EmailConfigComponent implements OnInit {
       error: () => {
         // revert UI toggle on error
         this.emailConfigs[index].enabled = !enabled;
-        alert('No se pudo actualizar el estado de la cuenta');
+        this.notificationService.error('No se pudo actualizar el estado de la cuenta', 'Error');
       }
     });
   }
@@ -151,7 +151,7 @@ export class EmailConfigComponent implements OnInit {
   addEmailConfig(): void {
     // Validación básica
     if (!this.newConfig.host || !this.newConfig.username || !this.newConfig.password) {
-      alert('Por favor completa todos los campos obligatorios');
+      this.notificationService.warning('Por favor completa todos los campos obligatorios', 'Validación');
       return;
     }
 
@@ -164,31 +164,45 @@ export class EmailConfigComponent implements OnInit {
         this.newConfig = this.createEmptyConfig();
         this.showAddForm = false;
         this.loadConfigs();
-        alert('Configuración de correo agregada exitosamente');
+        this.notificationService.success('Configuración de correo agregada exitosamente', 'Cuenta agregada');
       },
       error: () => {
-        alert('No se pudo guardar la configuración');
+        this.notificationService.error('No se pudo guardar la configuración', 'Error al guardar');
       }
     });
   }
 
   removeConfig(index: number): void {
-    if (!confirm('¿Estás seguro de que quieres eliminar esta configuración?')) return;
     const cfg = this.emailConfigs[index];
-    if (!cfg || !cfg.id) {
-      this.emailConfigs.splice(index, 1);
-      return;
-    }
-    this.apiService.deleteEmailConfig(cfg.id).subscribe({
-      next: () => {
-        this.emailConfigs.splice(index, 1);
-        delete this.testResults[index];
-        delete this.testing[index];
-      },
-      error: () => {
-        alert('No se pudo eliminar la configuración');
+    const cfgName = cfg?.username || cfg?.host || 'esta configuración';
+    this.notificationService.warning(
+      `¿Estás seguro de eliminar ${cfgName}?`,
+      'Confirmar eliminación',
+      {
+        persistent: true,
+        action: {
+          label: 'Eliminar',
+          handler: () => {
+            // Si no hay id, es una fila nueva sin guardar
+            if (!cfg || !cfg.id) {
+              this.emailConfigs.splice(index, 1);
+              return;
+            }
+            this.apiService.deleteEmailConfig(cfg.id).subscribe({
+              next: () => {
+                this.emailConfigs.splice(index, 1);
+                delete this.testResults[index];
+                delete this.testing[index];
+                this.notificationService.success('Configuración eliminada correctamente', 'Eliminada');
+              },
+              error: () => {
+                this.notificationService.error('No se pudo eliminar la configuración', 'Error al eliminar');
+              }
+            });
+          }
+        }
       }
-    });
+    );
   }
 
   cancelAdd(): void {

@@ -67,6 +67,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   selectedPlanId = '';
   changeReason = '';
   cancelling = false;
+  confirmChangeAcknowledged = false;
   
   // Estado de envío
   submittingPlanChange = false;
@@ -176,6 +177,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     
     this.selectedPlanId = planId;
     this.changeReason = '';
+    this.confirmChangeAcknowledged = false;
     this.showPlanChangeModal = true;
   }
 
@@ -183,11 +185,16 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     this.showPlanChangeModal = false;
     this.selectedPlanId = '';
     this.changeReason = '';
+    this.confirmChangeAcknowledged = false;
   }
 
   submitPlanChange(): void {
     if (!this.selectedPlanId) {
       this.notificationService.error('Selecciona un plan válido');
+      return;
+    }
+    if (!this.confirmChangeAcknowledged) {
+      this.notificationService.warning('Debes confirmar que entiendes las implicaciones del cambio de plan');
       return;
     }
 
@@ -209,6 +216,10 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.submittingPlanChange = false;
         }
       });
+  }
+
+  get selectedPlan(): SubscriptionPlan | undefined {
+    return this.availablePlans.find(p => p._id === this.selectedPlanId);
   }
 
   getStatusBadgeClass(status: string): string {

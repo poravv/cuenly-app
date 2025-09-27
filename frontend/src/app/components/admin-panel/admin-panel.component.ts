@@ -191,8 +191,9 @@ export class AdminPanelComponent implements OnInit {
     const action = newStatus === 'suspended' ? 'suspender' : 'activar';
     const statusText = newStatus === 'suspended' ? 'suspendido' : 'activo';
     
+    const extraNote = newStatus === 'suspended' ? ' Esto cancelará cualquier suscripción activa.' : '';
     this.notificationService.warning(
-      `¿Estás seguro de ${action} a ${user.email}?`,
+      `¿Estás seguro de ${action} a ${user.email}?${extraNote}`,
       'Confirmar cambio de estado',
       {
         persistent: true,
