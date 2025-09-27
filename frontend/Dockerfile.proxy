@@ -44,7 +44,39 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo '    index index.html;' >> /docker-entrypoint.sh && \
     echo '    client_max_body_size 100M;' >> /docker-entrypoint.sh && \
     echo '' >> /docker-entrypoint.sh && \
-    echo '    # API proxy - endpoints directos (sin /api prefix)' >> /docker-entrypoint.sh && \
+    echo '    # API proxy - process-direct (timeouts largos para procesamiento)' >> /docker-entrypoint.sh && \
+    echo '    location /process-direct {' >> /docker-entrypoint.sh && \
+    echo '        proxy_pass http://BACKEND_URL_PLACEHOLDER;' >> /docker-entrypoint.sh && \
+    echo '        proxy_http_version 1.1;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Upgrade $http_upgrade;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Connection "upgrade";' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Host $host;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Real-IP $remote_addr;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Forwarded-Proto $scheme;' >> /docker-entrypoint.sh && \
+    echo '        proxy_cache_bypass $http_upgrade;' >> /docker-entrypoint.sh && \
+    echo '        proxy_connect_timeout 600s;' >> /docker-entrypoint.sh && \
+    echo '        proxy_send_timeout 600s;' >> /docker-entrypoint.sh && \
+    echo '        proxy_read_timeout 600s;' >> /docker-entrypoint.sh && \
+    echo '    }' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '    # API proxy - admin específico (prioridad alta)' >> /docker-entrypoint.sh && \
+    echo '    location /admin {' >> /docker-entrypoint.sh && \
+    echo '        proxy_pass http://BACKEND_URL_PLACEHOLDER;' >> /docker-entrypoint.sh && \
+    echo '        proxy_http_version 1.1;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Upgrade $http_upgrade;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Connection "upgrade";' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header Host $host;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Real-IP $remote_addr;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' >> /docker-entrypoint.sh && \
+    echo '        proxy_set_header X-Forwarded-Proto $scheme;' >> /docker-entrypoint.sh && \
+    echo '        proxy_cache_bypass $http_upgrade;' >> /docker-entrypoint.sh && \
+    echo '        proxy_connect_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '        proxy_send_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '        proxy_read_timeout 60s;' >> /docker-entrypoint.sh && \
+    echo '    }' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo '    # API proxy - otros endpoints (timeouts normales)' >> /docker-entrypoint.sh && \
     echo '    location ~ ^/(user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|export-templates|export|invoices|health|cache|imap|docs|openapi.json) {' >> /docker-entrypoint.sh && \
     echo '        proxy_pass http://BACKEND_URL_PLACEHOLDER;' >> /docker-entrypoint.sh && \
     echo '        proxy_http_version 1.1;' >> /docker-entrypoint.sh && \

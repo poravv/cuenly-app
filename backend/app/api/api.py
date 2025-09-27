@@ -20,13 +20,13 @@ from app.config.settings import settings
 from app.utils.firebase_auth import verify_firebase_token, extract_bearer_token
 from app.utils.trial_middleware import check_trial_limits_optional, check_trial_limits, check_ai_limits
 from app.repositories.user_repository import UserRepository
+from app.repositories.subscription_repository import SubscriptionRepository
 from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura
 from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
 from app.modules.email_processor.storage import save_binary
 from app.modules.prefs.prefs import get_auto_refresh as prefs_get_auto_refresh, set_auto_refresh as prefs_set_auto_refresh
-from app.modules.mongo_exporter import MongoDBExporter
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.modules.mapping.invoice_mapping import map_invoice
 from app.modules.mongo_query_service import get_mongo_query_service
@@ -69,6 +69,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Startup event para inicializar servicios
+@app.on_event("startup")
+async def startup_event():
+    """Inicializa servicios cuando arranca el servidor FastAPI"""
+    try:
+        from app.modules.scheduler import ScheduledTasks
+        scheduler_tasks = ScheduledTasks()
+        scheduler_tasks.start_background_scheduler()
+        logger.info("✅ Scheduler de límites IA iniciado correctamente")
+    except Exception as e:
+        logger.error(f"❌ Error iniciando scheduler de límites IA: {e}")
 
 # Instancia global del procesador
 invoice_sync = CuenlyApp()
@@ -149,6 +161,19 @@ def _get_current_user_with_ai_check(request: Request) -> Dict[str, Any]:
     claims['trial_info'] = trial_info
     return claims
 
+def _get_current_admin(request: Request) -> Dict[str, Any]:
+    """Valida token Firebase y verifica que sea admin. Lanza excepción si no es admin."""
+    claims = _get_current_user(request)
+    if not claims:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    # Verificar si es administrador
+    user_repo = UserRepository()
+    if not user_repo.is_admin(claims.get('email', '')):
+        raise HTTPException(status_code=403, detail="Acceso denegado. Se requieren permisos de administrador.")
+    
+    return claims
+
 # Tarea en segundo plano para procesar correos
 def process_emails_task():
     """Tarea en segundo plano para procesar correos."""
@@ -187,11 +212,17 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     except Exception as e:
         logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
     
+    # Verificar si es admin
+    is_admin = db_user.get('role') == 'admin' if db_user else False
+    
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
         "email": db_user.get('email') if db_user else user.get('email'),
         "name": db_user.get('name') if db_user else user.get('name'),
         "picture": db_user.get('picture') if db_user else user.get('picture'),
+        "role": db_user.get('role', 'user') if db_user else 'user',
+        "is_admin": is_admin,
+        "status": db_user.get('status', 'active') if db_user else 'active',
         "is_trial": trial_info.get('is_trial_user', True),
         "trial_expires_at": trial_info.get('trial_expires_at'),
         "trial_expired": trial_info.get('trial_expired', True),
@@ -277,7 +308,7 @@ async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_
         }
 
 @app.post("/process", response_model=ProcessResult)
-async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # Procesamiento mixto - verificar IA internamente
+async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """
     Procesa correos electrónicos para extraer facturas.
     
@@ -324,10 +355,19 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
         )
 
 @app.post("/process-direct")
-async def process_emails_direct(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Procesa correos directamente sin cola de tareas (modo simple)."""
+async def process_emails_direct(
+    limit: Optional[int] = 10,
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
+):
+    """Procesa correos directamente con límite (máximo 10 para procesamiento manual)."""
     try:
-        # Ejecutar procesamiento directamente
+        # Validar límite
+        if limit is None or limit <= 0:
+            limit = 10
+        if limit > 50:  # Límite máximo de seguridad
+            limit = 50
+            
+        # Ejecutar procesamiento limitado
         from app.modules.email_processor.config_store import get_enabled_configs
         from app.modules.email_processor.email_processor import MultiEmailProcessor
         owner_email = (user.get('email') or '').lower()
@@ -343,13 +383,14 @@ async def process_emails_direct(user: Dict[str, Any] = Depends(_get_current_user
             email_configs.append(MultiEmailConfig(**config_data))
             
         mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
-        result = mp.process_all_emails()
+        result = mp.process_limited_emails(limit=limit)
         
         if result and hasattr(result, 'success') and result.success:
             return {
                 "success": True,
                 "message": result.message,
-                "invoice_count": getattr(result, 'invoice_count', 0)
+                "invoice_count": getattr(result, 'invoice_count', 0),
+                "limit_used": limit
             }
         else:
             return {
@@ -359,10 +400,11 @@ async def process_emails_direct(user: Dict[str, Any] = Depends(_get_current_user
             }
             
     except Exception as e:
+        logger.error(f"Error en process-direct: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/tasks/process")
-async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
+async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """Encola una ejecución de procesamiento de correos y retorna un job_id."""
     
     # Verificar si el job automático está ejecutándose
@@ -553,7 +595,7 @@ async def upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # XMLs usan parser nativo
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """
     Sube un archivo XML SIFEN para procesarlo directamente con el parser nativo (fallback OpenAI).
     """
@@ -676,7 +718,7 @@ async def enqueue_upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):  # XMLs usan parser nativo
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """Encola el procesamiento de un XML manual y retorna job_id."""
     if not file.filename.lower().endswith('.xml'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
@@ -723,17 +765,7 @@ async def enqueue_upload_xml(
         logger.error(f"Error al encolar XML: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/excel")
-async def get_excel(user: Dict[str, Any] = Depends(_get_current_user)):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.get("/excel/list")
-async def list_excel_files(user: Dict[str, Any] = Depends(_get_current_user)):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.get("/excel/{year_month}")
-async def get_excel_by_month(year_month: str, user: Dict[str, Any] = Depends(_get_current_user)):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
+    # Endpoints legacy de Excel eliminados
 
 @app.post("/email-config/test")
 async def test_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Depends(_get_current_user)):
@@ -1503,9 +1535,7 @@ async def imap_pool_stats():
         logger.error(f"Error obteniendo estadísticas del pool IMAP: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas del pool: {str(e)}")
 
-@app.get("/excel/stats")
-async def excel_stats():
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
+    # Endpoint legacy /excel/stats eliminado
 
 @app.get("/health/detailed")
 async def detailed_health():
@@ -1655,10 +1685,828 @@ async def get_system_health():
             "error": str(e)
         }
 
+# -----------------------------
+# Admin Endpoints
+# -----------------------------
+
+class UpdateUserRoleRequest(BaseModel):
+    role: str  # 'admin' o 'user'
+
+class UpdateUserStatusRequest(BaseModel):
+    status: str  # 'active' o 'suspended'
+
+@app.get("/admin/users")
+async def admin_get_users(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Obtiene lista de usuarios (solo para admins)"""
+    try:
+        user_repo = UserRepository()
+        result = user_repo.get_all_users(page, page_size)
+        
+        # Convertir ObjectId y datetime a string para serialización
+        for user in result['users']:
+            if '_id' in user:
+                user['id'] = str(user['_id'])
+                del user['_id']
+            for field in ['created_at', 'last_login', 'trial_expires_at', 'email_processing_start_date']:
+                if field in user and user[field]:
+                    user[field] = user[field].isoformat() if hasattr(user[field], 'isoformat') else str(user[field])
+        
+        return {
+            "success": True,
+            **result
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo usuarios: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo usuarios")
+
+@app.put("/admin/users/{user_email}/role")
+async def admin_update_user_role(
+    user_email: str,
+    request: UpdateUserRoleRequest,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Actualiza el rol de un usuario (solo para admins)"""
+    try:
+        user_repo = UserRepository()
+        
+        # Verificar que el usuario existe
+        target_user = user_repo.get_by_email(user_email)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        # No permitir cambiar el rol del admin principal
+        if user_email.lower() == 'andyvercha@gmail.com' and request.role != 'admin':
+            raise HTTPException(status_code=400, detail="No se puede cambiar el rol del administrador principal")
+        
+        success = user_repo.update_user_role(user_email, request.role)
+        if not success:
+            raise HTTPException(status_code=400, detail="Rol inválido o usuario no encontrado")
+        
+        return {
+            "success": True,
+            "message": f"Rol actualizado a '{request.role}' para {user_email}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error actualizando rol: {e}")
+        raise HTTPException(status_code=500, detail="Error actualizando rol")
+
+@app.put("/admin/users/{user_email}/status")
+async def admin_update_user_status(
+    user_email: str,
+    request: UpdateUserStatusRequest,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Actualiza el estado de un usuario (solo para admins)"""
+    try:
+        user_repo = UserRepository()
+        
+        # Verificar que el usuario existe
+        target_user = user_repo.get_by_email(user_email)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        # No permitir suspender al admin principal
+        if user_email.lower() == 'andyvercha@gmail.com' and request.status == 'suspended':
+            raise HTTPException(status_code=400, detail="No se puede suspender al administrador principal")
+        
+        success = user_repo.update_user_status(user_email, request.status)
+        if not success:
+            raise HTTPException(status_code=400, detail="Estado inválido o usuario no encontrado")
+        
+        return {
+            "success": True,
+            "message": f"Estado actualizado a '{request.status}' para {user_email}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error actualizando estado: {e}")
+        raise HTTPException(status_code=500, detail="Error actualizando estado")
+
+@app.get("/admin/stats")
+async def admin_get_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene estadísticas del sistema (solo para admins)"""
+    try:
+        user_repo = UserRepository()
+        repo = MongoInvoiceRepository()
+        
+        # Estadísticas de usuarios
+        user_stats = user_repo.get_user_stats()
+        
+        # Estadísticas de facturas
+        headers_coll = repo._headers()
+        items_coll = repo._items()
+        
+        # Total de facturas
+        total_invoices = headers_coll.count_documents({})
+        
+        # Facturas por mes (últimos 6 meses)
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        six_months_ago = now - timedelta(days=180)
+        
+        monthly_pipeline = [
+            {"$match": {"fecha_emision": {"$gte": six_months_ago}}},
+            {
+                "$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$fecha_emision"}},
+                    "count": {"$sum": 1},
+                    "total_amount": {"$sum": "$monto_total"}
+                }
+            },
+            {"$sort": {"_id": 1}}
+        ]
+        
+        monthly_stats = list(headers_coll.aggregate(monthly_pipeline))
+        
+        # Facturas por usuario (top 10)
+        user_pipeline = [
+            {"$match": {"owner_email": {"$exists": True, "$ne": None}}},
+            {
+                "$group": {
+                    "_id": "$owner_email",
+                    "count": {"$sum": 1},
+                    "total_amount": {"$sum": "$monto_total"}
+                }
+            },
+            {"$sort": {"count": -1}},
+            {"$limit": 10}
+        ]
+        
+        user_invoices_stats = list(headers_coll.aggregate(user_pipeline))
+        
+        # Estadísticas por fecha (últimos 30 días)
+        thirty_days_ago = now - timedelta(days=30)
+        daily_pipeline = [
+            {"$match": {"fecha_emision": {"$gte": thirty_days_ago}}},
+            {
+                "$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$fecha_emision"}},
+                    "count": {"$sum": 1}
+                }
+            },
+            {"$sort": {"_id": 1}}
+        ]
+        
+        daily_stats = list(headers_coll.aggregate(daily_pipeline))
+        
+        return {
+            "success": True,
+            "user_stats": user_stats,
+            "invoice_stats": {
+                "total_invoices": total_invoices,
+                "total_items": items_coll.count_documents({}),
+                "monthly_invoices": monthly_stats,
+                "daily_invoices": daily_stats,
+                "user_invoices": user_invoices_stats
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
+
+@app.get("/admin/check")
+async def admin_check(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Verifica si el usuario actual es admin"""
+    try:
+        user_repo = UserRepository()
+        is_admin = user_repo.is_admin(user.get('email', ''))
+        
+        return {
+            "success": True,
+            "is_admin": is_admin,
+            "email": user.get('email'),
+            "message": "Acceso de administrador verificado" if is_admin else "Usuario sin permisos de administrador"
+        }
+    except Exception as e:
+        logger.error(f"Error verificando admin: {e}")
+        raise HTTPException(status_code=500, detail="Error verificando permisos")
+
+# =====================================
+# ENDPOINTS DE PLANES Y SUSCRIPCIONES
+# =====================================
+
+# Modelos para planes
+class PlanCreateRequest(BaseModel):
+    name: str
+    code: str
+    description: str
+    price: float
+    currency: str = "USD"
+    billing_period: str  # monthly, yearly, one_time
+    features: Dict[str, Any]
+    status: str = "active"
+    is_popular: bool = False
+    sort_order: int = 0
+
+class PlanUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    currency: Optional[str] = None
+    billing_period: Optional[str] = None
+    features: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    is_popular: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+class SubscriptionCreateRequest(BaseModel):
+    user_email: str
+    plan_code: str
+    payment_method: str = "manual"
+    payment_reference: Optional[str] = None
+
+# API pública para planes (sin autenticación)
+@app.get("/api/plans", tags=["Plans - Public"])
+async def get_public_plans():
+    """Obtiene todos los planes activos - API pública para integración externa"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        plans = await repo.get_all_plans(include_inactive=False)
+        
+        return {
+            "success": True,
+            "data": plans,
+            "count": len(plans)
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo planes públicos: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo planes")
+
+@app.get("/api/plans/{plan_code}", tags=["Plans - Public"])
+async def get_public_plan(plan_code: str):
+    """Obtiene un plan específico - API pública"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        plan = await repo.get_plan_by_code(plan_code)
+        
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        return {
+            "success": True,
+            "data": plan
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo plan {plan_code}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo plan")
+
+# Endpoints de suscripción para usuario autenticado
+@app.get("/user/subscription", tags=["User - Subscription"])
+async def get_user_subscription(current_user: dict = Depends(_get_current_user)):
+    """Obtiene la suscripción actual del usuario autenticado"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        subscription = await repo.get_user_active_subscription(current_user["email"])
+        
+        if not subscription:
+            return {
+                "success": True,
+                "data": None,
+                "message": "Usuario sin suscripción activa"
+            }
+        
+        return {
+            "success": True,
+            "data": subscription
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo suscripción de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo suscripción")
+
+@app.get("/user/subscription/history", tags=["User - Subscription"])
+async def get_user_subscription_history(current_user: dict = Depends(_get_current_user)):
+    """Obtiene el historial de suscripciones del usuario"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        history = await repo.get_user_subscriptions_history(current_user["email"])
+        
+        return {
+            "success": True,
+            "data": history,
+            "count": len(history)
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo historial de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo historial")
+
+@app.post("/user/subscription/change-plan", tags=["User - Subscription"])
+async def request_plan_change(
+    request: dict,
+    current_user: dict = Depends(_get_current_user)
+):
+    """Solicita cambio de plan para el usuario"""
+    try:
+        new_plan_id = request.get("plan_id")
+        if not new_plan_id:
+            raise HTTPException(status_code=400, detail="plan_id es requerido")
+        
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        # Verificar que el plan existe (buscar por código)
+        plan = await repo.get_plan_by_code(new_plan_id)
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        # Verificar si el usuario ya tiene este plan
+        current_subscription = await repo.get_user_active_subscription(current_user["email"])
+        if current_subscription and current_subscription.get("plan_code") == new_plan_id:
+            raise HTTPException(status_code=400, detail="Ya tienes este plan activo")
+        
+        # Ejecutar el cambio de plan
+        success = await repo.assign_plan_to_user(
+            user_email=current_user["email"],
+            plan_code=new_plan_id,
+            payment_method="user_request"  # Indicar que fue solicitud del usuario
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Error al cambiar el plan")
+        
+        logger.info(f"✅ Plan cambiado exitosamente: {current_user['email']} -> {plan['name']}")
+        
+        return {
+            "success": True,
+            "message": f"Plan cambiado exitosamente al {plan['name']}. Los cambios son efectivos inmediatamente.",
+            "data": {
+                "new_plan": plan,
+                "user_email": current_user["email"],
+                "change_date": datetime.now().isoformat()
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error procesando cambio de plan para {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error procesando solicitud")
+
+@app.post("/user/subscription/cancel", tags=["User - Subscription"])
+async def cancel_user_subscription(current_user: dict = Depends(_get_current_user)):
+    """Cancela la suscripción activa del usuario autenticado."""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+
+        # Verificar si el usuario tiene una suscripción activa
+        active = await repo.get_user_active_subscription(current_user["email"])
+        if not active:
+            return {
+                "success": True,
+                "message": "No tienes una suscripción activa para cancelar"
+            }
+
+        # Cancelar suscripciones activas (idempotente)
+        ok = await repo.cancel_user_subscriptions(current_user["email"])
+        if not ok:
+            raise HTTPException(status_code=500, detail="No se pudo cancelar la suscripción")
+
+        logger.info(f"✅ Suscripción cancelada para {current_user['email']}")
+        return {
+            "success": True,
+            "message": "Tu suscripción ha sido cancelada correctamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelando suscripción de {current_user['email']}: {e}")
+        raise HTTPException(status_code=500, detail="Error cancelando suscripción")
+
+# Endpoints administrativos para planes (requieren auth admin)
+@app.get("/admin/plans", tags=["Admin - Plans"])
+async def admin_get_plans(
+    include_inactive: bool = Query(False),
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Obtiene todos los planes (incluye inactivos si se especifica)"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        plans = await repo.get_all_plans(include_inactive=include_inactive)
+        
+        return {
+            "success": True,
+            "data": plans,
+            "count": len(plans)
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo planes admin: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo planes")
+
+@app.post("/admin/plans", tags=["Admin - Plans"])
+async def admin_create_plan(
+    plan: PlanCreateRequest,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Crea un nuevo plan de suscripción"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        # Verificar que el código no exista
+        existing_plan = await repo.get_plan_by_code(plan.code)
+        if existing_plan:
+            raise HTTPException(status_code=400, detail="Ya existe un plan con ese código")
+        
+        success = await repo.create_plan(plan.dict())
+        if not success:
+            raise HTTPException(status_code=500, detail="Error creando plan")
+        
+        return {
+            "success": True,
+            "message": f"Plan '{plan.name}' creado exitosamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creando plan: {e}")
+        raise HTTPException(status_code=500, detail="Error creando plan")
+
+@app.put("/admin/plans/{plan_code}", tags=["Admin - Plans"])
+async def admin_update_plan(
+    plan_code: str,
+    plan: PlanUpdateRequest,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Actualiza un plan existente"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        # Verificar que el plan existe
+        existing_plan = await repo.get_plan_by_code(plan_code)
+        if not existing_plan:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        # Actualizar solo los campos que se enviaron
+        update_data = {k: v for k, v in plan.dict().items() if v is not None}
+        
+        success = await repo.update_plan(plan_code, update_data)
+        if not success:
+            raise HTTPException(status_code=500, detail="Error actualizando plan")
+        
+        return {
+            "success": True,
+            "message": f"Plan '{plan_code}' actualizado exitosamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error actualizando plan: {e}")
+        raise HTTPException(status_code=500, detail="Error actualizando plan")
+
+@app.delete("/admin/plans/{plan_code}", tags=["Admin - Plans"])
+async def admin_delete_plan(
+    plan_code: str,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Elimina un plan (soft delete)"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        success = await repo.delete_plan(plan_code)
+        if not success:
+            raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        return {
+            "success": True,
+            "message": f"Plan '{plan_code}' eliminado exitosamente"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error eliminando plan: {e}")
+        raise HTTPException(status_code=500, detail="Error eliminando plan")
+
+# Endpoints de suscripciones
+@app.get("/admin/subscriptions/stats", tags=["Admin - Subscriptions"])
+async def admin_get_subscription_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene estadísticas de suscripciones"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        stats = await repo.get_subscription_stats()
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas de suscripciones: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
+
+@app.post("/admin/subscriptions", tags=["Admin - Subscriptions"])
+async def admin_create_subscription(
+    subscription: SubscriptionCreateRequest,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Asigna un plan a un usuario"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        success = await repo.assign_plan_to_user(
+            subscription.user_email,
+            subscription.plan_code,
+            subscription.payment_method
+        )
+        
+        if not success:
+            raise HTTPException(status_code=400, detail="Error asignando plan al usuario")
+        
+        return {
+            "success": True,
+            "message": f"Plan '{subscription.plan_code}' asignado a {subscription.user_email}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error asignando plan: {e}")
+        raise HTTPException(status_code=500, detail="Error asignando plan")
+
+@app.get("/admin/subscriptions/user/{user_email}", tags=["Admin - Subscriptions"])
+async def admin_get_user_subscriptions(
+    user_email: str,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Obtiene el historial de suscripciones de un usuario"""
+    try:
+        from app.repositories.subscription_repository import SubscriptionRepository
+        repo = SubscriptionRepository()
+        
+        current_subscription = await repo.get_user_subscription(user_email)
+        history = await repo.get_user_subscriptions_history(user_email)
+        
+        return {
+            "success": True,
+            "data": {
+                "current_subscription": current_subscription,
+                "history": history
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo suscripciones de {user_email}: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo suscripciones")
+
+# Endpoint para estadísticas filtradas con fecha
+@app.get("/admin/stats/filtered", tags=["Admin - Stats"])
+async def admin_get_filtered_stats(
+    start_date: Optional[str] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Fecha fin (YYYY-MM-DD)"),
+    user_email: Optional[str] = Query(None, description="Email del usuario"),
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Obtiene estadísticas filtradas por fecha y usuario"""
+    try:
+        user_repo = UserRepository()
+        repo = MongoInvoiceRepository()
+        headers_coll = repo._headers()
+        
+        # Construir filtro de fecha
+        date_filter = {}
+        if start_date:
+            from datetime import datetime
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            date_filter["$gte"] = start_dt
+        if end_date:
+            from datetime import datetime
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            # Agregar 1 día para incluir todo el día final
+            from datetime import timedelta
+            end_dt = end_dt + timedelta(days=1)
+            date_filter["$lt"] = end_dt
+        
+        # Construir query principal
+        main_query = {}
+        if date_filter:
+            main_query["fecha_emision"] = date_filter
+        if user_email:
+            main_query["owner_email"] = user_email
+        
+        # Estadísticas básicas
+        total_invoices = headers_coll.count_documents(main_query)
+        
+        # Aggregation para estadísticas detalladas
+        pipeline = [
+            {"$match": main_query},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_amount": {"$sum": "$monto_total"},
+                    "avg_amount": {"$avg": "$monto_total"},
+                    "min_amount": {"$min": "$monto_total"},
+                    "max_amount": {"$max": "$monto_total"}
+                }
+            }
+        ]
+        
+        amount_stats = list(headers_coll.aggregate(pipeline))
+        amount_data = amount_stats[0] if amount_stats else {
+            "total_amount": 0,
+            "avg_amount": 0,
+            "min_amount": 0,
+            "max_amount": 0
+        }
+        
+        # Estadísticas por día
+        daily_pipeline = [
+            {"$match": main_query},
+            {
+                "$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$fecha_emision"}},
+                    "count": {"$sum": 1},
+                    "total_amount": {"$sum": "$monto_total"}
+                }
+            },
+            {"$sort": {"_id": 1}}
+        ]
+        
+        daily_stats = list(headers_coll.aggregate(daily_pipeline))
+        
+        # Estadísticas por hora (si hay datos del mismo día)
+        hourly_stats = []
+        if not user_email and start_date == end_date:  # Solo si es el mismo día
+            hourly_pipeline = [
+                {"$match": main_query},
+                {
+                    "$group": {
+                        "_id": {"$hour": "$fecha_emision"},
+                        "count": {"$sum": 1}
+                    }
+                },
+                {"$sort": {"_id": 1}}
+            ]
+            hourly_stats = list(headers_coll.aggregate(hourly_pipeline))
+        
+        # Estadísticas por usuario (si no se filtró por usuario específico)
+        user_stats = []
+        if not user_email:
+            user_pipeline = [
+                {"$match": main_query},
+                {
+                    "$group": {
+                        "_id": "$owner_email",
+                        "count": {"$sum": 1},
+                        "total_amount": {"$sum": "$monto_total"}
+                    }
+                },
+                {"$sort": {"count": -1}},
+                {"$limit": 20}
+            ]
+            user_stats = list(headers_coll.aggregate(user_pipeline))
+        
+        return {
+            "success": True,
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "user_email": user_email
+            },
+            "stats": {
+                "total_invoices": total_invoices,
+                "total_amount": amount_data["total_amount"],
+                "avg_amount": amount_data["avg_amount"],
+                "min_amount": amount_data["min_amount"],
+                "max_amount": amount_data["max_amount"],
+                "daily_breakdown": daily_stats,
+                "hourly_breakdown": hourly_stats,
+                "user_breakdown": user_stats
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas filtradas: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
+
+# =====================================
+# ENDPOINTS DE RESETEO MENSUAL DE IA
+# =====================================
+
+@app.post("/admin/ai-limits/reset-monthly", tags=["Admin - AI Limits"])
+async def admin_reset_monthly_ai_limits(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Ejecuta el reseteo mensual de límites de IA para usuarios con planes activos"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        result = await reset_service.reset_monthly_limits()
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": result["message"],
+                "data": {
+                    "resetted_users": result["resetted_users"],
+                    "total_subscriptions": result.get("total_subscriptions", 0),
+                    "errors": result.get("errors", []),
+                    "execution_date": result.get("execution_date")
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": result["message"]
+            }
+            
+    except Exception as e:
+        logger.error(f"Error en reseteo mensual manual: {e}")
+        raise HTTPException(status_code=500, detail="Error ejecutando reseteo mensual")
+
+@app.post("/admin/ai-limits/reset-user/{user_email}", tags=["Admin - AI Limits"])
+async def admin_reset_user_ai_limits(
+    user_email: str,
+    admin: Dict[str, Any] = Depends(_get_current_admin)
+):
+    """Resetea manualmente los límites de IA de un usuario específico"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        result = await reset_service.reset_user_limits_manually(user_email)
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": result["message"],
+                "data": {
+                    "user_email": user_email,
+                    "new_limit": result.get("new_limit")
+                }
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["message"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en reset manual para {user_email}: {e}")
+        raise HTTPException(status_code=500, detail="Error reseteando límites del usuario")
+
+@app.get("/admin/ai-limits/reset-stats", tags=["Admin - AI Limits"])
+async def admin_get_reset_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene estadísticas sobre los resets de límites de IA"""
+    try:
+        from app.services.monthly_reset_service import MonthlyResetService
+        reset_service = MonthlyResetService()
+        
+        stats = await reset_service.get_reset_stats()
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas de reset: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
+
+@app.get("/admin/scheduler/status", tags=["Admin - Scheduler"])
+async def admin_get_scheduler_status(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Obtiene el estado del scheduler de tareas programadas"""
+    try:
+        from app.services.scheduler import get_scheduler_status
+        from app.services.monthly_reset_service import MonthlyResetService
+        
+        reset_service = MonthlyResetService()
+        scheduler_status = get_scheduler_status()
+        
+        return {
+            "success": True,
+            "data": {
+                "scheduler": scheduler_status,
+                "next_reset_date": reset_service.get_next_reset_date().isoformat(),
+                "should_run_today": reset_service.should_run_today()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo estado del scheduler: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo estado del scheduler")
+
 def start():
     """Inicia el servidor API."""
     # Guardar tiempo de inicio
     app.state.start_time = time.time()
+    
+    # Iniciar scheduler para tareas programadas
+    try:
+        from app.services.scheduler import start_background_scheduler
+        start_background_scheduler()
+        logger.info("🚀 Scheduler de tareas programadas iniciado")
+    except Exception as e:
+        logger.error(f"❌ Error iniciando scheduler: {e}")
     
     uvicorn.run(
         "app.api.api:app",
@@ -1693,143 +2541,41 @@ async def set_auto_refresh(payload: AutoRefreshPayload):
         logger.error(f"Error al guardar preferencia auto-refresh: {e}")
         raise HTTPException(status_code=500, detail="No se pudo guardar preferencia")
 
-# -----------------------------
-# Exportadores Avanzados 
-# -----------------------------
-
-@app.post("/export/excel-completo")
-async def export_excel_completo(background_tasks: BackgroundTasks, run_async: bool = False):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.post("/export/mongodb")
-async def export_to_mongodb(background_tasks: BackgroundTasks, run_async: bool = False):
-    """
-    Exporta TODAS las facturas a MongoDB en formato documental optimizado.
-    Ideal para análisis avanzado, reporting y consultas complejas.
-    """
-    try:
-        if run_async:
-            background_tasks.add_task(_export_mongodb_task)
-            return {
-                "success": True,
-                "message": "Exportación a MongoDB iniciada en segundo plano",
-                "export_type": "mongodb"
-            }
-        else:
-            return await _export_mongodb_task()
-    except Exception as e:
-        logger.error(f"Error en export MongoDB: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error en export MongoDB: {str(e)}")
-
-@app.get("/export/excel-completo/list")
-async def list_excel_completo_files():
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.get("/export/excel-completo/{year_month}")
-async def download_excel_completo(year_month: str):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
-
-@app.post("/export/excel-completo/{year_month}")
-async def export_excel_completo_month(year_month: str, background_tasks: BackgroundTasks, run_async: bool = False):
-    """
-    Exporta facturas de un mes específico desde MongoDB al formato Excel completo.
-    Args:
-        year_month: Mes en formato YYYY-MM (ej: 2025-01)
-        run_async: Si true, ejecuta en segundo plano
-    """
-    try:
-        # Validar formato de fecha
-        try:
-            datetime.strptime(year_month, "%Y-%m")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Formato de mes inválido. Use YYYY-MM")
-        
-        if run_async:
-            background_tasks.add_task(_export_completo_month_task, year_month)
-            return {
-                "success": True,
-                "message": f"Exportación completa del mes {year_month} iniciada en segundo plano",
-                "export_type": "excel_completo",
-                "year_month": year_month
-            }
-        else:
-            return await _export_completo_month_task(year_month)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error en export completo por mes: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error en export completo: {str(e)}")
+# Endpoints legacy de exportación eliminados (Excel/Documental)
 
 @app.get("/export/mongodb/stats")
 async def mongodb_export_stats():
-    """
-    Obtiene estadísticas de la base de datos MongoDB.
-    """
+    """Estadísticas básicas de la base de facturas (v2)."""
     try:
-        exporter = MongoDBExporter()
-        try:
-            stats = exporter.get_statistics()
-            return {
-                "success": True,
-                "export_type": "mongodb",
-                "database_stats": stats
-            }
-        finally:
-            exporter.close_connections()
+        from app.modules.mongo_query_service import MongoQueryService
+        from app.config.export_config import get_mongodb_config
+        config = get_mongodb_config()
+        service = MongoQueryService(connection_string=config["connection_string"])  # fuerza v2 internamente
+        client = service._get_client()
+        db = client[config["database"]]
+        headers = db["invoice_headers"]
+        items = db["invoice_items"]
+        total_headers = headers.count_documents({})
+        total_items = items.count_documents({})
+        total_amount = list(headers.aggregate([
+            {"$group": {"_id": None, "sum": {"$sum": "$totales.total"}}}
+        ]))
+        return {
+            "success": True,
+            "collection": "invoice_headers",
+            "total_invoices": total_headers,
+            "total_items": total_items,
+            "total_amount": float(total_amount[0]["sum"]) if total_amount else 0.0
+        }
     except Exception as e:
-        logger.error(f"Error obteniendo stats MongoDB: {str(e)}")
+        logger.error(f"Error obteniendo stats MongoDB v2: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas: {str(e)}")
 
-@app.post("/export/process-and-export")
-async def process_and_export_all(
-    background_tasks: BackgroundTasks,
-    export_types: List[str] = Query(default=["mongodb"], description="Tipos de export soportados"),
-    run_async: bool = False
-):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
+    # Endpoint legacy process-and-export eliminado
 
 # Funciones auxiliares para tareas en segundo plano
 
-async def _export_completo_task():
-    return {"success": False, "message": "Exportación a Excel deshabilitada"}
-
-async def _export_mongodb_task():
-    """Tarea para exportar a MongoDB"""
-    try:
-        # Obtener facturas para exportar
-        invoices = getattr(invoice_sync, '_last_processed_invoices', [])
-        
-        if not invoices:
-            return {
-                "success": False,
-                "message": "No hay facturas disponibles para exportar a MongoDB. Procese emails primero.",
-                "export_type": "mongodb"
-            }
-        
-        exporter = MongoDBExporter()
-        try:
-            result = exporter.export_invoices(invoices)
-            
-            return {
-                "success": True,
-                "message": f"Exportación a MongoDB completada: {result['inserted']} insertados, {result['updated']} actualizados",
-                "export_type": "mongodb",
-                "mongo_result": result,
-                "invoice_count": len(invoices)
-            }
-        finally:
-            exporter.close_connections()
-            
-    except Exception as e:
-        logger.error(f"Error en export MongoDB task: {e}")
-        return {
-            "success": False,
-            "message": f"Error en exportación MongoDB: {str(e)}",
-            "export_type": "mongodb"
-        }
-
-async def _process_and_export_task(export_types: List[str]):
-    return {"success": False, "message": "Exportación deshabilitada"}
+    # Tareas legacy de exportación eliminadas
 
 async def _export_completo_month_task(year_month: str):
     return {"success": False, "message": "Exportación a Excel deshabilitada"}
@@ -1974,12 +2720,7 @@ async def get_recent_activity(days: int = Query(default=7, description="Días ha
         logger.error(f"Error obteniendo actividad reciente: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo actividad: {str(e)}")
 
-@app.get("/export/excel-from-mongodb/{year_month}")
-async def export_excel_from_mongodb(request: Request,
-                                   year_month: str, 
-                                   export_type: str = Query(default="completo", 
-                                                          description="Tipo de export: completo")):
-    raise HTTPException(status_code=410, detail="Exportación a Excel deshabilitada")
+    # Endpoint legacy /export/excel-from-mongodb eliminado
 
 def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
     """
@@ -2063,6 +2804,83 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
         # Agregar campos adicionales directamente del documento
         invoice.cdc = doc.get("cdc", "")
         invoice.timbrado = doc.get("timbrado", "")
+
+        # Normalizar y mapear campos críticos faltantes para exportación
+        # Moneda: mapear PYG/GS → GS, USD/DOLAR → USD, default GS
+        moneda_raw = (doc.get("moneda") or "GS")
+        try:
+            moneda_norm = str(moneda_raw).upper()
+        except Exception:
+            moneda_norm = "GS"
+        if moneda_norm in ["PYG", "GS", None, ""]:
+            invoice.moneda = "GS"
+        elif moneda_norm in ["USD", "DOLLAR", "DOLAR"]:
+            invoice.moneda = "USD"
+        else:
+            # Mantener el valor normalizado si viene otra moneda conocida
+            invoice.moneda = moneda_norm or "GS"
+
+        # Tipo de cambio (si existe en el documento)
+        try:
+            invoice.tipo_cambio = float(doc.get("tipo_cambio", 0.0) or 0.0)
+        except Exception:
+            pass
+
+        # Condición de venta y tipo de documento
+        condicion_raw = (doc.get("condicion_venta") or "CONTADO")
+        try:
+            condicion_norm = str(condicion_raw).upper()
+        except Exception:
+            condicion_norm = "CONTADO"
+        invoice.condicion_venta = condicion_norm
+        # CR si contiene CREDITO/CRÉDITO/CREDIT, caso contrario CO
+        invoice.tipo_documento = "CR" if any(word in condicion_norm for word in ["CREDITO", "CRÉDITO", "CREDIT"]) else "CO"
+
+        # Datos del emisor adicionales
+        try:
+            invoice.direccion_emisor = doc.get("direccion_emisor", "")
+        except Exception:
+            pass
+        try:
+            invoice.telefono_emisor = doc.get("telefono_emisor", "")
+        except Exception:
+            pass
+        try:
+            invoice.actividad_economica = doc.get("actividad_economica", "")
+        except Exception:
+            pass
+        try:
+            invoice.email_emisor = doc.get("email_emisor", "")
+        except Exception:
+            pass
+
+        # Datos del receptor adicionales
+        try:
+            invoice.direccion_cliente = doc.get("direccion_cliente", "")
+        except Exception:
+            pass
+        try:
+            invoice.telefono_cliente = doc.get("telefono_cliente", "")
+        except Exception:
+            pass
+
+        # Mes de proceso y fecha de creación
+        try:
+            if not getattr(invoice, 'mes_proceso', None):
+                invoice.mes_proceso = doc.get("mes_proceso", "")
+        except Exception:
+            pass
+        try:
+            invoice.created_at = doc.get("created_at")
+        except Exception:
+            pass
+
+        # Descripción de la factura (si viene precomputada)
+        try:
+            if doc.get("descripcion_factura"):
+                invoice.descripcion_factura = doc.get("descripcion_factura")
+        except Exception:
+            pass
         
         # También verificar en datos_tecnicos por compatibilidad
         if "datos_tecnicos" in doc:
@@ -2135,7 +2953,7 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
                     "email_emisor", "actividad_economica"
                 ],
                 "cliente": [
-                    "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente"
+                    "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente", "telefono_cliente"
                 ],
                 "montos": [
                     "gravado_5", "gravado_10", "iva_5", "iva_10", "total_iva",
@@ -2148,7 +2966,7 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
                     "productos.total", "productos.iva", "productos.base_gravada", "productos.monto_iva"
                 ],
                 "metadata": [
-                    "mes_proceso", "created_at", "descripcion_factura"
+                    "mes_proceso", "created_at"
                 ]
             }
         }

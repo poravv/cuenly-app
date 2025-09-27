@@ -8,11 +8,9 @@ import argparse
 from datetime import datetime
 
 from app.config.settings import settings
-from app.config.export_config import get_mongodb_config
 from app.models.models import InvoiceData, ProcessResult, EmailConfig, JobStatus
 from app.modules.email_processor.email_processor import MultiEmailProcessor, EmailProcessor
 from app.modules.openai_processor.openai_processor import OpenAIProcessor
-from app.modules.mongo_exporter import MongoDBExporter
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 
 # Configurar logging
@@ -54,14 +52,9 @@ class CuenlyApp:
         
         self.openai_processor = OpenAIProcessor()
         
-        # Inicializar MongoDB como almacenamiento primario
-        mongodb_config = get_mongodb_config()
-        if mongodb_config.get("as_primary", True):
-            self.mongodb_exporter = MongoDBExporter()
-            logger.info("✅ MongoDB configurado como almacenamiento primario")
-        else:
-            self.mongodb_exporter = None
-            logger.info("⚠️ MongoDB no configurado como primario")
+        # Persistencia unificada en esquema v2 (invoice_headers/items) mediante MongoInvoiceRepository
+        # El exportador documental legacy (facturas_completas) ha sido deshabilitado
+        self.mongodb_exporter = None
         
         # Guardar referencia a últimas facturas procesadas
         self._last_processed_invoices: List[InvoiceData] = []
@@ -130,30 +123,7 @@ class CuenlyApp:
                 if result_type == 'success':
                     result = result_data
                     
-                    # **NUEVO**: Exportar automáticamente a MongoDB si está configurado
-                    if result.success and result.invoices and self.mongodb_exporter:
-                        try:
-                            logger.info("💾 Exportando automáticamente a MongoDB...")
-                            mongo_result = self.mongodb_exporter.export_invoices(result.invoices)
-                            
-                            # Guardar referencia para otros exportadores
-                            self._last_processed_invoices = result.invoices
-                            
-                            # Actualizar mensaje del resultado
-                            if mongo_result and mongo_result.get('inserted', 0) + mongo_result.get('updated', 0) > 0:
-                                result.message += f" | MongoDB: {mongo_result['inserted']} insertados, {mongo_result['updated']} actualizados"
-                                logger.info("✅ Exportación a MongoDB completada: %s", mongo_result)
-                            else:
-                                logger.warning("⚠️ MongoDB export devolvió resultado vacío")
-                                
-                        except Exception as mongo_error:
-                            logger.error("❌ Error exportando a MongoDB: %s", mongo_error)
-                            # No fallar el proceso completo por error de MongoDB
-                            result.message += f" | ⚠️ MongoDB export falló: {str(mongo_error)}"
-                        finally:
-                            # Cerrar conexiones MongoDB
-                            if self.mongodb_exporter:
-                                self.mongodb_exporter.close_connections()
+                    # Persistencia se realiza directamente durante el procesamiento vía repositorio v2
                     
                 else:
                     result = ProcessResult(
@@ -191,22 +161,7 @@ class CuenlyApp:
         with PROCESSING_LOCK:
             invoice_data = self.openai_processor.extract_invoice_data(pdf_path, metadata)
             
-            # **NUEVO**: Exportar automáticamente a MongoDB si está configurado
-            if invoice_data and self.mongodb_exporter:
-                try:
-                    logger.info("💾 Exportando PDF procesado a MongoDB...")
-                    mongo_result = self.mongodb_exporter.export_invoices([invoice_data])
-                    
-                    # Guardar en referencia
-                    self._last_processed_invoices = [invoice_data]
-                    
-                    logger.info("✅ PDF exportado a MongoDB: %s", mongo_result)
-                except Exception as mongo_error:
-                    logger.error("❌ Error exportando PDF a MongoDB: %s", mongo_error)
-                finally:
-                    # Cerrar conexiones
-                    if self.mongodb_exporter:
-                        self.mongodb_exporter.close_connections()
+            # Persistencia se realiza directamente vía repositorio v2 durante el flujo de EmailProcessor
             
             return invoice_data
     
