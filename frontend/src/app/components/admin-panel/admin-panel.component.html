@@ -11,8 +11,6 @@
     <div class="spinner"></div>
     <p>Cargando datos del sistema...</p>
   </div>
-  
-  ---
 
   <div *ngIf="!loading" class="admin-content">
     
@@ -37,6 +35,13 @@
         (click)="setActiveTab('plans')">
         <i class="bi bi-credit-card"></i>
         Planes
+      </button>
+      <button 
+        class="tab-button" 
+        [class.active]="activeTab === 'ai-limits'"
+        (click)="setActiveTab('ai-limits')">
+        <i class="bi bi-robot"></i>
+        Límites IA
       </button>
     </div>
     
@@ -343,6 +348,144 @@
     
     <div *ngIf="activeTab === 'plans'" class="tab-content">
       <app-plans-management></app-plans-management>
+    </div>
+
+    <!-- AI Limits Tab -->
+    <div *ngIf="activeTab === 'ai-limits'" class="tab-content">
+      <div class="section-header">
+        <h3>Gestión de Límites de IA</h3>
+        <button class="btn btn-primary" (click)="loadAiLimitsData()">
+          <i class="bi bi-arrow-clockwise"></i>
+          Actualizar
+        </button>
+      </div>
+
+      <!-- Scheduler Status -->
+      <div class="ai-limits-section">
+        <h4>Estado del Reseteo Automático</h4>
+        
+        <div *ngIf="loadingSchedulerStatus" class="loading">
+          <div class="spinner-small"></div>
+          <span>Cargando estado del scheduler...</span>
+        </div>
+
+        <div *ngIf="!loadingSchedulerStatus && schedulerStatus" class="scheduler-info">
+          <div class="info-grid">
+            <div class="info-card">
+              <div class="info-icon scheduler">
+                <i class="bi bi-calendar-event"></i>
+              </div>
+              <div class="info-content">
+                <h5>Próximo Reseteo</h5>
+                <p>{{formatDate(schedulerStatus.next_reset_date)}}</p>
+              </div>
+            </div>
+            
+            <div class="info-card">
+              <div class="info-icon" [class.success]="schedulerStatus.scheduler.running" [class.danger]="!schedulerStatus.scheduler.running">
+                <i class="bi" [class.bi-play-circle]="schedulerStatus.scheduler.running" [class.bi-pause-circle]="!schedulerStatus.scheduler.running"></i>
+              </div>
+              <div class="info-content">
+                <h5>Scheduler</h5>
+                <p>{{schedulerStatus.scheduler.running ? 'Activo' : 'Inactivo'}}</p>
+              </div>
+            </div>
+            
+            <div class="info-card">
+              <div class="info-icon warning" *ngIf="schedulerStatus.should_run_today">
+                <i class="bi bi-exclamation-triangle"></i>
+              </div>
+              <div class="info-icon info" *ngIf="!schedulerStatus.should_run_today">
+                <i class="bi bi-info-circle"></i>
+              </div>
+              <div class="info-content">
+                <h5>Estado Hoy</h5>
+                <p>{{schedulerStatus.should_run_today ? 'Reseteo pendiente' : 'Sin reseteo hoy'}}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reset Statistics -->
+      <div class="ai-limits-section">
+        <h4>Estadísticas de Reseteo</h4>
+        
+        <div *ngIf="loadingResetStats" class="loading">
+          <div class="spinner-small"></div>
+          <span>Cargando estadísticas...</span>
+        </div>
+
+        <div *ngIf="!loadingResetStats && resetStats" class="reset-stats">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon users">
+                <i class="bi bi-people"></i>
+              </div>
+              <div class="stat-content">
+                <h3>{{formatNumber(resetStats.active_subscriptions)}}</h3>
+                <p>Suscripciones Activas</p>
+              </div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon success">
+                <i class="bi bi-arrow-clockwise"></i>
+              </div>
+              <div class="stat-content">
+                <h3>{{formatNumber(resetStats.resetted_this_month)}}</h3>
+                <p>Reseteados Este Mes</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manual Actions -->
+      <div class="ai-limits-section">
+        <h4>Acciones Manuales</h4>
+        
+        <div class="manual-actions">
+          <div class="action-group">
+            <h5>Reseteo Mensual Manual</h5>
+            <p>Ejecuta el reseteo mensual de límites para todos los usuarios con planes activos</p>
+            <button 
+              class="btn btn-warning" 
+              (click)="executeMonthlyReset()"
+              [disabled]="loadingMonthlyReset">
+              <i class="bi bi-arrow-repeat"></i>
+              <span *ngIf="!loadingMonthlyReset">Ejecutar Reseteo Mensual</span>
+              <span *ngIf="loadingMonthlyReset">Ejecutando...</span>
+            </button>
+          </div>
+
+          <div class="action-group">
+            <h5>Reset Individual</h5>
+            <p>Resetea los límites de IA de un usuario específico</p>
+            
+            <div class="user-reset-form">
+              <div class="form-group">
+                <label>Usuario:</label>
+                <select [(ngModel)]="selectedUserForReset" class="form-control">
+                  <option value="">Seleccionar usuario...</option>
+                  <option *ngFor="let user of users" [value]="user.email">
+                    {{user.name || user.email}} ({{user.email}})
+                  </option>
+                </select>
+              </div>
+              
+              <button 
+                class="btn btn-info" 
+                (click)="resetUserLimits()"
+                [disabled]="!selectedUserForReset || loadingUserReset">
+                <i class="bi bi-person-refresh"></i>
+                <span *ngIf="!loadingUserReset">Resetear Usuario</span>
+                <span *ngIf="loadingUserReset">Reseteando...</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>

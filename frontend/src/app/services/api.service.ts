@@ -291,6 +291,27 @@ export class ApiService {
     return this.http.get<any>(`${this.apiUrl}/admin/subscriptions/user/${userEmail}`);
   }
 
+  // Suscripción del usuario actual
+  getUserSubscription(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/user/subscription`);
+  }
+
+  getUserSubscriptionHistory(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/user/subscription/history`);
+  }
+
+  requestPlanChange(planId: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/user/subscription/change-plan`, { plan_id: planId });
+  }
+
+  cancelUserSubscription(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/user/subscription/cancel`, {});
+  }
+
+  getSubscriptionPlans(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/api/plans`);
+  }
+
   // Estadísticas filtradas
   getFilteredStats(filters: {
     start_date?: string,
@@ -303,6 +324,35 @@ export class ApiService {
     if (filters.user_email) params.user_email = filters.user_email;
 
     return this.http.get<any>(`${this.apiUrl}/admin/stats/filtered`, { params });
+  }
+
+  // =====================================
+  // RESETEO DE LÍMITES DE IA
+  // =====================================
+
+  // Reseteo mensual automático
+  resetMonthlyAiLimits(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
+  }
+
+  // Reseteo manual de un usuario específico
+  resetUserAiLimits(userEmail: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-user/${userEmail}`, {});
+  }
+
+  // Estadísticas de reseteo
+  getResetStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/ai-limits/reset-stats`);
+  }
+
+  // Estado del scheduler
+  getSchedulerStatus(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/scheduler/status`);
+  }
+
+  // Ejecutar reseteo mensual manual
+  executeMonthlyReset(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
   }
 
   // Métodos genéricos HTTP para compatibilidad
