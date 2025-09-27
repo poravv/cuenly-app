@@ -6,7 +6,7 @@ from bson import ObjectId
 import logging
 
 from app.config.export_config import get_mongodb_config
-from app.models.export_template import ExportTemplate, ExportField
+from app.models.export_template import ExportTemplate, ExportField, AVAILABLE_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -118,9 +118,18 @@ class ExportTemplateRepository:
         }
         
         if 'fields' in template_dict:
+            # 1) Normalizar alignment
             for field in template_dict['fields']:
                 if 'alignment' in field and field['alignment'] in alignment_mapping:
                     field['alignment'] = alignment_mapping[field['alignment']]
+            # 2) Filtrar campos no soportados (por ejemplo: descripcion_factura eliminada)
+            allowed = set(AVAILABLE_FIELDS.keys())
+            filtered_fields = [f for f in template_dict['fields'] if f.get('field_key') in allowed]
+            # 3) Reordenar por 'order' si existe, preservando estabilidad; luego reasignar orden secuencial
+            sorted_fields = sorted(filtered_fields, key=lambda x: x.get('order', 10**9))
+            for i, f in enumerate(sorted_fields, start=1):
+                f['order'] = i
+            template_dict['fields'] = sorted_fields
         
         return template_dict
 

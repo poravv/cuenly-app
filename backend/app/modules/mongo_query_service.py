@@ -27,7 +27,8 @@ class MongoQueryService:
         config = get_mongodb_config()
         self.connection_string = connection_string or config["connection_string"]
         self.database_name = config["database"]
-        self.collection_name = config["collection_name"]
+        # Forzar colección v2 como única fuente de verdad
+        self.collection_name = "invoice_headers"
         
         self._client: Optional[MongoClient] = None
         logger.info("MongoQueryService inicializado: %s", self.database_name)
@@ -53,7 +54,7 @@ class MongoQueryService:
         return self._client
 
     def _is_v2(self) -> bool:
-        return str(self.collection_name).lower() in ("invoice_headers",)
+        return True
 
     def get_available_months(self, owner_email: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -381,21 +382,35 @@ class MongoQueryService:
             db = client[self.database_name]
             collection = db[self.collection_name]
             
-            # Construir filtros
-            filters = {}
+            # Construir filtros (v2)
+            filters: Dict[str, Any] = {}
             
-            # Filtro de texto libre
+            # Texto libre: usar OR en campos relevantes
             if query:
-                filters["$text"] = {"$search": query}
+                regex = {"$regex": query, "$options": "i"}
+                filters["$or"] = [
+                    {"numero_documento": regex},
+                    {"emisor.nombre": regex},
+                    {"receptor.nombre": regex},
+                ]
             
-            # Filtros de fecha
+            # Filtros de fecha (usar fecha_emision datetime)
             if start_date or end_date:
-                date_filter = {}
+                from datetime import datetime
+                date_filter: Dict[str, Any] = {}
                 if start_date:
-                    date_filter["$gte"] = start_date
+                    try:
+                        date_filter["$gte"] = datetime.fromisoformat(start_date)
+                    except Exception:
+                        pass
                 if end_date:
-                    date_filter["$lte"] = end_date
-                filters["factura.fecha"] = date_filter
+                    try:
+                        # incluir fin de día
+                        date_filter["$lte"] = datetime.fromisoformat(end_date)
+                    except Exception:
+                        pass
+                if date_filter:
+                    filters["fecha_emision"] = date_filter
             
             # Filtros de RUC
             if provider_ruc:
@@ -403,31 +418,34 @@ class MongoQueryService:
             if client_ruc:
                 filters["receptor.ruc"] = client_ruc
             
-            # Filtros de monto
+            # Filtros de monto (totales.total)
             if min_amount is not None or max_amount is not None:
-                amount_filter = {}
+                amount_filter: Dict[str, Any] = {}
                 if min_amount is not None:
-                    amount_filter["$gte"] = min_amount
+                    amount_filter["$gte"] = float(min_amount)
                 if max_amount is not None:
-                    amount_filter["$lte"] = max_amount
-                filters["montos.monto_total"] = amount_filter
+                    amount_filter["$lte"] = float(max_amount)
+                filters["totales.total"] = amount_filter
             
-            # Proyección optimizada
+            # Proyección optimizada (v2)
             projection = {
                 "_id": 1,
-                "factura_id": 1,
-                "factura": 1,
+                "numero_documento": 1,
+                "fecha_emision": 1,
+                "timbrado": 1,
+                "cdc": 1,
+                "moneda": 1,
+                "tipo_cambio": 1,
                 "emisor": 1,
                 "receptor": 1,
-                "montos": 1,
-                "metadata": 1,
-                "indices": 1
+                "totales": 1,
+                "owner_email": 1,
+                "created_at": 1,
             }
             
-            # Ejecutar consulta
             results = list(
                 collection.find(filters, projection)
-                .sort("factura.fecha", -1)
+                .sort("fecha_emision", -1)
                 .limit(limit)
             )
             
@@ -455,48 +473,28 @@ class MongoQueryService:
             
             # Fecha límite
             cutoff_date = datetime.now(timezone.utc) - relativedelta(days=days)
-            cutoff_str = cutoff_date.isoformat()
             
             pipeline = [
-                {
-                    "$match": {
-                        "metadata.fecha_procesado": {"$gte": cutoff_str}
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": {
-                            "$dateToString": {
-                                "format": "%Y-%m-%d",
-                                "date": {"$dateFromString": {"dateString": "$metadata.fecha_procesado"}}
-                            }
-                        },
-                        "count": {"$sum": 1},
-                        "total_amount": {"$sum": "$montos.monto_total"}
-                    }
-                },
-                {
-                    "$sort": {"_id": -1}
-                }
+                {"$match": {"created_at": {"$gte": cutoff_date}}},
+                {"$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
+                    "count": {"$sum": 1},
+                    "total_amount": {"$sum": "$totales.total"}
+                }},
+                {"$sort": {"_id": -1}}
             ]
             
             daily_activity = list(collection.aggregate(pipeline))
             
             # Estadísticas totales del período
             total_stats = collection.aggregate([
-                {
-                    "$match": {
-                        "metadata.fecha_procesado": {"$gte": cutoff_str}
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": None,
-                        "total_facturas": {"$sum": 1},
-                        "total_monto": {"$sum": "$montos.monto_total"},
-                        "proveedores_unicos": {"$addToSet": "$emisor.ruc"}
-                    }
-                }
+                {"$match": {"created_at": {"$gte": cutoff_date}}},
+                {"$group": {
+                    "_id": None,
+                    "total_facturas": {"$sum": 1},
+                    "total_monto": {"$sum": "$totales.total"},
+                    "proveedores_unicos": {"$addToSet": "$emisor.ruc"}
+                }}
             ])
             
             total_result = list(total_stats)

@@ -11,6 +11,7 @@ class Party(BaseModel):
     direccion: Optional[str] = ""
     telefono: Optional[str] = ""
     email: Optional[str] = ""
+    actividad_economica: Optional[str] = ""
 
 
 class Totales(BaseModel):

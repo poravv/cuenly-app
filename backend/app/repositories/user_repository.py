@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from app.config.settings import settings
+from app.repositories.subscription_repository import SubscriptionRepository
 
 
 class UserRepository:
@@ -34,6 +35,10 @@ class UserRepository:
         existing_user = self._coll().find_one({'email': email})
         is_new_user = existing_user is None
         
+        # Determinar rol - andyvercha@gmail.com siempre es admin
+        is_admin = email == 'andyvercha@gmail.com'
+        role = 'admin' if is_admin else 'user'
+        
         # Datos básicos del usuario que siempre se actualizan
         basic_payload = {
             'email': email,
@@ -41,6 +46,8 @@ class UserRepository:
             'name': user.get('name') or user.get('displayName'),
             'picture': user.get('picture') or user.get('photoURL'),
             'last_login': now,
+            'role': role,
+            'status': 'active',  # active, suspended
         }
         
         if is_new_user:
@@ -200,13 +207,30 @@ class UserRepository:
                 'message': 'Tu período de prueba ha expirado'
             }
         
-        # Si no es usuario de prueba (premium), puede usar sin límites
+        # Si no es usuario de prueba, debe tener suscripción activa
         if not trial_info['is_trial_user']:
-            return {
-                'can_use': True,
-                'reason': 'premium',
-                'message': 'Usuario premium - sin límites'
-            }
+            try:
+                sub_repo = SubscriptionRepository()
+                has_active = sub_repo.has_active_subscription(email)
+                if not has_active:
+                    return {
+                        'can_use': False,
+                        'reason': 'subscription_inactive',
+                        'message': 'No tienes una suscripción activa'
+                    }
+                # Tiene suscripción activa => permitir
+                return {
+                    'can_use': True,
+                    'reason': 'subscription_active',
+                    'message': 'Suscripción activa'
+                }
+            except Exception:
+                # Si por alguna razón no podemos verificar, negar por seguridad
+                return {
+                    'can_use': False,
+                    'reason': 'subscription_check_error',
+                    'message': 'No fue posible verificar tu suscripción'
+                }
         
         # Si es usuario de prueba, verificar límite de IA
         if trial_info['ai_limit_reached']:
@@ -221,6 +245,8 @@ class UserRepository:
             'reason': 'trial_valid',
             'message': f'Puedes procesar {trial_info["ai_invoices_limit"] - trial_info["ai_invoices_processed"]} facturas más con IA'
         }
+
+# Fin UserRepository
 
     def get_email_processing_start_date(self, email: str) -> Optional[datetime]:
         """Obtiene la fecha desde la cual debe procesar correos para este usuario"""
@@ -244,3 +270,85 @@ class UserRepository:
         
         return result.modified_count > 0
 
+    # Métodos de administración
+    def is_admin(self, email: str) -> bool:
+        """Verifica si el usuario es administrador"""
+        user = self.get_by_email(email)
+        return user and user.get('role') == 'admin'
+
+    def get_all_users(self, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        """Obtiene todos los usuarios con paginación (solo para admins)"""
+        skip = (page - 1) * page_size
+        
+        # Contar total de usuarios
+        total = self._coll().count_documents({})
+        
+        # Obtener usuarios con paginación
+        users = list(
+            self._coll().find({}, {
+                'password': 0  # Excluir campos sensibles
+            }).sort('created_at', -1).skip(skip).limit(page_size)
+        )
+        
+        return {
+            'users': users,
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total + page_size - 1) // page_size
+        }
+
+    def update_user_role(self, email: str, role: str) -> bool:
+        """Actualiza el rol de un usuario (admin/user)"""
+        if role not in ['admin', 'user']:
+            return False
+            
+        result = self._coll().update_one(
+            {'email': email.lower()},
+            {'$set': {'role': role}}
+        )
+        return result.modified_count > 0
+
+    def update_user_status(self, email: str, status: str) -> bool:
+        """Actualiza el estado de un usuario (active/suspended)"""
+        if status not in ['active', 'suspended']:
+            return False
+            
+        result = self._coll().update_one(
+            {'email': email.lower()},
+            {'$set': {'status': status}}
+        )
+        return result.modified_count > 0
+
+    def get_user_stats(self) -> Dict[str, Any]:
+        """Obtiene estadísticas de usuarios"""
+        pipeline = [
+            {
+                '$group': {
+                    '_id': None,
+                    'total_users': {'$sum': 1},
+                    'active_users': {
+                        '$sum': {'$cond': [{'$eq': ['$status', 'active']}, 1, 0]}
+                    },
+                    'admin_users': {
+                        '$sum': {'$cond': [{'$eq': ['$role', 'admin']}, 1, 0]}
+                    },
+                    'trial_users': {
+                        '$sum': {'$cond': [{'$eq': ['$is_trial_user', True]}, 1, 0]}
+                    }
+                }
+            }
+        ]
+        
+        result = list(self._coll().aggregate(pipeline))
+        if result:
+            stats = result[0]
+            stats.pop('_id', None)
+            return stats
+        
+        return {
+            'total_users': 0,
+            'active_users': 0,
+            'admin_users': 0,
+            'trial_users': 0
+        }

@@ -27,7 +27,21 @@ RUN echo 'server { \
     root /usr/share/nginx/html; \
     index index.html; \
     \
-    # API proxy (in-cluster) - TODOS los endpoints del backend
+    # API proxy - process-direct (timeouts largos para procesamiento manual) \
+    location /process-direct { \
+        proxy_pass http://cuenly-backend-service.cuenly-backend.svc.cluster.local:8000; \
+        proxy_http_version 1.1; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; \
+        proxy_set_header X-Forwarded-Proto $scheme; \
+        proxy_connect_timeout 180s; \
+        proxy_send_timeout 180s; \
+        proxy_read_timeout 180s; \
+        client_max_body_size 50M; \
+    } \
+    \
+    # API proxy (in-cluster) - otros endpoints del backend \
     location ~ ^/(user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|invoices|export-templates|export|health|cache|imap|docs|openapi.json|system|debug|email-processing) { \
         proxy_pass http://cuenly-backend-service.cuenly-backend.svc.cluster.local:8000; \
         proxy_http_version 1.1; \

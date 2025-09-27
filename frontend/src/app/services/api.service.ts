@@ -130,9 +130,11 @@ export class ApiService {
     return this.http.post<JobStatus>(`${this.apiUrl}/job/interval`, { minutes });
   }
 
-  // Procesamiento directo sin cola de tareas
-  processEmailsDirect(): Observable<any> {
-    return this.http.post<any>(`${this.apiUrl}/process-direct`, {});
+  // Procesamiento directo sin cola de tareas (máximo 10 facturas)
+  processEmailsDirect(limit: number = 10): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/process-direct`, {}, {
+      params: { limit: limit.toString() }
+    });
   }
 
   // Encolar procesamiento (usa TaskQueue)
@@ -219,5 +221,154 @@ export class ApiService {
 
   getV2BulkDeleteInfo(headerIds: string[]): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/v2/invoices/bulk-delete-info`, { header_ids: headerIds });
+  }
+
+  // Métodos de administración
+  checkAdminStatus(): Observable<{success: boolean, is_admin: boolean, email: string, message: string}> {
+    return this.http.get<{success: boolean, is_admin: boolean, email: string, message: string}>(`${this.apiUrl}/admin/check`);
+  }
+
+  getAdminUsers(page: number = 1, pageSize: number = 20): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/users`, {
+      params: { page: page.toString(), page_size: pageSize.toString() }
+    });
+  }
+
+  updateUserRole(email: string, role: string): Observable<{success: boolean, message: string}> {
+    return this.http.put<{success: boolean, message: string}>(`${this.apiUrl}/admin/users/${email}/role`, { role });
+  }
+
+  updateUserStatus(email: string, status: string): Observable<{success: boolean, message: string}> {
+    return this.http.put<{success: boolean, message: string}>(`${this.apiUrl}/admin/users/${email}/status`, { status });
+  }
+
+  getAdminStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/stats`);
+  }
+
+  // =====================================
+  // PLANES Y SUSCRIPCIONES
+  // =====================================
+
+  // API Pública de planes (sin autenticación)
+  getPublicPlans(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/api/plans`);
+  }
+
+  getPublicPlan(planCode: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/api/plans/${planCode}`);
+  }
+
+  // Métodos administrativos para planes
+  getAdminPlans(includeInactive: boolean = false): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/plans`, {
+      params: { include_inactive: includeInactive.toString() }
+    });
+  }
+
+  createPlan(planData: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/plans`, planData);
+  }
+
+  updatePlan(planCode: string, planData: any): Observable<any> {
+    return this.http.put<any>(`${this.apiUrl}/admin/plans/${planCode}`, planData);
+  }
+
+  deletePlan(planCode: string): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/admin/plans/${planCode}`);
+  }
+
+  // Métodos de suscripciones
+  getSubscriptionStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/subscriptions/stats`);
+  }
+
+  assignPlanToUser(subscriptionData: any): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/subscriptions`, subscriptionData);
+  }
+
+  getUserSubscriptions(userEmail: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/subscriptions/user/${userEmail}`);
+  }
+
+  // Suscripción del usuario actual
+  getUserSubscription(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/user/subscription`);
+  }
+
+  getUserSubscriptionHistory(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/user/subscription/history`);
+  }
+
+  requestPlanChange(planId: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/user/subscription/change-plan`, { plan_id: planId });
+  }
+
+  cancelUserSubscription(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/user/subscription/cancel`, {});
+  }
+
+  getSubscriptionPlans(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/api/plans`);
+  }
+
+  // Estadísticas filtradas
+  getFilteredStats(filters: {
+    start_date?: string,
+    end_date?: string,
+    user_email?: string
+  }): Observable<any> {
+    let params: any = {};
+    if (filters.start_date) params.start_date = filters.start_date;
+    if (filters.end_date) params.end_date = filters.end_date;
+    if (filters.user_email) params.user_email = filters.user_email;
+
+    return this.http.get<any>(`${this.apiUrl}/admin/stats/filtered`, { params });
+  }
+
+  // =====================================
+  // RESETEO DE LÍMITES DE IA
+  // =====================================
+
+  // Reseteo mensual automático
+  resetMonthlyAiLimits(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
+  }
+
+  // Reseteo manual de un usuario específico
+  resetUserAiLimits(userEmail: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-user/${userEmail}`, {});
+  }
+
+  // Estadísticas de reseteo
+  getResetStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/ai-limits/reset-stats`);
+  }
+
+  // Estado del scheduler
+  getSchedulerStatus(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/scheduler/status`);
+  }
+
+  // Ejecutar reseteo mensual manual
+  executeMonthlyReset(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
+  }
+
+  // Métodos genéricos HTTP para compatibilidad
+  get(url: string, options?: any): Promise<any> {
+    return this.http.get<any>(`${this.apiUrl}${url}`, options).toPromise();
+  }
+
+  post(url: string, data: any, options?: any): Promise<any> {
+    return this.http.post<any>(`${this.apiUrl}${url}`, data, options).toPromise();
+  }
+
+  put(url: string, data: any, options?: any): Promise<any> {
+    return this.http.put<any>(`${this.apiUrl}${url}`, data, options).toPromise();
+  }
+
+  delete(url: string, options?: any): Promise<any> {
+    return this.http.delete<any>(`${this.apiUrl}${url}`, options).toPromise();
   }
 }
