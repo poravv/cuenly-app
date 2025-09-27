@@ -175,34 +175,34 @@ export class DashboardComponent implements OnInit, OnDestroy {
     });
   }
 
-  private pollJob(): void {
-    if (!this.processingJobId) return;
-    this.apiService.getTaskStatus(this.processingJobId).subscribe({
-      next: (st: TaskStatusResponse) => {
-        if (st.status === 'done' || st.status === 'error') {
-          if (this.processingPolling) {
-            this.processingPolling.unsubscribe();
-            this.processingPolling = null;
-          }
-          this.loading = false;
-          this.processingResult = st.result || null;
+  // private pollJob(): void {
+  //   if (!this.processingJobId) return;
+  //   this.apiService.getTaskStatus(this.processingJobId).subscribe({
+  //     next: (st: TaskStatusResponse) => {
+  //       if (st.status === 'done' || st.status === 'error') {
+  //         if (this.processingPolling) {
+  //           this.processingPolling.unsubscribe();
+  //           this.processingPolling = null;
+  //         }
+  //         this.loading = false;
+  //         this.processingResult = st.result || null;
           
-          // Si hay un error específico, mostrarlo
-          if (st.status === 'error') {
-            this.error = st.message || 'Error durante el procesamiento';
-          }
+  //         // Si hay un error específico, mostrarlo
+  //         if (st.status === 'error') {
+  //           this.error = st.message || 'Error durante el procesamiento';
+  //         }
           
-          // refrescar estado
-          this.getSystemStatus();
-          this.getJobStatus();
-        }
-      },
-      error: (err) => {
-        console.error('Error consultando estado de tarea:', err);
-        // No detener el polling por un error de red temporal
-      }
-    });
-  }
+  //         // refrescar estado
+  //         this.getSystemStatus();
+  //         this.getJobStatus();
+  //       }
+  //     },
+  //     error: (err) => {
+  //       console.error('Error consultando estado de tarea:', err);
+  //       // No detener el polling por un error de red temporal
+  //     }
+  //   });
+  // }
   
   startJob(): void {
     this.jobLoading = true;
