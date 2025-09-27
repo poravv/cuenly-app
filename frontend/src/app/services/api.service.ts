@@ -305,6 +305,35 @@ export class ApiService {
     return this.http.get<any>(`${this.apiUrl}/admin/stats/filtered`, { params });
   }
 
+  // =====================================
+  // RESETEO DE LÍMITES DE IA
+  // =====================================
+
+  // Reseteo mensual automático
+  resetMonthlyAiLimits(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
+  }
+
+  // Reseteo manual de un usuario específico
+  resetUserAiLimits(userEmail: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-user/${userEmail}`, {});
+  }
+
+  // Estadísticas de reseteo
+  getResetStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/ai-limits/reset-stats`);
+  }
+
+  // Estado del scheduler
+  getSchedulerStatus(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/scheduler/status`);
+  }
+
+  // Ejecutar reseteo mensual manual
+  executeMonthlyReset(): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
+  }
+
   // Métodos genéricos HTTP para compatibilidad
   get(url: string, options?: any): Promise<any> {
     return this.http.get<any>(`${this.apiUrl}${url}`, options).toPromise();
