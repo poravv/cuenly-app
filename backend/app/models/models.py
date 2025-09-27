@@ -259,7 +259,15 @@ class InvoiceData(BaseModel):
             empresa=EmpresaData(**data["empresa"]) if data.get("empresa") else None,
             timbrado_data=TimbradoData(**data["timbrado_data"]) if data.get("timbrado_data") else None,
             factura_data=FacturaData(**data["factura_data"]) if data.get("factura_data") else None,
-            productos=[ProductoFactura(**p) for p in data.get("productos", [])],
+            # Normalizar productos: asegurar que 'nombre' exista tomando 'descripcion'/'articulo' si es necesario
+            productos=[
+                (
+                    ProductoFactura(**({**p, 'nombre': (p.get('nombre') or p.get('descripcion') or p.get('articulo') or p.get('codigo') or '')}))
+                    if isinstance(p, dict)
+                    else ProductoFactura(**p.__dict__)
+                )
+                for p in (data.get("productos", []) or [])
+            ],
             totales=TotalesData(**data["totales"]) if data.get("totales") else None,
             cliente=ClienteData(**data["cliente"]) if data.get("cliente") else None,
 
