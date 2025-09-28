@@ -76,8 +76,9 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo '        proxy_read_timeout 60s;' >> /docker-entrypoint.sh && \
     echo '    }' >> /docker-entrypoint.sh && \
     echo '' >> /docker-entrypoint.sh && \
-    echo '    # API proxy - otros endpoints (timeouts normales)' >> /docker-entrypoint.sh && \
-    echo '    location ~ ^/(user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|export-templates|export|invoices|health|cache|imap|docs|openapi.json) {' >> /docker-entrypoint.sh && \
+    echo '    # API proxy - endpoint /api (¡AQUÍ ESTÁ LA REESCRITURA QUE NECESITAS!)' >> /docker-entrypoint.sh && \
+    echo '    location /api/ {' >> /docker-entrypoint.sh && \
+    echo '        rewrite ^/api/(.*)$ /$1 break;' >> /docker-entrypoint.sh && \
     echo '        proxy_pass http://BACKEND_URL_PLACEHOLDER;' >> /docker-entrypoint.sh && \
     echo '        proxy_http_version 1.1;' >> /docker-entrypoint.sh && \
     echo '        proxy_set_header Upgrade $http_upgrade;' >> /docker-entrypoint.sh && \
@@ -92,9 +93,8 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo '        proxy_read_timeout 60s;' >> /docker-entrypoint.sh && \
     echo '    }' >> /docker-entrypoint.sh && \
     echo '' >> /docker-entrypoint.sh && \
-    echo '    # API proxy - con /api prefix (compatibilidad)' >> /docker-entrypoint.sh && \
-    echo '    location /api/ {' >> /docker-entrypoint.sh && \
-    echo '        rewrite ^/api/(.*)$ /$1 break;' >> /docker-entrypoint.sh && \
+    echo '    # API proxy - otros endpoints (RegEx SIN /api)' >> /docker-entrypoint.sh && \
+    echo '    location ~ ^/(user|v2|status|process|upload|upload-xml|job|tasks|prefs|email-config|email-configs|export-templates|export|invoices|health|cache|imap|docs|openapi.json) {' >> /docker-entrypoint.sh && \
     echo '        proxy_pass http://BACKEND_URL_PLACEHOLDER;' >> /docker-entrypoint.sh && \
     echo '        proxy_http_version 1.1;' >> /docker-entrypoint.sh && \
     echo '        proxy_set_header Upgrade $http_upgrade;' >> /docker-entrypoint.sh && \
