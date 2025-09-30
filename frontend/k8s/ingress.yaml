@@ -28,8 +28,6 @@ spec:
     - host: app.cuenly.com
       http:
         paths:
-          # ===== TODO EL TRÁFICO VA AL FRONTEND =====
-          # El nginx del frontend maneja internamente el proxy a las APIs del backend
           - path: /
             pathType: Prefix
             backend:
@@ -37,4 +35,3 @@ spec:
                 name: cuenly-frontend-service
                 port:
                   number: 80
-
