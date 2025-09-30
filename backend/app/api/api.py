@@ -2135,10 +2135,11 @@ async def request_plan_change(
             raise HTTPException(status_code=400, detail="Ya tienes este plan activo")
         
         # Ejecutar el cambio de plan
+        # Nota: usar "manual" para cumplir con el validador de MongoDB
         success = await repo.assign_plan_to_user(
             user_email=current_user["email"],
             plan_code=new_plan_id,
-            payment_method="user_request"  # Indicar que fue solicitud del usuario
+            payment_method="manual"
         )
         
         if not success:
