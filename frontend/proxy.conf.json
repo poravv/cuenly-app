@@ -1,90 +1,30 @@
-{
-  "/v2": {
+[
+  {
+    "context": [
+      "/api",
+      "/user",
+      "/admin",
+      "/v2",
+      "/status",
+      "/process",
+      "/upload",
+      "/upload-xml",
+      "/job",
+      "/tasks",
+      "/prefs",
+      "/email-config",
+      "/email-configs",
+      "/export-templates",
+      "/export",
+      "/invoices",
+      "/cache",
+      "/imap",
+      "/system",
+      "/email-processing"
+    ],
     "target": "http://localhost:8000",
     "secure": false,
     "changeOrigin": true,
     "logLevel": "warn"
-  },
-  "/status": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/process": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/upload": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/upload-xml": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/job": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/tasks": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/prefs": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/email-config": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/email-configs": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/export-templates": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/export": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/api": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/invoices": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
-  },
-  "/user": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true,
-    "logLevel": "debug"
-  },
-  "/admin": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true,
-    "logLevel": "debug"
-  },
-  "/health": {
-    "target": "http://localhost:8000",
-    "secure": false,
-    "changeOrigin": true
   }
-}
+]
