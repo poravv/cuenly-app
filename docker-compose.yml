@@ -73,7 +73,6 @@ services:
     ports:
       - "4200:80"
     volumes:
-      - ./nginx/nginx-proxy.conf:/etc/nginx/nginx.conf:ro
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
