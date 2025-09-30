@@ -2,6 +2,7 @@
   {
     "context": [
       "/api",
+      "/process-direct",
       "/user",
       "/admin",
       "/v2",
