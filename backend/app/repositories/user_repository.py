@@ -138,11 +138,12 @@ class UserRepository:
             return {
                 'is_trial_user': False,
                 'trial_expired': False,
-                'days_remaining': -1,  # -1 indica usuario sin límite
+                'days_remaining': -1,  # -1 indica usuario sin límite de tiempo
                 'trial_expires_at': None,
                 'ai_invoices_processed': ai_processed,
-                'ai_invoices_limit': -1,  # -1 indica sin límite
-                'ai_limit_reached': False
+                # Usar el límite guardado en el usuario (proviene del plan asignado). Puede ser -1 = ilimitado
+                'ai_invoices_limit': ai_limit,
+                'ai_limit_reached': False if ai_limit < 0 else (ai_processed >= ai_limit)
             }
         
         if not trial_expires_at:

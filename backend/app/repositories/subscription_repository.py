@@ -139,6 +139,7 @@ class SubscriptionRepository:
     async def get_user_subscription(self, user_email: str) -> Optional[Dict[str, Any]]:
         """Obtener la suscripción activa de un usuario."""
         try:
+            user_email = (user_email or "").lower()
             subscription = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
@@ -155,6 +156,7 @@ class SubscriptionRepository:
     async def get_user_active_subscription(self, user_email: str) -> Optional[Dict[str, Any]]:
         """Obtener la suscripción activa de un usuario con detalles completos."""
         try:
+            user_email = (user_email or "").lower()
             # Obtener la suscripción activa
             subscription = self.subscriptions_collection.find_one(
                 {
@@ -173,10 +175,7 @@ class SubscriptionRepository:
             plan = await self.get_plan_by_code(subscription.get("plan_code"))
             
             # Obtener uso actual de IA del usuario
-            user = self.users_collection.find_one(
-                {"email": user_email},
-                {"ai_invoices_used": 1}
-            )
+            user = self.users_collection.find_one({"email": user_email}, {"ai_invoices_used": 1})
             
             # Usar límite del plan, no del usuario
             if plan and plan.get("features"):
@@ -206,6 +205,7 @@ class SubscriptionRepository:
     def has_active_subscription(self, user_email: str) -> bool:
         """Versión síncrona y ligera para verificar si existe una suscripción activa no expirada."""
         try:
+            user_email = (user_email or "").lower()
             s = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
@@ -222,6 +222,8 @@ class SubscriptionRepository:
     async def create_subscription(self, subscription_data: Dict[str, Any]) -> bool:
         """Crear una nueva suscripción."""
         try:
+            # Normalizar email
+            subscription_data["user_email"] = (subscription_data.get("user_email") or "").lower()
             # Cancelar suscripciones activas existentes
             await self.cancel_user_subscriptions(subscription_data["user_email"])
             
@@ -257,6 +259,7 @@ class SubscriptionRepository:
     async def cancel_user_subscriptions(self, user_email: str) -> bool:
         """Cancelar todas las suscripciones activas de un usuario."""
         try:
+            user_email = (user_email or "").lower()
             result = self.subscriptions_collection.update_many(
                 {
                     "user_email": user_email,
@@ -281,6 +284,7 @@ class SubscriptionRepository:
     async def update_user_plan_status(self, user_email: str, plan_features: Dict[str, Any]) -> bool:
         """Actualizar el estado del plan del usuario."""
         try:
+            user_email = (user_email or "").lower()
             update_data = {
                 "is_trial_user": False,
                 "trial_expires_at": None,
@@ -293,7 +297,10 @@ class SubscriptionRepository:
                 {"$set": update_data}
             )
             
-            logger.info(f"Estado de plan actualizado para {user_email}")
+            if result.modified_count == 0:
+                logger.warning(f"No se modificó el estado de plan para {user_email} (posible valores iguales o email no coincide)")
+            else:
+                logger.info(f"Estado de plan actualizado para {user_email}")
             return result.modified_count > 0
             
         except Exception as e:
@@ -401,6 +408,7 @@ class SubscriptionRepository:
     async def assign_plan_to_user(self, user_email: str, plan_code: str, payment_method: str = "manual") -> bool:
         """Asignar un plan a un usuario específico (para admin)."""
         try:
+            user_email = (user_email or "").lower()
             # Obtener información del plan
             plan = await self.get_plan_by_code(plan_code)
             if not plan:
