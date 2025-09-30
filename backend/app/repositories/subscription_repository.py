@@ -414,6 +414,8 @@ class SubscriptionRepository:
                 "plan_price": plan["price"],
                 "currency": plan["currency"],
                 "billing_period": plan["billing_period"],
+                # Incluir features del plan para actualizar límites del usuario correctamente
+                "plan_features": plan.get("features", {}),
                 "status": "active",
                 "payment_method": payment_method,
                 "payment_reference": f"admin_assigned_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
