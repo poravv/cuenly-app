@@ -285,6 +285,11 @@ class SubscriptionRepository:
         """Actualizar el estado del plan del usuario."""
         try:
             user_email = (user_email or "").lower()
+            
+            # Log estado antes de actualizar
+            current_user = self.users_collection.find_one({"email": user_email})
+            logger.info(f"🔍 Usuario ANTES de actualizar plan {user_email}: is_trial_user={current_user.get('is_trial_user') if current_user else 'NO_FOUND'}")
+            
             update_data = {
                 "is_trial_user": False,
                 "trial_expires_at": None,
@@ -292,15 +297,22 @@ class SubscriptionRepository:
                 "last_updated": datetime.utcnow()
             }
             
+            logger.info(f"🔧 Actualizando usuario {user_email} con datos: {update_data}")
+            
             result = self.users_collection.update_one(
                 {"email": user_email},
                 {"$set": update_data}
             )
             
+            # Log estado después de actualizar
+            updated_user = self.users_collection.find_one({"email": user_email})
+            logger.info(f"✅ Usuario DESPUÉS de actualizar plan {user_email}: is_trial_user={updated_user.get('is_trial_user') if updated_user else 'NO_FOUND'}")
+            
             if result.modified_count == 0:
-                logger.warning(f"No se modificó el estado de plan para {user_email} (posible valores iguales o email no coincide)")
+                logger.warning(f"⚠️ No se modificó el estado de plan para {user_email} (matched: {result.matched_count}, modified: {result.modified_count})")
             else:
-                logger.info(f"Estado de plan actualizado para {user_email}")
+                logger.info(f"✅ Estado de plan actualizado exitosamente para {user_email}")
+                
             return result.modified_count > 0
             
         except Exception as e:
