@@ -1575,6 +1575,42 @@ async def cache_stats():
         logger.error(f"Error obteniendo estadísticas del cache: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas del cache: {str(e)}")
 
+@app.post("/debug/fix-user-trial-status")
+async def debug_fix_user_trial_status(user_email: str, admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Endpoint de debugging para corregir manualmente el estado de trial de un usuario"""
+    try:
+        from app.repositories.user_repository import UserRepository
+        from app.repositories.subscription_repository import SubscriptionRepository
+        
+        user_repo = UserRepository()
+        sub_repo = SubscriptionRepository()
+        
+        # Verificar si tiene suscripción activa
+        active_subscription = await sub_repo.get_user_active_subscription(user_email.lower())
+        
+        if active_subscription:
+            # Forzar actualización del estado del usuario
+            update_result = await sub_repo.update_user_plan_status(
+                user_email.lower(),
+                active_subscription.get("plan_features", {})
+            )
+            
+            return {
+                "success": True,
+                "message": f"Estado de trial corregido para {user_email}",
+                "update_result": update_result,
+                "active_subscription": active_subscription.get("plan_name")
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"No hay suscripción activa para {user_email}"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error corrigiendo estado de trial para {user_email}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/cache/clear")
 async def clear_cache(older_than_hours: Optional[int] = None):
     """
