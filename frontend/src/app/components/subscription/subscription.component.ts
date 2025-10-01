@@ -213,6 +213,18 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.loadSubscriptionData();
           // Refrescar perfil global para que navbar/banners reaccionen
           this.userService.refreshUserProfile().subscribe();
+          
+          // Actualización agresiva con delay para asegurar consistencia
+          setTimeout(() => {
+            this.userService.refreshUserProfile().subscribe({
+              next: (profile) => {
+                console.log('🔄 Perfil actualizado después de cambio de plan:', profile);
+              },
+              error: (error) => {
+                console.warn('⚠️ Error actualizando perfil después de cambio de plan:', error);
+              }
+            });
+          }, 2000); // Delay de 2 segundos para permitir que el backend procese completamente
         },
         error: (error: any) => {
           console.error('Error requesting plan change:', error);
