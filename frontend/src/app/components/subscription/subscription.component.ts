@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
+import { UserService } from '../../services/user.service';
 import { NotificationService } from '../../services/notification.service';
 
 interface SubscriptionPlan {
@@ -75,7 +76,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   constructor(
     private apiService: ApiService,
     private notificationService: NotificationService,
-    private router: Router
+    private router: Router,
+    private userService: UserService
   ) {}
 
   ngOnInit(): void {
@@ -209,6 +211,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.submittingPlanChange = false;
           // Recargar datos
           this.loadSubscriptionData();
+          // Refrescar perfil global para que navbar/banners reaccionen
+          this.userService.refreshUserProfile().subscribe();
         },
         error: (error: any) => {
           console.error('Error requesting plan change:', error);
@@ -367,6 +371,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.showCancelConfirmModal = false;
           this.loadSubscriptionData();
           this.setActiveTab('plans');
+          // Refrescar perfil global
+          this.userService.refreshUserProfile().subscribe();
         },
         error: (error: any) => {
           console.error('Error cancelling subscription:', error);
