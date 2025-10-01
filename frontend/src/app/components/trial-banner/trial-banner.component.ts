@@ -55,6 +55,10 @@ export class TrialBannerComponent implements OnInit {
     this.authService.user$.subscribe(user => {
       if (user) {
         this.loadUserProfile();
+        // Reaccionar a actualizaciones globales del perfil
+        this.userService.userProfile$.subscribe(p => {
+          if (p) this.userProfile = p;
+        });
       } else {
         this.userProfile = null;
       }

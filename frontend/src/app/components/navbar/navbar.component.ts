@@ -29,6 +29,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
     // Hacer el componente accesible globalmente para debugging
     (window as any).navbarComponent = this;
     
+    // Reaccionar a cambios de autenticación
     this.auth.user$.subscribe(u => {
       this.user = u;
       if (u) {
@@ -39,6 +40,13 @@ export class NavbarComponent implements OnInit, OnDestroy {
         if (this.intervalId) { clearInterval(this.intervalId); this.intervalId = null; }
         this.status = null;
         this.userProfile = null;
+      }
+    });
+
+    // Suscribirse a cambios de perfil publicados por UserService
+    this.userService.userProfile$.subscribe(profile => {
+      if (profile) {
+        this.userProfile = profile;
       }
     });
   }
