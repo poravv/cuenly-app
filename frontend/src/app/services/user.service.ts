@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
+import { tap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
 export interface UserProfile {
@@ -38,7 +39,12 @@ export class UserService {
     const url = `/api/user/profile`;
     console.log('🔍 UserService: Llamando a getUserProfile()');
     console.log('🔍 API URL:', url);
-    return this.http.get<UserProfile>(url);
+    return this.http.get<UserProfile>(url).pipe(
+      tap(profile => {
+        // Publicar el perfil para que otros componentes reaccionen (navbar, banners)
+        this.userProfileSubject.next(profile);
+      })
+    );
   }
 
   refreshUserProfile(): Observable<UserProfile> {
