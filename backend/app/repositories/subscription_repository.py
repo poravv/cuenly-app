@@ -292,16 +292,20 @@ class SubscriptionRepository:
             
             update_data = {
                 "is_trial_user": False,
-                "trial_expires_at": None,
+                # No actualizar trial_expires_at para evitar error de validación del schema
                 "ai_invoices_limit": plan_features.get("ai_invoices_limit", 50),
                 "last_updated": datetime.utcnow()
             }
             
             logger.info(f"🔧 Actualizando usuario {user_email} con datos: {update_data}")
             
+            # Usar una operación combinada: $set para campos a actualizar, $unset para remover trial_expires_at
             result = self.users_collection.update_one(
                 {"email": user_email},
-                {"$set": update_data}
+                {
+                    "$set": update_data,
+                    "$unset": {"trial_expires_at": ""}  # Remover el campo para evitar conflictos de schema
+                }
             )
             
             # Log estado después de actualizar
