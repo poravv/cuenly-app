@@ -57,12 +57,29 @@ export class TrialBannerComponent implements OnInit {
         this.loadUserProfile();
         // Reaccionar a actualizaciones globales del perfil
         this.userService.userProfile$.subscribe(p => {
-          if (p) this.userProfile = p;
+          if (p) {
+            this.userProfile = p;
+            console.log('🔄 TrialBanner: Perfil actualizado', p);
+          }
         });
       } else {
         this.userProfile = null;
       }
     });
+    
+    // Actualización periódica para asegurar consistencia
+    setInterval(() => {
+      if (this.userProfile?.is_trial) {
+        this.userService.refreshUserProfile().subscribe({
+          next: (profile) => {
+            console.log('🔄 TrialBanner: Refresh periódico', profile);
+          },
+          error: (error) => {
+            console.warn('⚠️ Error en refresh periódico:', error);
+          }
+        });
+      }
+    }, 30000); // Cada 30 segundos si es usuario de prueba
   }
 
   private loadUserProfile(): void {
