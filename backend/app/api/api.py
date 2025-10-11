@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from app.config.settings import settings
 from app.utils.firebase_auth import verify_firebase_token, extract_bearer_token
 from app.utils.trial_middleware import check_trial_limits_optional, check_trial_limits, check_ai_limits
+from app.utils.security import validate_frontend_key
 from app.repositories.user_repository import UserRepository
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura
@@ -318,7 +319,7 @@ async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_
         }
 
 @app.post("/process", response_model=ProcessResult)
-async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_ai_check), _frontend_key: bool = Depends(validate_frontend_key)):
     """
     Procesa correos electrónicos para extraer facturas.
     
@@ -367,7 +368,9 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
 @app.post("/process-direct")
 async def process_emails_direct(
     limit: Optional[int] = 10,
-    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check),
+    request: Request = None,
+    _frontend_key: bool = Depends(validate_frontend_key)
 ):
     """Procesa correos directamente con límite (máximo 10 para procesamiento manual)."""
     try:
@@ -414,7 +417,11 @@ async def process_emails_direct(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/tasks/process")
-async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+async def enqueue_process_emails(
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check),
+    request: Request = None,
+    _frontend_key: bool = Depends(validate_frontend_key)
+):
     """Encola una ejecución de procesamiento de correos y retorna un job_id."""
     
     # Verificar si el job automático está ejecutándose
@@ -2689,25 +2696,32 @@ async def set_auto_refresh(payload: AutoRefreshPayload):
 # Endpoints legacy de exportación eliminados (Excel/Documental)
 
 @app.get("/export/mongodb/stats")
-async def mongodb_export_stats():
-    """Estadísticas básicas de la base de facturas."""
+async def mongodb_export_stats(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Estadísticas básicas de la base de facturas del usuario actual."""
     try:
         from app.modules.mongo_query_service import MongoQueryService
         from app.config.export_config import get_mongodb_config
         config = get_mongodb_config()
-        service = MongoQueryService(connection_string=config["connection_string"])  # fuerza v2 internamente
+        service = MongoQueryService(connection_string=config["connection_string"])
         client = service._get_client()
         db = client[config["database"]]
         headers = db["invoice_headers"]
         items = db["invoice_items"]
-        total_headers = headers.count_documents({})
-        total_items = items.count_documents({})
+        
+        # Filtrar por usuario actual
+        user_filter = {"owner_email": user["email"]}
+        
+        total_headers = headers.count_documents(user_filter)
+        total_items = items.count_documents(user_filter)
         total_amount = list(headers.aggregate([
+            {"$match": user_filter},
             {"$group": {"_id": None, "sum": {"$sum": "$totales.total"}}}
         ]))
+        
         return {
             "success": True,
             "collection": "invoice_headers",
+            "user_email": user["email"],
             "total_invoices": total_headers,
             "total_items": total_items,
             "total_amount": float(total_amount[0]["sum"]) if total_amount else 0.0
