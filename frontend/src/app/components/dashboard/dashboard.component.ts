@@ -131,27 +131,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
     
     // Procesar facturas recientes desde headers (solo para mostrar)
-    if (responses.headers?.success && responses.headers.results) {
+    if (responses.headers?.success && responses.headers.data) {
       
-      this.recentInvoices = responses.headers.results.slice(0, 5).map((header: any) => ({
+      this.recentInvoices = responses.headers.data.slice(0, 5).map((header: any) => ({
         emisor_nombre: header.emisor?.nombre || 'Sin emisor',
         numero_documento: header.numero_documento || 'N/A',
-        fecha_emision: header.fecha || header.fecha_emision,
+        fecha_emision: header.fecha_emision || header.fecha,
         monto_total: header.totales?.total || 0
       }));
       
-      // Contar emisores únicos desde todos los headers disponibles (no solo los 20)
-      const emisoresUnicos = new Set<string>();
-      responses.headers.results.forEach((header: any) => {
-        const emisorNombre = header.emisor?.nombre;
-        if (emisorNombre && emisorNombre.trim() !== '') {
-          emisoresUnicos.add(emisorNombre);
-        }
-      });
-      
       // Crear top emisores basado en frecuencia en la muestra actual
       const emisoresMap = new Map<string, {count: number, total: number}>();
-      responses.headers.results.forEach((header: any) => {
+      responses.headers.data.forEach((header: any) => {
         const emisorNombre = header.emisor?.nombre;
         if (emisorNombre && emisorNombre.trim() !== '') {
           const monto = header.totales?.total || 0;
