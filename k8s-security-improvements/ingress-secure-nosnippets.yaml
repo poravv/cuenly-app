@@ -1,4 +1,4 @@
-# Ingress mejorado con seguridad
+# Ingress seguro sin snippets (compatible con clusters restrictivos)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -18,14 +18,6 @@ metadata:
     nginx.ingress.kubernetes.io/rate-limit-rps: "100"
     nginx.ingress.kubernetes.io/rate-limit-connections: "50"
     
-    # Security headers usando anotaciones permitidas
-    nginx.ingress.kubernetes.io/server-snippet: |
-      add_header X-Frame-Options "SAMEORIGIN" always;
-      add_header X-Content-Type-Options "nosniff" always;
-      add_header X-XSS-Protection "1; mode=block" always;
-      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    
     # Proxy settings
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
@@ -36,7 +28,7 @@ metadata:
     nginx.ingress.kubernetes.io/enable-cors: "true"
     nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.cuenly.com"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type, X-Requested-With"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type, X-Requested-With, X-Frontend-Key"
     nginx.ingress.kubernetes.io/cors-max-age: "86400"
     
 spec:
