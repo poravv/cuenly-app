@@ -651,11 +651,28 @@ jobs:
           kubectl apply -f frontend/k8s/configmap.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/networkpolicy.yaml -n ${{ env.NAMESPACE }}
           
-          # Aplicar ingress seguro con rate limiting si existe, sino el normal
+          # Aplicar ingress seguro con rate limiting con fallbacks
           echo "🛡️  Configurando ingress con seguridad..."
-          if [ -f "k8s-security-improvements/ingress-secure.yaml" ]; then
-            echo "✅ Aplicando ingress seguro con rate limiting"
-            kubectl apply -f k8s-security-improvements/ingress-secure.yaml -n ${{ env.NAMESPACE }}
+          
+          # Intentar ingress seguro sin snippets (más compatible)
+          if [ -f "k8s-security-improvements/ingress-secure-nosnippets.yaml" ]; then
+            echo "🔐 Intentando ingress seguro sin snippets..."
+            if kubectl apply -f k8s-security-improvements/ingress-secure-nosnippets.yaml -n ${{ env.NAMESPACE }}; then
+              echo "✅ Ingress seguro aplicado correctamente"
+            else
+              echo "⚠️  Ingress seguro falló, intentando con ingress normal..."
+              kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
+            fi
+          # Fallback: intentar ingress seguro con snippets
+          elif [ -f "k8s-security-improvements/ingress-secure.yaml" ]; then
+            echo "🔐 Intentando ingress seguro con snippets..."
+            if kubectl apply -f k8s-security-improvements/ingress-secure.yaml -n ${{ env.NAMESPACE }}; then
+              echo "✅ Ingress seguro aplicado correctamente"
+            else
+              echo "⚠️  Ingress seguro falló (snippets deshabilitados), usando ingress normal..."
+              kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
+            fi
+          # Fallback final: ingress normal
           else
             echo "⚠️  Ingress seguro no encontrado, usando ingress normal"
             kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
