@@ -27,6 +27,7 @@ import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 import { TrialInterceptor } from './interceptors/trial.interceptor';
+import { InvoiceProcessingComponent } from './components/invoice-processing/invoice-processing.component';
 
 @NgModule({
   declarations: [
@@ -49,7 +50,8 @@ import { TrialInterceptor } from './interceptors/trial.interceptor';
     NotificationContainerComponent,
     AdminPanelComponent,
     PlansManagementComponent,
-    SuspendedComponent
+    SuspendedComponent,
+    InvoiceProcessingComponent
   ],
   imports: [
     BrowserModule,
