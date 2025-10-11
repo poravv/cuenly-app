@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "cuenly-app")
     MULTI_TENANT_ENFORCE: bool = os.getenv("MULTI_TENANT_ENFORCE", "true").lower() in ("1", "true", "yes")
     
+    # Security - Frontend API Key
+    FRONTEND_API_KEY: str = os.getenv("FRONTEND_API_KEY", "cuenly-frontend-dev-key-2025")
+    
     # Email Processing
     EMAIL_PROCESS_ALL_DATES: bool = os.getenv("EMAIL_PROCESS_ALL_DATES", "true").lower() in ("1", "true", "yes")
     

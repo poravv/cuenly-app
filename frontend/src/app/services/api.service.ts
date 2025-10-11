@@ -3,6 +3,7 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { SystemStatus, ProcessResult, JobStatus, EmailConfig, EmailTestResult, TaskSubmitResponse, TaskStatusResponse, AutoRefreshPref } from '../models/invoice.model';
+import { AuthService } from './auth.service';
 
 
 @Injectable({
@@ -11,7 +12,41 @@ import { SystemStatus, ProcessResult, JobStatus, EmailConfig, EmailTestResult, T
 export class ApiService {
   private apiUrl = environment.apiUrl;
 
-  constructor(private http: HttpClient) { }
+  constructor(private http: HttpClient, private authService: AuthService) { }
+
+  /**
+   * Obtiene headers con autenticación Firebase y API Key del frontend
+   */
+  private getSecureHeaders(): HttpHeaders {
+    let headers = new HttpHeaders({
+      'Content-Type': 'application/json',
+      'X-Frontend-Key': environment.frontendApiKey
+    });
+
+    // Agregar token Firebase si está disponible
+    const token = this.authService.getIdToken();
+    if (token) {
+      headers = headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    return headers;
+  }
+
+  /**
+   * Obtiene headers básicos (sin API Key para endpoints públicos)
+   */
+  private getBasicHeaders(): HttpHeaders {
+    let headers = new HttpHeaders({
+      'Content-Type': 'application/json'
+    });
+
+    const token = this.authService.getIdToken();
+    if (token) {
+      headers = headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    return headers;
+  }
 
   // Obtener estado del sistema
   getStatus(): Observable<SystemStatus> {
@@ -20,7 +55,11 @@ export class ApiService {
 
   // Procesar correos
   processEmails(runAsync: boolean = false): Observable<ProcessResult> {
-    return this.http.post<ProcessResult>(`${this.apiUrl}/process`, { run_async: runAsync });
+    return this.http.post<ProcessResult>(
+      `${this.apiUrl}/process`, 
+      { run_async: runAsync },
+      { headers: this.getSecureHeaders() }
+    );
   }
 
   // Subir un archivo PDF
@@ -133,13 +172,18 @@ export class ApiService {
   // Procesamiento directo sin cola de tareas (máximo 10 facturas)
   processEmailsDirect(limit: number = 10): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/process-direct`, {}, {
-      params: { limit: limit.toString() }
+      params: { limit: limit.toString() },
+      headers: this.getSecureHeaders()
     });
   }
 
-  // Encolar procesamiento (usa TaskQueue)
-  enqueueProcess(): Observable<TaskSubmitResponse> {
-    return this.http.post<TaskSubmitResponse>(`${this.apiUrl}/tasks/process`, {});
+    // Enviar tarea de procesamiento
+  submitTask(): Observable<TaskSubmitResponse> {
+    return this.http.post<TaskSubmitResponse>(
+      `${this.apiUrl}/tasks/process`, 
+      {},
+      { headers: this.getSecureHeaders() }
+    );
   }
 
   // Consultar estado de tarea
