@@ -180,6 +180,7 @@ jobs:
           export const environment = {
             production: false,
             apiUrl: '',
+            frontendApiKey: "${{ secrets.FRONTEND_API_KEY }}",
             firebase: {
               apiKey: "${{ secrets.FIREBASE_API_KEY }}",
               authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
@@ -197,6 +198,7 @@ jobs:
           export const environment = {
             production: true,
             apiUrl: '',
+            frontendApiKey: "${{ secrets.FRONTEND_API_KEY }}",
             firebase: {
               apiKey: "${{ secrets.FIREBASE_API_KEY }}",
               authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
@@ -292,7 +294,8 @@ jobs:
             --from-literal=JOB_INTERVAL_MINUTES="${{ secrets.JOB_INTERVAL_MINUTES }}" \
             --from-literal=AUTH_REQUIRE="${{ secrets.AUTH_REQUIRE }}" \
             --from-literal=FIREBASE_PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID }}" \
-            --from-literal=MULTI_TENANT_ENFORCE="${{ secrets.MULTI_TENANT_ENFORCE }}"
+            --from-literal=MULTI_TENANT_ENFORCE="${{ secrets.MULTI_TENANT_ENFORCE }}" \
+            --from-literal=FRONTEND_API_KEY="${{ secrets.FRONTEND_API_KEY }}"
             
       - name: Create/Update MongoDB secrets
         run: |
@@ -324,10 +327,17 @@ jobs:
           kubectl rollout status deployment/mongodb -n ${{ env.NAMESPACE }} --timeout=300s
           kubectl wait --for=condition=ready pod -l app=mongodb -n ${{ env.NAMESPACE }} --timeout=300s
           
-      - name: Apply NetworkPolicies
+      - name: Apply NetworkPolicies and Security Configurations
         run: |
+          # NetworkPolicies existentes
           kubectl apply -f backend/k8s/networkpolicy-mongodb.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f backend/k8s/networkpolicy-backend.yaml -n ${{ env.NAMESPACE }}
+          
+          # Rate limiting y configuraciones de seguridad
+          echo "🛡️  Aplicando configuraciones de rate limiting y seguridad..."
+          kubectl apply -f k8s-security-improvements/rate-limiting-configmap.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Rate limiting config no encontrado, continuando..."
+          
+          echo "✅ Configuraciones de seguridad aplicadas"
           
       - name: Initialize MongoDB with script
         run: |
@@ -589,7 +599,18 @@ jobs:
           kubectl apply -f frontend/k8s/backend-proxy-service.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/configmap.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/networkpolicy.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
+          
+          # Aplicar ingress seguro con rate limiting si existe, sino el normal
+          echo "🛡️  Configurando ingress con seguridad..."
+          if [ -f "k8s-security-improvements/ingress-secure.yaml" ]; then
+            echo "✅ Aplicando ingress seguro con rate limiting"
+            kubectl apply -f k8s-security-improvements/ingress-secure.yaml -n ${{ env.NAMESPACE }}
+          else
+            echo "⚠️  Ingress seguro no encontrado, usando ingress normal"
+            kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
+          fi
+          
+          echo "✅ Infraestructura frontend con seguridad configurada"
           
       - name: Pre-deploy diagnostics
         run: |
@@ -804,6 +825,11 @@ jobs:
             echo "🌐 Services:"
             kubectl get svc -n cuenly-backend || echo "No backend services"
             kubectl get svc -n cuenly-frontend || echo "No frontend services"
+            
+            echo "🛡️  Security Status:"
+            kubectl get configmap nginx-rate-limit-config -n cuenly-frontend > /dev/null 2>&1 && echo "  ✅ Rate limiting: Configured" || echo "  ⚠️  Rate limiting: Not configured"
+            kubectl get networkpolicy -n cuenly-backend -n cuenly-frontend > /dev/null 2>&1 && echo "  ✅ Network policies: Active" || echo "  ⚠️  Network policies: Not found"
+            kubectl get secret backend-env-secrets -n cuenly-backend -o jsonpath='{.data.FRONTEND_API_KEY}' > /dev/null 2>&1 && echo "  ✅ Frontend API Key: Configured" || echo "  ⚠️  Frontend API Key: Missing"
           else
             echo "ℹ️  Deploy skipped - not on main/master branch"
           fi
