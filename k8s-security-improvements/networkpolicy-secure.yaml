@@ -1,0 +1,92 @@
+# NetworkPolicy más restrictiva para backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-secure-policy
+  namespace: cuenly-backend
+spec:
+  podSelector:
+    matchLabels:
+      app: cuenly-backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Solo permitir tráfico del frontend
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: cuenly-frontend
+          podSelector:
+            matchLabels:
+              app: cuenly-frontend
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Permitir health checks desde kube-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # Permitir acceso a MongoDB
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mongodb
+      ports:
+        - protocol: TCP
+          port: 27017
+    # Permitir DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Permitir HTTPS para APIs externas (OpenAI, etc.)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # Permitir SMTP para emails
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 25
+---
+# NetworkPolicy para MongoDB más restrictiva
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mongodb-secure-policy
+  namespace: cuenly-backend
+spec:
+  podSelector:
+    matchLabels:
+      app: mongodb
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Solo backend puede acceder a MongoDB
+    - from:
+        - podSelector:
+            matchLabels:
+              app: cuenly-backend
+      ports:
+        - protocol: TCP
+          port: 27017
+  egress:
+    # MongoDB solo necesita DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

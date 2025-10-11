@@ -1,0 +1,84 @@
+# ConfigMap para rate limiting y seguridad
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-rate-limit-config
+  namespace: cuenly-frontend
+data:
+  nginx.conf: |
+    # Rate limiting zones ajustado para el procesamiento de emails
+    limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+    limit_req_zone $binary_remote_addr zone=processing:10m rate=12r/h;  # 1 cada 5 min = 12/hora máximo
+    limit_req_zone $binary_remote_addr zone=api:10m rate=100r/m;
+    limit_req_zone $binary_remote_addr zone=general:10m rate=200r/m;
+    
+    # Connection limiting
+    limit_conn_zone $binary_remote_addr zone=conn_limit_per_ip:10m;
+    
+    server {
+        listen 80;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html;
+        client_max_body_size 100M;
+        
+        # Security Headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' https://cdn.jsdelivr.net;" always;
+        
+        # Rate limiting
+        limit_req zone=general burst=50 nodelay;
+        limit_conn conn_limit_per_ip 20;
+        
+        # Hide nginx version
+        server_tokens off;
+        
+        # Health check (sin rate limit)
+        location /health {
+            access_log off;
+            add_header Content-Type text/plain;
+            return 200 "healthy\n";
+        }
+        
+        # Login endpoints con rate limit estricto
+        location ~ ^/(api/auth|api/login|login) {
+            limit_req zone=login burst=3 nodelay;
+            proxy_pass http://$BACKEND_HOST;
+            # ... resto de configuración proxy
+        }
+        
+        # Processing endpoints con rate limit para cada 5 minutos
+        location ~ ^/(process|process-direct|tasks/process)(/|$) {
+            limit_req zone=processing burst=2 nodelay;  # Permitir burst de 2 para recuperar fallos
+            proxy_pass http://$BACKEND_HOST;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header Authorization $http_authorization;
+            proxy_connect_timeout 600s;  # Timeout largo para procesamiento
+            proxy_send_timeout 600s;
+            proxy_read_timeout 600s;
+        }
+        
+        # API endpoints con rate limit moderado
+        location ^~ /api {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://$BACKEND_HOST;
+            # ... resto de configuración proxy
+        }
+        
+        # Static files (sin rate limit pero con cache)
+        location / {
+            try_files $uri $uri/ /index.html;
+            
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|webp)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+                access_log off;
+            }
+        }
+    }

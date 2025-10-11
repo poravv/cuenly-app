@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from app.config.settings import settings
 from app.utils.firebase_auth import verify_firebase_token, extract_bearer_token
 from app.utils.trial_middleware import check_trial_limits_optional, check_trial_limits, check_ai_limits
+from app.utils.security import validate_frontend_key
 from app.repositories.user_repository import UserRepository
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura
@@ -318,7 +319,7 @@ async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_
         }
 
 @app.post("/process", response_model=ProcessResult)
-async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+async def process_emails(background_tasks: BackgroundTasks, run_async: bool = False, request: Request = None, user: Dict[str, Any] = Depends(_get_current_user_with_ai_check), _frontend_key: bool = Depends(validate_frontend_key)):
     """
     Procesa correos electrónicos para extraer facturas.
     
@@ -367,7 +368,9 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
 @app.post("/process-direct")
 async def process_emails_direct(
     limit: Optional[int] = 10,
-    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check),
+    request: Request = None,
+    _frontend_key: bool = Depends(validate_frontend_key)
 ):
     """Procesa correos directamente con límite (máximo 10 para procesamiento manual)."""
     try:
@@ -414,7 +417,11 @@ async def process_emails_direct(
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @app.post("/tasks/process")
-async def enqueue_process_emails(user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+async def enqueue_process_emails(
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check),
+    request: Request = None,
+    _frontend_key: bool = Depends(validate_frontend_key)
+):
     """Encola una ejecución de procesamiento de correos y retorna un job_id."""
     
     # Verificar si el job automático está ejecutándose
