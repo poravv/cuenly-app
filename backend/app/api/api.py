@@ -245,6 +245,38 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
         "email_processing_start_date": processing_start_date
     }
 
+@app.get("/user/trial-status")
+async def get_trial_status(user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Verifica el estado del trial del usuario actual.
+    Retorna información específica sobre el estado del trial para automatización de procesamiento.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    try:
+        user_repo = UserRepository()
+        owner_email = (user.get('email') or '').lower()
+        trial_info = user_repo.get_trial_info(owner_email)
+        
+        return {
+            "success": True,
+            "can_process": not trial_info.get('trial_expired', True),
+            "is_trial_user": trial_info.get('is_trial_user', False),
+            "trial_expired": trial_info.get('trial_expired', True),
+            "trial_end_date": trial_info.get('trial_end_date'),
+            "ai_invoices_processed": trial_info.get('ai_invoices_processed', 0),
+            "ai_invoice_limit": trial_info.get('ai_invoice_limit', 0),
+            "message": "Trial expirado. Actualiza tu suscripción para continuar." if trial_info.get('trial_expired', True) else "Trial activo"
+        }
+    except Exception as e:
+        logger.error(f"Error al verificar trial status: {str(e)}")
+        return {
+            "success": False,
+            "can_process": False,
+            "message": f"Error al verificar estado del trial: {str(e)}"
+        }
+
 class UpdateProcessingStartDatePayload(BaseModel):
     start_date: Optional[str] = None  # ISO format date, si es None usa fecha actual
 
@@ -331,6 +363,20 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
         ProcessResult: Resultado del procesamiento.
     """
     try:
+        # Verificar trial antes de procesar
+        user_repo = UserRepository()
+        owner_email = (user.get('email') or '').lower()
+        trial_info = user_repo.get_trial_info(owner_email)
+        
+        if trial_info['is_trial_user'] and trial_info['trial_expired']:
+            logger.warning(f"Intento de procesamiento con trial expirado: {owner_email}")
+            return ProcessResult(
+                success=False,
+                message="TRIAL_EXPIRED: Tu período de prueba ha expirado. Por favor, actualiza tu suscripción para continuar procesando facturas.",
+                invoice_count=0,
+                invoices=[]
+            )
+        
         if run_async:
             # Ejecutar en segundo plano
             background_tasks.add_task(process_emails_task)

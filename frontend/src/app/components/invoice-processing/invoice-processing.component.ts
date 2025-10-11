@@ -143,6 +143,13 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
 
     this.apiService.processEmailsDirect().subscribe({
       next: (result) => {
+        // Verificar si es un error de trial expirado
+        if (!result.success && result.message?.includes('TRIAL_EXPIRED')) {
+          this.showTrialExpiredError(result.message.replace('TRIAL_EXPIRED: ', ''));
+          this.loading = false;
+          return;
+        }
+        
         this.processingResult = result;
         this.loading = false;
         
@@ -152,39 +159,74 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         }, 1000);
       },
       error: (err) => {
-        this.error = err.error?.detail || 'Error al procesar correos';
+        // Verificar si el error del backend es trial expirado
+        if (err.error?.message?.includes('TRIAL_EXPIRED')) {
+          this.showTrialExpiredError(err.error.message.replace('TRIAL_EXPIRED: ', ''));
+        } else {
+          this.error = err.error?.detail || err.error?.message || 'Error al procesar correos';
+        }
         this.loading = false;
         console.error('Error procesando correos:', err);
       }
     });
   }
 
+  // Mostrar notificación elegante para trial expirado
+  private showTrialExpiredError(message: string): void {
+    this.error = `🚫 ${message}`;
+    
+    // Auto-limpiar el error después de 10 segundos
+    setTimeout(() => {
+      if (this.error?.includes('🚫')) {
+        this.error = null;
+      }
+    }, 10000);
+  }
+
   startJob(): void {
     this.jobLoading = true;
-    const targetInterval = (this.jobIntervalInput && this.jobIntervalInput >= 1)
-      ? this.jobIntervalInput!
-      : (this.jobStatus?.interval_minutes || 3);
+    
+    // Verificar trial antes de iniciar automatización
+    this.apiService.getTrialStatus().subscribe({
+      next: (trialStatus) => {
+        if (!trialStatus.can_process) {
+          this.jobError = trialStatus.message;
+          this.jobLoading = false;
+          return;
+        }
+        
+        // Trial válido, proceder con el inicio del job
+        const targetInterval = (this.jobIntervalInput && this.jobIntervalInput >= 1)
+          ? this.jobIntervalInput!
+          : (this.jobStatus?.interval_minutes || 3);
 
-    this.apiService.setJobInterval(targetInterval).subscribe({
-      next: () => {
-        this.apiService.startJob().subscribe({
-          next: (result) => {
-            this.jobStatus = result;
-            this.jobLoading = false;
-            this.jobIntervalTouched = false;
-            this.jobIntervalInput = this.jobStatus?.interval_minutes ?? targetInterval;
-            this.startAutoRefresh();
-            setTimeout(() => this.getJobStatus(), 300);
+        this.apiService.setJobInterval(targetInterval).subscribe({
+          next: () => {
+            this.apiService.startJob().subscribe({
+              next: (result) => {
+                this.jobStatus = result;
+                this.jobLoading = false;
+                this.jobIntervalTouched = false;
+                this.jobIntervalInput = this.jobStatus?.interval_minutes ?? targetInterval;
+                this.startAutoRefresh();
+                setTimeout(() => this.getJobStatus(), 300);
+              },
+              error: (err) => {
+                this.jobError = 'Error al iniciar el job programado';
+                this.jobLoading = false;
+                console.error(err);
+              }
+            });
           },
           error: (err) => {
-            this.jobError = 'Error al iniciar el job programado';
+            this.jobError = 'No se pudo actualizar el intervalo';
             this.jobLoading = false;
             console.error(err);
           }
         });
       },
       error: (err) => {
-        this.jobError = 'No se pudo actualizar el intervalo';
+        this.jobError = 'Error al verificar estado del trial';
         this.jobLoading = false;
         console.error(err);
       }
