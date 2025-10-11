@@ -1,6 +1,7 @@
 import { NgModule } from '@angular/core';
 import { RouterModule, Routes } from '@angular/router';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
+import { InvoiceProcessingComponent } from './components/invoice-processing/invoice-processing.component';
 import { UploadComponent } from './components/upload/upload.component';
 import { UploadXmlComponent } from './components/upload-xml/upload-xml.component';
 import { EmailConfigComponent } from './components/email-config/email-config.component';
@@ -23,11 +24,12 @@ const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [LoginGuard] },
   { path: 'suspended', component: SuspendedComponent },
   { path: '', component: DashboardComponent, canActivate: [AuthGuard] },
+    { path: 'manage-invoices', component: InvoiceProcessingComponent, canActivate: [AuthGuard] },
   { path: 'upload', component: UploadComponent, canActivate: [AuthGuard] },
   { path: 'upload-xml', component: UploadXmlComponent, canActivate: [AuthGuard] },
   { path: 'invoice-explorer', component: InvoiceExplorerComponent, canActivate: [AuthGuard] },
   { path: 'invoice-list', component: InvoicesV2Component, canActivate: [AuthGuard] },
-  { path: 'email-config', component: EmailConfigComponent, canActivate: [AuthGuard] },
+  { path: 'email-settings', component: EmailConfigComponent, canActivate: [AuthGuard] },
   { path: 'templates-export', component: ExportTemplatesComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/new', component: TemplateEditorComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/create', component: TemplateEditorComponent, canActivate: [AuthGuard] },
