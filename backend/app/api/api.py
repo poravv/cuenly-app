@@ -2689,25 +2689,32 @@ async def set_auto_refresh(payload: AutoRefreshPayload):
 # Endpoints legacy de exportación eliminados (Excel/Documental)
 
 @app.get("/export/mongodb/stats")
-async def mongodb_export_stats():
-    """Estadísticas básicas de la base de facturas."""
+async def mongodb_export_stats(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Estadísticas básicas de la base de facturas del usuario actual."""
     try:
         from app.modules.mongo_query_service import MongoQueryService
         from app.config.export_config import get_mongodb_config
         config = get_mongodb_config()
-        service = MongoQueryService(connection_string=config["connection_string"])  # fuerza v2 internamente
+        service = MongoQueryService(connection_string=config["connection_string"])
         client = service._get_client()
         db = client[config["database"]]
         headers = db["invoice_headers"]
         items = db["invoice_items"]
-        total_headers = headers.count_documents({})
-        total_items = items.count_documents({})
+        
+        # Filtrar por usuario actual
+        user_filter = {"owner_email": user["email"]}
+        
+        total_headers = headers.count_documents(user_filter)
+        total_items = items.count_documents(user_filter)
         total_amount = list(headers.aggregate([
+            {"$match": user_filter},
             {"$group": {"_id": None, "sum": {"$sum": "$totales.total"}}}
         ]))
+        
         return {
             "success": True,
             "collection": "invoice_headers",
+            "user_email": user["email"],
             "total_invoices": total_headers,
             "total_items": total_items,
             "total_amount": float(total_amount[0]["sum"]) if total_amount else 0.0
