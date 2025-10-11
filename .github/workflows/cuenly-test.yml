@@ -125,15 +125,36 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
           
-      - name: Generate environment files
+      - name: Generate environment files with frontendApiKey
         run: |
           mkdir -p frontend/src/environments
           
-          # Generar environment.ts para testing
+          # Crear archivo de interfaz para TypeScript
+          cat > frontend/src/environments/environment.interface.ts << 'EOF'
+          export interface Environment {
+            production: boolean;
+            apiUrl: string;
+            frontendApiKey: string;
+            firebase: {
+              apiKey: string;
+              authDomain: string;
+              projectId: string;
+              storageBucket: string;
+              messagingSenderId: string;
+              appId: string;
+              measurementId: string;
+            };
+          }
+          EOF
+          
+          # Generar environment.ts para testing con frontendApiKey
           cat > frontend/src/environments/environment.ts << 'EOF'
-          export const environment = {
+          import { Environment } from './environment.interface';
+
+          export const environment: Environment = {
             production: false,
             apiUrl: '',
+            frontendApiKey: 'cuenly-frontend-test-key',
             firebase: {
               apiKey: "test-api-key",
               authDomain: "test.firebaseapp.com",
@@ -147,7 +168,29 @@ jobs:
           EOF
           
           # Generar environment.prod.ts para testing
-          cp frontend/src/environments/environment.ts frontend/src/environments/environment.prod.ts
+          cat > frontend/src/environments/environment.prod.ts << 'EOF'
+          import { Environment } from './environment.interface';
+
+          export const environment: Environment = {
+            production: true,
+            apiUrl: '',
+            frontendApiKey: 'cuenly-frontend-test-key',
+            firebase: {
+              apiKey: "test-api-key",
+              authDomain: "test.firebaseapp.com",
+              projectId: "test-project",
+              storageBucket: "test.appspot.com",
+              messagingSenderId: "123456789",
+              appId: "1:123456789:web:test",
+              measurementId: "G-TEST123"
+            }
+          };
+          EOF
+          
+          # Verificar que los archivos fueron generados correctamente
+          echo "✅ Environment files generados para testing:"
+          echo "🔍 environment.ts frontendApiKey: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.ts || echo '❌ NO ENCONTRADO')"
+          echo "🔍 environment.prod.ts frontendApiKey: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.prod.ts || echo '❌ NO ENCONTRADO')"
           
       - name: Install dependencies
         run: |
