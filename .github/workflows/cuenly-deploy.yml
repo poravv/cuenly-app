@@ -175,12 +175,21 @@ jobs:
         run: |
           mkdir -p frontend/src/environments
           
+          # Verificar que FRONTEND_API_KEY está configurado
+          if [ -z "${{ secrets.FRONTEND_API_KEY }}" ]; then
+            echo "⚠️  FRONTEND_API_KEY no configurado, usando valor por defecto"
+            FRONTEND_API_KEY="cuenly-frontend-dev-key-2025"
+          else
+            FRONTEND_API_KEY="${{ secrets.FRONTEND_API_KEY }}"
+            echo "✅ FRONTEND_API_KEY configurado correctamente"
+          fi
+          
           # Generar environment.ts
-          cat > frontend/src/environments/environment.ts << 'EOF'
+          cat > frontend/src/environments/environment.ts << EOF
           export const environment = {
             production: false,
             apiUrl: '',
-            frontendApiKey: "${{ secrets.FRONTEND_API_KEY }}",
+            frontendApiKey: "${FRONTEND_API_KEY}",
             firebase: {
               apiKey: "${{ secrets.FIREBASE_API_KEY }}",
               authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
@@ -194,11 +203,11 @@ jobs:
           EOF
           
           # Generar environment.prod.ts
-          cat > frontend/src/environments/environment.prod.ts << 'EOF'
+          cat > frontend/src/environments/environment.prod.ts << EOF
           export const environment = {
             production: true,
             apiUrl: '',
-            frontendApiKey: "${{ secrets.FRONTEND_API_KEY }}",
+            frontendApiKey: "${FRONTEND_API_KEY}",
             firebase: {
               apiKey: "${{ secrets.FIREBASE_API_KEY }}",
               authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
@@ -210,6 +219,13 @@ jobs:
             }
           };
           EOF
+          
+          # Verificar que los archivos fueron generados correctamente
+          echo "📋 Environment files generados:"
+          echo "🔍 environment.ts contiene frontendApiKey:"
+          grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.ts || echo "❌ No encontrado"
+          echo "🔍 environment.prod.ts contiene frontendApiKey:"
+          grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.prod.ts || echo "❌ No encontrado"
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -280,6 +296,16 @@ jobs:
       - name: Create/Update backend secrets
         run: |
           set -euo pipefail
+          
+          # Configurar FRONTEND_API_KEY con fallback
+          if [ -z "${{ secrets.FRONTEND_API_KEY }}" ]; then
+            echo "⚠️  FRONTEND_API_KEY no configurado en secrets, usando valor por defecto"
+            FRONTEND_API_KEY_VALUE="cuenly-frontend-dev-key-2025"
+          else
+            FRONTEND_API_KEY_VALUE="${{ secrets.FRONTEND_API_KEY }}"
+            echo "✅ FRONTEND_API_KEY configurado desde secrets"
+          fi
+          
           kubectl delete secret backend-env-secrets -n ${{ env.NAMESPACE }} --ignore-not-found=true
           kubectl create secret generic backend-env-secrets \
             --namespace=${{ env.NAMESPACE }} \
@@ -295,7 +321,7 @@ jobs:
             --from-literal=AUTH_REQUIRE="${{ secrets.AUTH_REQUIRE }}" \
             --from-literal=FIREBASE_PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID }}" \
             --from-literal=MULTI_TENANT_ENFORCE="${{ secrets.MULTI_TENANT_ENFORCE }}" \
-            --from-literal=FRONTEND_API_KEY="${{ secrets.FRONTEND_API_KEY }}"
+            --from-literal=FRONTEND_API_KEY="${FRONTEND_API_KEY_VALUE}"
             
       - name: Create/Update MongoDB secrets
         run: |
