@@ -215,7 +215,7 @@
 /* Simple Chart */
 .simple-chart {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   justify-content: space-around;
   height: 200px;
   padding: 20px 0;
@@ -242,7 +242,7 @@
   background: #f8f9fa;
   border-radius: 20px;
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   overflow: hidden;
 }
 
@@ -287,7 +287,7 @@
 .user-stats {
   display: flex;
   flex-direction: column;
-  align-items: end;
+  align-items: flex-end;
   gap: 4px;
 }
 
@@ -611,7 +611,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 20px;
-  align-items: end;
+  align-items: flex-end;
 }
 
 .filter-group {
@@ -657,7 +657,7 @@
 .daily-chart,
 .hourly-chart {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   justify-content: space-around;
   height: 200px;
   padding: 20px 0;
@@ -680,7 +680,7 @@
   background: #f8f9fa;
   border-radius: 4px;
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   overflow: hidden;
   margin-bottom: 8px;
 }
