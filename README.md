@@ -2,6 +2,8 @@
 
 CuenlyApp es una herramienta automatizada para extraer información de facturas a partir de correos electrónicos y consolidarla en archivos Excel, con observabilidad completa y analytics integrado.
 
+🎯 **Estado actual**: Sistema de monitoreo centralizado y Firebase Analytics completamente funcional.
+
 ## 🚀 Características Principales
 
 - **Procesamiento Inteligente de Facturas**
