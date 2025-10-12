@@ -1,35 +1,78 @@
 # CuenlyApp
 
-CuenlyApp es una herramienta automatizada para extraer información de facturas a partir de correos electrónicos y consolidarla en archivos Excel.
+CuenlyApp es una herramienta automatizada para extraer información de facturas a partir de correos electrónicos y consolidarla en archivos Excel, con observabilidad completa y analytics integrado.
 
-## 🚀 Características
+## 🚀 Características Principales
 
-- Conexión automática a cuentas de correo para recuperar facturas
-- Extracción de PDFs adjuntos o desde enlaces
-- Procesamiento de PDFs mediante OCR para extraer información clave
-- Uso de inteligencia artificial para identificar datos de facturas
-- Exportación automática a Excel
-- API RESTful para integración con otros sistemas
-- Interfaz web amigable para gestión
+- **Procesamiento Inteligente de Facturas**
+  - Conexión automática a cuentas de correo para recuperar facturas
+  - Extracción de PDFs adjuntos o desde enlaces web
+  - Procesamiento de PDFs mediante OCR avanzado
+  - Uso de inteligencia artificial (GPT) para identificar datos clave
+  - Exportación automática a Excel con templates personalizables
+
+- **Interfaz y Experiencia de Usuario**
+  - Interfaz web moderna y responsive
+  - Sistema de notificaciones elegante (sin popups intrusivos)
+  - Panel de administración completo con gestión de usuarios y planes
+  - Autenticación segura con Firebase Auth
+  - Control de suscripciones y límites de uso
+
+- **Observabilidad y Monitoreo**
+  - Métricas completas con Prometheus y Grafana
+  - Logs estructurados en formato JSON
+  - AlertManager para notificaciones críticas por email
+  - Firebase Analytics para tracking de uso y comportamiento
+  - Dashboards personalizados para monitoreo en tiempo real
+
+- **API y Integración**
+  - API RESTful completa para integración con otros sistemas
+  - Autenticación por API Key para servicios externos
+  - Documentación automática con FastAPI/OpenAPI
+  - Rate limiting y middleware de seguridad
 
 ## 🧱 Arquitectura
 
-### Backend
-- Python 3.9+
-- FastAPI
-- PyMuPDF / Tesseract OCR
-- Pandas para manipulación de datos
+### Backend (FastAPI + Python)
+- **FastAPI** - Framework web moderno y rápido
+- **Python 3.11+** - Lenguaje principal
+- **PyMuPDF / Tesseract OCR** - Procesamiento de PDFs
+- **Pandas** - Manipulación de datos y exportación Excel
+- **OpenAI GPT** - Inteligencia artificial para extracción de datos
+- **Prometheus** - Métricas y observabilidad
+- **Structured Logging** - Logs JSON para análisis
 
-### Frontend
-- Angular 15
-- Bootstrap 5
+### Frontend (Angular + Firebase)
+- **Angular 17** - Framework web moderno
+- **Firebase Auth** - Autenticación segura
+- **Firebase Analytics** - Tracking de uso automático
+- **Bootstrap 5** - UI/UX responsivo
+- **Sistema de Notificaciones** - Feedback elegante al usuario
+
+### Observabilidad Stack
+- **Prometheus** - Recolección de métricas
+- **Grafana** - Dashboards y visualización
+- **AlertManager** - Alertas por email para eventos críticos
+- **Firebase Analytics** - Métricas de comportamiento de usuario
 
 ## 📋 Requisitos Previos
 
-- Python 3.9 o superior
-- Node.js 16 o superior (para desarrollo frontend)
-- Tesseract OCR instalado en el sistema
-- Docker y Kubernetes (para deployment en producción)
+### Para Desarrollo
+- **Python 3.11+** - Runtime del backend
+- **Node.js 18+** - Para desarrollo del frontend Angular
+- **Docker & Docker Compose** - Contenedores para desarrollo
+- **Tesseract OCR** - Procesamiento de texto en imágenes
+
+### Para Producción
+- **Kubernetes cluster** - Orquestación de contenedores
+- **Firebase project** - Autenticación y analytics
+- **OpenAI API Key** - Procesamiento inteligente de facturas
+- **SMTP server** - Para alertas y notificaciones
+
+### Para Observabilidad (Opcional)
+- **Prometheus** - Stack de métricas
+- **Grafana** - Dashboards
+- **AlertManager** - Gestión de alertas
 
 ## 🚀 Deployment
 
@@ -175,10 +218,107 @@ La API proporciona los siguientes endpoints:
 - `GET /excel`: Descarga el archivo Excel con las facturas procesadas
 - `GET /status`: Obtiene el estado actual del sistema
 
-## 👥 Contribución
+## 🎯 Mejoras Recientes Implementadas
 
-Las contribuciones son bienvenidas. Por favor, envía un pull request para cualquier mejora.
+### ✨ Sistema de Notificaciones Moderno
+- Reemplazó `alert()` y `confirm()` básicos por notificaciones elegantes
+- Notificaciones no intrusivas con auto-dismiss
+- Soporte para acciones personalizables y confirmaciones
+- Diseño responsivo y accesible
+
+### 🔢 Corrección de Redondeo en Exportaciones
+- Corregido el truncamiento incorrecto de valores decimales
+- Los montos de IVA y totales ahora se redondean correctamente
+- Mejor precisión en cálculos financieros
+
+### 🛡️ Panel de Administración Mejorado
+- Sistema completo de gestión de usuarios y roles
+- Gestión de planes y suscripciones
+- Control de límites de uso y estados de cuenta
+- Estadísticas y métricas de uso por usuario
+
+### 📊 Observabilidad Completa
+- Métricas automáticas de performance y uso
+- Logs estructurados para análisis y debugging
+- Dashboards de Grafana para monitoreo visual
+- Alertas automáticas por email para eventos críticos
+
+### � Firebase Analytics
+- Tracking automático de navegación y eventos
+- Métricas de comportamiento de usuario
+- Analytics de uso de funcionalidades
+- Dashboard en tiempo real en Firebase Console
+
+> 📚 **Documentación detallada** disponible en [`docs/MEJORAS_IMPLEMENTADAS.md`](docs/MEJORAS_IMPLEMENTADAS.md)
+
+## 🔧 Tecnologías y Stack Completo
+
+### Core Application
+- **Backend:** FastAPI + Python 3.11 + SQLAlchemy + Pydantic
+- **Frontend:** Angular 17 + TypeScript + Bootstrap 5 + RxJS
+- **Authentication:** Firebase Auth con Google OAuth
+- **Database:** MongoDB con índices optimizados
+- **AI/ML:** OpenAI GPT-4 para extracción inteligente de datos
+
+### DevOps & Deployment
+- **Containerization:** Docker + Multi-stage builds
+- **Orchestration:** Kubernetes con Helm charts
+- **CI/CD:** GitHub Actions con deployment automático
+- **Registry:** GitHub Container Registry (GHCR)
+
+### Observability & Monitoring
+- **Metrics:** Prometheus + custom exporters
+- **Visualization:** Grafana dashboards personalizados
+- **Alerting:** AlertManager + SMTP notifications
+- **Logging:** Structured JSON logs + centralized collection
+- **Analytics:** Firebase Analytics con eventos customizados
+
+### Security & Performance
+- **API Security:** JWT tokens + API Key authentication
+- **Rate Limiting:** Custom middleware con Redis backend
+- **Network Policies:** Kubernetes security policies
+- **HTTPS/TLS:** Cert-manager + Let's Encrypt
+- **Secrets Management:** Kubernetes secrets + GitHub secrets
+
+## �👥 Contribución
+
+Las contribuciones son bienvenidas. Para contribuir:
+
+1. **Fork** el repositorio
+2. Crea una **rama feature** (`git checkout -b feature/nueva-funcionalidad`)
+3. **Commit** tus cambios (`git commit -m 'Agregar nueva funcionalidad'`)
+4. **Push** a la rama (`git push origin feature/nueva-funcionalidad`)
+5. Abre un **Pull Request**
+
+### 📋 Guidelines para Contribuidores
+
+- Seguir las convenciones de código existentes
+- Escribir tests para nuevas funcionalidades
+- Actualizar documentación cuando sea necesario
+- Usar commits descriptivos y claros
 
 ## 📜 Licencia
 
-Este proyecto está licenciado bajo la Licencia MIT. Consulta el archivo LICENSE para más detalles.
+Este proyecto está licenciado bajo la **Licencia MIT**. Eres libre de:
+
+- ✅ **Usar** - Usar el software para cualquier propósito
+- ✅ **Modificar** - Cambiar el código fuente
+- ✅ **Distribuir** - Compartir copias del software
+- ✅ **Sublicenciar** - Otorgar los mismos derechos a otros
+- ✅ **Vender** - Usar con fines comerciales
+
+**Condiciones:**
+- Incluir el aviso de copyright y licencia en todas las copias
+- No hay garantía; el software se proporciona "tal como está"
+
+> 📄 Consulta el archivo [`LICENSE`](LICENSE) para más detalles legales completos.
+
+## 📞 Soporte y Contacto
+
+- **Issues:** [GitHub Issues](https://github.com/poravv/cuenly-app/issues)
+- **Documentación:** Carpeta [`docs/`](docs/)
+- **Email:** contacto a través de GitHub
+
+---
+
+**⭐ Si este proyecto te resulta útil, ¡considera darle una estrella en GitHub!**

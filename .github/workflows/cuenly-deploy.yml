@@ -205,7 +205,24 @@ jobs:
           }
           EOF
           
-          # Los archivos no existen en el repo, crearlos desde cero
+          # Configurar Firebase con fallbacks a valores conocidos
+          FIREBASE_API_KEY="${{ secrets.FIREBASE_API_KEY }}"
+          FIREBASE_AUTH_DOMAIN="${{ secrets.FIREBASE_AUTH_DOMAIN }}"
+          FIREBASE_PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID }}"
+          FIREBASE_STORAGE_BUCKET="${{ secrets.FIREBASE_STORAGE_BUCKET }}"
+          FIREBASE_MESSAGING_SENDER_ID="${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}"
+          FIREBASE_APP_ID="${{ secrets.FIREBASE_APP_ID }}"
+          FIREBASE_MEASUREMENT_ID="${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+          
+          # Usar valores por defecto si los secrets están vacíos
+          [ -z "$FIREBASE_API_KEY" ] && FIREBASE_API_KEY="AIzaSyAKFgwLUwsibGv8RMWFtGAZiBkUBy93r00"
+          [ -z "$FIREBASE_AUTH_DOMAIN" ] && FIREBASE_AUTH_DOMAIN="cuenly-app.firebaseapp.com"
+          [ -z "$FIREBASE_PROJECT_ID" ] && FIREBASE_PROJECT_ID="cuenly-app"
+          [ -z "$FIREBASE_STORAGE_BUCKET" ] && FIREBASE_STORAGE_BUCKET="cuenly-app.firebasestorage.app"
+          [ -z "$FIREBASE_MESSAGING_SENDER_ID" ] && FIREBASE_MESSAGING_SENDER_ID="381437069453"
+          [ -z "$FIREBASE_APP_ID" ] && FIREBASE_APP_ID="1:381437069453:web:b4cc8c4856a1a168817ac4"
+          [ -z "$FIREBASE_MEASUREMENT_ID" ] && FIREBASE_MEASUREMENT_ID="G-JCQ8120888"
+          
           echo "🔧 Creando environment.ts..."
           cat > frontend/src/environments/environment.ts << EOF
           import { Environment } from './environment.interface';
@@ -214,13 +231,13 @@ jobs:
             apiUrl: '',
             frontendApiKey: "${FRONTEND_API_KEY}",
             firebase: {
-              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
-              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
-              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
-              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
-              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
-              appId: "${{ secrets.FIREBASE_APP_ID }}",
-              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+              apiKey: "${FIREBASE_API_KEY}",
+              authDomain: "${FIREBASE_AUTH_DOMAIN}",
+              projectId: "${FIREBASE_PROJECT_ID}",
+              storageBucket: "${FIREBASE_STORAGE_BUCKET}",
+              messagingSenderId: "${FIREBASE_MESSAGING_SENDER_ID}",
+              appId: "${FIREBASE_APP_ID}",
+              measurementId: "${FIREBASE_MEASUREMENT_ID}"
             }
           };
           EOF
@@ -233,24 +250,30 @@ jobs:
             apiUrl: '',
             frontendApiKey: "${FRONTEND_API_KEY}",
             firebase: {
-              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
-              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
-              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
-              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
-              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
-              appId: "${{ secrets.FIREBASE_APP_ID }}",
-              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+              apiKey: "${FIREBASE_API_KEY}",
+              authDomain: "${FIREBASE_AUTH_DOMAIN}",
+              projectId: "${FIREBASE_PROJECT_ID}",
+              storageBucket: "${FIREBASE_STORAGE_BUCKET}",
+              messagingSenderId: "${FIREBASE_MESSAGING_SENDER_ID}",
+              appId: "${FIREBASE_APP_ID}",
+              measurementId: "${FIREBASE_MEASUREMENT_ID}"
             }
           };
           EOF
           
-          echo "✅ Archivos environment generados desde cero"
+          echo "✅ Archivos environment generados con Firebase Analytics"
           echo "📋 Archivos creados:"
           ls -la frontend/src/environments/
           echo ""
-          echo "🔍 Verificando contenido generado:"
-          echo "environment.ts frontendApiKey: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.ts || echo '❌ NO ENCONTRADO')"
-          echo "environment.prod.ts frontendApiKey: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.prod.ts || echo '❌ NO ENCONTRADO')"
+          echo "🔍 Verificando Firebase Analytics configurado:"
+          echo "measurementId en environment.ts: $(grep -o 'measurementId: ".*"' frontend/src/environments/environment.ts || echo '❌ NO ENCONTRADO')"
+          echo "measurementId en environment.prod.ts: $(grep -o 'measurementId: ".*"' frontend/src/environments/environment.prod.ts || echo '❌ NO ENCONTRADO')"
+          echo "projectId en prod: $(grep -o 'projectId: ".*"' frontend/src/environments/environment.prod.ts || echo '❌ NO ENCONTRADO')"
+          echo ""
+          echo "🔧 Firebase config values used:"
+          echo "- API Key: ${FIREBASE_API_KEY:0:10}..."
+          echo "- Project ID: $FIREBASE_PROJECT_ID"
+          echo "- Measurement ID: $FIREBASE_MEASUREMENT_ID"
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
