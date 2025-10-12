@@ -2,9 +2,7 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { AuthService } from './services/auth.service';
 import { FirebaseService } from './services/firebase.service';
-// Analytics services - se auto-inicializan al ser inyectados
 import { AnalyticsService } from './services/analytics.service';
-import { AnalyticsDebugService } from './services/analytics-debug.service';
 
 @Component({
   selector: 'app-root',
@@ -19,8 +17,7 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(
     private auth: AuthService,
     private firebase: FirebaseService,
-    private analytics: AnalyticsService,  // Inicializa tracking automático
-    private analyticsDebug: AnalyticsDebugService  // Debug tools
+    private analytics: AnalyticsService  // Auto-inicializa tracking de páginas
   ) {}
 
   ngOnInit(): void {
@@ -54,8 +51,7 @@ export class AppComponent implements OnInit, OnDestroy {
       }
     }));
 
-    // Debug info para desarrollo
-    console.log('🔧 Analytics Debug: Use analyticsDebug.test() in console to test Firebase Analytics');
+
   }
 
   ngOnDestroy(): void {
