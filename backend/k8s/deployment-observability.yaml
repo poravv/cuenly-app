@@ -56,6 +56,8 @@ spec:
         # Logging annotations for Loki
         loki.grafana.com/scrape: "true"
         loki.grafana.com/tenant: "cuenly"
+        # Centralized monitoring reference
+        cuenly.com/monitoring-namespace: "cuenly-monitoring"
         # Performance monitoring
         cuenly.com/performance-monitoring: "enabled"
         cuenly.com/log-format: "json"

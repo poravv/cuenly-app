@@ -1,0 +1,270 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cuenly-grafana-config
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-grafana
+    component: visualization
+data:
+  grafana.ini: |
+    [analytics]
+    check_for_updates = false
+    reporting_enabled = false
+    
+    [security]
+    admin_user = admin
+    admin_password = cuenly2025!
+    disable_gravatar = false
+    
+    [users]
+    allow_sign_up = false
+    
+    [auth.anonymous]
+    enabled = false
+    
+    [log]
+    mode = console
+    level = info
+    
+    [paths]
+    data = /var/lib/grafana/
+    logs = /var/log/grafana
+    plugins = /var/lib/grafana/plugins
+    provisioning = /etc/grafana/provisioning
+    
+    [server]
+    protocol = http
+    http_port = 3000
+    domain = localhost
+    root_url = %(protocol)s://%(domain)s:%(http_port)s/
+    
+    [database]
+    type = sqlite3
+    path = grafana.db
+    
+    [session]
+    provider = file
+    
+    [dashboards]
+    default_home_dashboard_path = /etc/grafana/dashboards/cuenly-overview.json
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cuenly-grafana-datasources
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-grafana
+    component: datasources
+    grafana_datasource: "1"
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+    # Prometheus - Métricas principales
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://cuenly-prometheus:9090
+      isDefault: true
+      editable: false
+      jsonData:
+        httpMethod: POST
+        manageAlerts: true
+        prometheusType: Prometheus
+        prometheusVersion: 2.40.0
+        cacheLevel: 'High'
+        disableRecordingRules: false
+        incrementalQueryOverlapWindow: 10m
+      
+    # Loki - Logs centralizados
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://cuenly-loki:3100
+      isDefault: false
+      editable: false
+      jsonData:
+        maxLines: 1000
+        derivedFields:
+          - datasourceUid: prometheus
+            matcherRegex: "trace_id=(\\w+)"
+            name: TraceID
+            url: "$${__value.raw}"
+      
+    # AlertManager - Gestión de alertas
+    - name: AlertManager
+      type: alertmanager
+      access: proxy
+      url: http://cuenly-alertmanager:9093
+      isDefault: false
+      editable: false
+      jsonData:
+        implementation: prometheus
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cuenly-grafana-dashboards-config
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-grafana
+    component: dashboards
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+    - name: 'cuenly-dashboards'
+      orgId: 1
+      folder: 'Cuenly'
+      type: file
+      disableDeletion: false
+      editable: true
+      updateIntervalSeconds: 30
+      allowUiUpdates: true
+      options:
+        path: /etc/grafana/dashboards
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cuenly-grafana-storage
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-grafana
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cuenly-grafana
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-grafana
+    component: visualization
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: visualization
+    app.kubernetes.io/part-of: cuenly-monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Para PVC
+  selector:
+    matchLabels:
+      app: cuenly-grafana
+  template:
+    metadata:
+      labels:
+        app: cuenly-grafana
+        component: visualization
+      annotations:
+        cuenly.com/restart-safe: "true"
+    spec:
+      serviceAccountName: cuenly-monitoring
+      securityContext:
+        fsGroup: 472
+        runAsGroup: 472
+        runAsUser: 472
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.2.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+          name: http-grafana
+          protocol: TCP
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: "admin"
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "cuenly2025!"
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_SERVER_DOMAIN
+          value: "cuenly-grafana"
+        - name: GF_LOG_LEVEL
+          value: "INFO"
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-piechart-panel,grafana-worldmap-panel"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: http-grafana
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: http-grafana
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 10
+          failureThreshold: 3
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+          requests:
+            cpu: 200m
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /etc/grafana/grafana.ini
+          name: config
+          subPath: grafana.ini
+        - mountPath: /etc/grafana/provisioning/datasources
+          name: datasources
+        - mountPath: /etc/grafana/provisioning/dashboards
+          name: dashboards-config
+        - mountPath: /etc/grafana/dashboards
+          name: dashboards
+        - mountPath: /var/lib/grafana
+          name: storage
+      volumes:
+      - name: config
+        configMap:
+          name: cuenly-grafana-config
+      - name: datasources
+        configMap:
+          name: cuenly-grafana-datasources
+      - name: dashboards-config
+        configMap:
+          name: cuenly-grafana-dashboards-config
+      - name: dashboards
+        configMap:
+          name: cuenly-dashboards
+          optional: true
+      - name: storage
+        persistentVolumeClaim:
+          claimName: cuenly-grafana-storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cuenly-grafana
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-grafana
+    component: visualization
+spec:
+  ports:
+  - port: 3000
+    protocol: TCP
+    name: http-grafana
+    targetPort: http-grafana
+  selector:
+    app: cuenly-grafana
+  type: ClusterIP

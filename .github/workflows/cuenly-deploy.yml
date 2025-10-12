@@ -548,6 +548,73 @@ jobs:
           
           echo "✅ Stack de observabilidad desplegado"
           
+      - name: Deploy centralized monitoring stack
+        run: |
+          set -euo pipefail
+          echo "� Desplegando stack de monitoreo centralizado..."
+          
+          # 1. Crear namespace y RBAC
+          echo "🔧 Creando infraestructura de monitoreo..."
+          kubectl apply -f k8s-monitoring/namespace.yaml
+          
+          # 2. Limpiar recursos legacy del monitoring namespace anterior
+          echo "🧹 Limpiando recursos legacy..."
+          kubectl delete statefulset loki -n monitoring --ignore-not-found=true --cascade=false
+          kubectl delete pod loki-0 -n monitoring --force --grace-period=0 --ignore-not-found=true
+          kubectl delete deployment monitoring-grafana -n monitoring --ignore-not-found=true --cascade=false
+          
+          # 3. Desplegar Prometheus primero (otros dependen de él)
+          echo "📈 Desplegando Prometheus..."
+          kubectl apply -f k8s-monitoring/prometheus.yaml
+          
+          # 4. Desplegar Loki
+          echo "� Desplegando Loki..."
+          kubectl apply -f k8s-monitoring/loki.yaml
+          
+          # 5. Desplegar Grafana
+          echo "📊 Desplegando Grafana..."
+          kubectl apply -f k8s-monitoring/grafana.yaml
+          
+          # 6. Esperar que los servicios estén listos
+          echo "⏳ Esperando servicios de monitoreo..."
+          
+          # Prometheus
+          kubectl rollout status statefulset/cuenly-prometheus -n cuenly-monitoring --timeout=300s || echo "⚠️  Prometheus timeout"
+          
+          # Loki
+          kubectl rollout status statefulset/cuenly-loki -n cuenly-monitoring --timeout=300s || echo "⚠️  Loki timeout"
+          
+          # Grafana
+          kubectl rollout status deployment/cuenly-grafana -n cuenly-monitoring --timeout=180s || echo "⚠️  Grafana timeout"
+          
+          # 7. Verificar estado final
+          echo "🔍 Verificando estado del stack de monitoreo..."
+          kubectl get pods -n cuenly-monitoring -o wide
+          kubectl get svc -n cuenly-monitoring
+          
+          # 8. Test de conectividad básico
+          echo "🩺 Test de conectividad básico..."
+          
+          # Verificar que Prometheus puede scrapearse a sí mismo
+          PROMETHEUS_POD=$(kubectl get pods -n cuenly-monitoring -l app=cuenly-prometheus -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$PROMETHEUS_POD" ]; then
+            kubectl exec $PROMETHEUS_POD -n cuenly-monitoring -- wget -q --spider http://localhost:9090/-/healthy && echo "✅ Prometheus health OK" || echo "❌ Prometheus health failed"
+          fi
+          
+          # Verificar que Loki está listo
+          LOKI_POD=$(kubectl get pods -n cuenly-monitoring -l app=cuenly-loki -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$LOKI_POD" ]; then
+            kubectl exec $LOKI_POD -n cuenly-monitoring -- wget -q --spider http://localhost:3100/ready && echo "✅ Loki ready OK" || echo "❌ Loki ready failed"
+          fi
+          
+          # Verificar que Grafana está listo
+          GRAFANA_POD=$(kubectl get pods -n cuenly-monitoring -l app=cuenly-grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$GRAFANA_POD" ]; then
+            kubectl exec $GRAFANA_POD -n cuenly-monitoring -- wget -q --spider http://localhost:3000/api/health && echo "✅ Grafana health OK" || echo "❌ Grafana health failed"
+          fi
+          
+          echo "✅ Stack de monitoreo centralizado desplegado"
+          
       - name: Deploy backend application  
         run: |
           set -euo pipefail
