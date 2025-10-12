@@ -563,6 +563,9 @@ jobs:
           kubectl delete statefulset loki -n monitoring --ignore-not-found=true --cascade=false
           kubectl delete pod loki-0 -n monitoring --force --grace-period=0 --ignore-not-found=true
           kubectl delete deployment monitoring-grafana -n monitoring --ignore-not-found=true --cascade=false
+          # Limpiar ingress duplicado que causa conflicto
+          kubectl delete ingress grafana-ingress -n monitoring --ignore-not-found=true
+          kubectl delete ingress cuenly-grafana-ingress -n monitoring --ignore-not-found=true
           
           # 3. Desplegar Prometheus primero (otros dependen de él)
           echo "📈 Desplegando Prometheus..."
@@ -576,7 +579,13 @@ jobs:
           
           # 4. Desplegar Loki
           echo "� Desplegando Loki..."
-          kubectl apply -f k8s-monitoring/loki.yaml
+          if [ -f "k8s-monitoring/loki-hostpath.yaml" ]; then
+            echo "🔧 Usando versión hostPath para Loki..."
+            kubectl apply -f k8s-monitoring/loki-hostpath.yaml
+          else
+            echo "🔧 Usando versión PVC para Loki..."
+            kubectl apply -f k8s-monitoring/loki.yaml
+          fi
           
           # 5. Desplegar Grafana
           echo "📊 Desplegando Grafana..."
