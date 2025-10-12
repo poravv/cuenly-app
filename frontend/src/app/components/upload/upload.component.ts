@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { UserService } from '../../services/user.service';
+import { AnalyticsService } from '../../services/analytics.service';
 import { ProcessResult, TaskSubmitResponse, TaskStatusResponse } from '../../models/invoice.model';
 import { Subscription, interval } from 'rxjs';
 import { NotificationService } from '../../services/notification.service';
@@ -27,7 +28,8 @@ export class UploadComponent implements OnInit {
     private apiService: ApiService,
     private userService: UserService,
     private router: Router,
-    private notificationService: NotificationService
+    private notificationService: NotificationService,
+    private analytics: AnalyticsService
   ) {
     this.uploadForm = this.fb.group({
       sender: ['', [Validators.maxLength(100)]],
@@ -45,6 +47,9 @@ export class UploadComponent implements OnInit {
     
     if (fileList && fileList.length > 0) {
       const file = fileList[0];
+      
+      // Track file selection
+      this.analytics.trackUpload(file.type, file.size);
       
       // Verificar si es un PDF
       if (file.type !== 'application/pdf') {
