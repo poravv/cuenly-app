@@ -1,0 +1,90 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cuenly-prometheus
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-prometheus
+    component: metrics
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: cuenly-monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: cuenly-prometheus
+  template:
+    metadata:
+      labels:
+        app: cuenly-prometheus
+        component: metrics
+      annotations:
+        cuenly.com/restart-safe: "true"
+    spec:
+      serviceAccountName: cuenly-monitoring
+      securityContext:
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.40.0
+        imagePullPolicy: IfNotPresent
+        args:
+          - --config.file=/etc/prometheus/prometheus.yml
+          - --storage.tsdb.path=/prometheus/
+          - --web.console.libraries=/etc/prometheus/console_libraries
+          - --web.console.templates=/etc/prometheus/consoles
+          - --storage.tsdb.retention.time=30d
+          - --storage.tsdb.retention.size=45GB
+          - --web.enable-lifecycle
+          - --web.enable-admin-api
+        ports:
+        - name: http-prometheus
+          containerPort: 9090
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: http-prometheus
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: http-prometheus
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 4
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 500m
+            memory: 2Gi
+          limits:
+            cpu: 2
+            memory: 4Gi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: storage
+          mountPath: /prometheus
+      volumes:
+      - name: config
+        configMap:
+          name: cuenly-prometheus-config
+      - name: storage
+        hostPath:
+          path: /opt/cuenly-monitoring/prometheus
+          type: DirectoryOrCreate
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
