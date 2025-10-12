@@ -1,0 +1,92 @@
+# Deployment de AlertManager para Kubernetes
+# Archivo: backend/k8s/alertmanager-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: cuenly-backend
+  labels:
+    app: alertmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+      - name: alertmanager
+        image: prom/alertmanager:v0.26.0
+        args:
+        - '--config.file=/etc/alertmanager/config.yml'
+        - '--storage.path=/alertmanager'
+        - '--web.external-url=http://alertmanager:9093'
+        ports:
+        - containerPort: 9093
+        env:
+        - name: ALERTMANAGER_SMTP_HOST
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-secrets
+              key: ALERTMANAGER_SMTP_HOST
+        - name: ALERTMANAGER_SMTP_PORT
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-secrets
+              key: ALERTMANAGER_SMTP_PORT
+        - name: ALERTMANAGER_SMTP_USER
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-secrets
+              key: ALERTMANAGER_SMTP_USER
+        - name: ALERTMANAGER_SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-secrets
+              key: ALERTMANAGER_SMTP_PASSWORD
+        - name: ALERTMANAGER_EMAIL_TO
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-secrets
+              key: ALERTMANAGER_EMAIL_TO
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/alertmanager
+        - name: storage-volume
+          mountPath: /alertmanager
+      volumes:
+      - name: config-volume
+        configMap:
+          name: alertmanager-config
+      - name: storage-volume
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-service
+  namespace: cuenly-backend
+spec:
+  selector:
+    app: alertmanager
+  ports:
+  - port: 9093
+    targetPort: 9093
+  type: ClusterIP
+
+---
+# ConfigMap que monta la configuración desde el archivo config/alertmanager.yml
+# que ya usa variables de entorno para los secrets
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: cuenly-backend
+data:
+  # Este contenido se actualizará desde el workflow usando el archivo config/alertmanager.yml
+  config.yml: "# Placeholder - Se actualiza automáticamente desde el workflow"

@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { ProcessResult, SystemStatus, JobStatus, TaskSubmitResponse, TaskStatusResponse } from '../../models/invoice.model';
 import { interval, Subscription } from 'rxjs';
+import { ObservabilityService } from '../../services/observability.service';
 
 @Component({
   selector: 'app-invoice-processing',
@@ -28,7 +29,11 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   private storageHandler: any;
   private savePrefTimer: any = null;
   
-  constructor(private apiService: ApiService, private cdr: ChangeDetectorRef) {
+  constructor(
+    private apiService: ApiService, 
+    private cdr: ChangeDetectorRef,
+    private observability: ObservabilityService
+  ) {
     const saved = localStorage.getItem('cuenlyapp:autoRefresh');
     this.autoRefresh = (saved === 'true' || saved === 'True' || saved === '1');
     const savedInt = localStorage.getItem('cuenlyapp:autoRefreshInterval');
@@ -111,9 +116,12 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         this.loading = false;
       },
       error: (err) => {
-        this.error = 'Error al obtener estado del sistema';
         this.loading = false;
-        console.error(err);
+        this.error = 'Error al obtener el estado del sistema';
+        this.observability.error('Error loading system status', err, 'InvoiceProcessingComponent', {
+          endpoint: '/status',
+          action: 'loadSystemStatus'
+        });
       }
     });
   }
@@ -129,9 +137,12 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         }
       },
       error: (err) => {
-        this.jobError = 'Error al obtener estado del job';
         this.jobLoading = false;
-        console.error(err);
+        this.jobError = 'Error al obtener el estado del trabajo';
+        this.observability.error('Error loading job status', err, 'InvoiceProcessingComponent', {
+          endpoint: '/job/status',
+          action: 'loadJobStatus'
+        });
       }
     });
   }
@@ -140,9 +151,21 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.processingResult = null;
     this.error = null;
+    
+    // Log user action
+    this.observability.logUserAction('process_emails_started', 'InvoiceProcessingComponent', {
+      async_mode: async
+    });
 
     this.apiService.processEmailsDirect().subscribe({
       next: (result) => {
+        // Verificar si es un error de trial expirado
+        if (!result.success && result.message?.includes('TRIAL_EXPIRED')) {
+          this.showTrialExpiredError(result.message.replace('TRIAL_EXPIRED: ', ''));
+          this.loading = false;
+          return;
+        }
+        
         this.processingResult = result;
         this.loading = false;
         
@@ -152,41 +175,91 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         }, 1000);
       },
       error: (err) => {
-        this.error = err.error?.detail || 'Error al procesar correos';
+        // Verificar si el error del backend es trial expirado
+        if (err.error?.message?.includes('TRIAL_EXPIRED')) {
+          this.showTrialExpiredError(err.error.message.replace('TRIAL_EXPIRED: ', ''));
+        } else {
+          this.error = err.error?.detail || err.error?.message || 'Error al procesar correos';
+        }
         this.loading = false;
-        console.error('Error procesando correos:', err);
+        this.observability.error('Error processing emails', err, 'InvoiceProcessingComponent', {
+          action: 'processEmails',
+          endpoint: '/process-emails'
+        });
       }
     });
   }
 
+  // Mostrar notificación elegante para trial expirado
+  private showTrialExpiredError(message: string): void {
+    this.error = `🚫 ${message}`;
+    
+    // Auto-limpiar el error después de 10 segundos
+    setTimeout(() => {
+      if (this.error?.includes('🚫')) {
+        this.error = null;
+      }
+    }, 10000);
+  }
+
   startJob(): void {
     this.jobLoading = true;
-    const targetInterval = (this.jobIntervalInput && this.jobIntervalInput >= 1)
-      ? this.jobIntervalInput!
-      : (this.jobStatus?.interval_minutes || 3);
+    
+    // Verificar trial antes de iniciar automatización
+    this.apiService.getTrialStatus().subscribe({
+      next: (trialStatus) => {
+        if (!trialStatus.can_process) {
+          this.jobError = trialStatus.message;
+          this.jobLoading = false;
+          return;
+        }
+        
+        // Trial válido, proceder con el inicio del job
+        const targetInterval = (this.jobIntervalInput && this.jobIntervalInput >= 1)
+          ? this.jobIntervalInput!
+          : (this.jobStatus?.interval_minutes || 3);
 
-    this.apiService.setJobInterval(targetInterval).subscribe({
-      next: () => {
-        this.apiService.startJob().subscribe({
-          next: (result) => {
-            this.jobStatus = result;
-            this.jobLoading = false;
-            this.jobIntervalTouched = false;
-            this.jobIntervalInput = this.jobStatus?.interval_minutes ?? targetInterval;
-            this.startAutoRefresh();
-            setTimeout(() => this.getJobStatus(), 300);
+        this.apiService.setJobInterval(targetInterval).subscribe({
+          next: () => {
+            this.apiService.startJob().subscribe({
+              next: (result) => {
+                this.jobStatus = result;
+                this.jobLoading = false;
+                this.jobIntervalTouched = false;
+                this.jobIntervalInput = this.jobStatus?.interval_minutes ?? targetInterval;
+                
+                // Log job started
+                this.observability.logUserAction('scheduled_job_started', 'InvoiceProcessingComponent', {
+                  interval_minutes: targetInterval
+                });
+                
+                this.startAutoRefresh();
+                setTimeout(() => this.getJobStatus(), 300);
+              },
+              error: (err) => {
+                this.jobError = 'Error al iniciar el job programado';
+                this.jobLoading = false;
+                this.observability.error('Error starting scheduled job', err, 'InvoiceProcessingComponent', {
+                  action: 'startJob'
+                });
+              }
+            });
           },
           error: (err) => {
-            this.jobError = 'Error al iniciar el job programado';
+            this.jobError = 'No se pudo actualizar el intervalo';
             this.jobLoading = false;
-            console.error(err);
+            this.observability.error('Error updating job interval in start process', err, 'InvoiceProcessingComponent', {
+              action: 'startJobUpdateInterval'
+            });
           }
         });
       },
       error: (err) => {
-        this.jobError = 'No se pudo actualizar el intervalo';
+        this.jobError = 'Error al verificar estado del trial';
         this.jobLoading = false;
-        console.error(err);
+        this.observability.error('Error checking trial status', err, 'InvoiceProcessingComponent', {
+          action: 'startJobTrialCheck'
+        });
       }
     });
   }
@@ -198,12 +271,18 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       next: (result) => {
         this.jobStatus = result;
         this.jobLoading = false;
+        
+        // Log job stopped
+        this.observability.logUserAction('scheduled_job_stopped', 'InvoiceProcessingComponent');
+        
         this.stopAutoRefresh();
       },
       error: (err) => {
         this.jobError = 'Error al detener el job programado';
         this.jobLoading = false;
-        console.error(err);
+        this.observability.error('Error stopping scheduled job', err, 'InvoiceProcessingComponent', {
+          action: 'stopJob'
+        });
       }
     });
   }
@@ -246,7 +325,13 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     this.jobLoading = true;
     this.apiService.setJobInterval(this.jobIntervalInput).subscribe({
       next: (st) => { this.jobStatus = st; this.jobLoading = false; },
-      error: (err) => { this.jobError = 'No se pudo actualizar el intervalo'; this.jobLoading = false; console.error(err); }
+      error: (err) => { 
+        this.jobError = 'No se pudo actualizar el intervalo'; 
+        this.jobLoading = false; 
+        this.observability.error('Error updating job interval', err, 'InvoiceProcessingComponent', {
+          action: 'updateJobInterval'
+        });
+      }
     });
   }
 
@@ -303,7 +388,9 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         hour12: false
       }).format(date);
     } catch (error) {
-      console.error('Error formatting Paraguay time:', error);
+      this.observability.error('Error formatting Paraguay time', error as Error, 'InvoiceProcessingComponent', {
+        action: 'formatParaguayTime'
+      });
       return '--:--';
     }
   }
@@ -323,7 +410,9 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         hour12: false
       }).format(date).replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$1/$2/$3');
     } catch (error) {
-      console.error('Error formatting Paraguay datetime:', error);
+      this.observability.error('Error formatting Paraguay datetime', error as Error, 'InvoiceProcessingComponent', {
+        action: 'formatParaguayDateTime'
+      });
       return 'N/A';
     }
   }
@@ -338,7 +427,9 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         year: 'numeric'
       }).format(date);
     } catch (error) {
-      console.error('Error formatting Paraguay date:', error);
+      this.observability.error('Error formatting Paraguay date', error as Error, 'InvoiceProcessingComponent', {
+        action: 'formatParaguayDate'
+      });
       return 'N/A';
     }
   }
