@@ -554,11 +554,7 @@ jobs:
           set -euo pipefail
           echo "� Desplegando stack de monitoreo centralizado..."
           
-          # 1. Crear namespace y RBAC
-          echo "🔧 Creando infraestructura de monitoreo..."
-          kubectl apply -f k8s-monitoring/namespace.yaml
-          
-          # 2. Limpiar recursos legacy del monitoring namespace anterior
+          # 1. Limpiar recursos legacy del monitoring namespace anterior
           echo "🧹 Limpiando recursos legacy..."
           kubectl delete statefulset loki -n monitoring --ignore-not-found=true --cascade=false
           kubectl delete pod loki-0 -n monitoring --force --grace-period=0 --ignore-not-found=true
@@ -567,15 +563,9 @@ jobs:
           kubectl delete ingress grafana-ingress -n monitoring --ignore-not-found=true
           kubectl delete ingress cuenly-grafana-ingress -n monitoring --ignore-not-found=true
           
-          # 3. Desplegar Prometheus primero (otros dependen de él)
-          echo "📈 Desplegando Prometheus..."
-          if [ -f "k8s-monitoring/prometheus-hostpath.yaml" ]; then
-            echo "🔧 Usando versión hostPath para Prometheus..."
-            kubectl apply -f k8s-monitoring/prometheus-hostpath.yaml
-          else
-            echo "🔧 Usando versión PVC para Prometheus..."
-            kubectl apply -f k8s-monitoring/prometheus.yaml
-          fi
+          # 2. Desplegar stack completo simplificado (Namespace + RBAC + Loki + Prometheus)
+          echo "� Desplegando stack simplificado con emptyDir (sin problemas de permisos)..."
+          kubectl apply -f k8s-monitoring/simple-monitoring-stack.yaml
           
           # 4. Desplegar Loki
           echo "� Desplegando Loki..."
@@ -603,19 +593,12 @@ jobs:
           # 7. Esperar que los servicios estén listos
           echo "⏳ Esperando servicios de monitoreo..."
           
-          # Prometheus (StatefulSet o Deployment según la versión)
-          if [ -f "k8s-monitoring/prometheus-hostpath.yaml" ]; then
-            kubectl rollout status deployment/cuenly-prometheus -n cuenly-monitoring --timeout=300s || echo "⚠️  Prometheus timeout"
-          else
-            kubectl rollout status statefulset/cuenly-prometheus -n cuenly-monitoring --timeout=300s || echo "⚠️  Prometheus timeout"
-          fi
+          # Stack simplificado - todos son Deployments
+          echo "⏳ Esperando Prometheus..."
+          kubectl rollout status deployment/cuenly-prometheus -n cuenly-monitoring --timeout=300s || echo "⚠️  Prometheus timeout"
           
-          # Loki (StatefulSet o Deployment según la versión) 
-          if [ -f "k8s-monitoring/loki-hostpath.yaml" ]; then
-            kubectl rollout status deployment/cuenly-loki -n cuenly-monitoring --timeout=300s || echo "⚠️  Loki timeout"
-          else
-            kubectl rollout status statefulset/cuenly-loki -n cuenly-monitoring --timeout=300s || echo "⚠️  Loki timeout"
-          fi
+          echo "⏳ Esperando Loki..."
+          kubectl rollout status deployment/cuenly-loki -n cuenly-monitoring --timeout=300s || echo "⚠️  Loki timeout"
           
           # Grafana
           kubectl rollout status deployment/cuenly-grafana -n cuenly-monitoring --timeout=180s || echo "⚠️  Grafana timeout"
