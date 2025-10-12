@@ -3,6 +3,7 @@ import { Subscription } from 'rxjs';
 import { AuthService } from './services/auth.service';
 import { FirebaseService } from './services/firebase.service';
 import { AnalyticsService } from './services/analytics.service';
+import { AnalyticsDebugService } from './services/analytics-debug.service';
 
 @Component({
   selector: 'app-root',
@@ -17,7 +18,8 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(
     private auth: AuthService,
     private firebase: FirebaseService,
-    private analytics: AnalyticsService  // Auto-inicializa tracking de páginas
+    private analytics: AnalyticsService,  // Auto-inicializa tracking de páginas
+    private analyticsDebug: AnalyticsDebugService  // Debug tools siempre disponible
   ) {}
 
   ngOnInit(): void {

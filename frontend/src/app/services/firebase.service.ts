@@ -19,12 +19,12 @@ export class FirebaseService {
       // Inicializar Firebase App
       this.app = initializeApp(environment.firebase);
       
-      // Inicializar Analytics solo en producción y si está disponible
-      if (environment.production && environment.firebase.measurementId) {
+      // Inicializar Analytics si hay measurementId (tanto en dev como prod)
+      if (environment.firebase.measurementId) {
         this.analytics = getAnalytics(this.app);
-        console.log('✅ Firebase Analytics inicializado');
+        console.log('✅ Firebase Analytics inicializado para:', environment.production ? 'PRODUCCIÓN' : 'DESARROLLO');
       } else {
-        console.log('⚠️ Firebase Analytics deshabilitado en desarrollo');
+        console.log('⚠️ Firebase Analytics no inicializado - falta measurementId');
       }
     } catch (error) {
       console.error('❌ Error inicializando Firebase:', error);
@@ -36,13 +36,14 @@ export class FirebaseService {
    */
   logEvent(eventName: string, parameters?: { [key: string]: any }): void {
     if (!this.analytics) {
-      console.log(`📊 [DEV] Analytics Event: ${eventName}`, parameters);
+      console.log(`📊 [DISABLED] Analytics Event: ${eventName}`, parameters);
       return;
     }
 
     try {
       logEvent(this.analytics, eventName, parameters);
-      console.log(`📊 Analytics Event logged: ${eventName}`, parameters);
+      const mode = environment.production ? 'PROD' : 'DEV';
+      console.log(`📊 [${mode}] Analytics Event logged: ${eventName}`, parameters);
     } catch (error) {
       console.error('❌ Error logging analytics event:', error);
     }
