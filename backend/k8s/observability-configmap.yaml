@@ -1,0 +1,215 @@
+# ConfigMap para configuración de observabilidad
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: observability-config
+  namespace: cuenly-backend
+  labels:
+    app: cuenly-backend
+    component: configuration
+    tier: config
+data:
+  # Configuración de logging estructurado
+  log-config.json: |
+    {
+      "version": 1,
+      "disable_existing_loggers": false,
+      "formatters": {
+        "structured": {
+          "class": "app.utils.observability.StructuredFormatter",
+          "format": "%(message)s"
+        },
+        "simple": {
+          "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        }
+      },
+      "handlers": {
+        "console": {
+          "class": "logging.StreamHandler",
+          "level": "INFO",
+          "formatter": "structured",
+          "stream": "ext://sys.stdout"
+        },
+        "file": {
+          "class": "logging.handlers.RotatingFileHandler",
+          "level": "DEBUG",
+          "formatter": "structured",
+          "filename": "/var/log/cuenly/app.log",
+          "maxBytes": 10485760,
+          "backupCount": 5
+        }
+      },
+      "loggers": {
+        "app": {
+          "level": "INFO",
+          "handlers": ["console", "file"],
+          "propagate": false
+        },
+        "uvicorn": {
+          "level": "INFO",
+          "handlers": ["console"],
+          "propagate": false
+        },
+        "fastapi": {
+          "level": "INFO",
+          "handlers": ["console"],
+          "propagate": false
+        }
+      },
+      "root": {
+        "level": "WARNING",
+        "handlers": ["console"]
+      }
+    }
+
+  # Configuración de métricas para Prometheus
+  prometheus-config.yml: |
+    # Labels globales para todas las métricas
+    global_labels:
+      service: cuenly-backend
+      environment: production
+      version: v2.0.0
+      cluster: cuenly-k8s
+    
+    # Configuración de métricas personalizadas
+    custom_metrics:
+      - name: cuenly_request_duration_seconds
+        type: histogram
+        description: "Duration of HTTP requests in seconds"
+        buckets: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+        labels: [method, endpoint, status_code]
+      
+      - name: cuenly_active_users_total
+        type: gauge
+        description: "Number of currently active users"
+        labels: [subscription_type]
+      
+      - name: cuenly_invoices_processed_total
+        type: counter
+        description: "Total number of invoices processed"
+        labels: [status, user_type]
+      
+      - name: cuenly_trial_expiration_events_total
+        type: counter
+        description: "Total number of trial expiration events"
+        labels: [action_taken]
+
+  # Configuración de Grafana dashboards
+  grafana-dashboard-config.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Cuenly Backend Metrics",
+        "tags": ["cuenly", "backend", "api"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(cuenly_request_duration_seconds_count[5m])",
+                "legendFormat": "{{method}} {{endpoint}}"
+              }
+            ]
+          },
+          {
+            "title": "Response Time",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(cuenly_request_duration_seconds_bucket[5m]))",
+                "legendFormat": "95th percentile"
+              }
+            ]
+          },
+          {
+            "title": "Active Users",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "cuenly_active_users_total",
+                "legendFormat": "{{subscription_type}}"
+              }
+            ]
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "5s"
+      }
+    }
+
+  # Configuración de alertas
+  alerting-rules.yml: |
+    groups:
+    - name: cuenly-backend-alerts
+      rules:
+      - alert: HighErrorRate
+        expr: rate(cuenly_request_duration_seconds_count{status_code=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: cuenly-backend
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors per second"
+      
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(cuenly_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: cuenly-backend
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }} seconds"
+      
+      - alert: TrialExpirationSpike
+        expr: increase(cuenly_trial_expiration_events_total[1h]) > 50
+        for: 0m
+        labels:
+          severity: info
+          service: cuenly-backend
+        annotations:
+          summary: "Unusual spike in trial expirations"
+          description: "{{ $value }} trial expirations in the last hour"
+
+  # Configuración de Loki para logs
+  loki-config.yml: |
+    # Pipeline stages para parsing de logs JSON
+    pipeline_stages:
+    - json:
+        expressions:
+          timestamp: timestamp
+          level: level
+          logger: logger
+          message: message
+          request_id: request_id
+          user_email: user_email
+          event_type: event_type
+          http_method: http_method
+          endpoint: endpoint
+          status_code: status_code
+          response_time_ms: response_time_ms
+          module: module
+          function: function
+    
+    - timestamp:
+        source: timestamp
+        format: RFC3339Nano
+    
+    - labels:
+        level:
+        logger:
+        correlation_id:
+        user_id:
+        method:
+        endpoint:
+        status_code:
+    
+    - output:
+        source: message

@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
+import { ObservabilityService } from './observability.service';
 
 export interface UserProfile {
   email: string;
@@ -30,24 +31,69 @@ export class UserService {
   private userProfileSubject = new BehaviorSubject<UserProfile | null>(null);
   public userProfile$ = this.userProfileSubject.asObservable();
 
-  constructor(private http: HttpClient) { 
-    console.log('🔍 UserService: Inicializado con baseUrl:', this.baseUrl);
+  constructor(
+    private http: HttpClient,
+    private observability: ObservabilityService
+  ) { 
+    this.observability.info('UserService initialized', 'UserService', {
+      base_url: this.baseUrl
+    });
   }
 
   getUserProfile(): Observable<UserProfile> {
     // Usar /api como prefijo que ya está configurado en el proxy
     const url = `/api/user/profile`;
-    console.log('🔍 UserService: Llamando a getUserProfile()');
-    console.log('🔍 API URL:', url);
+    
+    // Log API call initiation
+    this.observability.debug('Calling getUserProfile', 'UserService', {
+      api_url: url,
+      action: 'get_user_profile'
+    });
+    const startTime = performance.now();
+    
     return this.http.get<UserProfile>(url).pipe(
-      tap(profile => {
-        // Publicar el perfil para que otros componentes reaccionen (navbar, banners)
-        this.userProfileSubject.next(profile);
+      tap({
+        next: (profile) => {
+          const responseTime = performance.now() - startTime;
+          
+          // Log successful API call
+          this.observability.logApiCall('GET', url, responseTime, true, {
+            user_email: profile.email,
+            is_trial: profile.is_trial,
+            trial_expired: profile.trial_expired,
+            ai_limit_reached: profile.ai_limit_reached
+          });
+          
+          // Publicar el perfil para que otros componentes reaccionen (navbar, banners)
+          this.userProfileSubject.next(profile);
+          
+          this.observability.debug('User profile loaded successfully', 'UserService', {
+            user_email: profile.email,
+            status: profile.status,
+            role: profile.role
+          });
+        },
+        error: (error) => {
+          const responseTime = performance.now() - startTime;
+          
+          this.observability.logApiCall('GET', url, responseTime, false, {
+            error_message: error.message,
+            status_code: error.status
+          });
+          
+          this.observability.error('Failed to load user profile', error, 'UserService', {
+            api_url: url,
+            action: 'get_user_profile'
+          });
+        }
       })
     );
   }
 
   refreshUserProfile(): Observable<UserProfile> {
+    this.observability.debug('Refreshing user profile', 'UserService', {
+      action: 'refresh_user_profile'
+    });
     return this.getUserProfile();
   }
 
@@ -57,12 +103,23 @@ export class UserService {
 
   // Método para actualizar el perfil después de procesar facturas
   updateProfileAfterProcessing(): void {
+    this.observability.debug('Updating profile after processing', 'UserService', {
+      action: 'update_profile_after_processing'
+    });
+    
     this.refreshUserProfile().subscribe({
       next: (profile) => {
-        console.log('Perfil actualizado después del procesamiento', profile);
+        this.observability.info('Profile updated after processing', 'UserService', {
+          user_email: profile.email,
+          ai_invoices_processed: profile.ai_invoices_processed,
+          ai_invoices_limit: profile.ai_invoices_limit,
+          ai_limit_reached: profile.ai_limit_reached
+        });
       },
       error: (error) => {
-        console.error('Error actualizando perfil:', error);
+        this.observability.error('Error updating profile after processing', error, 'UserService', {
+          action: 'update_profile_after_processing'
+        });
       }
     });
   }

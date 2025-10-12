@@ -359,6 +359,50 @@ jobs:
             --from-literal=mongodb-database="${{ secrets.MONGODB_DATABASE }}"
           echo "✅ Secrets de MongoDB creados correctamente"
             
+      - name: Create/Update AlertManager secrets
+        run: |
+          set -euo pipefail
+          
+          echo "🔐 Creando secrets de AlertManager desde GitHub Secrets..."
+          
+          # Verificar que todos los secrets requeridos estén configurados
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_HOST }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_SMTP_HOST no configurado en GitHub Secrets"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_PORT }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_SMTP_PORT no configurado en GitHub Secrets"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_USER }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_SMTP_USER no configurado en GitHub Secrets"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_PASSWORD }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_SMTP_PASSWORD no configurado en GitHub Secrets"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.ALERTMANAGER_EMAIL_TO }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_EMAIL_TO no configurado en GitHub Secrets"
+            exit 1
+          fi
+          
+          # Crear secret de Kubernetes usando los GitHub Secrets directamente
+          kubectl delete secret alertmanager-secrets -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl create secret generic alertmanager-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=ALERTMANAGER_SMTP_HOST="${{ secrets.ALERTMANAGER_SMTP_HOST }}" \
+            --from-literal=ALERTMANAGER_SMTP_PORT="${{ secrets.ALERTMANAGER_SMTP_PORT }}" \
+            --from-literal=ALERTMANAGER_SMTP_USER="${{ secrets.ALERTMANAGER_SMTP_USER }}" \
+            --from-literal=ALERTMANAGER_SMTP_PASSWORD="${{ secrets.ALERTMANAGER_SMTP_PASSWORD }}" \
+            --from-literal=ALERTMANAGER_EMAIL_TO="${{ secrets.ALERTMANAGER_EMAIL_TO }}"
+          
+          echo "✅ Secrets de AlertManager creados correctamente desde GitHub Secrets"
+            
       - name: Cleanup old MongoDB resources
         run: |
           # Eliminar recursos problemáticos del replica set
@@ -389,6 +433,25 @@ jobs:
           kubectl apply -f k8s-security-improvements/rate-limiting-configmap.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Rate limiting config no encontrado, continuando..."
           
           echo "✅ Configuraciones de seguridad aplicadas"
+          
+      - name: Create/Update AlertManager ConfigMap
+        run: |
+          set -euo pipefail
+          echo "🔧 Creando ConfigMap de AlertManager desde archivo de configuración..."
+          
+          # Verificar que el archivo de configuración existe
+          if [ ! -f "config/alertmanager.yml" ]; then
+            echo "❌ Error: config/alertmanager.yml no encontrado"
+            exit 1
+          fi
+          
+          # Crear ConfigMap desde el archivo que ya usa variables de entorno
+          kubectl delete configmap alertmanager-config -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl create configmap alertmanager-config \
+            --from-file=config.yml=config/alertmanager.yml \
+            --namespace=${{ env.NAMESPACE }}
+          
+          echo "✅ ConfigMap de AlertManager creado con configuración segura"
           
       - name: Initialize MongoDB with script
         run: |
@@ -443,6 +506,24 @@ jobs:
           kubectl delete replicaset -l app=cuenly-backend -n ${{ env.NAMESPACE }} --force --grace-period=0 --ignore-not-found=true || true
           
           echo "✅ Limpieza completada"
+          
+      - name: Deploy observability stack (AlertManager, etc.)
+        run: |
+          set -euo pipefail
+          echo "📊 Desplegando stack de observabilidad..."
+          
+          # Desplegar AlertManager
+          kubectl apply -f backend/k8s/alertmanager-deployment.yaml -n ${{ env.NAMESPACE }}
+          
+          # Esperar que AlertManager esté listo
+          kubectl rollout status deployment/alertmanager -n ${{ env.NAMESPACE }} --timeout=180s || echo "⚠️  AlertManager timeout, continuando..."
+          
+          # Aplicar configuraciones de observabilidad
+          kubectl apply -f backend/k8s/deployment-observability.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability config no encontrado"
+          kubectl apply -f backend/k8s/observability-configmap.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability ConfigMap no encontrado"
+          kubectl apply -f backend/k8s/service-observability.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability Service no encontrado"
+          
+          echo "✅ Stack de observabilidad desplegado"
           
       - name: Deploy backend application  
         run: |
