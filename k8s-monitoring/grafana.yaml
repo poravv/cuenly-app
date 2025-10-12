@@ -36,8 +36,9 @@ data:
     [server]
     protocol = http
     http_port = 3000
-    domain = localhost
-    root_url = %(protocol)s://%(domain)s:%(http_port)s/
+    domain = metrics.mindtechpy.net
+    root_url = https://%(domain)s/
+    serve_from_sub_path = false
     
     [database]
     type = sqlite3
@@ -192,7 +193,9 @@ spec:
         - name: GF_USERS_ALLOW_SIGN_UP
           value: "false"
         - name: GF_SERVER_DOMAIN
-          value: "cuenly-grafana"
+          value: "metrics.mindtechpy.net"
+        - name: GF_SERVER_ROOT_URL
+          value: "https://metrics.mindtechpy.net/"
         - name: GF_LOG_LEVEL
           value: "INFO"
         - name: GF_INSTALL_PLUGINS
