@@ -582,24 +582,41 @@ jobs:
           echo "📊 Desplegando Grafana..."
           kubectl apply -f k8s-monitoring/grafana.yaml
           
-          # 6. Esperar que los servicios estén listos
+          # 6. Desplegar Ingress de Grafana para acceso externo
+          echo "🌐 Desplegando Ingress de Grafana..."
+          if [ -f "k8s-monitoring/grafana-ingress.yaml" ]; then
+            kubectl apply -f k8s-monitoring/grafana-ingress.yaml
+            echo "✅ Ingress de Grafana configurado para metrics.mindtechpy.net"
+          else
+            echo "⚠️  Archivo grafana-ingress.yaml no encontrado"
+          fi
+          
+          # 7. Esperar que los servicios estén listos
           echo "⏳ Esperando servicios de monitoreo..."
           
-          # Prometheus
-          kubectl rollout status statefulset/cuenly-prometheus -n cuenly-monitoring --timeout=300s || echo "⚠️  Prometheus timeout"
+          # Prometheus (StatefulSet o Deployment según la versión)
+          if [ -f "k8s-monitoring/prometheus-hostpath.yaml" ]; then
+            kubectl rollout status deployment/cuenly-prometheus -n cuenly-monitoring --timeout=300s || echo "⚠️  Prometheus timeout"
+          else
+            kubectl rollout status statefulset/cuenly-prometheus -n cuenly-monitoring --timeout=300s || echo "⚠️  Prometheus timeout"
+          fi
           
-          # Loki
-          kubectl rollout status statefulset/cuenly-loki -n cuenly-monitoring --timeout=300s || echo "⚠️  Loki timeout"
+          # Loki (StatefulSet o Deployment según la versión) 
+          if [ -f "k8s-monitoring/loki-hostpath.yaml" ]; then
+            kubectl rollout status deployment/cuenly-loki -n cuenly-monitoring --timeout=300s || echo "⚠️  Loki timeout"
+          else
+            kubectl rollout status statefulset/cuenly-loki -n cuenly-monitoring --timeout=300s || echo "⚠️  Loki timeout"
+          fi
           
           # Grafana
           kubectl rollout status deployment/cuenly-grafana -n cuenly-monitoring --timeout=180s || echo "⚠️  Grafana timeout"
           
-          # 7. Verificar estado final
+          # 8. Verificar estado final
           echo "🔍 Verificando estado del stack de monitoreo..."
           kubectl get pods -n cuenly-monitoring -o wide
           kubectl get svc -n cuenly-monitoring
           
-          # 8. Test de conectividad básico
+          # 9. Test de conectividad básico
           echo "🩺 Test de conectividad básico..."
           
           # Verificar que Prometheus puede scrapearse a sí mismo
@@ -618,6 +635,14 @@ jobs:
           GRAFANA_POD=$(kubectl get pods -n cuenly-monitoring -l app=cuenly-grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
           if [ -n "$GRAFANA_POD" ]; then
             kubectl exec $GRAFANA_POD -n cuenly-monitoring -- wget -q --spider http://localhost:3000/api/health && echo "✅ Grafana health OK" || echo "❌ Grafana health failed"
+          fi
+          
+          # Verificar que el Ingress está configurado
+          if kubectl get ingress cuenly-grafana-ingress -n cuenly-monitoring >/dev/null 2>&1; then
+            echo "✅ Ingress de Grafana configurado"
+            echo "🌐 Acceso disponible en: https://metrics.mindtechpy.net/"
+          else
+            echo "❌ Ingress de Grafana no encontrado"
           fi
           
           echo "✅ Stack de monitoreo centralizado desplegado"
