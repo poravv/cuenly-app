@@ -363,48 +363,45 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Configurar ALERTMANAGER secrets con fallback
-          SMTP_HOST="${{ secrets.ALERTMANAGER_SMTP_HOST }}"
-          SMTP_PORT="${{ secrets.ALERTMANAGER_SMTP_PORT }}"
-          SMTP_USER="${{ secrets.ALERTMANAGER_SMTP_USER }}"
-          SMTP_PASS="${{ secrets.ALERTMANAGER_SMTP_PASSWORD }}"
-          EMAIL_TO="${{ secrets.ALERTMANAGER_EMAIL_TO }}"
+          echo "🔐 Creando secrets de AlertManager desde GitHub Secrets..."
           
-          # Usar valores por defecto si los secrets no existen
-          if [ -z "$SMTP_HOST" ]; then
-            echo "⚠️  ALERTMANAGER_SMTP_HOST no configurado, usando valor por defecto"
-            SMTP_HOST="mail.cuenly.com"
+          # Verificar que todos los secrets requeridos estén configurados
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_HOST }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_SMTP_HOST no configurado en GitHub Secrets"
+            exit 1
           fi
           
-          if [ -z "$SMTP_PORT" ]; then
-            echo "⚠️  ALERTMANAGER_SMTP_PORT no configurado, usando valor por defecto"
-            SMTP_PORT="587"
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_PORT }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_SMTP_PORT no configurado en GitHub Secrets"
+            exit 1
           fi
           
-          if [ -z "$SMTP_USER" ]; then
-            echo "⚠️  ALERTMANAGER_SMTP_USER no configurado, usando valor por defecto"
-            SMTP_USER="alerts@cuenly.com"
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_USER }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_SMTP_USER no configurado en GitHub Secrets"
+            exit 1
           fi
           
-          if [ -z "$SMTP_PASS" ]; then
-            echo "⚠️  ALERTMANAGER_SMTP_PASSWORD no configurado, usando valor por defecto"
-            SMTP_PASS="m+7GY8.k9?6GxHnX9nN4zE7kP2vQ5wL8xB6cM3jR1sA0yF"
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_PASSWORD }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_SMTP_PASSWORD no configurado en GitHub Secrets"
+            exit 1
           fi
           
-          if [ -z "$EMAIL_TO" ]; then
-            echo "⚠️  ALERTMANAGER_EMAIL_TO no configurado, usando valor por defecto"
-            EMAIL_TO="alerts@cuenly.com"
+          if [ -z "${{ secrets.ALERTMANAGER_EMAIL_TO }}" ]; then
+            echo "❌ ERROR: ALERTMANAGER_EMAIL_TO no configurado en GitHub Secrets"
+            exit 1
           fi
           
+          # Crear secret de Kubernetes usando los GitHub Secrets directamente
           kubectl delete secret alertmanager-secrets -n ${{ env.NAMESPACE }} --ignore-not-found=true
           kubectl create secret generic alertmanager-secrets \
             --namespace=${{ env.NAMESPACE }} \
-            --from-literal=ALERTMANAGER_SMTP_HOST="$SMTP_HOST" \
-            --from-literal=ALERTMANAGER_SMTP_PORT="$SMTP_PORT" \
-            --from-literal=ALERTMANAGER_SMTP_USER="$SMTP_USER" \
-            --from-literal=ALERTMANAGER_SMTP_PASSWORD="$SMTP_PASS" \
-            --from-literal=ALERTMANAGER_EMAIL_TO="$EMAIL_TO"
-          echo "✅ Secrets de AlertManager creados correctamente"
+            --from-literal=ALERTMANAGER_SMTP_HOST="${{ secrets.ALERTMANAGER_SMTP_HOST }}" \
+            --from-literal=ALERTMANAGER_SMTP_PORT="${{ secrets.ALERTMANAGER_SMTP_PORT }}" \
+            --from-literal=ALERTMANAGER_SMTP_USER="${{ secrets.ALERTMANAGER_SMTP_USER }}" \
+            --from-literal=ALERTMANAGER_SMTP_PASSWORD="${{ secrets.ALERTMANAGER_SMTP_PASSWORD }}" \
+            --from-literal=ALERTMANAGER_EMAIL_TO="${{ secrets.ALERTMANAGER_EMAIL_TO }}"
+          
+          echo "✅ Secrets de AlertManager creados correctamente desde GitHub Secrets"
             
       - name: Cleanup old MongoDB resources
         run: |

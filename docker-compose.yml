@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
     environment:
       - MONGO_INITDB_ROOT_USERNAME=cuenlyapp
-      - MONGO_INITDB_ROOT_PASSWORD=cuenlyapp2025
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_ROOT_PASSWORD:-changeme}
       - MONGO_INITDB_DATABASE=cuenlyapp_warehouse
     volumes:
       - mongodb_data:/data/db
@@ -40,7 +40,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - MONGODB_URL=mongodb://cuenlyapp:cuenlyapp2025@mongodb:27017/cuenlyapp_warehouse?authSource=admin
+      - MONGODB_URL=mongodb://cuenlyapp:${MONGODB_ROOT_PASSWORD:-changeme}@mongodb:27017/cuenlyapp_warehouse?authSource=admin
       - DEBUG=true
       - LOG_LEVEL=INFO
       - TZ=America/Asuncion
@@ -93,7 +93,7 @@ services:
     restart: unless-stopped
     environment:
       - MONGO_INITDB_ROOT_USERNAME=cuenlyapp
-      - MONGO_INITDB_ROOT_PASSWORD=cuenlyapp2025
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_ROOT_PASSWORD:-changeme}
       - MONGO_INITDB_DATABASE=cuenlyapp_warehouse
     volumes:
       - mongodb_data:/data/db
@@ -122,7 +122,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - MONGODB_URL=mongodb://cuenlyapp:cuenlyapp2025@mongodb-dev:27017/cuenlyapp_warehouse?authSource=admin
+      - MONGODB_URL=mongodb://cuenlyapp:${MONGODB_ROOT_PASSWORD:-changeme}@mongodb-dev:27017/cuenlyapp_warehouse?authSource=admin
       - DEBUG=true
       - LOG_LEVEL=INFO
       - TZ=America/Asuncion
