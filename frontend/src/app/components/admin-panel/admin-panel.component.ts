@@ -1,6 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
+import { ObservabilityService } from '../../services/observability.service';
+import { UserService } from '../../services/user.service';
 
 interface User {
   id: string;
@@ -101,15 +103,34 @@ export class AdminPanelComponent implements OnInit {
 
   constructor(
     private apiService: ApiService,
-    private notificationService: NotificationService
+    private notificationService: NotificationService,
+    private observability: ObservabilityService,
+    private userService: UserService
   ) {}
 
   ngOnInit(): void {
+    // Log admin panel access - CRÍTICO para auditoría
+    const currentUser = this.userService.getCurrentProfile();
+    this.observability.logUserAction('admin_panel_accessed', 'AdminPanelComponent', {
+      admin_email: currentUser?.email,
+      admin_role: currentUser?.role,
+      security_event: true,
+      audit_trail: true
+    });
+    
+    this.observability.logPageView('AdminPanel');
     this.loadData();
   }
 
   loadData(): void {
     this.loading = true;
+    const currentUser = this.userService.getCurrentProfile();
+    
+    this.observability.debug('Loading admin panel data', 'AdminPanelComponent', {
+      admin_email: currentUser?.email,
+      action: 'load_admin_data'
+    });
+    
     this.loadStats();
     this.loadUsers();
   }
@@ -162,9 +183,33 @@ export class AdminPanelComponent implements OnInit {
         action: {
           label: 'Confirmar',
           handler: () => {
+            // Log intento de cambio de rol - CRÍTICO para auditoría
+            const currentUser = this.userService.getCurrentProfile();
+            this.observability.warn('Role change attempt', 'AdminPanelComponent', {
+              admin_email: currentUser?.email,
+              target_user_email: user.email,
+              old_role: user.role,
+              new_role: newRole,
+              action: 'user_role_change_attempt',
+              security_event: true,
+              audit_trail: true
+            });
+            
             this.apiService.updateUserRole(user.email, newRole).subscribe({
               next: (response) => {
                 if (response.success) {
+                  // Log éxito del cambio de rol
+                  this.observability.warn('Role changed successfully', 'AdminPanelComponent', {
+                    admin_email: currentUser?.email,
+                    target_user_email: user.email,
+                    old_role: user.role,
+                    new_role: newRole,
+                    action: 'user_role_changed',
+                    security_event: true,
+                    audit_trail: true,
+                    success: true
+                  });
+                  
                   user.role = newRole;
                   this.notificationService.success(
                     `Rol actualizado correctamente para ${user.email}`,
@@ -174,7 +219,15 @@ export class AdminPanelComponent implements OnInit {
                 }
               },
               error: (error) => {
-                console.error('Error updating role:', error);
+                this.observability.error('Role change failed', error, 'AdminPanelComponent', {
+                  admin_email: currentUser?.email,
+                  target_user_email: user.email,
+                  attempted_role: newRole,
+                  action: 'user_role_change_failed',
+                  security_event: true,
+                  audit_trail: true
+                });
+                
                 this.notificationService.error(
                   'No se pudo actualizar el rol del usuario',
                   'Error actualizando rol'
@@ -190,6 +243,19 @@ export class AdminPanelComponent implements OnInit {
   updateUserStatus(user: User, newStatus: string): void {
     const action = newStatus === 'suspended' ? 'suspender' : 'activar';
     const statusText = newStatus === 'suspended' ? 'suspendido' : 'activo';
+    
+    // Log intento de cambio de estado - CRÍTICO para auditoría
+    const currentUser = this.userService.getCurrentProfile();
+    this.observability.warn('User status change attempt', 'AdminPanelComponent', {
+      admin_email: currentUser?.email,
+      target_user_email: user.email,
+      old_status: user.status,
+      new_status: newStatus,
+      action: 'user_status_change_attempt',
+      security_event: true,
+      audit_trail: true,
+      is_suspension: newStatus === 'suspended'
+    });
     
     const extraNote = newStatus === 'suspended' ? ' Esto cancelará cualquier suscripción activa.' : '';
     this.notificationService.warning(

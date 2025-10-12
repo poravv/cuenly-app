@@ -42,8 +42,13 @@ from app.modules.email_processor.config_store import (
     get_by_id as db_get_by_id,
     get_by_username as db_get_by_username,
 )
+from app.utils.observability import observability_logger
+from app.middleware.observability_middleware import ObservabilityMiddleware, BusinessEventLogger
 
-# Configurar logging
+# Configurar logging mejorado para observabilidad
+observability_logger.setup_logging(level=settings.LOG_LEVEL)
+
+# Configurar logging tradicional para compatibilidad
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -61,6 +66,9 @@ app = FastAPI(
     description="API para procesar facturas desde correo electrónico y almacenarlas en MongoDB",
     version="2.0.0"
 )
+
+# Configurar middleware de observabilidad
+app.add_middleware(ObservabilityMiddleware)
 
 # Configurar CORS
 app.add_middleware(
@@ -122,9 +130,25 @@ def _get_current_user(request: Request) -> Dict[str, Any]:
             'name': claims.get('name'),
             'picture': claims.get('picture') or claims.get('photoURL'),
         })
-        logger.info(f"Usuario autenticado y registrado: {claims.get('email')}")
+        user_email = claims.get('email', '')
+        observability_logger.log_business_event(
+            "user_authentication_success",
+            user_email=user_email,
+            auth_method="firebase",
+            user_name=claims.get('name'),
+            user_uid=claims.get('user_id')
+        )
+        BusinessEventLogger.log_user_authentication(user_email, True)
     except Exception as e:
-        logger.error(f"Error registrando usuario {claims.get('email')}: {e}")
+        user_email = claims.get('email', '')
+        observability_logger.log_error(
+            "user_registration_error",
+            str(e),
+            user_email=user_email,
+            user_uid=claims.get('user_id'),
+            auth_method="firebase"
+        )
+        BusinessEventLogger.log_user_authentication(user_email, False)
         # No fallar la autenticación, pero loggear el error para diagnóstico
     # Realizar verificación de suspensión fuera del try/except
     try:
@@ -136,7 +160,13 @@ def _get_current_user(request: Request) -> Dict[str, Any]:
         # Propagar bloqueo explícito
         raise
     except Exception as e:
-        logger.error(f"Error verificando estado de usuario {claims.get('email')}: {e}")
+        user_email = claims.get('email', '')
+        observability_logger.log_error(
+            "user_status_check_error",
+            str(e),
+            user_email=user_email,
+            endpoint="/api/user/status"
+        )
     return claims
 
 def _get_current_user_with_trial_info(request: Request) -> Dict[str, Any]:
@@ -369,7 +399,14 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
         trial_info = user_repo.get_trial_info(owner_email)
         
         if trial_info['is_trial_user'] and trial_info['trial_expired']:
-            logger.warning(f"Intento de procesamiento con trial expirado: {owner_email}")
+            observability_logger.log_business_event(
+                "trial_expired_processing_attempt",
+                user_email=owner_email,
+                attempted_action="email_processing",
+                trial_expired=True,
+                security_event=True
+            )
+            BusinessEventLogger.log_trial_expiration_attempt(owner_email, "email_processing")
             return ProcessResult(
                 success=False,
                 message="TRIAL_EXPIRED: Tu período de prueba ha expirado. Por favor, actualiza tu suscripción para continuar procesando facturas.",
@@ -405,7 +442,13 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
             result = mp.process_all_emails()
             return result
     except Exception as e:
-        logger.error(f"Error al procesar correos: {str(e)}")
+        observability_logger.log_error(
+            "email_processing_error",
+            str(e),
+            user_email=user.get('email', ''),
+            endpoint="/process",
+            async_mode=run_async
+        )
         return ProcessResult(
             success=False,
             message=f"Error al procesar correos: {str(e)}"
@@ -3424,3 +3467,141 @@ async def export_invoices_with_template(
     except Exception as e:
         logger.error(f"Error exportando con template: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ================================
+# OBSERVABILIDAD - LOGS FRONTEND
+# ================================
+
+class FrontendLogEntry(BaseModel):
+    timestamp: str
+    level: str
+    message: str
+    component: Optional[str] = None
+    user_email: Optional[str] = None
+    request_id: Optional[str] = None
+    event_type: Optional[str] = None
+    extra_data: Optional[Dict[str, Any]] = None
+    stack_trace: Optional[str] = None
+    url: Optional[str] = None
+    user_agent: Optional[str] = None
+
+class FrontendLogsPayload(BaseModel):
+    logs: List[FrontendLogEntry]
+
+@app.post("/logs/frontend")
+async def receive_frontend_logs(
+    payload: FrontendLogsPayload,
+    user: Dict[str, Any] = Depends(_get_current_user),
+    _frontend_key: bool = Depends(validate_frontend_key)
+):
+    """
+    Recibe logs del frontend para centralizar observabilidad
+    """
+    try:
+        user_email = user.get('email', '') if user else ''
+        
+        for log_entry in payload.logs:
+            # Enriquecer con información del usuario autenticado
+            if user_email and not log_entry.user_email:
+                log_entry.user_email = user_email
+            
+            # Log en el sistema centralizado
+            observability_logger.logger.log(
+                getattr(logging, log_entry.level, logging.INFO),
+                f"Frontend: {log_entry.message}",
+                extra={
+                    'event_type': 'frontend_log',
+                    'frontend_component': log_entry.component,
+                    'frontend_url': log_entry.url,
+                    'frontend_user_agent': log_entry.user_agent,
+                    'frontend_request_id': log_entry.request_id,
+                    'frontend_event_type': log_entry.event_type,
+                    'frontend_extra_data': log_entry.extra_data,
+                    'frontend_stack_trace': log_entry.stack_trace,
+                    'user_email': log_entry.user_email or user_email,
+                    'original_timestamp': log_entry.timestamp
+                }
+            )
+        
+        return {"success": True, "logs_received": len(payload.logs)}
+        
+    except Exception as e:
+        logger.error(f"Error procesando logs frontend: {e}")
+        raise HTTPException(status_code=500, detail="Error procesando logs")
+
+# ================================
+# MÉTRICAS PROMETHEUS
+# ================================
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """
+    Endpoint para métricas de Prometheus
+    """
+    try:
+        from app.utils.metrics import metrics_collector
+        
+        # Obtener métricas en formato Prometheus
+        metrics_output = metrics_collector.get_metrics_output()
+        
+        # Retornar con el content-type correcto
+        return Response(
+            content=metrics_output,
+            media_type="text/plain; version=0.0.4; charset=utf-8"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generando métricas Prometheus: {e}")
+        # Retornar respuesta vacía en caso de error para no romper Prometheus
+        return Response(
+            content="",
+            media_type="text/plain; version=0.0.4; charset=utf-8"
+        )
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint para Kubernetes y monitoreo
+    """
+    try:
+        # Verificar conexiones críticas
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "version": "2.0.0",
+            "service": "cuenly-backend"
+        }
+        
+        # Verificar conexión a MongoDB
+        try:
+            from app.repositories.user_repository import UserRepository
+            user_repo = UserRepository()
+            # Intento simple de conexión
+            user_repo.collection.database.command("ismaster")
+            health_status["mongodb"] = "connected"
+        except Exception as e:
+            health_status["mongodb"] = f"error: {str(e)}"
+            health_status["status"] = "unhealthy"
+        
+        # Verificar límites de procesamiento
+        try:
+            health_status["processing_lock"] = "available" if not PROCESSING_LOCK.is_locked() else "locked"
+        except:
+            health_status["processing_lock"] = "unknown"
+        
+        status_code = 200 if health_status["status"] == "healthy" else 503
+        
+        return JSONResponse(
+            content=health_status,
+            status_code=status_code
+        )
+        
+    except Exception as e:
+        return JSONResponse(
+            content={
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            },
+            status_code=503
+        )

@@ -1,0 +1,231 @@
+groups:
+- name: cuenly-backend-sla-alerts
+  interval: 30s
+  rules:
+  
+  # === ALERTAS DE DISPONIBILIDAD ===
+  - alert: CuenlyBackendDown
+    expr: up{job="cuenly-backend"} == 0
+    for: 1m
+    labels:
+      severity: critical
+      service: cuenly-backend
+      category: availability
+    annotations:
+      summary: "Cuenly Backend está caído"
+      description: "El backend de Cuenly no responde en {{ $labels.instance }}"
+      runbook_url: "https://docs.cuenly.com/runbooks/backend-down"
+      
+  - alert: CuenlyBackendHighErrorRate
+    expr: |
+      (
+        sum(rate(cuenly_request_duration_seconds_count{status_code=~"5.."}[5m])) /
+        sum(rate(cuenly_request_duration_seconds_count[5m]))
+      ) * 100 > 5
+    for: 2m
+    labels:
+      severity: warning
+      service: cuenly-backend
+      category: availability
+    annotations:
+      summary: "Alta tasa de errores en Cuenly Backend"
+      description: "La tasa de errores es {{ $value | humanizePercentage }} en los últimos 5 minutos"
+      
+  - alert: CuenlyBackendCriticalErrorRate
+    expr: |
+      (
+        sum(rate(cuenly_request_duration_seconds_count{status_code=~"5.."}[5m])) /
+        sum(rate(cuenly_request_duration_seconds_count[5m]))
+      ) * 100 > 15
+    for: 1m
+    labels:
+      severity: critical
+      service: cuenly-backend
+      category: availability
+    annotations:
+      summary: "Tasa crítica de errores en Cuenly Backend"
+      description: "La tasa de errores es {{ $value | humanizePercentage }} - CRÍTICO"
+      
+  # === ALERTAS DE PERFORMANCE ===
+  - alert: CuenlyBackendHighLatency
+    expr: |
+      histogram_quantile(0.95,
+        sum(rate(cuenly_request_duration_seconds_bucket[5m])) by (le)
+      ) > 2
+    for: 5m
+    labels:
+      severity: warning
+      service: cuenly-backend
+      category: performance
+    annotations:
+      summary: "Alta latencia en Cuenly Backend"
+      description: "El P95 de latencia es {{ $value }}s en los últimos 5 minutos"
+      
+  - alert: CuenlyBackendCriticalLatency
+    expr: |
+      histogram_quantile(0.95,
+        sum(rate(cuenly_request_duration_seconds_bucket[5m])) by (le)
+      ) > 5
+    for: 2m
+    labels:
+      severity: critical
+      service: cuenly-backend
+      category: performance
+    annotations:
+      summary: "Latencia crítica en Cuenly Backend"
+      description: "El P95 de latencia es {{ $value }}s - CRÍTICO"
+      
+  - alert: CuenlyBackendSlowEndpoint
+    expr: |
+      histogram_quantile(0.95,
+        sum(rate(cuenly_request_duration_seconds_bucket[5m])) by (le, endpoint)
+      ) > 3
+    for: 3m
+    labels:
+      severity: info
+      service: cuenly-backend
+      category: performance
+    annotations:
+      summary: "Endpoint lento detectado"
+      description: "El endpoint {{ $labels.endpoint }} tiene P95 de {{ $value }}s"
+
+- name: cuenly-business-alerts
+  interval: 60s
+  rules:
+  
+  # === ALERTAS DE NEGOCIO ===
+  - alert: CuenlyHighTrialExpirations
+    expr: |
+      increase(cuenly_trial_expiration_events_total[1h]) > 20
+    for: 0m
+    labels:
+      severity: info
+      service: cuenly-backend
+      category: business
+    annotations:
+      summary: "Pico inusual de expiraciones de trial"
+      description: "{{ $value }} expiraciones de trial en la última hora"
+      
+  - alert: CuenlyInvoiceProcessingFailures
+    expr: |
+      (
+        sum(rate(cuenly_invoices_processed_total{status="error"}[10m])) /
+        sum(rate(cuenly_invoices_processed_total[10m]))
+      ) * 100 > 10
+    for: 5m
+    labels:
+      severity: warning
+      service: cuenly-backend
+      category: business
+    annotations:
+      summary: "Alta tasa de fallos en procesamiento de facturas"
+      description: "{{ $value | humanizePercentage }} de facturas fallan al procesarse"
+      
+  - alert: CuenlyAuthenticationFailures
+    expr: |
+      sum(rate(cuenly_authentication_events_total{result="failure"}[5m])) > 0.5
+    for: 2m
+    labels:
+      severity: warning
+      service: cuenly-backend
+      category: security
+    annotations:
+      summary: "Alta tasa de fallos de autenticación"
+      description: "{{ $value }} fallos de autenticación por segundo"
+      
+  - alert: CuenlyNoInvoiceActivity
+    expr: |
+      sum(rate(cuenly_invoices_processed_total[30m])) == 0
+    for: 30m
+    labels:
+      severity: info
+      service: cuenly-backend
+      category: business
+    annotations:
+      summary: "Sin actividad de procesamiento de facturas"
+      description: "No se han procesado facturas en los últimos 30 minutos"
+
+- name: cuenly-infrastructure-alerts
+  interval: 30s
+  rules:
+  
+  # === ALERTAS DE INFRAESTRUCTURA ===
+  - alert: CuenlyHighMemoryUsage
+    expr: |
+      (
+        process_resident_memory_bytes{job="cuenly-backend"} / 
+        container_spec_memory_limit_bytes{job="cuenly-backend"}
+      ) * 100 > 80
+    for: 5m
+    labels:
+      severity: warning
+      service: cuenly-backend
+      category: infrastructure
+    annotations:
+      summary: "Alto uso de memoria en Cuenly Backend"
+      description: "Uso de memoria: {{ $value | humanizePercentage }}"
+      
+  - alert: CuenlyHighCPUUsage
+    expr: |
+      rate(process_cpu_seconds_total{job="cuenly-backend"}[5m]) * 100 > 80
+    for: 10m
+    labels:
+      severity: warning
+      service: cuenly-backend
+      category: infrastructure
+    annotations:
+      summary: "Alto uso de CPU en Cuenly Backend"
+      description: "Uso de CPU: {{ $value | humanizePercentage }}"
+      
+  - alert: CuenlyPodRestarting
+    expr: |
+      increase(kube_pod_container_status_restarts_total{pod=~"cuenly-backend-.*"}[10m]) > 0
+    for: 0m
+    labels:
+      severity: warning
+      service: cuenly-backend
+      category: infrastructure
+    annotations:
+      summary: "Pod de Cuenly Backend reiniciándose"
+      description: "El pod {{ $labels.pod }} se ha reiniciado {{ $value }} veces en 10 minutos"
+      
+  - alert: CuenlyMongoConnectionIssues
+    expr: |
+      sum(rate(cuenly_errors_total{error_type="mongodb_connection"}[5m])) > 0
+    for: 1m
+    labels:
+      severity: critical
+      service: cuenly-backend
+      category: infrastructure
+    annotations:
+      summary: "Problemas de conexión con MongoDB"
+      description: "{{ $value }} errores de conexión con MongoDB por segundo"
+
+- name: cuenly-api-key-security
+  interval: 30s
+  rules:
+  
+  # === ALERTAS DE SEGURIDAD ===
+  - alert: CuenlyAPIKeyFailures
+    expr: |
+      sum(rate(cuenly_api_key_validations_total{result="invalid"}[5m])) > 1
+    for: 2m
+    labels:
+      severity: warning
+      service: cuenly-backend
+      category: security
+    annotations:
+      summary: "Alto número de validaciones fallidas de API Key"
+      description: "{{ $value }} validaciones fallidas de API key por segundo"
+      
+  - alert: CuenlySuspiciousActivity
+    expr: |
+      sum(rate(cuenly_api_key_validations_total{result="invalid"}[1m])) > 10
+    for: 0m
+    labels:
+      severity: critical
+      service: cuenly-backend
+      category: security
+    annotations:
+      summary: "Actividad sospechosa detectada"
+      description: "{{ $value }} intentos fallidos de API key en 1 minuto - Posible ataque"
