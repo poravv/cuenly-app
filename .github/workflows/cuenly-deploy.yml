@@ -171,40 +171,86 @@ jobs:
       - uses: actions/checkout@v4
       
       # ✅ Actualizar environment files con secretos (sin regenerar desde cero)
-      - name: Update environment files with secrets
+      - name: Generate environment files with secrets for production
         run: |
-          echo "🔧 Actualizando environment files con secretos..."
+          echo "🔧 Generando environment files con secretos..."
           
           # Configurar FRONTEND_API_KEY con fallback
           if [ -z "${{ secrets.FRONTEND_API_KEY }}" ]; then
-            echo "⚠️  FRONTEND_API_KEY no configurado, manteniendo valor por defecto"
+            echo "⚠️  FRONTEND_API_KEY no configurado, usando valor por defecto"
             FRONTEND_API_KEY="cuenly-frontend-dev-key-2025"
           else
             FRONTEND_API_KEY="${{ secrets.FRONTEND_API_KEY }}"
             echo "✅ FRONTEND_API_KEY configurado correctamente"
           fi
           
-          # Verificar archivos existentes
-          echo "📋 Archivos environment existentes:"
+          # Crear directorio
+          mkdir -p frontend/src/environments
+          
+          # Crear interfaz TypeScript
+          cat > frontend/src/environments/environment.interface.ts << 'EOF'
+          export interface Environment {
+            production: boolean;
+            apiUrl: string;
+            frontendApiKey: string;
+            firebase: {
+              apiKey: string;
+              authDomain: string;
+              projectId: string;
+              storageBucket: string;
+              messagingSenderId: string;
+              appId: string;
+              measurementId: string;
+            };
+          }
+          EOF
+          
+          # Los archivos no existen en el repo, crearlos desde cero
+          echo "🔧 Creando environment.ts..."
+          cat > frontend/src/environments/environment.ts << EOF
+          import { Environment } from './environment.interface';
+          export const environment: Environment = {
+            production: false,
+            apiUrl: '',
+            frontendApiKey: "${FRONTEND_API_KEY}",
+            firebase: {
+              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
+              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
+              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
+              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
+              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
+              appId: "${{ secrets.FIREBASE_APP_ID }}",
+              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+            }
+          };
+          EOF
+          
+          echo "🔧 Creando environment.prod.ts..."
+          cat > frontend/src/environments/environment.prod.ts << EOF
+          import { Environment } from './environment.interface';
+          export const environment: Environment = {
+            production: true,
+            apiUrl: '',
+            frontendApiKey: "${FRONTEND_API_KEY}",
+            firebase: {
+              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
+              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
+              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
+              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
+              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
+              appId: "${{ secrets.FIREBASE_APP_ID }}",
+              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+            }
+          };
+          EOF
+          
+          echo "✅ Archivos environment generados desde cero"
+          echo "📋 Archivos creados:"
           ls -la frontend/src/environments/
-          
-          echo "� Contenido actual de environment.prod.ts:"
-          cat frontend/src/environments/environment.prod.ts
-          
-          # Solo reemplazar el placeholder en environment.prod.ts si existe
-          if grep -q "__FRONTEND_API_KEY__" frontend/src/environments/environment.prod.ts; then
-            echo "🔄 Reemplazando __FRONTEND_API_KEY__ con valor real..."
-            sed -i.bak "s/__FRONTEND_API_KEY__/${FRONTEND_API_KEY}/g" frontend/src/environments/environment.prod.ts
-            echo "✅ Reemplazo completado"
-          else
-            echo "ℹ️  No se encontró placeholder __FRONTEND_API_KEY__ - archivo ya actualizado"
-          fi
-          
-          # Verificar el resultado
-          echo "� Contenido final de environment.prod.ts:"
-          cat frontend/src/environments/environment.prod.ts
-          
-          echo "🔍 frontendApiKey encontrado: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.prod.ts || echo "❌ NO ENCONTRADO")"
+          echo ""
+          echo "🔍 Verificando contenido generado:"
+          echo "environment.ts frontendApiKey: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.ts || echo '❌ NO ENCONTRADO')"
+          echo "environment.prod.ts frontendApiKey: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.prod.ts || echo '❌ NO ENCONTRADO')"
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -313,6 +359,53 @@ jobs:
             --from-literal=mongodb-database="${{ secrets.MONGODB_DATABASE }}"
           echo "✅ Secrets de MongoDB creados correctamente"
             
+      - name: Create/Update AlertManager secrets
+        run: |
+          set -euo pipefail
+          
+          # Configurar ALERTMANAGER secrets con fallback
+          SMTP_HOST="${{ secrets.ALERTMANAGER_SMTP_HOST }}"
+          SMTP_PORT="${{ secrets.ALERTMANAGER_SMTP_PORT }}"
+          SMTP_USER="${{ secrets.ALERTMANAGER_SMTP_USER }}"
+          SMTP_PASS="${{ secrets.ALERTMANAGER_SMTP_PASSWORD }}"
+          EMAIL_TO="${{ secrets.ALERTMANAGER_EMAIL_TO }}"
+          
+          # Usar valores por defecto si los secrets no existen
+          if [ -z "$SMTP_HOST" ]; then
+            echo "⚠️  ALERTMANAGER_SMTP_HOST no configurado, usando valor por defecto"
+            SMTP_HOST="mail.cuenly.com"
+          fi
+          
+          if [ -z "$SMTP_PORT" ]; then
+            echo "⚠️  ALERTMANAGER_SMTP_PORT no configurado, usando valor por defecto"
+            SMTP_PORT="587"
+          fi
+          
+          if [ -z "$SMTP_USER" ]; then
+            echo "⚠️  ALERTMANAGER_SMTP_USER no configurado, usando valor por defecto"
+            SMTP_USER="alerts@cuenly.com"
+          fi
+          
+          if [ -z "$SMTP_PASS" ]; then
+            echo "⚠️  ALERTMANAGER_SMTP_PASSWORD no configurado, usando valor por defecto"
+            SMTP_PASS="m+7GY8.k9?6GxHnX9nN4zE7kP2vQ5wL8xB6cM3jR1sA0yF"
+          fi
+          
+          if [ -z "$EMAIL_TO" ]; then
+            echo "⚠️  ALERTMANAGER_EMAIL_TO no configurado, usando valor por defecto"
+            EMAIL_TO="alerts@cuenly.com"
+          fi
+          
+          kubectl delete secret alertmanager-secrets -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl create secret generic alertmanager-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=ALERTMANAGER_SMTP_HOST="$SMTP_HOST" \
+            --from-literal=ALERTMANAGER_SMTP_PORT="$SMTP_PORT" \
+            --from-literal=ALERTMANAGER_SMTP_USER="$SMTP_USER" \
+            --from-literal=ALERTMANAGER_SMTP_PASSWORD="$SMTP_PASS" \
+            --from-literal=ALERTMANAGER_EMAIL_TO="$EMAIL_TO"
+          echo "✅ Secrets de AlertManager creados correctamente"
+            
       - name: Cleanup old MongoDB resources
         run: |
           # Eliminar recursos problemáticos del replica set
@@ -343,6 +436,25 @@ jobs:
           kubectl apply -f k8s-security-improvements/rate-limiting-configmap.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Rate limiting config no encontrado, continuando..."
           
           echo "✅ Configuraciones de seguridad aplicadas"
+          
+      - name: Create/Update AlertManager ConfigMap
+        run: |
+          set -euo pipefail
+          echo "🔧 Creando ConfigMap de AlertManager desde archivo de configuración..."
+          
+          # Verificar que el archivo de configuración existe
+          if [ ! -f "config/alertmanager.yml" ]; then
+            echo "❌ Error: config/alertmanager.yml no encontrado"
+            exit 1
+          fi
+          
+          # Crear ConfigMap desde el archivo que ya usa variables de entorno
+          kubectl delete configmap alertmanager-config -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl create configmap alertmanager-config \
+            --from-file=config.yml=config/alertmanager.yml \
+            --namespace=${{ env.NAMESPACE }}
+          
+          echo "✅ ConfigMap de AlertManager creado con configuración segura"
           
       - name: Initialize MongoDB with script
         run: |
@@ -397,6 +509,24 @@ jobs:
           kubectl delete replicaset -l app=cuenly-backend -n ${{ env.NAMESPACE }} --force --grace-period=0 --ignore-not-found=true || true
           
           echo "✅ Limpieza completada"
+          
+      - name: Deploy observability stack (AlertManager, etc.)
+        run: |
+          set -euo pipefail
+          echo "📊 Desplegando stack de observabilidad..."
+          
+          # Desplegar AlertManager
+          kubectl apply -f backend/k8s/alertmanager-deployment.yaml -n ${{ env.NAMESPACE }}
+          
+          # Esperar que AlertManager esté listo
+          kubectl rollout status deployment/alertmanager -n ${{ env.NAMESPACE }} --timeout=180s || echo "⚠️  AlertManager timeout, continuando..."
+          
+          # Aplicar configuraciones de observabilidad
+          kubectl apply -f backend/k8s/deployment-observability.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability config no encontrado"
+          kubectl apply -f backend/k8s/observability-configmap.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability ConfigMap no encontrado"
+          kubectl apply -f backend/k8s/service-observability.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability Service no encontrado"
+          
+          echo "✅ Stack de observabilidad desplegado"
           
       - name: Deploy backend application  
         run: |
@@ -605,11 +735,28 @@ jobs:
           kubectl apply -f frontend/k8s/configmap.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/networkpolicy.yaml -n ${{ env.NAMESPACE }}
           
-          # Aplicar ingress seguro con rate limiting si existe, sino el normal
+          # Aplicar ingress seguro con rate limiting con fallbacks
           echo "🛡️  Configurando ingress con seguridad..."
-          if [ -f "k8s-security-improvements/ingress-secure.yaml" ]; then
-            echo "✅ Aplicando ingress seguro con rate limiting"
-            kubectl apply -f k8s-security-improvements/ingress-secure.yaml -n ${{ env.NAMESPACE }}
+          
+          # Intentar ingress seguro sin snippets (más compatible)
+          if [ -f "k8s-security-improvements/ingress-secure-nosnippets.yaml" ]; then
+            echo "🔐 Intentando ingress seguro sin snippets..."
+            if kubectl apply -f k8s-security-improvements/ingress-secure-nosnippets.yaml -n ${{ env.NAMESPACE }}; then
+              echo "✅ Ingress seguro aplicado correctamente"
+            else
+              echo "⚠️  Ingress seguro falló, intentando con ingress normal..."
+              kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
+            fi
+          # Fallback: intentar ingress seguro con snippets
+          elif [ -f "k8s-security-improvements/ingress-secure.yaml" ]; then
+            echo "🔐 Intentando ingress seguro con snippets..."
+            if kubectl apply -f k8s-security-improvements/ingress-secure.yaml -n ${{ env.NAMESPACE }}; then
+              echo "✅ Ingress seguro aplicado correctamente"
+            else
+              echo "⚠️  Ingress seguro falló (snippets deshabilitados), usando ingress normal..."
+              kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
+            fi
+          # Fallback final: ingress normal
           else
             echo "⚠️  Ingress seguro no encontrado, usando ingress normal"
             kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}

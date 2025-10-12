@@ -345,6 +345,11 @@ export class ApiService {
     return this.http.get<any>(`${this.apiUrl}/user/subscription/history`);
   }
 
+  // Verificar estado del trial del usuario
+  getTrialStatus(): Observable<{success: boolean, can_process: boolean, is_trial_user: boolean, trial_expired: boolean, message: string}> {
+    return this.http.get<{success: boolean, can_process: boolean, is_trial_user: boolean, trial_expired: boolean, message: string}>(`${this.apiUrl}/user/trial-status`);
+  }
+
   requestPlanChange(planId: string): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/user/subscription/change-plan`, { plan_id: planId });
   }

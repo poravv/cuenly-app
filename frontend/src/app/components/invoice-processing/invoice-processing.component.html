@@ -185,8 +185,27 @@
             </div>
           </div>
 
+          <!-- Error State - Trial Expirado -->
+          <div *ngIf="!loading && !processingResult && error?.includes('🚫')" class="alert alert-warning border-0 mx-3">
+            <div class="d-flex align-items-start">
+              <i class="bi bi-hourglass-split text-warning me-2 fs-5"></i>
+              <div class="flex-grow-1">
+                <h6 class="alert-heading mb-2">Período de Prueba Expirado</h6>
+                <p class="mb-2">{{ (error || '').replace('🚫 ', '') }}</p>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-sm btn-warning" routerLink="/subscription">
+                    <i class="bi bi-credit-card me-1"></i>Ver Planes
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary" (click)="error = null">
+                    <i class="bi bi-x me-1"></i>Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Error State General -->
-          <div *ngIf="!loading && !processingResult && error" class="alert alert-danger border-0 mx-3">
+          <div *ngIf="!loading && !processingResult && error && !error?.includes('🚫')" class="alert alert-danger border-0 mx-3">
             <div class="d-flex align-items-start">
               <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
               <div>
@@ -359,7 +378,27 @@
             </div>
           </div>
 
-          <div *ngIf="jobError" class="alert alert-danger border-0 mt-3">
+          <!-- Error de automatización - Trial Expirado -->
+          <div *ngIf="jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción')" class="alert alert-warning border-0 mt-3">
+            <div class="d-flex align-items-start">
+              <i class="bi bi-hourglass-split text-warning me-2 fs-5"></i>
+              <div class="flex-grow-1">
+                <h6 class="alert-heading mb-2">Automatización No Disponible</h6>
+                <p class="mb-2">{{ jobError }}</p>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-sm btn-warning" routerLink="/subscription">
+                    <i class="bi bi-credit-card me-1"></i>Ver Planes
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary" (click)="jobError = null">
+                    <i class="bi bi-x me-1"></i>Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Error de automatización - General -->
+          <div *ngIf="jobError && !(jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción'))" class="alert alert-danger border-0 mt-3">
             <i class="bi bi-exclamation-triangle me-2"></i>
             {{ jobError }}
           </div>
