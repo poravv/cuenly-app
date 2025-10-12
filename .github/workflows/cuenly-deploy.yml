@@ -530,14 +530,36 @@ jobs:
           set -euo pipefail
           echo "🚀 Desplegando backend..."
           
-          # Aplicar configuración de Kubernetes
-          kubectl apply -f backend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
-          
           # Obtener SHA corto para tag único
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
-          echo "📦 Desplegando imagen: ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}"
+          echo "📦 Preparando imagen: ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}"
+          
+          # Verificar si existe deployment con selector diferente y eliminarlo
+          echo "🔍 Verificando deployment existente..."
+          if kubectl get deployment cuenly-backend -n ${{ env.NAMESPACE }} &>/dev/null; then
+            echo "⚠️  Deployment existente encontrado, verificando selector..."
+            
+            # Obtener selector actual
+            CURRENT_SELECTOR=$(kubectl get deployment cuenly-backend -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null || echo '{}')
+            echo "Selector actual: $CURRENT_SELECTOR"
+            
+            # Si el selector no incluye 'tier: backend', eliminar el deployment
+            if ! echo "$CURRENT_SELECTOR" | grep -q '"tier":"backend"'; then
+              echo "�️  Selector incompatible detectado, eliminando deployment..."
+              kubectl delete deployment cuenly-backend -n ${{ env.NAMESPACE }} --cascade=orphan
+              
+              # Esperar a que se elimine
+              echo "⏳ Esperando eliminación del deployment..."
+              sleep 10
+            fi
+          fi
+          
+          # Aplicar configuración de Kubernetes
+          echo "📋 Aplicando configuración de backend..."
+          kubectl apply -f backend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
           
           # Actualizar imagen del deployment
+          echo "🔄 Actualizando imagen del deployment..."
           kubectl set image deployment/cuenly-backend \
             cuenly-backend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA} \
             -n ${{ env.NAMESPACE }}
@@ -547,6 +569,7 @@ jobs:
             "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
           
           # Esperar que el rollout complete
+          echo "⏳ Esperando rollout del backend..."
           kubectl rollout status deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=300s
           
           # Verificar que los pods estén usando la imagen correcta
@@ -558,6 +581,8 @@ jobs:
             echo "✅ Backend desplegado correctamente con SHA: ${SHORT_SHA}"
           else
             echo "❌ Error: Backend no está usando la imagen esperada"
+            echo "Imagen esperada: ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}"
+            echo "Imágenes actuales: $CURRENT_IMAGES"
             exit 1
           fi
           
