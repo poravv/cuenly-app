@@ -21,12 +21,14 @@ export class AnalyticsService {
   private initializeRouteTracking(): void {
     this.router.events
       .pipe(filter(event => event instanceof NavigationEnd))
-      .subscribe((event: NavigationEnd) => {
-        // Obtener nombre de la página desde la ruta
-        const pageName = this.getPageNameFromUrl(event.urlAfterRedirects);
-        
-        // Enviar evento de page_view
-        this.firebase.trackPageView(pageName);
+      .subscribe((event) => {
+        if (event instanceof NavigationEnd) {
+          // Obtener nombre de la página desde la ruta
+          const pageName = this.getPageNameFromUrl(event.urlAfterRedirects);
+          
+          // Enviar evento de page_view
+          this.firebase.trackPageView(pageName);
+        }
       });
   }
 
