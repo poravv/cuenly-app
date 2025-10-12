@@ -29,9 +29,25 @@ spec:
     spec:
       serviceAccountName: cuenly-monitoring
       securityContext:
-        runAsUser: 10001
-        runAsGroup: 10001
-        fsGroup: 10001
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
+      initContainers:
+      - name: loki-init
+        image: busybox:1.35
+        command:
+          - sh
+          - -c
+          - |
+            mkdir -p /loki/chunks /loki/rules /loki/index
+            chmod -R 777 /loki
+            chown -R 0:0 /loki
+        volumeMounts:
+        - name: storage
+          mountPath: /loki
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
       containers:
       - name: loki
         image: grafana/loki:2.9.0
