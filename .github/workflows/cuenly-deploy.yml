@@ -9,6 +9,7 @@ on:
       - 'frontend/**'
       - 'config/**'
       - 'nginx/**'
+      - 'k8s-monitoring/**'
       - '.github/workflows/cuenly-deploy.yml'
   pull_request:
     branches: [ main, master ]
@@ -93,7 +94,7 @@ jobs:
             FRONTEND_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^frontend/' > /dev/null && echo "true" || echo "false")
             
             # Detectar cambios en config global
-            CONFIG_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^config/|^nginx/|^docker-compose.yml|\.github/workflows/' > /dev/null && echo "true" || echo "false")
+            CONFIG_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^config/|^nginx/|^k8s-monitoring/|^docker-compose.yml|\.github/workflows/' > /dev/null && echo "true" || echo "false")
             
             # Si hay cambios en config o workflow, rebuildeamos todo
             if [ "$CONFIG_CHANGED" == "true" ]; then
@@ -565,7 +566,13 @@ jobs:
           
           # 3. Desplegar Prometheus primero (otros dependen de él)
           echo "📈 Desplegando Prometheus..."
-          kubectl apply -f k8s-monitoring/prometheus.yaml
+          if [ -f "k8s-monitoring/prometheus-hostpath.yaml" ]; then
+            echo "🔧 Usando versión hostPath para Prometheus..."
+            kubectl apply -f k8s-monitoring/prometheus-hostpath.yaml
+          else
+            echo "🔧 Usando versión PVC para Prometheus..."
+            kubectl apply -f k8s-monitoring/prometheus.yaml
+          fi
           
           # 4. Desplegar Loki
           echo "� Desplegando Loki..."
