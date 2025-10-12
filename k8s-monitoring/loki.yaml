@@ -1,0 +1,258 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cuenly-loki-config
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-loki
+    component: logging
+data:
+  loki.yaml: |
+    auth_enabled: false
+    
+    server:
+      http_listen_port: 3100
+      grpc_listen_port: 9096
+      log_level: info
+      
+    common:
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+      replication_factor: 1
+      ring:
+        instance_addr: 127.0.0.1
+        kvstore:
+          store: inmemory
+          
+    query_range:
+      results_cache:
+        cache:
+          embedded_cache:
+            enabled: true
+            max_size_mb: 100
+            
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: cuenly_index_
+            period: 24h
+            
+    ruler:
+      alertmanager_url: http://cuenly-alertmanager:9093
+      
+    # Single instance - no memberlist issues
+    memberlist:
+      join_members: []
+      
+    limits_config:
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      enforce_metric_name: false
+      ingestion_rate_mb: 64
+      ingestion_burst_size_mb: 128
+      per_stream_rate_limit: 3MB
+      per_stream_rate_limit_burst: 15MB
+      
+    chunk_store_config:
+      max_look_back_period: 0s
+      
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: 720h  # 30 days retention
+      
+    compactor:
+      working_directory: /loki/boltdb-shipper-compactor
+      shared_store: filesystem
+      retention_enabled: true
+      retention_delete_delay: 2h
+      
+    ingester:
+      max_chunk_age: 2h
+      chunk_idle_period: 5m
+      chunk_block_size: 262144
+      chunk_encoding: snappy
+      chunk_retain_period: 1m
+      max_transfer_retries: 0
+      wal:
+        enabled: true
+        dir: /loki/wal
+        replay_memory_ceiling: 1GB
+      lifecycler:
+        ring:
+          kvstore:
+            store: inmemory
+          replication_factor: 1
+        final_sleep: 0s
+      chunk_target_size: 1048576
+      
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /loki/boltdb-shipper-active
+        cache_location: /loki/boltdb-shipper-cache
+        cache_ttl: 24h
+        shared_store: filesystem
+        build_per_tenant_index: true
+      filesystem:
+        directory: /loki/chunks
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cuenly-loki-storage
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-loki
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cuenly-loki
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-loki
+    component: logging
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/component: logging
+    app.kubernetes.io/part-of: cuenly-monitoring
+spec:
+  serviceName: cuenly-loki
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cuenly-loki
+  template:
+    metadata:
+      labels:
+        app: cuenly-loki
+        component: logging
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3100"
+        prometheus.io/path: "/metrics"
+        cuenly.com/restart-safe: "true"
+    spec:
+      serviceAccountName: cuenly-monitoring
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+      - name: loki
+        image: grafana/loki:2.9.0
+        imagePullPolicy: IfNotPresent
+        args:
+        - -config.file=/etc/loki/loki.yaml
+        - -target=all
+        ports:
+        - containerPort: 3100
+          name: http-metrics
+          protocol: TCP
+        - containerPort: 9096
+          name: grpc
+          protocol: TCP
+        env:
+        - name: LOKI_TRACING_ENABLED
+          value: "false"
+        - name: CUENLY_TENANT
+          value: "cuenly-app"
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: http-metrics
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http-metrics
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /ready
+            port: http-metrics
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 12
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+          requests:
+            cpu: 200m
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/loki
+          name: config
+        - mountPath: /loki
+          name: storage
+        - mountPath: /tmp
+          name: tmp
+      volumes:
+      - name: config
+        configMap:
+          name: cuenly-loki-config
+      - name: tmp
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: storage
+      labels:
+        app: cuenly-loki
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 30Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cuenly-loki
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-loki
+    component: logging
+spec:
+  ports:
+  - port: 3100
+    protocol: TCP
+    name: http-metrics
+    targetPort: http-metrics
+  - port: 9096
+    protocol: TCP
+    name: grpc
+    targetPort: grpc
+  selector:
+    app: cuenly-loki
+  type: ClusterIP
