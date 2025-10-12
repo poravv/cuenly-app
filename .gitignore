@@ -65,6 +65,7 @@ media/
 # Private files (like API keys, etc.)
 .env.local
 .env.*.local
+.env.docker.local
 
 # Excel and CSV files (for data processing)
 *.xlsx
