@@ -1,0 +1,108 @@
+# Configuración de AlertManager para Cuenly
+# Archivo: config/alertmanager.yml
+
+global:
+  # SMTP configuration para emails
+  smtp_smarthost: '${ALERTMANAGER_SMTP_HOST}:${ALERTMANAGER_SMTP_PORT}'
+  smtp_from: '${ALERTMANAGER_SMTP_USER}'
+  smtp_auth_username: '${ALERTMANAGER_SMTP_USER}'
+  smtp_auth_password: '${ALERTMANAGER_SMTP_PASSWORD}'
+  smtp_require_tls: true
+
+# Plantillas de mensajes
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Configuración de enrutamiento
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'cuenly-team'
+  
+  # Rutas específicas por severidad
+  routes:
+  - match:
+      severity: critical
+    receiver: 'critical-alerts'
+    group_wait: 5s
+    repeat_interval: 30m
+    
+  - match:
+      severity: warning
+    receiver: 'warning-alerts'
+    repeat_interval: 2h
+    
+  - match:
+      category: business
+    receiver: 'business-alerts'
+    repeat_interval: 4h
+
+# Configuración de receptores (dónde enviar)
+receivers:
+- name: 'cuenly-team'
+  email_configs:
+  - to: '${ALERTMANAGER_EMAIL_TO}'
+    subject: '[Cuenly] Alerta: {{ .GroupLabels.alertname }}'
+    body: |
+      {{ range .Alerts }}
+      Alerta: {{ .Annotations.summary }}
+      Descripción: {{ .Annotations.description }}
+      Severidad: {{ .Labels.severity }}
+      Servicio: {{ .Labels.service }}
+      Tiempo: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+      {{ end }}
+
+- name: 'critical-alerts'
+  # Email inmediato para alertas críticas
+  email_configs:
+  - to: '${ALERTMANAGER_EMAIL_TO}'
+    subject: '🚨 [CRÍTICO] {{ .GroupLabels.alertname }}'
+    body: |
+      ⚠️ ALERTA CRÍTICA EN CUENLY ⚠️
+      
+      {{ range .Alerts }}
+      Problema: {{ .Annotations.summary }}
+      Detalles: {{ .Annotations.description }}
+      Servicio: {{ .Labels.service }}
+      Hora: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+      
+      🔗 Runbook: {{ .Annotations.runbook_url }}
+      {{ end }}
+  
+  # Slack para alertas críticas (opcional)
+  slack_configs:
+  - api_url: 'https://hooks.slack.com/services/TU-SLACK-WEBHOOK'
+    channel: '#cuenly-alerts'
+    title: '🚨 Alerta Crítica en Cuenly'
+    text: |
+      {{ range .Alerts }}
+      *{{ .Annotations.summary }}*
+      {{ .Annotations.description }}
+      Severidad: {{ .Labels.severity }}
+      {{ end }}
+
+- name: 'warning-alerts'
+  email_configs:
+  - to: '${ALERTMANAGER_EMAIL_TO}'
+    subject: '⚠️ [WARNING] {{ .GroupLabels.alertname }}'
+
+- name: 'business-alerts'
+  email_configs:
+  - to: '${ALERTMANAGER_EMAIL_TO}'
+    subject: '📊 [BUSINESS] {{ .GroupLabels.alertname }}'
+
+# Inhibiciones (evitar spam de alertas relacionadas)
+inhibit_rules:
+- source_match:
+    severity: 'critical'
+  target_match:
+    severity: 'warning'
+  equal: ['service', 'instance']
+  
+- source_match:
+    alertname: 'CuenlyBackendDown'
+  target_match_re:
+    alertname: 'Cuenly.*'
+  equal: ['service']

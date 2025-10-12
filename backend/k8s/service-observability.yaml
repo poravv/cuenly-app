@@ -1,0 +1,67 @@
+# Service mejorado para observabilidad
+apiVersion: v1
+kind: Service
+metadata:
+  name: cuenly-backend-service
+  namespace: cuenly-backend
+  labels:
+    app: cuenly-backend
+    component: api-server
+    tier: backend
+    app.kubernetes.io/name: cuenly-backend-service
+    app.kubernetes.io/component: service
+    app.kubernetes.io/part-of: cuenly-app
+  annotations:
+    # Prometheus service discovery
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
+    # Service mesh annotations (si usas Istio)
+    service.istio.io/canonical-name: cuenly-backend
+    service.istio.io/canonical-revision: v2.0.0
+    # Observability annotations
+    cuenly.com/service-type: "backend-api"
+    cuenly.com/monitoring-enabled: "true"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  - name: metrics  # Puerto específico para métricas si es necesario
+    port: 9090
+    targetPort: 8000
+    protocol: TCP
+  selector:
+    app: cuenly-backend
+
+---
+# ServiceMonitor para Prometheus Operator (si lo usas)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cuenly-backend-monitor
+  namespace: cuenly-backend
+  labels:
+    app: cuenly-backend
+    component: monitoring
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: cuenly-backend
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    honorLabels: true
+  - port: http
+    path: /health
+    interval: 15s
+    scrapeTimeout: 5s
+    honorLabels: true
+  namespaceSelector:
+    matchNames:
+    - cuenly-backend

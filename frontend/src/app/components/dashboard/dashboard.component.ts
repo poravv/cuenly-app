@@ -3,6 +3,8 @@ import { ApiService } from '../../services/api.service';
 import { HttpClient } from '@angular/common/http';
 import { forkJoin } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { ObservabilityService } from '../../services/observability.service';
+import { UserService } from '../../services/user.service';
 
 interface DashboardStats {
   total_invoices: number;
@@ -76,10 +78,23 @@ export class DashboardComponent implements OnInit, OnDestroy {
   
   constructor(
     private apiService: ApiService,
-    private http: HttpClient
+    private http: HttpClient,
+    private observability: ObservabilityService,
+    private userService: UserService
   ) {}
 
   ngOnInit(): void {
+    // Log page view
+    this.observability.logPageView('Dashboard');
+    
+    // Log user access
+    const currentUser = this.userService.getCurrentProfile();
+    this.observability.logUserAction('dashboard_accessed', 'DashboardComponent', {
+      user_email: currentUser?.email,
+      user_role: currentUser?.role,
+      is_trial: currentUser?.is_trial
+    });
+    
     this.loadData();
   }
   
@@ -89,6 +104,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   loadData(): void {
     this.loading = true;
+    
+    const currentUser = this.userService.getCurrentProfile();
+    this.observability.info('Loading dashboard data', 'DashboardComponent', {
+      user_email: currentUser?.email,
+      action: 'load_dashboard_data'
+    });
     
     // Cargar solo métricas reales disponibles
     forkJoin({
@@ -101,7 +122,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loading = false;
       },
       error: (err) => {
-        console.error('Error loading dashboard data:', err);
+        const currentUser = this.userService.getCurrentProfile();
+        this.observability.error('Error loading dashboard data', err, 'DashboardComponent', {
+          user_email: currentUser?.email,
+          action: 'load_dashboard_data',
+          fallback_used: true
+        });
+        
         this.loadFallbackData();
         this.loading = false;
       }
@@ -210,7 +237,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
         };
       },
       error: (err) => {
-        console.error('Error loading system status:', err);
+        const currentUser = this.userService.getCurrentProfile();
+        this.observability.error('Error loading system status', err, 'DashboardComponent', {
+          user_email: currentUser?.email,
+          action: 'load_system_status',
+          endpoint: '/status'
+        });
+        
         // Estado por defecto en caso de error
         this.systemStatus = {
           email_configured: false,
