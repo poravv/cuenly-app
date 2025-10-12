@@ -3,6 +3,7 @@ import { ApiService } from '../../services/api.service';
 import { SystemStatus } from '../../models/invoice.model';
 import { AuthService } from '../../services/auth.service';
 import { UserService, UserProfile } from '../../services/user.service';
+import { FirebaseService } from '../../services/firebase.service';
 import { User } from 'firebase/auth';
 import { Router } from '@angular/router';
 
@@ -22,7 +23,8 @@ export class NavbarComponent implements OnInit, OnDestroy {
     private api: ApiService, 
     private auth: AuthService, 
     private userService: UserService,
-    private router: Router
+    private router: Router,
+    private firebase: FirebaseService
   ) {}
 
   ngOnInit(): void {
@@ -67,6 +69,10 @@ export class NavbarComponent implements OnInit, OnDestroy {
   async signOut(): Promise<void> {
     try {
       console.log('🔐 Cerrando sesión...');
+      
+      // Track logout
+      this.firebase.trackLogout();
+      
       await this.auth.signOut();
       console.log('✅ Sesión cerrada correctamente');
       

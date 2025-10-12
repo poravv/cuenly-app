@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { FirebaseService } from '../../services/firebase.service';
 import { combineLatest, Subscription } from 'rxjs';
 
 @Component({
@@ -15,7 +16,12 @@ export class LoginComponent implements OnInit, OnDestroy {
   info: string | null = null;
   private sub = new Subscription();
 
-  constructor(private auth: AuthService, private router: Router, private route: ActivatedRoute) {}
+  constructor(
+    private auth: AuthService, 
+    private router: Router, 
+    private route: ActivatedRoute,
+    private firebase: FirebaseService
+  ) {}
 
   ngOnInit(): void {
     const ret = this.route.snapshot.queryParamMap.get('returnUrl');
@@ -33,6 +39,10 @@ export class LoginComponent implements OnInit, OnDestroy {
 
   async signInGoogle() {
     this.loading = true; this.error = null;
+    
+    // Track login attempt
+    this.firebase.logEvent('login_attempted', { method: 'google' });
+    
     try {
       await this.auth.signInWithGoogle();
       this.info = 'Autenticación exitosa. ¡Tienes 15 días de uso gratuito!';
@@ -41,6 +51,9 @@ export class LoginComponent implements OnInit, OnDestroy {
       }, 1500);
     } catch (e: any) {
       this.error = e?.message || 'Error al iniciar sesión';
+      
+      // Track login error
+      this.firebase.trackError('login_failed', e?.message || 'Unknown error', 'LoginComponent');
     } finally {
       this.loading = false;
     }
