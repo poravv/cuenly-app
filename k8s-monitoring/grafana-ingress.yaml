@@ -1,0 +1,40 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cuenly-grafana-ingress
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-grafana
+    component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+    # Headers para proxy sin snippets (compatibilidad con security policies)
+    nginx.ingress.kubernetes.io/upstream-vhost: "metrics.mindtechpy.net"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: metrics.mindtechpy.net
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: cuenly-grafana
+            port:
+              number: 3000
+  # También soportar acceso directo por IP para Nginx Proxy Manager
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: cuenly-grafana
+            port:
+              number: 3000

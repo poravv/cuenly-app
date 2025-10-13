@@ -9,6 +9,7 @@ on:
       - 'frontend/**'
       - 'config/**'
       - 'nginx/**'
+      - 'k8s-monitoring/**'
       - '.github/workflows/cuenly-deploy.yml'
   pull_request:
     branches: [ main, master ]
@@ -93,7 +94,7 @@ jobs:
             FRONTEND_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^frontend/' > /dev/null && echo "true" || echo "false")
             
             # Detectar cambios en config global
-            CONFIG_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^config/|^nginx/|^docker-compose.yml|\.github/workflows/' > /dev/null && echo "true" || echo "false")
+            CONFIG_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^config/|^nginx/|^k8s-monitoring/|^docker-compose.yml|\.github/workflows/' > /dev/null && echo "true" || echo "false")
             
             # Si hay cambios en config o workflow, rebuildeamos todo
             if [ "$CONFIG_CHANGED" == "true" ]; then
@@ -205,7 +206,24 @@ jobs:
           }
           EOF
           
-          # Los archivos no existen en el repo, crearlos desde cero
+          # Configurar Firebase con fallbacks a valores conocidos
+          FIREBASE_API_KEY="${{ secrets.FIREBASE_API_KEY }}"
+          FIREBASE_AUTH_DOMAIN="${{ secrets.FIREBASE_AUTH_DOMAIN }}"
+          FIREBASE_PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID }}"
+          FIREBASE_STORAGE_BUCKET="${{ secrets.FIREBASE_STORAGE_BUCKET }}"
+          FIREBASE_MESSAGING_SENDER_ID="${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}"
+          FIREBASE_APP_ID="${{ secrets.FIREBASE_APP_ID }}"
+          FIREBASE_MEASUREMENT_ID="${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+          
+          # Usar valores por defecto si los secrets están vacíos
+          [ -z "$FIREBASE_API_KEY" ] && FIREBASE_API_KEY="AIzaSyAKFgwLUwsibGv8RMWFtGAZiBkUBy93r00"
+          [ -z "$FIREBASE_AUTH_DOMAIN" ] && FIREBASE_AUTH_DOMAIN="cuenly-app.firebaseapp.com"
+          [ -z "$FIREBASE_PROJECT_ID" ] && FIREBASE_PROJECT_ID="cuenly-app"
+          [ -z "$FIREBASE_STORAGE_BUCKET" ] && FIREBASE_STORAGE_BUCKET="cuenly-app.firebasestorage.app"
+          [ -z "$FIREBASE_MESSAGING_SENDER_ID" ] && FIREBASE_MESSAGING_SENDER_ID="381437069453"
+          [ -z "$FIREBASE_APP_ID" ] && FIREBASE_APP_ID="1:381437069453:web:b4cc8c4856a1a168817ac4"
+          [ -z "$FIREBASE_MEASUREMENT_ID" ] && FIREBASE_MEASUREMENT_ID="G-JCQ8120888"
+          
           echo "🔧 Creando environment.ts..."
           cat > frontend/src/environments/environment.ts << EOF
           import { Environment } from './environment.interface';
@@ -214,13 +232,13 @@ jobs:
             apiUrl: '',
             frontendApiKey: "${FRONTEND_API_KEY}",
             firebase: {
-              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
-              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
-              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
-              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
-              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
-              appId: "${{ secrets.FIREBASE_APP_ID }}",
-              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+              apiKey: "${FIREBASE_API_KEY}",
+              authDomain: "${FIREBASE_AUTH_DOMAIN}",
+              projectId: "${FIREBASE_PROJECT_ID}",
+              storageBucket: "${FIREBASE_STORAGE_BUCKET}",
+              messagingSenderId: "${FIREBASE_MESSAGING_SENDER_ID}",
+              appId: "${FIREBASE_APP_ID}",
+              measurementId: "${FIREBASE_MEASUREMENT_ID}"
             }
           };
           EOF
@@ -233,24 +251,30 @@ jobs:
             apiUrl: '',
             frontendApiKey: "${FRONTEND_API_KEY}",
             firebase: {
-              apiKey: "${{ secrets.FIREBASE_API_KEY }}",
-              authDomain: "${{ secrets.FIREBASE_AUTH_DOMAIN }}",
-              projectId: "${{ secrets.FIREBASE_PROJECT_ID }}",
-              storageBucket: "${{ secrets.FIREBASE_STORAGE_BUCKET }}",
-              messagingSenderId: "${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}",
-              appId: "${{ secrets.FIREBASE_APP_ID }}",
-              measurementId: "${{ secrets.FIREBASE_MEASUREMENT_ID }}"
+              apiKey: "${FIREBASE_API_KEY}",
+              authDomain: "${FIREBASE_AUTH_DOMAIN}",
+              projectId: "${FIREBASE_PROJECT_ID}",
+              storageBucket: "${FIREBASE_STORAGE_BUCKET}",
+              messagingSenderId: "${FIREBASE_MESSAGING_SENDER_ID}",
+              appId: "${FIREBASE_APP_ID}",
+              measurementId: "${FIREBASE_MEASUREMENT_ID}"
             }
           };
           EOF
           
-          echo "✅ Archivos environment generados desde cero"
+          echo "✅ Archivos environment generados con Firebase Analytics"
           echo "📋 Archivos creados:"
           ls -la frontend/src/environments/
           echo ""
-          echo "🔍 Verificando contenido generado:"
-          echo "environment.ts frontendApiKey: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.ts || echo '❌ NO ENCONTRADO')"
-          echo "environment.prod.ts frontendApiKey: $(grep -o 'frontendApiKey: ".*"' frontend/src/environments/environment.prod.ts || echo '❌ NO ENCONTRADO')"
+          echo "🔍 Verificando Firebase Analytics configurado:"
+          echo "measurementId en environment.ts: $(grep -o 'measurementId: ".*"' frontend/src/environments/environment.ts || echo '❌ NO ENCONTRADO')"
+          echo "measurementId en environment.prod.ts: $(grep -o 'measurementId: ".*"' frontend/src/environments/environment.prod.ts || echo '❌ NO ENCONTRADO')"
+          echo "projectId en prod: $(grep -o 'projectId: ".*"' frontend/src/environments/environment.prod.ts || echo '❌ NO ENCONTRADO')"
+          echo ""
+          echo "🔧 Firebase config values used:"
+          echo "- API Key: ${FIREBASE_API_KEY:0:10}..."
+          echo "- Project ID: $FIREBASE_PROJECT_ID"
+          echo "- Measurement ID: $FIREBASE_MEASUREMENT_ID"
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -518,12 +542,104 @@ jobs:
           # Esperar que AlertManager esté listo
           kubectl rollout status deployment/alertmanager -n ${{ env.NAMESPACE }} --timeout=180s || echo "⚠️  AlertManager timeout, continuando..."
           
-          # Aplicar configuraciones de observabilidad
-          kubectl apply -f backend/k8s/deployment-observability.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability config no encontrado"
-          kubectl apply -f backend/k8s/observability-configmap.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability ConfigMap no encontrado"
-          kubectl apply -f backend/k8s/service-observability.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability Service no encontrado"
+          # Aplicar ConfigMap de observabilidad (métricas, alertas, logs)
+          kubectl apply -f backend/k8s/observability-configmap.yaml -n ${{ env.NAMESPACE }}
           
           echo "✅ Stack de observabilidad desplegado"
+          
+      - name: Deploy centralized monitoring stack
+        run: |
+          set -euo pipefail
+          echo "� Desplegando stack de monitoreo centralizado..."
+          
+          # 1. Limpiar recursos legacy del monitoring namespace anterior
+          echo "🧹 Limpiando recursos legacy..."
+          kubectl delete statefulset loki -n monitoring --ignore-not-found=true --cascade=false
+          kubectl delete pod loki-0 -n monitoring --force --grace-period=0 --ignore-not-found=true
+          kubectl delete deployment monitoring-grafana -n monitoring --ignore-not-found=true --cascade=false
+          # Limpiar ingress duplicado que causa conflicto
+          kubectl delete ingress grafana-ingress -n monitoring --ignore-not-found=true
+          kubectl delete ingress cuenly-grafana-ingress -n monitoring --ignore-not-found=true
+          
+          # 2. Crear ConfigMap con reglas de alertas de Prometheus
+          echo "🚨 Configurando reglas de alertas de Prometheus..."
+          if [ -f "config/prometheus-alerts-cuenly.yml" ]; then
+            kubectl delete configmap prometheus-rules -n cuenly-monitoring --ignore-not-found=true
+            kubectl create configmap prometheus-rules \
+              --from-file=cuenly-alerts.yml=config/prometheus-alerts-cuenly.yml \
+              --namespace=cuenly-monitoring
+            echo "✅ Reglas de alertas configuradas desde config/prometheus-alerts-cuenly.yml"
+          else
+            echo "⚠️  Archivo config/prometheus-alerts-cuenly.yml no encontrado"
+            echo "⚠️  Aplicando ConfigMap placeholder..."
+            kubectl apply -f k8s-monitoring/prometheus-rules-configmap.yaml
+          fi
+          
+          # 3. Desplegar stack completo simplificado (Namespace + RBAC + Loki + Prometheus)
+          echo "📊 Desplegando stack simplificado con emptyDir (sin problemas de permisos)..."
+          kubectl apply -f k8s-monitoring/simple-monitoring-stack.yaml
+          
+          # 4. Desplegar Grafana
+          echo "📊 Desplegando Grafana..."
+          kubectl apply -f k8s-monitoring/grafana.yaml
+          
+          # 5. Desplegar Ingress de Grafana para acceso externo
+          echo "🌐 Desplegando Ingress de Grafana..."
+          if [ -f "k8s-monitoring/grafana-ingress.yaml" ]; then
+            kubectl apply -f k8s-monitoring/grafana-ingress.yaml
+            echo "✅ Ingress de Grafana configurado para metrics.mindtechpy.net"
+          else
+            echo "⚠️  Archivo grafana-ingress.yaml no encontrado"
+          fi
+          
+          # 6. Esperar que los servicios estén listos
+          echo "⏳ Esperando servicios de monitoreo..."
+          
+          # Stack simplificado - todos son Deployments
+          echo "⏳ Esperando Prometheus..."
+          kubectl rollout status deployment/cuenly-prometheus -n cuenly-monitoring --timeout=300s || echo "⚠️  Prometheus timeout"
+          
+          echo "⏳ Esperando Loki..."
+          kubectl rollout status deployment/cuenly-loki -n cuenly-monitoring --timeout=300s || echo "⚠️  Loki timeout"
+          
+          # Grafana
+          kubectl rollout status deployment/cuenly-grafana -n cuenly-monitoring --timeout=180s || echo "⚠️  Grafana timeout"
+          
+          # 8. Verificar estado final
+          echo "🔍 Verificando estado del stack de monitoreo..."
+          kubectl get pods -n cuenly-monitoring -o wide
+          kubectl get svc -n cuenly-monitoring
+          
+          # 9. Test de conectividad básico
+          echo "🩺 Test de conectividad básico..."
+          
+          # Verificar que Prometheus puede scrapearse a sí mismo
+          PROMETHEUS_POD=$(kubectl get pods -n cuenly-monitoring -l app=cuenly-prometheus -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$PROMETHEUS_POD" ]; then
+            kubectl exec $PROMETHEUS_POD -n cuenly-monitoring -- wget -q --spider http://localhost:9090/-/healthy && echo "✅ Prometheus health OK" || echo "❌ Prometheus health failed"
+          fi
+          
+          # Verificar que Loki está listo
+          LOKI_POD=$(kubectl get pods -n cuenly-monitoring -l app=cuenly-loki -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$LOKI_POD" ]; then
+            kubectl exec $LOKI_POD -n cuenly-monitoring -- wget -q --spider http://localhost:3100/ready && echo "✅ Loki ready OK" || echo "❌ Loki ready failed"
+          fi
+          
+          # Verificar que Grafana está listo
+          GRAFANA_POD=$(kubectl get pods -n cuenly-monitoring -l app=cuenly-grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$GRAFANA_POD" ]; then
+            kubectl exec $GRAFANA_POD -n cuenly-monitoring -- wget -q --spider http://localhost:3000/api/health && echo "✅ Grafana health OK" || echo "❌ Grafana health failed"
+          fi
+          
+          # Verificar que el Ingress está configurado
+          if kubectl get ingress cuenly-grafana-ingress -n cuenly-monitoring >/dev/null 2>&1; then
+            echo "✅ Ingress de Grafana configurado"
+            echo "🌐 Acceso disponible en: https://metrics.mindtechpy.net/"
+          else
+            echo "❌ Ingress de Grafana no encontrado"
+          fi
+          
+          echo "✅ Stack de monitoreo centralizado desplegado"
           
       - name: Deploy backend application  
         run: |
