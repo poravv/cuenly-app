@@ -542,10 +542,8 @@ jobs:
           # Esperar que AlertManager esté listo
           kubectl rollout status deployment/alertmanager -n ${{ env.NAMESPACE }} --timeout=180s || echo "⚠️  AlertManager timeout, continuando..."
           
-          # Aplicar configuraciones de observabilidad
-          kubectl apply -f backend/k8s/deployment-observability.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability config no encontrado"
-          kubectl apply -f backend/k8s/observability-configmap.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability ConfigMap no encontrado"
-          kubectl apply -f backend/k8s/service-observability.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Observability Service no encontrado"
+          # Aplicar ConfigMap de observabilidad (métricas, alertas, logs)
+          kubectl apply -f backend/k8s/observability-configmap.yaml -n ${{ env.NAMESPACE }}
           
           echo "✅ Stack de observabilidad desplegado"
           
@@ -563,15 +561,29 @@ jobs:
           kubectl delete ingress grafana-ingress -n monitoring --ignore-not-found=true
           kubectl delete ingress cuenly-grafana-ingress -n monitoring --ignore-not-found=true
           
-          # 2. Desplegar stack completo simplificado (Namespace + RBAC + Loki + Prometheus)
-          echo "� Desplegando stack simplificado con emptyDir (sin problemas de permisos)..."
+          # 2. Crear ConfigMap con reglas de alertas de Prometheus
+          echo "🚨 Configurando reglas de alertas de Prometheus..."
+          if [ -f "config/prometheus-alerts-cuenly.yml" ]; then
+            kubectl delete configmap prometheus-rules -n cuenly-monitoring --ignore-not-found=true
+            kubectl create configmap prometheus-rules \
+              --from-file=cuenly-alerts.yml=config/prometheus-alerts-cuenly.yml \
+              --namespace=cuenly-monitoring
+            echo "✅ Reglas de alertas configuradas desde config/prometheus-alerts-cuenly.yml"
+          else
+            echo "⚠️  Archivo config/prometheus-alerts-cuenly.yml no encontrado"
+            echo "⚠️  Aplicando ConfigMap placeholder..."
+            kubectl apply -f k8s-monitoring/prometheus-rules-configmap.yaml
+          fi
+          
+          # 3. Desplegar stack completo simplificado (Namespace + RBAC + Loki + Prometheus)
+          echo "📊 Desplegando stack simplificado con emptyDir (sin problemas de permisos)..."
           kubectl apply -f k8s-monitoring/simple-monitoring-stack.yaml
           
-          # 3. Desplegar Grafana
+          # 4. Desplegar Grafana
           echo "📊 Desplegando Grafana..."
           kubectl apply -f k8s-monitoring/grafana.yaml
           
-          # 6. Desplegar Ingress de Grafana para acceso externo
+          # 5. Desplegar Ingress de Grafana para acceso externo
           echo "🌐 Desplegando Ingress de Grafana..."
           if [ -f "k8s-monitoring/grafana-ingress.yaml" ]; then
             kubectl apply -f k8s-monitoring/grafana-ingress.yaml
@@ -580,7 +592,7 @@ jobs:
             echo "⚠️  Archivo grafana-ingress.yaml no encontrado"
           fi
           
-          # 7. Esperar que los servicios estén listos
+          # 6. Esperar que los servicios estén listos
           echo "⏳ Esperando servicios de monitoreo..."
           
           # Stack simplificado - todos son Deployments

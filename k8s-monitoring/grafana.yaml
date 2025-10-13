@@ -14,7 +14,6 @@ data:
     
     [security]
     admin_user = admin
-    admin_password = cuenly2025!
     disable_gravatar = false
     
     [users]
@@ -49,6 +48,20 @@ data:
     
     [dashboards]
     default_home_dashboard_path = /etc/grafana/dashboards/cuenly-overview.json
+
+---
+# Secret para credenciales de Grafana
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cuenly-grafana-credentials
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-grafana
+type: Opaque
+stringData:
+  admin-user: admin
+  admin-password: cuenly2025!  # TODO: Cambiar por una contraseña segura
 
 ---
 apiVersion: v1
@@ -187,9 +200,15 @@ spec:
           protocol: TCP
         env:
         - name: GF_SECURITY_ADMIN_USER
-          value: "admin"
+          valueFrom:
+            secretKeyRef:
+              name: cuenly-grafana-credentials
+              key: admin-user
         - name: GF_SECURITY_ADMIN_PASSWORD
-          value: "cuenly2025!"
+          valueFrom:
+            secretKeyRef:
+              name: cuenly-grafana-credentials
+              key: admin-password
         - name: GF_USERS_ALLOW_SIGN_UP
           value: "false"
         - name: GF_SERVER_DOMAIN

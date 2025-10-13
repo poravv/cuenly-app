@@ -1,0 +1,18 @@
+# ConfigMap con reglas de alertas de Prometheus para Cuenly
+# Este ConfigMap se crea desde el archivo config/prometheus-alerts-cuenly.yml
+# Archivo: k8s-monitoring/prometheus-rules-configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-prometheus
+    component: rules
+data:
+  # Este contenido se actualizará automáticamente desde el workflow
+  # usando el archivo config/prometheus-alerts-cuenly.yml
+  cuenly-alerts.yml: |
+    # Placeholder - Se actualiza automáticamente desde el workflow
+    # Contenido real viene de config/prometheus-alerts-cuenly.yml
