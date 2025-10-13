@@ -46,8 +46,10 @@ data:
     [session]
     provider = file
     
-    [dashboards]
-    default_home_dashboard_path = /etc/grafana/dashboards/cuenly-overview.json
+    # [dashboards]
+    # Comentado - No forzar dashboard por defecto al inicio
+    # Grafana mostrará la página de bienvenida
+    # default_home_dashboard_path = /etc/grafana/dashboards/cuenly-overview.json
 
 ---
 # Secret para credenciales de Grafana
