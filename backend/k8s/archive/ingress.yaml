@@ -1,8 +1,0 @@
-# INGRESS ELIMINADO - Ahora todo se maneja desde el frontend ingress
-# para evitar conflictos de precedencia y problemas de TLS
-# 
-# Todas las rutas del backend ahora están configuradas en:
-# frontend/k8s/ingress.yaml
-#
-# Este archivo se mantiene para referencia pero no se aplica
-
