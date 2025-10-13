@@ -53,7 +53,24 @@ subjects:
   namespace: cuenly-monitoring
 
 ---
-# Loki - Logs centralizado (emptyDir)
+# PersistentVolumeClaim para Loki (30 días de logs)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cuenly-loki-storage
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-loki
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# Loki - Logs centralizado (PersistentVolume - 30 días)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -97,7 +114,8 @@ spec:
         configMap:
           name: loki-config
       - name: storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: cuenly-loki-storage
 
 ---
 apiVersion: v1
@@ -116,7 +134,24 @@ spec:
     app: cuenly-loki
 
 ---
-# Prometheus - Métricas (emptyDir)
+# PersistentVolumeClaim para Prometheus (30 días de métricas)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cuenly-prometheus-storage
+  namespace: cuenly-monitoring
+  labels:
+    app: cuenly-prometheus
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 8Gi
+
+---
+# Prometheus - Métricas (PersistentVolume - 30 días)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -143,7 +178,7 @@ spec:
           - --storage.tsdb.path=/prometheus/
           - --web.console.libraries=/etc/prometheus/console_libraries
           - --web.console.templates=/etc/prometheus/consoles
-          - --storage.tsdb.retention.time=7d
+          - --storage.tsdb.retention.time=30d
           - --web.enable-lifecycle
         ports:
         - containerPort: 9090
@@ -170,7 +205,8 @@ spec:
         configMap:
           name: prometheus-rules
       - name: storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: cuenly-prometheus-storage
 
 ---
 apiVersion: v1
@@ -233,7 +269,15 @@ data:
 
     limits_config:
       reject_old_samples: true
-      reject_old_samples_max_age: 168h
+      reject_old_samples_max_age: 720h  # 30 días
+
+    # Retención de datos: 30 días
+    chunk_store_config:
+      max_look_back_period: 720h  # 30 días
+
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: 720h  # 30 días
 
 ---
 # ConfigMap para Prometheus
