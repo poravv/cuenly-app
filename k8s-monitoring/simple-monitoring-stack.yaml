@@ -264,36 +264,45 @@ data:
         static_configs:
           - targets: ['localhost:9090']
 
-      - job_name: 'cuenly-backend'
+      # Monitoreo de TODOS los namespaces del cluster
+      - job_name: 'kubernetes-pods'
         kubernetes_sd_configs:
           - role: pod
-            namespaces:
-              names:
-                - cuenly-backend
+            # SIN filtro de namespaces = TODOS los namespaces
         relabel_configs:
+          # Filtrar solo pods con anotación prometheus.io/scrape=true
           - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
             action: keep
             regex: true
+          
+          # Agregar namespace como label
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          
+          # Configurar path de métricas
           - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
             action: replace
             target_label: __metrics_path__
             regex: (.+)
+          
+          # Configurar puerto de métricas
           - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
             action: replace
             regex: ([^:]+)(?::\d+)?;(\d+)
             replacement: $1:$2
             target_label: __address__
-
-      - job_name: 'cuenly-frontend'
-        kubernetes_sd_configs:
-          - role: pod
-            namespaces:
-              names:
-                - cuenly-frontend
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
-            action: keep
-            regex: true
+          
+          # Agregar nombre del pod
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: kubernetes_pod_name
+          
+          # Agregar label 'app' si existe
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          
+          # Agregar label 'component' si existe
+          - source_labels: [__meta_kubernetes_pod_label_component]
+            target_label: component
 
 ---
 # Promtail - Recolector de logs para Loki
@@ -389,10 +398,11 @@ data:
         kubernetes_sd_configs:
           - role: pod
         relabel_configs:
-          # Filtrar solo namespaces de Cuenly
-          - source_labels: [__meta_kubernetes_namespace]
-            action: keep
-            regex: (cuenly-backend|cuenly-frontend|cuenly-monitoring)
+          # Monitorear TODOS los namespaces del cluster
+          # Comentar la línea siguiente para limitar solo a Cuenly:
+          # - source_labels: [__meta_kubernetes_namespace]
+          #   action: keep
+          #   regex: (cuenly-backend|cuenly-frontend|cuenly-monitoring)
           
           # Drop pods sin contenedor
           - source_labels: [__meta_kubernetes_pod_container_name]
