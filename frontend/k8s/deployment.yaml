@@ -6,8 +6,12 @@ metadata:
   labels:
     app: cuenly-frontend
     tier: frontend
+    component: web-server
+    version: v2.0.0
   annotations:
     deployment.kubernetes.io/revision: "1"
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "80"
 spec:
   replicas: 2
   strategy:
@@ -22,6 +26,12 @@ spec:
       labels:
         app: cuenly-frontend
         tier: frontend
+        component: web-server
+        version: v2.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+        loki.grafana.com/scrape: "true"
     spec:
       containers:
       - name: cuenly-frontend

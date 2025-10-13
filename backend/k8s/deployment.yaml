@@ -6,8 +6,13 @@ metadata:
   labels:
     app: cuenly-backend
     tier: backend
+    component: api-server
+    version: v2.0.0
   annotations:
     deployment.kubernetes.io/revision: "1"
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
 spec:
   replicas: 1
   strategy:
@@ -21,6 +26,13 @@ spec:
       labels:
         app: cuenly-backend
         tier: backend
+        component: api-server
+        version: v2.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+        loki.grafana.com/scrape: "true"
     spec:
       containers:
       - name: cuenly-backend
@@ -81,6 +93,12 @@ metadata:
   labels:
     app: cuenly-backend
     tier: backend
+    component: api-server
+  annotations:
+    # Prometheus service discovery
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
   selector:

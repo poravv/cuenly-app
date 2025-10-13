@@ -151,6 +151,8 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/prometheus
+        - name: rules
+          mountPath: /etc/prometheus/rules
         - name: storage
           mountPath: /prometheus
         resources:
@@ -164,6 +166,9 @@ spec:
       - name: config
         configMap:
           name: prometheus-config
+      - name: rules
+        configMap:
+          name: prometheus-rules
       - name: storage
         emptyDir: {}
 
@@ -243,6 +248,17 @@ data:
       scrape_interval: 15s
       evaluation_interval: 15s
 
+    # Configuración de AlertManager
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets:
+          - alertmanager-service.cuenly-backend.svc.cluster.local:9093
+
+    # Cargar reglas de alertas
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+
     scrape_configs:
       - job_name: 'prometheus'
         static_configs:
@@ -280,7 +296,7 @@ data:
             regex: true
 
 ---
-# Promtail simplificado - Evita "too many open files"
+# Promtail - Recolector de logs para Loki
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -288,6 +304,7 @@ metadata:
   namespace: cuenly-monitoring
   labels:
     app: cuenly-promtail
+    component: log-collector
 spec:
   selector:
     matchLabels:
@@ -296,6 +313,7 @@ spec:
     metadata:
       labels:
         app: cuenly-promtail
+        component: log-collector
     spec:
       serviceAccountName: cuenly-monitoring
       containers:
@@ -306,19 +324,29 @@ spec:
         ports:
         - containerPort: 3101
           name: http-metrics
+        env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         volumeMounts:
         - name: config
           mountPath: /etc/promtail
-        - name: varlog
-          mountPath: /var/log
+        - name: run
+          mountPath: /run/promtail
+        - mountPath: /var/lib/docker/containers
+          name: docker
+          readOnly: true
+        - mountPath: /var/log/pods
+          name: pods
           readOnly: true
         resources:
           limits:
-            cpu: 100m
-            memory: 128Mi
+            cpu: 200m
+            memory: 256Mi
           requests:
             cpu: 50m
-            memory: 64Mi
+            memory: 128Mi
         securityContext:
           runAsUser: 0
           privileged: true
@@ -326,9 +354,15 @@ spec:
       - name: config
         configMap:
           name: promtail-config
-      - name: varlog
+      - name: run
         hostPath:
-          path: /var/log
+          path: /run/promtail
+      - name: docker
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: pods
+        hostPath:
+          path: /var/log/pods
 
 ---
 apiVersion: v1
@@ -348,34 +382,56 @@ data:
       - url: http://cuenly-loki:3100/loki/api/v1/push
 
     scrape_configs:
-      # Configuración simplificada - busca logs de sistema
-      - job_name: system-logs
-        static_configs:
-        - targets:
-            - localhost
-          labels:
-            job: system
-            __path__: /var/log/syslog
-      
-      # Solo logs básicos de pods para evitar "too many open files"
-      - job_name: kubernetes-basic
+      # Logs de Kubernetes - Configuración mejorada con todos los labels
+      - job_name: kubernetes-pods
+        pipeline_stages:
+          - docker: {}
         kubernetes_sd_configs:
           - role: pod
         relabel_configs:
-          # Filtrar solo namespaces específicos
+          # Filtrar solo namespaces de Cuenly
           - source_labels: [__meta_kubernetes_namespace]
             action: keep
-            regex: (cuenly-backend|cuenly-frontend)
-          # Solo contenedores principales
+            regex: (cuenly-backend|cuenly-frontend|cuenly-monitoring)
+          
+          # Drop pods sin contenedor
           - source_labels: [__meta_kubernetes_pod_container_name]
-            action: keep
-            regex: (cuenly-backend|cuenly-frontend)
-          - source_labels: [__meta_kubernetes_pod_container_name]
-            target_label: container
+            action: drop
+            regex: ^$
+          
+          # Añadir namespace como label
           - source_labels: [__meta_kubernetes_namespace]
             target_label: namespace
+          
+          # Añadir nombre del pod
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+          
+          # Añadir nombre del contenedor
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          
+          # Añadir label 'app' si existe
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          
+          # Añadir label 'component' si existe
+          - source_labels: [__meta_kubernetes_pod_label_component]
+            target_label: component
+          
+          # Añadir label 'tier' si existe
+          - source_labels: [__meta_kubernetes_pod_label_tier]
+            target_label: tier
+          
+          # Añadir label 'version' si existe
+          - source_labels: [__meta_kubernetes_pod_label_version]
+            target_label: version
+          
+          # Añadir nombre del nodo
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node_name
+          
+          # Configurar path a logs de contenedores (funciona en la mayoría de clusters)
           - replacement: /var/log/pods/*$1/*.log
             separator: /
             source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
