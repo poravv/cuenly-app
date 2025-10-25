@@ -46,11 +46,11 @@ spec:
             name: backend-env-secrets
         resources:
           requests:
-            memory: "2Gi"
-            cpu: "500m"
+            memory: "4Gi"      # Aumentado para multi-usuario y cache de correos
+            cpu: "1000m"       # 1 core garantizado
           limits:
-            memory: "4Gi"
-            cpu: "2000m"
+            memory: "8Gi"      # Límite aumentado para procesamiento masivo
+            cpu: "4000m"       # 4 cores máximo para picos de carga
         livenessProbe:
           httpGet:
             path: /health
@@ -118,8 +118,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: cuenly-backend
-  minReplicas: 1
-  maxReplicas: 2
+  minReplicas: 1    # Mínimo 2 réplicas para alta disponibilidad
+  maxReplicas: 2    # Hasta 4 réplicas para picos de carga multi-usuario
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 30
@@ -141,11 +141,11 @@ spec:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 60
+        averageUtilization: 70    # Escalar cuando CPU > 70%
   - type: Resource
     resource:
       name: memory
       target:
         type: Utilization
-        averageUtilization: 70
+        averageUtilization: 75    # Escalar cuando memoria > 75%
 
