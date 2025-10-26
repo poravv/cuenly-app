@@ -149,3 +149,4 @@ spec:
         type: Utilization
         averageUtilization: 75    # Escalar cuando memoria > 75%
 
+
