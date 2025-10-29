@@ -18,25 +18,20 @@ spec:
       labels:
         app: alertmanager
     spec:
-      # Init container para procesar el template con envsubst
+      # Init container para procesar el template con sed
       initContainers:
       - name: config-init
         image: busybox:1.36
         command: ['sh', '-c']
         args:
         - |
-          # Copiar el template y reemplazar variables
           cp /tmp/config-template/config.yml /tmp/config-processed/config.yml
-          
-          # Reemplazar variables manualmente (busybox no tiene envsubst)
           sed -i "s|\${ALERTMANAGER_SMTP_HOST}|$ALERTMANAGER_SMTP_HOST|g" /tmp/config-processed/config.yml
           sed -i "s|\${ALERTMANAGER_SMTP_PORT}|$ALERTMANAGER_SMTP_PORT|g" /tmp/config-processed/config.yml
           sed -i "s|\${ALERTMANAGER_SMTP_USER}|$ALERTMANAGER_SMTP_USER|g" /tmp/config-processed/config.yml
           sed -i "s|\${ALERTMANAGER_SMTP_PASSWORD}|$ALERTMANAGER_SMTP_PASSWORD|g" /tmp/config-processed/config.yml
           sed -i "s|\${ALERTMANAGER_EMAIL_TO}|$ALERTMANAGER_EMAIL_TO|g" /tmp/config-processed/config.yml
-          
-          echo "✅ Configuración procesada correctamente"
-          cat /tmp/config-processed/config.yml
+          echo "✅ Configuración procesada correctamente"; cat /tmp/config-processed/config.yml
         env:
         - name: ALERTMANAGER_SMTP_HOST
           valueFrom:
@@ -58,19 +53,17 @@ spec:
             secretKeyRef:
               name: alertmanager-secrets
               key: ALERTMANAGER_SMTP_PASSWORD
-      volumes:
-      - name: config-template
-        configMap:
-          name: alertmanager-config
-      - name: config-processed
-        emptyDir: {}
-      - name: storage-volume
-        emptyDir: {}:
+        - name: ALERTMANAGER_EMAIL_TO
+          valueFrom:
+            secretKeyRef:
+              name: alertmanager-secrets
+              key: ALERTMANAGER_EMAIL_TO
+        volumeMounts:
         - name: config-template
           mountPath: /tmp/config-template
         - name: config-processed
           mountPath: /tmp/config-processed
-      
+
       containers:
       - name: alertmanager
         image: prom/alertmanager:v0.26.0
@@ -98,9 +91,11 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
       volumes:
-      - name: config-volume
+      - name: config-template
         configMap:
           name: alertmanager-config
+      - name: config-processed
+        emptyDir: {}
       - name: storage-volume
         emptyDir: {}
 
