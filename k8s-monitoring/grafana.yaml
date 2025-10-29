@@ -114,7 +114,7 @@ data:
     - name: AlertManager
       type: alertmanager
       access: proxy
-      url: http://cuenly-alertmanager:9093
+      url: http://alertmanager-service.cuenly-backend.svc.cluster.local:9093
       isDefault: false
       editable: false
       jsonData:
@@ -156,6 +156,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: longhorn
   resources:
     requests:
       storage: 10Gi
