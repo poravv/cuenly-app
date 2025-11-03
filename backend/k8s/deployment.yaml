@@ -46,11 +46,11 @@ spec:
             name: backend-env-secrets
         resources:
           requests:
-            memory: "4Gi"      # Aumentado para multi-usuario y cache de correos
-            cpu: "1000m"       # 1 core garantizado
+            memory: "2Gi"      # Reducido para optimizar recursos del cluster
+            cpu: "200m"        # CPU mínima reducida
           limits:
-            memory: "8Gi"      # Límite aumentado para procesamiento masivo
-            cpu: "4000m"       # 4 cores máximo para picos de carga
+            memory: "4Gi"      # Límite reducido
+            cpu: "500m"        # CPU máxima reducida
         livenessProbe:
           httpGet:
             path: /health
