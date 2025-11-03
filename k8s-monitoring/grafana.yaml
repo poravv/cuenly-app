@@ -240,11 +240,11 @@ spec:
           failureThreshold: 3
         resources:
           limits:
-            cpu: 1000m
-            memory: 2Gi
+            cpu: 300m       # CPU reducida según especificación
+            memory: 1Gi       # Memoria reducida
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 100m       # CPU mínima reducida
+            memory: 256Mi     # Memoria mínima reducida
         volumeMounts:
         - mountPath: /etc/grafana/grafana.ini
           name: config

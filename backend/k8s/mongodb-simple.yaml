@@ -57,10 +57,10 @@ spec:
         - name: MONGO_LOG_LEVEL
           value: "1"  # Reducir logging para mejor rendimiento
         args: 
-          - "--wiredTigerCacheSizeGB=5"      # Cache de 5GB para índices y datos frecuentes
+          - "--wiredTigerCacheSizeGB=1.5"   # Cache reducido a 1.5GB
           - "--wiredTigerJournalCompressor=snappy"  # Compresión rápida
           - "--quiet"                        # Menos logging
-          - "--maxConns=1000"                # Aumentar conexiones simultáneas
+          - "--maxConns=500"                 # Conexiones reducidas
         ports:
         - containerPort: 27017
           name: mongo
@@ -69,11 +69,11 @@ spec:
           mountPath: /data/db
         resources:
           requests:
-            memory: "4Gi"    # Cache grande para índices y working set
-            cpu: "1000m"     # 1 core garantizado para operaciones
+            memory: "2Gi"    # Reducido para optimizar recursos
+            cpu: "250m"      # CPU mínima reducida
           limits:
-            memory: "8Gi"    # Límite alto para índices completos en RAM
-            cpu: "3000m"     # 3 cores para operaciones concurrentes
+            memory: "4Gi"    # Límite reducido
+            cpu: "750m"      # CPU máxima reducida
         livenessProbe:        # ✅ Simplificada para evitar reinicios falsos
           tcpSocket:
             port: 27017
