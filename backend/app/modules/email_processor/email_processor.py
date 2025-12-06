@@ -90,6 +90,30 @@ class MultiEmailProcessor:
                 invoice_count=0,
                 invoices=[]
             )
+        
+        # ✅ FILTRAR USUARIOS QUE ALCANZARON LÍMITE DE IA
+        from app.repositories.user_repository import UserRepository
+        user_repo = UserRepository()
+        filtered_configs = []
+        
+        for cfg in self.email_configs:
+            if cfg.owner_email:
+                ai_check = user_repo.can_use_ai(cfg.owner_email)
+                if not ai_check['can_use']:
+                    logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} (owner: {cfg.owner_email}) - {ai_check['message']}")
+                    errors.append(f"Cuenta {cfg.username}: {ai_check['message']}")
+                    continue
+            filtered_configs.append(cfg)
+        
+        if not filtered_configs:
+            return ProcessResult(
+                success=False,
+                message="No hay cuentas con acceso a IA disponible. Todos los usuarios han alcanzado su límite.",
+                invoice_count=0,
+                invoices=[]
+            )
+        
+        self.email_configs = filtered_configs
 
         for idx, cfg in enumerate(self.email_configs):
             if total_processed >= limit:
@@ -172,16 +196,35 @@ class MultiEmailProcessor:
         except Exception as e:
             logger.warning(f"No se pudo refrescar configuraciones desde MongoDB: {e}")
         
+        # ✅ FILTRAR USUARIOS QUE ALCANZARON LÍMITE DE IA
+        from app.repositories.user_repository import UserRepository
+        user_repo = UserRepository()
+        filtered_configs = []
+        skipped_ai_limit = 0
+        
+        for cfg in self.email_configs:
+            if cfg.owner_email:
+                ai_check = user_repo.can_use_ai(cfg.owner_email)
+                if not ai_check['can_use']:
+                    logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} (owner: {cfg.owner_email}) - {ai_check['message']}")
+                    skipped_ai_limit += 1
+                    continue
+            filtered_configs.append(cfg)
+        
+        self.email_configs = filtered_configs
+        
         all_invoices: List[InvoiceData] = []
         success_count = 0
         errors: List[str] = []
         
-        logger.info(f"Iniciando procesamiento de {len(self.email_configs)} cuentas de correo (filtradas por trial válido)")
+        logger.info(f"Iniciando procesamiento de {len(self.email_configs)} cuentas de correo (filtradas por trial válido y límite IA)")
+        if skipped_ai_limit > 0:
+            logger.info(f"⏭️ {skipped_ai_limit} cuentas omitidas por límite de IA alcanzado")
 
         if not self.email_configs:
             return ProcessResult(
                 success=False,
-                message="No hay cuentas de correo configuradas con acceso válido. Usuarios con trial expirado han sido omitidos.",
+                message="No hay cuentas de correo configuradas con acceso válido. Usuarios con trial expirado o límite de IA alcanzado han sido omitidos.",
                 invoice_count=0,
                 invoices=[]
             )
@@ -605,7 +648,7 @@ class EmailProcessor:
                         processed_emails += 1
                         logger.debug(f"🔍 Procesando correo {i+1}/{len(batch_ids)} del lote {batch_num}")
                         
-                        # Procesar un correo
+                        # Procesar un correo (ya incluye validación de límite IA)
                         invoice = self._process_single_email(eid)
                         
                         if invoice:
@@ -659,6 +702,22 @@ class EmailProcessor:
         Versión optimizada para uso en lotes.
         """
         try:
+            # ✅ VALIDAR LÍMITE DE IA ANTES DE PROCESAR
+            if self.owner_email:
+                from app.repositories.user_repository import UserRepository
+                user_repo = UserRepository()
+                ai_check = user_repo.can_use_ai(self.owner_email)
+                
+                if not ai_check['can_use']:
+                    logger.warning(f"⚠️ Límite de IA alcanzado para {self.owner_email}: {ai_check['message']}")
+                    logger.info(f"⏭️ Omitiendo correo {email_id} - usuario sin acceso a IA")
+                    # Marcar como leído para no reprocesarlo
+                    try:
+                        self.mark_as_read(email_id)
+                    except:
+                        pass
+                    return None
+            
             metadata, attachments = self.get_email_content(email_id)
             if not metadata:
                 return None
