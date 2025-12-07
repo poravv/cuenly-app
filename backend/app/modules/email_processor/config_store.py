@@ -236,3 +236,12 @@ def get_by_username(username: str, include_password: bool = True, owner_email: O
         "provider": d.get("provider") or "other",
         "enabled": bool(d.get("enabled", True)),
     }
+
+
+def count_configs_by_owner(owner_email: str) -> int:
+    """
+    Cuenta cuántas configuraciones de correo tiene un usuario.
+    Usado para validar límite de cuentas por plan.
+    """
+    coll = _get_collection()
+    return coll.count_documents({"owner_email": owner_email.lower()})

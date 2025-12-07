@@ -447,6 +447,7 @@ try {
         billing_period: 'monthly',
         features: {
           ai_invoices_limit: 50,
+          max_email_accounts: 2,
           email_processing: true,
           export_formats: ['excel', 'csv'],
           api_access: false,
@@ -468,6 +469,7 @@ try {
         billing_period: 'monthly',
         features: {
           ai_invoices_limit: 200,
+          max_email_accounts: 10,
           email_processing: true,
           export_formats: ['excel', 'csv', 'json'],
           api_access: true,
@@ -489,6 +491,7 @@ try {
         billing_period: 'monthly',
         features: {
           ai_invoices_limit: -1,
+          max_email_accounts: -1,
           email_processing: true,
           export_formats: ['excel', 'csv', 'json', 'pdf'],
           api_access: true,

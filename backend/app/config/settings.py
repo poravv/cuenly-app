@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     EMAIL_BATCH_DELAY: float = float(os.getenv("EMAIL_BATCH_DELAY", 3.0))  # Segundos entre lotes
     EMAIL_PROCESSING_DELAY: float = float(os.getenv("EMAIL_PROCESSING_DELAY", 0.5))  # Segundos entre correos
     
+    # Email Processing - Procesamiento paralelo
+    MAX_CONCURRENT_ACCOUNTS: int = int(os.getenv("MAX_CONCURRENT_ACCOUNTS", 10))  # Cuentas procesadas simultáneamente
+    ENABLE_PARALLEL_PROCESSING: bool = os.getenv("ENABLE_PARALLEL_PROCESSING", "true").lower() in ("1", "true", "yes")
+    
     # Job Processing Limits
     JOB_MAX_RUNTIME_HOURS: int = int(os.getenv("JOB_MAX_RUNTIME_HOURS", 24))  # Parar job después de 24 horas
     JOB_REST_PERIOD_HOURS: int = int(os.getenv("JOB_REST_PERIOD_HOURS", 2))  # Descansar 2 horas después de 24h

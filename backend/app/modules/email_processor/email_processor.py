@@ -8,6 +8,7 @@ import pickle
 import email.utils
 from typing import List, Tuple, Dict, Any, Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.config.settings import settings
 from app.models.models import EmailConfig, MultiEmailConfig, InvoiceData, ProcessResult
@@ -229,59 +230,45 @@ class MultiEmailProcessor:
                 invoices=[]
             )
 
-        for idx, cfg in enumerate(self.email_configs):
-            logger.info(f"Procesando cuenta {idx + 1}/{len(self.email_configs)}: {cfg.username}")
+        # ✅ PROCESAMIENTO PARALELO OPTIMIZADO
+        use_parallel = getattr(settings, 'ENABLE_PARALLEL_PROCESSING', True)
+        max_workers = getattr(settings, 'MAX_CONCURRENT_ACCOUNTS', 10)
+        
+        if use_parallel and len(self.email_configs) > 1:
+            logger.info(f"🚀 Procesamiento paralelo habilitado: {max_workers} cuentas simultáneas")
             
-            # Pausa entre cuentas para reducir carga del sistema (multiusuario)
-            if idx > 0:
-                time.sleep(2)  # 2 segundos entre cuentas
-                logger.info(f"⏳ Pausa de 2s antes de procesar cuenta {cfg.username}")
-            
-            try:
-                # Usar threading con timeout para evitar bloqueos indefinidos
-                import threading
-                import queue
-                import signal
-                
-                result_queue = queue.Queue()
-                
-                def process_account():
-                    try:
-                        single = EmailProcessor(EmailConfig(
-                            host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                            search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
-                        ), owner_email=cfg.owner_email)  # Pasar owner_email
-                        r = single.process_emails()
-                        # Serializar con pickle para preservar objetos complejos
-                        result_queue.put(pickle.dumps(('success', r)))
-                    except Exception as e:
-                        result_queue.put(pickle.dumps(('error', str(e))))
-                
-                # Ejecutar en thread separado con timeout más largo
-                thread = threading.Thread(target=process_account, daemon=True)
-                thread.start()
-                
-                # Timeout de 300 segundos (5 minutos) por cuenta para permitir procesamiento suave
-                thread.join(timeout=300)
-                
-                if thread.is_alive():
-                    # Thread aún ejecutándose - timeout
-                    errors.append(f"Timeout en {cfg.username}: procesamiento tomó más de 300 segundos")
-                    logger.error(f"❌ Timeout al procesar cuenta {cfg.username}: procesamiento tomó más de 300 segundos")
-                    # Forzar terminación del thread (no es ideal pero evita cuelgues)
-                    continue
-                
-                # Obtener resultado
+            def process_single_account(cfg: MultiEmailConfig) -> Tuple[bool, ProcessResult, str]:
+                """Procesa una cuenta individual y retorna resultado"""
                 try:
-                    pickled_result = result_queue.get_nowait()
-                    result_type, result_data = pickle.loads(pickled_result)
-                    if result_type == 'success':
-                        r = result_data
-                        if r.success:
+                    single = EmailProcessor(EmailConfig(
+                        host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
+                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                    ), owner_email=cfg.owner_email)
+                    result = single.process_emails()
+                    return (True, result, cfg.username)
+                except Exception as e:
+                    error_msg = f"Error procesando {cfg.username}: {str(e)}"
+                    logger.error(f"❌ {error_msg}")
+                    return (False, ProcessResult(success=False, message=str(e), invoice_count=0, invoices=[]), cfg.username)
+            
+            # Ejecutar en paralelo con ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="EmailProc") as executor:
+                # Enviar todas las tareas
+                future_to_config = {executor.submit(process_single_account, cfg): cfg for cfg in self.email_configs}
+                
+                # Procesar resultados a medida que completan
+                for idx, future in enumerate(as_completed(future_to_config), 1):
+                    cfg = future_to_config[future]
+                    try:
+                        is_success, result, username = future.result(timeout=300)  # 5 min timeout por cuenta
+                        
+                        logger.info(f"✅ Completada cuenta {idx}/{len(self.email_configs)}: {username}")
+                        
+                        if is_success and result.success:
                             success_count += 1
-                            # Validar que las facturas sean objetos correctos
+                            # Validar facturas
                             valid_invoices = []
-                            for invoice in r.invoices:
+                            for invoice in result.invoices:
                                 if isinstance(invoice, str):
                                     logger.error(f"❌ Factura inválida (string): {invoice[:100]}...")
                                     continue
@@ -292,20 +279,47 @@ class MultiEmailProcessor:
                                     continue
                             
                             all_invoices.extend(valid_invoices)
-                            logger.info(f"Cuenta {cfg.username}: {len(valid_invoices)} facturas válidas procesadas")
+                            logger.info(f"✅ Cuenta {username}: {len(valid_invoices)} facturas válidas procesadas")
                         else:
-                            errors.append(f"Error en {cfg.username}: {r.message}")
-                            logger.error(f"Error en cuenta {cfg.username}: {r.message}")
-                    else:
-                        errors.append(f"Error en {cfg.username}: {result_data}")
-                        logger.error(f"Error al procesar cuenta {cfg.username}: {result_data}")
-                except queue.Empty:
-                    errors.append(f"Error en {cfg.username}: no se pudo obtener resultado")
-                    logger.error(f"Error al procesar cuenta {cfg.username}: no se pudo obtener resultado")
+                            errors.append(f"Error en {username}: {result.message}")
+                            logger.error(f"❌ Error en cuenta {username}: {result.message}")
+                            
+                    except TimeoutError:
+                        errors.append(f"Timeout en {cfg.username}: procesamiento tomó más de 300 segundos")
+                        logger.error(f"❌ Timeout al procesar cuenta {cfg.username}")
+                    except Exception as e:
+                        errors.append(f"Error en {cfg.username}: {str(e)}")
+                        logger.error(f"❌ Error al procesar cuenta {cfg.username}: {str(e)}")
+        else:
+            # Procesamiento secuencial (fallback o configuración deshabilitada)
+            logger.info(f"📋 Procesamiento secuencial: {len(self.email_configs)} cuentas")
+            
+            for idx, cfg in enumerate(self.email_configs):
+                logger.info(f"Procesando cuenta {idx + 1}/{len(self.email_configs)}: {cfg.username}")
+                
+                if idx > 0:
+                    time.sleep(2)  # Pausa entre cuentas
+                
+                try:
+                    single = EmailProcessor(EmailConfig(
+                        host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
+                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                    ), owner_email=cfg.owner_email)
                     
-            except Exception as e:
-                errors.append(f"Error en {cfg.username}: {str(e)}")
-                logger.error(f"Error al procesar cuenta {cfg.username}: {str(e)}")
+                    r = single.process_emails()
+                    
+                    if r.success:
+                        success_count += 1
+                        valid_invoices = [inv for inv in r.invoices if hasattr(inv, '__dict__')]
+                        all_invoices.extend(valid_invoices)
+                        logger.info(f"✅ Cuenta {cfg.username}: {len(valid_invoices)} facturas")
+                    else:
+                        errors.append(f"Error en {cfg.username}: {r.message}")
+                        logger.error(f"❌ {cfg.username}: {r.message}")
+                        
+                except Exception as e:
+                    errors.append(f"Error en {cfg.username}: {str(e)}")
+                    logger.error(f"❌ Error en {cfg.username}: {str(e)}")
 
         if all_invoices:
             unique = self._remove_duplicate_invoices(all_invoices)

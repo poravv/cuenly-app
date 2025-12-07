@@ -968,8 +968,29 @@ async def test_email_config_by_id(config_id: str, user: Dict[str, Any] = Depends
 @app.get("/email-configs")
 async def list_email_configs(user: Dict[str, Any] = Depends(_get_current_user)):
     try:
-        cfgs = db_list_configs(include_password=False, owner_email=(user.get('email') or '').lower())
-        return {"success": True, "configs": cfgs, "total": len(cfgs)}
+        owner_email = (user.get('email') or '').lower()
+        cfgs = db_list_configs(include_password=False, owner_email=owner_email)
+        
+        # Obtener límites del plan para enviar al frontend
+        from app.modules.email_processor.config_store import count_configs_by_owner
+        from app.repositories.subscription_repository import SubscriptionRepository
+        
+        current_count = len(cfgs)
+        sub_repo = SubscriptionRepository()
+        subscription = await sub_repo.get_user_active_subscription(owner_email)
+        
+        max_accounts = 1  # Default para usuarios sin plan
+        if subscription:
+            plan_features = subscription.get('plan_features', {})
+            max_accounts = plan_features.get('max_email_accounts', 2)
+        
+        return {
+            "success": True, 
+            "configs": cfgs, 
+            "total": current_count,
+            "max_allowed": max_accounts,
+            "can_add_more": max_accounts == -1 or current_count < max_accounts
+        }
     except Exception as e:
         logger.error(f"Error listando configuraciones de correo: {e}")
         raise HTTPException(status_code=500, detail="No se pudieron obtener configuraciones")
@@ -978,12 +999,50 @@ async def list_email_configs(user: Dict[str, Any] = Depends(_get_current_user)):
 @app.post("/email-configs")
 async def create_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Depends(_get_current_user)):
     try:
+        owner_email = (user.get('email') or '').lower()
+        
         # Validar que password esté presente al crear
         if not config.password:
             raise HTTPException(status_code=400, detail="La contraseña es obligatoria al crear una cuenta")
+        
+        # ✅ VALIDAR LÍMITE DE CUENTAS DE CORREO POR PLAN
+        from app.modules.email_processor.config_store import count_configs_by_owner
+        from app.repositories.subscription_repository import SubscriptionRepository
+        
+        # Contar cuentas actuales del usuario
+        current_count = count_configs_by_owner(owner_email)
+        
+        # Obtener límite del plan del usuario
+        sub_repo = SubscriptionRepository()
+        subscription = await sub_repo.get_user_active_subscription(owner_email)
+        
+        if subscription:
+            plan_features = subscription.get('plan_features', {})
+            max_accounts = plan_features.get('max_email_accounts', 2)  # Default: 2 cuentas
+            
+            # -1 significa ilimitado
+            if max_accounts != -1 and current_count >= max_accounts:
+                raise HTTPException(
+                    status_code=403, 
+                    detail=f"Has alcanzado el límite de {max_accounts} cuentas de correo de tu plan. Actualiza tu suscripción para agregar más."
+                )
+        else:
+            # Usuario sin suscripción activa (trial o free)
+            max_accounts = 1  # Solo 1 cuenta para usuarios sin plan
+            if current_count >= max_accounts:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Has alcanzado el límite de cuentas de correo. Suscríbete a un plan para agregar más cuentas."
+                )
+        
         cfg_dict = config.model_dump()
-        cfg_id = db_create_config(cfg_dict, owner_email=(user.get('email') or '').lower())
+        cfg_id = db_create_config(cfg_dict, owner_email=owner_email)
+        
+        logger.info(f"✅ Nueva cuenta de correo creada para {owner_email}: {current_count + 1}/{max_accounts}")
+        
         return {"success": True, "id": cfg_id}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creando configuración de correo: {e}")
         raise HTTPException(status_code=500, detail="No se pudo crear configuración")
