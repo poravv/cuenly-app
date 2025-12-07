@@ -291,6 +291,13 @@
                      name="ai_invoices_limit" class="form-control" min="-1">
               <small class="form-text">(-1 = sin límite)</small>
             </div>
+            
+            <div class="form-group">
+              <label>Límite de Cuentas de Correo</label>
+              <input type="number" [(ngModel)]="planForm.features.max_email_accounts" 
+                     name="max_email_accounts" class="form-control" min="-1">
+              <small class="form-text">(-1 = sin límite)</small>
+            </div>
           </div>
 
           <div class="form-group">

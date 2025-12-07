@@ -13,9 +13,18 @@
           Configuración de Correos
         </h1>
       </div>
-      <button class="btn btn-outline-primary mt-2 mt-md-0" (click)="showAddForm = true" *ngIf="!showAddForm" [disabled]="loading">
-        <i class="bi bi-plus-circle"></i> Agregar Correo
-      </button>
+      <div>
+        <button class="btn btn-outline-primary mt-2 mt-md-0" 
+                (click)="showAddForm = true" 
+                *ngIf="!showAddForm" 
+                [disabled]="loading || !canAddMore"
+                [title]="!canAddMore ? 'Has alcanzado el límite de cuentas de correo de tu plan' : 'Agregar nueva cuenta de correo'">
+          <i class="bi bi-plus-circle"></i> Agregar Correo
+        </button>
+        <small class="d-block text-muted mt-1" *ngIf="maxEmailAccounts !== -1">
+          {{ emailConfigs.length }}/{{ maxEmailAccounts }} cuentas
+        </small>
+      </div>
     </div>
   
     <div class="col-12">
@@ -41,6 +50,13 @@
           <h5 class="card-title mb-0">Nueva Configuración de Correo</h5>
         </div>
         <div class="card-body">
+          <!-- Alerta de límite -->
+          <div class="alert alert-info border-0 mb-3" *ngIf="maxEmailAccounts !== -1">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>Límite de cuentas:</strong> Tu plan permite hasta {{ maxEmailAccounts }} cuentas de correo.
+            Actualmente tienes {{ emailConfigs.length }} configurada(s).
+          </div>
+          
           <form (ngSubmit)="addEmailConfig()" #emailForm="ngForm">
             <!-- Selector de proveedor -->
             <div class="mb-3">

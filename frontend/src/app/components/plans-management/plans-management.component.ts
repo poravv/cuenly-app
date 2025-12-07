@@ -76,6 +76,7 @@ export class PlansManagementComponent implements OnInit {
     billing_period: 'monthly',
     features: {
       ai_invoices_limit: 50,
+      max_email_accounts: 2,
       email_processing: true,
       export_formats: ['excel', 'csv'],
       api_access: false,
