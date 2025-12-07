@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
-import { EmailConfig, EmailTestResult } from '../../models/invoice.model';
+import { EmailConfig, EmailTestResult, EmailConfigsResponse } from '../../models/invoice.model';
 
 @Component({
   selector: 'app-email-config',
@@ -62,7 +62,7 @@ export class EmailConfigComponent implements OnInit {
   loadConfigs(): void {
     this.loading = true; this.error = null;
     this.apiService.getEmailConfigs().subscribe({
-      next: (resp) => {
+      next: (resp: EmailConfigsResponse) => {
         this.emailConfigs = resp.configs || [];
         this.maxEmailAccounts = resp.max_allowed || 1;
         this.canAddMore = resp.can_add_more !== undefined ? resp.can_add_more : true;

@@ -72,6 +72,14 @@ export interface EmailConfig {
   enabled?: boolean;
 }
 
+export interface EmailConfigsResponse {
+  success: boolean;
+  configs: EmailConfig[];
+  total: number;
+  max_allowed?: number;
+  can_add_more?: boolean;
+}
+
 export interface EmailTestResult {
   success: boolean;
   message: string;
