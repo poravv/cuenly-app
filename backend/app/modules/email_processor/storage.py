@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 _FALLBACK_DIR = "/tmp/cuenlyapp/temp_pdfs"
 
 def _ensure_dir(path: str) -> bool:
+    """Crea el directorio y valida escritura básica."""
     try:
         os.makedirs(path, exist_ok=True)
         # Verificar escritura
@@ -26,13 +27,24 @@ def _ensure_dir(path: str) -> bool:
         logger.error(f"❌ No se pudo crear/escribir en {path}: {e}")
         return False
 
-def ensure_dirs():
+def ensure_dirs() -> str:
     """Garantiza que exista un directorio usable para temporales.
     Intenta settings.TEMP_PDF_DIR y cae a /tmp si falla.
     """
-    if not _ensure_dir(settings.TEMP_PDF_DIR):
-        logger.warning(f"⚠️ Usando directorio fallback para temporales: {_FALLBACK_DIR}")
-        _ensure_dir(_FALLBACK_DIR)
+    configured = settings.TEMP_PDF_DIR
+    if _ensure_dir(configured):
+        return configured
+
+    logger.warning(f"⚠️ Usando directorio fallback para temporales: {_FALLBACK_DIR}")
+    if _ensure_dir(_FALLBACK_DIR):
+        # Persistir cambio en runtime para evitar logs repetitivos
+        try:
+            settings.TEMP_PDF_DIR = _FALLBACK_DIR
+        except Exception:
+            pass
+        return _FALLBACK_DIR
+    # Si todo falla, devolver el configurado aunque no funcione para que el llamador pueda manejarlo
+    return configured
 
 def sanitize_filename(filename: str, force_pdf: bool = False) -> str:
     """Limpia el nombre y fuerza .pdf si se requiere."""
@@ -55,18 +67,14 @@ def unique_name(clean_name: str) -> str:
 
 def _resolve_base_dir() -> str:
     # Intentar usar el configurado; si no se puede escribir, usar fallback
-    if _ensure_dir(settings.TEMP_PDF_DIR):
-        return settings.TEMP_PDF_DIR
-    _ensure_dir(_FALLBACK_DIR)
-    return _FALLBACK_DIR
+    return ensure_dirs()
 
 def save_binary(content: bytes, filename: str, force_pdf: bool = False) -> str:
     """Guarda bytes en /temp_pdfs con nombre único."""
     try:
-        ensure_dirs()
+        base_dir = ensure_dirs()
         clean = sanitize_filename(filename, force_pdf=force_pdf)
         candidate = unique_name(clean)
-        base_dir = _resolve_base_dir()
         path = os.path.join(base_dir, candidate)
         with open(path, "wb") as f:
             f.write(content)

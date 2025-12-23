@@ -11,6 +11,9 @@ load_dotenv(encoding="utf-8")
 class Settings(BaseSettings):
     # App
     TEMP_PDF_DIR: str = os.getenv("TEMP_PDF_DIR", "./data/temp_pdfs")
+    PROCESSED_EMAILS_FILE: str = os.getenv("PROCESSED_EMAILS_FILE", "./data/processed_emails.json")
+    PROCESSED_EMAIL_TTL_DAYS: int = int(os.getenv("PROCESSED_EMAIL_TTL_DAYS", 30))
+    PROCESSED_EMAIL_MAX_ENTRIES: int = int(os.getenv("PROCESSED_EMAIL_MAX_ENTRIES", 20000))
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     # OpenAI

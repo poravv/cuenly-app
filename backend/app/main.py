@@ -29,7 +29,11 @@ class CuenlyApp:
     def __init__(self):
         """Inicializa el sistema de sincronización de facturas usando OpenAI."""
         # Crear directorios necesarios
-        os.makedirs(settings.TEMP_PDF_DIR, exist_ok=True)
+        try:
+            from app.modules.email_processor.storage import ensure_dirs
+            ensure_dirs()
+        except Exception:
+            os.makedirs(settings.TEMP_PDF_DIR, exist_ok=True)
         # Directorio de Excel eliminado del flujo
         
         # Inicializar componentes
