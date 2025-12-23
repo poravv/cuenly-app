@@ -28,6 +28,7 @@ from .config_store import get_enabled_configs
 
 
 from .dedup import deduplicate_invoices
+from .processed_registry import build_key as build_processed_key, was_processed, mark_processed
 
 # NUEVO runner thread-safe (sincroniza con tu API /job/start)
 from app.modules.scheduler.job_runner import ScheduledJobRunner
@@ -503,6 +504,15 @@ class EmailProcessor:
             logger.warning(f"⚠️ No se pudo marcar correo {email_uid} como leído: {e}")
             return False
 
+    def _email_key(self, email_id: str) -> str:
+        return build_processed_key(email_id, getattr(self.config, "username", ""), self.owner_email)
+
+    def _mark_email_processed(self, email_id: str, reason: str) -> None:
+        try:
+            mark_processed(self._email_key(email_id), reason)
+        except Exception as e:
+            logger.debug(f"Registro de correo procesado falló ({email_id}): {e}")
+
     def _get_imap_connection(self):
         """Obtiene la conexión IMAP actual."""
         if self.current_connection:
@@ -657,7 +667,7 @@ class EmailProcessor:
                 for i, eid in enumerate(batch_ids):
                     if abort_run:
                         break
-                        
+                    invoice = None
                     try:
                         processed_emails += 1
                         logger.debug(f"🔍 Procesando correo {i+1}/{len(batch_ids)} del lote {batch_num}")
@@ -671,25 +681,25 @@ class EmailProcessor:
                             batch_invoices.append(invoice)
                             result.invoice_count += 1
                             logger.debug(f"✅ Factura procesada: {invoice.numero_factura}")
-                        
-                        # Marcar como leído inmediatamente después de procesar
+                    except OpenAIFatalError as e:
+                        logger.error(f"❌ Error FATAL de OpenAI en correo {eid}: {e}. Se omite y se continúa con el siguiente.")
+                    except OpenAIRetryableError as e:
+                        logger.warning(f"⚠️ Error transitorio de OpenAI en correo {eid}: {e}. Se omitirá este correo en esta corrida.")
+                    except Exception as e:
+                        logger.error(f"❌ Error procesando correo {eid}: {e}")
+                    finally:
+                        # Marcar como leído inmediatamente después de procesar (o fallar) para evitar reprocesos infinitos
                         try:
                             self.mark_as_read(eid)
                             logger.debug(f"📧 Correo {eid} marcado como leído")
                         except Exception as mark_err:
                             logger.warning(f"⚠️ No se pudo marcar correo {eid} como leído: {mark_err}")
-                        
+
                         # Pausa suave entre correos para procesamiento multiusuario
-                        if i < len(batch_ids) - 1:  # No pausar después del último correo del lote
+                        if i < len(batch_ids) - 1 and not abort_run:  # No pausar después del último correo del lote
                             time.sleep(email_delay)
-                        
-                        # Liberar memoria del invoice procesado
-                        if 'invoice' in locals():
-                            del invoice
-                        
-                    except Exception as e:
-                        logger.error(f"❌ Error procesando correo {eid}: {e}")
-                        continue
+
+                        invoice = None
                 
                 # Agregar facturas del lote al resultado
                 result.invoices.extend(batch_invoices)
@@ -715,6 +725,12 @@ class EmailProcessor:
         Procesa un solo correo y retorna la factura extraída.
         Versión optimizada para uso en lotes.
         """
+        key = self._email_key(email_id)
+
+        if was_processed(key):
+            logger.info(f"⏭️ Correo {email_id} ya estaba procesado; se omite para evitar duplicados.")
+            return None
+
         try:
             # ✅ VALIDAR LÍMITE DE IA ANTES DE PROCESAR
             if self.owner_email:
@@ -730,10 +746,12 @@ class EmailProcessor:
                         self.mark_as_read(email_id)
                     except:
                         pass
+                    self._mark_email_processed(email_id, "ai_limit")
                     return None
             
             metadata, attachments = self.get_email_content(email_id)
             if not metadata:
+                self._mark_email_processed(email_id, "missing_metadata")
                 return None
 
             email_meta_for_ai = {
@@ -760,43 +778,52 @@ class EmailProcessor:
                     pdf_path = save_binary(content, fname, force_pdf=True)
             
             # Procesar con prioridad: XML > PDF > Enlaces
-            try:
-                # XML primero
-                if xml_path:
-                    inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
-                    if inv:
-                        return inv
+            # XML primero
+            if xml_path:
+                inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
+                if inv:
+                    self._mark_email_processed(email_id, "xml")
+                    return inv
 
-                # PDF si no hay XML o falló
-                if pdf_path:
-                    inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
-                    if inv:
-                        return inv
+            # PDF si no hay XML o falló
+            if pdf_path:
+                inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
+                if inv:
+                    self._mark_email_processed(email_id, "pdf")
+                    return inv
 
-                # Enlaces como último recurso
-                if metadata.get("links"):
-                    for link in metadata["links"]:
-                        try:
-                            downloaded_path = download_pdf_from_url(link)
-                            if downloaded_path:
-                                if downloaded_path.lower().endswith(".xml"):
-                                    inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
-                                elif downloaded_path.lower().endswith(".pdf"):
-                                    inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
-                                else:
-                                    continue
-                                if inv:
-                                    return inv
-                        except Exception:
-                            continue
+            # Enlaces como último recurso
+            if metadata.get("links"):
+                for link in metadata["links"]:
+                    try:
+                        downloaded_path = download_pdf_from_url(link)
+                        if downloaded_path:
+                            if downloaded_path.lower().endswith(".xml"):
+                                inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                            elif downloaded_path.lower().endswith(".pdf"):
+                                inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                            else:
+                                continue
+                            if inv:
+                                self._mark_email_processed(email_id, "link")
+                                return inv
+                    except Exception:
+                        continue
 
-            except Exception as e:
-                logger.warning(f"⚠️ Error procesando archivos del correo {email_id}: {e}")
-
+            # Si llegamos aquí, no se pudo extraer la factura
+            self._mark_email_processed(email_id, "no_invoice")
             return None
-            
+
+        except OpenAIFatalError as e:
+            self._mark_email_processed(email_id, "openai_fatal")
+            logger.error(f"❌ Error fatal al procesar correo {email_id}: {e}")
+            raise
+        except OpenAIRetryableError as e:
+            logger.warning(f"⚠️ Error transitorio al procesar correo {email_id}: {e}")
+            raise
         except Exception as e:
             logger.error(f"❌ Error en _process_single_email para {email_id}: {e}")
+            self._mark_email_processed(email_id, "error")
             return None
 
     def _store_invoice_v2(self, invoice):

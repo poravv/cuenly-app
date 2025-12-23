@@ -333,16 +333,17 @@
                 <div class="mb-3">
                   <label class="form-label fw-semibold small">Intervalo de Procesamiento</label>
                   <div class="input-group">
-                    <input type="number" class="form-control" min="1" placeholder="Minutos"
-                      [ngModel]="jobIntervalInput !== null ? jobIntervalInput : jobStatus.interval_minutes"
-                      (ngModelChange)="onJobIntervalChange($event)" [class.is-invalid]="isJobIntervalInvalid()">
-                    <span class="input-group-text">min</span>
+                    <select class="form-select"
+                      [ngModel]="jobIntervalInput"
+                      (ngModelChange)="onJobIntervalChange($event)">
+                      <option *ngFor="let opt of intervalOptions" [ngValue]="opt">{{ opt }} minutos</option>
+                    </select>
                     <button class="btn btn-outline-primary" (click)="applyJobInterval()"
-                      [disabled]="jobLoading || isJobIntervalInvalid()">
+                      [disabled]="jobLoading">
                       <i class="bi bi-check"></i>
                     </button>
                   </div>
-                  <div class="invalid-feedback">Debe ser un número entero de 1 minuto o más.</div>
+                  <div class="form-text">Usa intervalos de 10, 15 o 20 minutos para evitar saturación.</div>
                 </div>
 
                 <!-- Frecuencia de actualización del panel -->
