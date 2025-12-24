@@ -19,10 +19,25 @@ def _ensure_dir(path: str) -> bool:
         os.makedirs(path, exist_ok=True)
         # Verificar escritura
         test_path = os.path.join(path, ".write_test")
-        with open(test_path, "w") as f:
-            f.write("ok")
-        os.remove(test_path)
-        return True
+        try:
+            with open(test_path, "w") as f:
+                f.write("ok")
+            os.remove(test_path)
+            return True
+        except FileNotFoundError:
+            # Retry una vez si la creación fue tardía (por fs lento)
+            try:
+                os.makedirs(path, exist_ok=True)
+                with open(test_path, "w") as f:
+                    f.write("ok")
+                os.remove(test_path)
+                return True
+            except Exception as e:
+                logger.error(f"❌ No se pudo crear/escribir en {path} tras reintento: {e}")
+                return False
+    except PermissionError as e:
+        logger.error(f"❌ Permiso denegado en {path}: {e}")
+        return False
     except Exception as e:
         logger.error(f"❌ No se pudo crear/escribir en {path}: {e}")
         return False
