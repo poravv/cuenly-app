@@ -296,8 +296,19 @@ class CuenlyApp:
             now_ts = int(_now().timestamp())
             interval_sec = max(60, int(self._job_status.interval_minutes) * 60)
             if self._job_status.running and self._job_status.next_run_ts:
-                if now_ts - self._job_status.next_run_ts > interval_sec * 2:
-                    logger.warning("Job scheduler parece estancado (next_run vencido). Marcando como detenido.")
+                drift = now_ts - self._job_status.next_run_ts
+                if drift > interval_sec * 2:
+                    logger.warning(
+                        "Job scheduler parece estancado (next_run vencido). "
+                        f"last_run_ts={self._job_status.last_run_ts}, next_run_ts={self._job_status.next_run_ts}, "
+                        f"now_ts={now_ts}, interval_sec={interval_sec}, drift={drift}"
+                    )
+                    # Forzar stop del scheduler interno para evitar estado zombie
+                    try:
+                        if hasattr(self.email_processor, 'stop_scheduled_job'):
+                            self.email_processor.stop_scheduled_job()
+                    except Exception:
+                        pass
                     self._job_status.running = False
                     self._job_status.next_run = None
                     self._job_status.next_run_ts = None
