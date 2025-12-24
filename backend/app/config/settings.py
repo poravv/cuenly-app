@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     PROCESSED_EMAILS_FILE: str = os.getenv("PROCESSED_EMAILS_FILE", "./data/processed_emails.json")
     PROCESSED_EMAIL_TTL_DAYS: int = int(os.getenv("PROCESSED_EMAIL_TTL_DAYS", 30))
     PROCESSED_EMAIL_MAX_ENTRIES: int = int(os.getenv("PROCESSED_EMAIL_MAX_ENTRIES", 20000))
+    # Zona horaria para todo el backend (afecta scheduler y timestamps)
+    TIMEZONE: str = os.getenv("TIMEZONE", "America/Asuncion")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     # OpenAI
