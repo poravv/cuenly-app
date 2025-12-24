@@ -392,6 +392,14 @@ class MultiEmailProcessor:
         """
         Snapshot simple del runner moderno (opcional para /job/status).
         """
+        # Si el hilo murió inesperadamente, reflejarlo como detenido
+        if self._scheduler and not self._scheduler.is_alive():
+            logger.warning("Scheduler thread no está vivo; marcando como detenido.")
+            try:
+                self._scheduler.stop()
+            except Exception:
+                pass
+
         if not self._scheduler or not self._scheduler.is_running:
             return {
                 "running": False,

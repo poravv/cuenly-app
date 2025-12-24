@@ -8,7 +8,8 @@ from pymongo import MongoClient
 # Configuración MongoDB - PRIMARIO
 MONGODB_CONNECTION_STRING = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
 MONGODB_DATABASE_NAME = os.getenv("MONGODB_DATABASE", "cuenlyapp_warehouse")
-MONGODB_COLLECTION_NAME = os.getenv("MONGODB_COLLECTION", "facturas_completas")
+# Colección v2 (headers) como fuente única
+MONGODB_COLLECTION_NAME = os.getenv("MONGODB_COLLECTION", "invoice_headers")
 
 # MongoDB como almacenamiento primario
 MONGODB_AS_PRIMARY = os.getenv("MONGODB_AS_PRIMARY", "true").lower() == "true"

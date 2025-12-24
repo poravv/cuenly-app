@@ -22,7 +22,10 @@ class ScheduledJobRunner:
 
     @property
     def is_running(self) -> bool:
-        return self._running
+        return self._running and self._thread is not None and self._thread.is_alive()
+
+    def is_alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
 
     @property
     def next_run(self) -> Optional[float]:
