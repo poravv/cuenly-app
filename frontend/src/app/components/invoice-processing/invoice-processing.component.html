@@ -296,10 +296,10 @@
                   </div>
                   <div class="col-6">
                     <div class="bg-white rounded-3 p-3 text-center">
-                      <div class="text-info fw-bold" *ngIf="jobStatus.next_run">
-                        {{ formatParaguayTime(jobStatus.next_run) }}
+                      <div class="text-info fw-bold">
+                        {{ nextRunDisplay() }}
                       </div>
-                      <div class="text-muted fw-bold" *ngIf="!jobStatus.next_run">--:--</div>
+                      <div class="text-muted small" *ngIf="!jobStatus?.running">Inactivo</div>
                       <small class="text-muted">Próxima ejecución</small>
                     </div>
                   </div>

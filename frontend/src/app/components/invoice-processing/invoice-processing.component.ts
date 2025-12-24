@@ -394,6 +394,13 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     }
   }
 
+  nextRunDisplay(): string {
+    if (!this.jobStatus || !this.jobStatus.running || !this.jobStatus.next_run) {
+      return '--:--';
+    }
+    return this.formatParaguayTime(this.jobStatus.next_run);
+  }
+
   formatParaguayDateTime(dateTime: any): string {
     try {
       const date = (typeof dateTime === 'number')
