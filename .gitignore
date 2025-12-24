@@ -77,3 +77,4 @@ media/
 # Uncomment if you want to ignore all data files (keep directory structure)
 # data/*
 # !data/.gitkeep
+/example
