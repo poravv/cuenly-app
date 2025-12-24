@@ -290,6 +290,19 @@ class CuenlyApp:
                     self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp()) if next_iso else None
                 except Exception:
                     self._job_status.next_run_ts = None
+
+        # Watchdog: si está running pero el siguiente run está muy vencido, marcar como detenido
+        try:
+            now_ts = int(_now().timestamp())
+            interval_sec = max(60, int(self._job_status.interval_minutes) * 60)
+            if self._job_status.running and self._job_status.next_run_ts:
+                if now_ts - self._job_status.next_run_ts > interval_sec * 2:
+                    logger.warning("Job scheduler parece estancado (next_run vencido). Marcando como detenido.")
+                    self._job_status.running = False
+                    self._job_status.next_run = None
+                    self._job_status.next_run_ts = None
+        except Exception:
+            pass
         
         return self._job_status
 
