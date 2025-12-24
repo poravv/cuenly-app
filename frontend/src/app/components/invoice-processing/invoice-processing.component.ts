@@ -24,7 +24,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   autoRefresh: boolean = false;
   refreshSubscription: Subscription | null = null;
   autoRefreshIntervalMs: number = 30000;
-  intervalOptions: number[] = [10, 15, 20];
+  intervalOptions: number[] = [5, 10, 15, 20];
   jobIntervalInput: number | null = null;
   jobIntervalTouched = false;
   private storageHandler: any;
