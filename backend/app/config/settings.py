@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     # MongoDB
     MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "cuenlyapp_warehouse")
-    MONGODB_COLLECTION: str = os.getenv("MONGODB_COLLECTION", "facturas_completas")
+    # Forzar colección v2 (headers) como única fuente de verdad
+    MONGODB_COLLECTION: str = os.getenv("MONGODB_COLLECTION", "invoice_headers")
 
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
