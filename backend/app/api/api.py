@@ -91,6 +91,17 @@ async def startup_event():
     except Exception as e:
         logger.error(f"❌ Error iniciando scheduler de límites IA: {e}")
 
+    try:
+        from app.modules.scheduler.async_jobs import async_job_manager
+        from app.modules.scheduler.job_handlers import handle_full_sync_job, handle_retry_skipped_job
+        
+        async_job_manager.register_handler("full_sync", handle_full_sync_job)
+        async_job_manager.register_handler("retry_skipped", handle_retry_skipped_job)
+        async_job_manager.start_worker()
+        logger.info("✅ AsyncJobWorker iniciado correctamente")
+    except Exception as e:
+        logger.error(f"❌ Error iniciando AsyncJobWorker: {e}")
+
 # Instancia global del procesador
 invoice_sync = CuenlyApp()
 
@@ -615,6 +626,58 @@ async def debug_tasks(user: Dict[str, Any] = Depends(_get_current_user)):
         "processing_lock_available": not PROCESSING_LOCK.locked()
     }
 
+@app.post("/jobs/full-sync")
+async def trigger_full_sync(
+    user: Dict[str, Any] = Depends(_get_current_user)  # Auth required
+):
+    """
+    Encola un job de sincronización completa (histórico) para el usuario.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    owner_email = (user.get('email') or '').lower()
+    
+    # Encolar job persistente
+    try:
+        from app.modules.scheduler.async_jobs import async_job_manager
+        
+        job_id = async_job_manager.enqueue_job(
+            "full_sync",
+            {"owner_email": owner_email},
+            owner_email=owner_email
+        )
+        return {"success": True, "message": "Sincronización histórica iniciada", "job_id": job_id}
+    except Exception as e:
+        logger.error(f"Error encolando job full_sync: {e}")
+        raise HTTPException(status_code=500, detail="Error interno al iniciar sincronización")
+
+@app.post("/jobs/retry-skipped")
+async def trigger_retry_skipped(
+    user: Dict[str, Any] = Depends(_get_current_user)  # Auth required
+):
+    """
+    Encola un job para reintentar correos que fueron omitidos por límites de IA.
+    Útil cuando el usuario renueva su plan o comienza un nuevo mes.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    owner_email = (user.get('email') or '').lower()
+    
+    try:
+        from app.modules.scheduler.async_jobs import async_job_manager
+        
+        job_id = async_job_manager.enqueue_job(
+            "retry_skipped",
+            {"owner_email": owner_email},
+            owner_email=owner_email
+        )
+        return {"success": True, "message": "Reintento de correos omitidos iniciado", "job_id": job_id}
+    except Exception as e:
+        logger.error(f"Error encolando job retry_skipped: {e}")
+        raise HTTPException(status_code=500, detail="Error interno")
+
 @app.post("/upload", response_model=ProcessResult)
 async def upload_pdf(
     file: UploadFile = File(...),
@@ -798,6 +861,90 @@ async def enqueue_upload_pdf(
                     doc = map_invoice(inv, fuente="OPENAI_VISION")
                     if owner:
                         try:
+                            doc.header.owner_email = owner
+                            for it in doc.items:
+                                it.owner_email = owner
+                        except Exception:
+                            pass
+                    repo.save_document(doc)
+                except Exception as e:
+                    logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
+
+        if not invoices:
+            return job_response(False, "No se pudo extraer información del PDF")
+            
+        return job_response(True, "PDF procesado correctamente", invoice_count=1)
+
+    job_id = task_queue.enqueue("process_pdf_manual", _runner)
+    return {"job_id": job_id}
+
+@app.post("/upload-image", response_model=ProcessResult)
+async def upload_image(
+    file: UploadFile = File(...),
+    sender: Optional[str] = Form(None),
+    date: Optional[str] = Form(None)
+    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+    """
+    Sube una imagen (JPG/PNG) para procesarla como factura (vía IA).
+    """
+    allowed_exts = ('.jpg', '.jpeg', '.png', '.webp')
+    if not (file.filename.lower().endswith(allowed_exts)):
+        raise HTTPException(status_code=400, detail="Solo se aceptan imágenes (JPG, PNG, WEBP)")
+    
+    try:
+        # Guardar archivo
+        img_path = os.path.join(settings.TEMP_PDF_DIR, file.filename)
+        with open(img_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        email_meta = {
+            "sender": sender or "Carga manual (Imagen)",
+        }
+        if date:
+            try:
+                email_meta["date"] = datetime.strptime(date, "%Y-%m-%d")
+            except Exception:
+                pass
+
+        with PROCESSING_LOCK:
+            owner = (user.get('email') or '').lower()
+            # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
+            invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
+            invoices = [invoice_data] if invoice_data else []
+            
+            if invoices:
+                try:
+                    repo = MongoInvoiceRepository()
+                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE")
+                    if owner:
+                        try:
+                            doc.header.owner_email = owner
+                            for it in doc.items:
+                                it.owner_email = owner
+                        except Exception:
+                            pass
+                    repo.save_document(doc)
+                except Exception as e:
+                    logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
+
+        if not invoices:
+            return ProcessResult(
+                success=False,
+                message="No se pudo extraer factura de la imagen",
+                invoice_count=0,
+                invoices=[]
+            )
+
+        return ProcessResult(
+            success=True,
+            message=f"Imagen procesada y almacenada",
+            invoice_count=1,
+            invoices=invoices
+        )
+
+    except Exception as e:
+        logger.error(f"Error al procesar imagen: {str(e)}")
+        return ProcessResult(success=False, message=f"Error: {str(e)}")
                             doc.header.owner_email = owner
                             for it in doc.items:
                                 it.owner_email = owner

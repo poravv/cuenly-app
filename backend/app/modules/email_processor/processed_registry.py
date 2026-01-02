@@ -1,101 +1,105 @@
-import json
 import logging
-import os
-import threading
-import time
-from typing import Dict, Any
-
+from datetime import datetime
+from typing import Optional
+from pymongo import MongoClient, UpdateOne
 from app.config.settings import settings
+from app.models.processed_email import ProcessedEmail
 
 logger = logging.getLogger(__name__)
 
-_REGISTRY_PATH = (
-    getattr(settings, "PROCESSED_EMAILS_FILE", "") or os.path.join(os.path.dirname(settings.TEMP_PDF_DIR), "processed_emails.json")
-)
-_TTL_SECONDS = int(getattr(settings, "PROCESSED_EMAIL_TTL_DAYS", 30)) * 24 * 60 * 60
-_MAX_ENTRIES = int(getattr(settings, "PROCESSED_EMAIL_MAX_ENTRIES", 20000))
+class MongoProcessedEmailRepository:
+    def __init__(self):
+        self._client = None
+        self._db_name = settings.MONGODB_DATABASE
+        self._conn_str = settings.MONGODB_URL
+        
+        # Cache local simple para evitar hits excesivos a Mongo en la misma ejecución
+        # Key: _id, Value: timestamp check
+        self._local_cache = {} 
 
-_lock = threading.Lock()
-_registry: Dict[str, Dict[str, Any]] = {}
-_loaded = False
-
-
-def _ensure_parent_dir(path: str) -> None:
-    try:
-        parent = os.path.dirname(path) or "."
-        os.makedirs(parent, exist_ok=True)
-    except Exception as e:
-        logger.warning(f"⚠️ No se pudo garantizar el directorio para el registro de correos procesados: {e}")
-
-
-def _load() -> None:
-    global _loaded
-    if _loaded:
-        return
-    with _lock:
-        if _loaded:
-            return
-        _ensure_parent_dir(_REGISTRY_PATH)
+    def _get_collection(self):
+        if not self._client:
+            self._client = MongoClient(self._conn_str)
+        coll = self._client[self._db_name].processed_emails
         try:
-            if os.path.exists(_REGISTRY_PATH):
-                with open(_REGISTRY_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        _registry.update(data)
-            _purge_locked()
-            _loaded = True
+            coll.create_index("status")
+            coll.create_index("owner_email")
+        except:
+            pass
+        return coll
+
+    def was_processed(self, key: str) -> bool:
+        """
+        Verifica si un correo ya fue procesado exitosamente.
+        Si está en estado 'skipped_ai_limit', devuelve False para permitir reintento (si el límite se renovó).
+        """
+        if key in self._local_cache:
+            return True
+
+        try:
+            doc = self._get_collection().find_one({"_id": key})
+            if not doc:
+                return False
+            
+            # Si fue omitido por límite de IA, NO lo consideramos "procesado" 
+            # para que el loop principal intente procesarlo de nuevo.
+            # (El loop principal hará el chequeo de cuota nuevamente)
+            if doc.get("status") == "skipped_ai_limit":
+                return False
+                
+            self._local_cache[key] = True
+            return True
         except Exception as e:
-            logger.warning(f"⚠️ No se pudo cargar registro de correos procesados: {e}")
-            _loaded = True  # evitar reintentos constantes
+            logger.error(f"Error consultando processed_emails en Mongo: {e}")
+            return False
 
+    def mark_processed(self, key: str, status: str = "success", reason: str = None, owner_email: str = None, account_email: str = None) -> None:
+        """
+        Marca un correo como procesado (o skipeado).
+        """
+        try:
+            parts = key.split("::")
+            if len(parts) >= 3:
+                owner = parts[0]
+                account = parts[1]
+                uid = parts[2]
+            else:
+                owner = owner_email or "unknown"
+                account = account_email or "unknown"
+                uid = key
 
-def _save_locked() -> None:
-    try:
-        tmp_path = _REGISTRY_PATH + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(_registry, f)
-        os.replace(tmp_path, _REGISTRY_PATH)
-    except Exception as e:
-        logger.warning(f"⚠️ No se pudo guardar registro de correos procesados: {e}")
+            doc = ProcessedEmail(
+                _id=key,
+                owner_email=owner,
+                account_email=account,
+                email_uid=uid,
+                status=status,
+                reason=reason,
+                processed_at=datetime.utcnow()
+            )
+            
+            self._get_collection().replace_one(
+                {"_id": key},
+                doc.model_dump(by_alias=True),
+                upsert=True
+            )
+            
+            if status != "skipped_ai_limit":
+                self._local_cache[key] = True
+                
+        except Exception as e:
+            logger.error(f"Error guardando processed_email en Mongo: {e}")
 
-
-def _purge_locked() -> None:
-    now = time.time()
-    changed = False
-
-    for key, meta in list(_registry.items()):
-        ts = float(meta.get("ts", 0) or 0)
-        if ts and now - ts > _TTL_SECONDS:
-            _registry.pop(key, None)
-            changed = True
-
-    if len(_registry) > _MAX_ENTRIES:
-        oldest = sorted(_registry.items(), key=lambda kv: float(kv[1].get("ts", 0) or 0))
-        surplus = len(_registry) - _MAX_ENTRIES
-        for k, _ in oldest[:surplus]:
-            _registry.pop(k, None)
-            changed = True
-
-    if changed:
-        _save_locked()
-
+# Instancia global para mantener compatibilidad
+_repo = MongoProcessedEmailRepository()
 
 def build_key(email_uid: str, username: str, owner_email: str | None = None) -> str:
     owner = (owner_email or "").lower()
     return f"{owner}::{username or ''}::{email_uid}"
 
-
 def was_processed(key: str) -> bool:
-    _load()
-    with _lock:
-        _purge_locked()
-        return key in _registry
-
+    return _repo.was_processed(key)
 
 def mark_processed(key: str, status: str = "done") -> None:
-    _load()
-    with _lock:
-        _purge_locked()
-        _registry[key] = {"ts": time.time(), "status": status}
-        _purge_locked()
-        _save_locked()
+    # Intenta extraer owner y account del key si es posible
+    _repo.mark_processed(key, status)
