@@ -515,9 +515,18 @@ class EmailProcessor:
     def _email_key(self, email_id: str) -> str:
         return build_processed_key(email_id, getattr(self.config, "username", ""), self.owner_email)
 
-    def _mark_email_processed(self, email_id: str, reason: str) -> None:
+    def _mark_email_processed(self, email_id: str, status: str = "success") -> None:
         try:
-            mark_processed(self._email_key(email_id), reason)
+            # Pass explicit arguments to the new Mongo repository method
+            # status can be: success, skipped_ai_limit, error, xml, pdf
+            # reason is inferred from status usually, or passed if we change signature
+            from app.modules.email_processor.processed_registry import _repo
+            _repo.mark_processed(
+                key=self._email_key(email_id),
+                status=status,
+                owner_email=self.owner_email,
+                account_email=self.config.username
+            )
         except Exception as e:
             logger.debug(f"Registro de correo procesado falló ({email_id}): {e}")
 
@@ -528,11 +537,11 @@ class EmailProcessor:
         return None
 
     # --------- Search logic ---------
-    def search_emails(self) -> List[str]:
+    def search_emails(self, ignore_date_filter: bool = False) -> List[str]:
         """
         Usa IMAPClient.search(subject_terms) que devuelve UIDs (str).
         NOTA: los términos en .env deben venir SIN acentos (como acordamos).
-        Filtra correos por fecha de registro del usuario.
+        Filtra correos por fecha de registro del usuario, a menos que ignore_date_filter=True.
         """
         if not self.client.conn:
             if not self.connect():
@@ -549,7 +558,7 @@ class EmailProcessor:
         
         # Verificar si debe aplicar filtro de fecha (configurable)
         from app.config.settings import settings
-        if not settings.EMAIL_PROCESS_ALL_DATES and self.owner_email:
+        if not ignore_date_filter and not settings.EMAIL_PROCESS_ALL_DATES and self.owner_email:
             try:
                 from app.repositories.user_repository import UserRepository
                 user_repo = UserRepository()
@@ -623,7 +632,7 @@ class EmailProcessor:
         return meta, attachments
 
     # --------- Core processing ---------
-    def process_emails(self) -> ProcessResult:
+    def process_emails(self, ignore_date_filter: bool = False) -> ProcessResult:
         """
         Procesamiento optimizado por lotes para evitar problemas de memoria.
         Procesa correos en lotes pequeños, almacenando y liberando memoria inmediatamente.
@@ -636,7 +645,7 @@ class EmailProcessor:
             if not self.connect():
                 return ProcessResult(success=False, message="Error al conectar al servidor de correo")
 
-            email_ids = self.search_emails()
+            email_ids = self.search_emails(ignore_date_filter=ignore_date_filter)
             if not email_ids:
                 self.disconnect()
                 return ProcessResult(success=True, message="No se encontraron correos con facturas", invoice_count=0)
@@ -748,13 +757,15 @@ class EmailProcessor:
                 
                 if not ai_check['can_use']:
                     logger.warning(f"⚠️ Límite de IA alcanzado para {self.owner_email}: {ai_check['message']}")
-                    logger.info(f"⏭️ Omitiendo correo {email_id} - usuario sin acceso a IA")
-                    # Marcar como leído para no reprocesarlo
+                    logger.info(f"⏭️ Omitiendo correo {email_id} - usuario sin acceso a IA (se guardará como skipped_ai_limit)")
+                    # Marcar como leído para no reprocesarlo inmediatamente
                     try:
                         self.mark_as_read(email_id)
                     except:
                         pass
-                    self._mark_email_processed(email_id, "ai_limit")
+                    # IMPORTANTE: Marcar como 'skipped_ai_limit' para que was_processed() devuelva False (permitiendo reintento)
+                    # pero quede constancia en BD.
+                    self._mark_email_processed(email_id, "skipped_ai_limit")
                     return None
             
             metadata, attachments = self.get_email_content(email_id)
@@ -860,166 +871,7 @@ class EmailProcessor:
             logger.error(f"❌ Error almacenando factura v2: {e}")
             # No re-lanzar la excepción para no detener el procesamiento del lote
     
-    def process_emails_legacy(self) -> ProcessResult:
-        result = ProcessResult(success=True, message="Procesamiento completado", invoice_count=0, invoices=[])
-        try:
-            if not self.connect():
-                return ProcessResult(success=False, message="Error al conectar al servidor de correo")
 
-            email_ids = self.search_emails()
-            if not email_ids:
-                self.disconnect()
-                return ProcessResult(success=True, message="No se encontraron correos con facturas", invoice_count=0)
-
-            logger.info(f"Procesando {len(email_ids)} correos")
-
-            abort_run = False
-
-            for eid in email_ids:
-
-                if abort_run:           
-                    break
-
-                try:
-                    metadata, attachments = self.get_email_content(eid)
-                    if not metadata:
-                        logger.warning(f"⚠️ No se pudo obtener metadatos del correo {eid}")
-                        continue
-
-                    email_meta_for_ai = {
-                        "sender": metadata.get("sender", ""),
-                        "subject": metadata.get("subject", ""),
-                        "date": metadata.get("date")
-                    }
-
-                    xml_path = None
-                    pdf_path = None
-                    processed = False
-
-                    # Adjuntos: XML prioridad, luego PDF
-                    for att in attachments:
-                        fname = (att.get("filename") or "").lower()
-                        ctype = (att.get("content_type") or "").lower()
-                        content = att.get("content") or b""
-                        is_pdf = fname.endswith(".pdf") or ctype == "application/pdf"
-                        is_xml = fname.endswith(".xml") or ctype in (
-                            "text/xml", "application/xml", "application/x-iso20022+xml", "application/x-invoice+xml"
-                        )
-                        if is_xml:
-                            xml_path = save_binary(content, fname)  # no forzamos .pdf
-                            logger.info(f"📄 XML adjunto detectado: {fname}")
-                        elif is_pdf:
-                            pdf_path = save_binary(content, fname, force_pdf=True)
-                            logger.info(f"📄 PDF adjunto detectado: {fname}")
-                    try:
-                        # XML primero
-                        if xml_path:
-                            logger.info("📄 Procesando XML adjunto como fuente principal")
-                            inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
-                            if inv:
-                                result.invoices.append(inv)
-                                result.invoice_count += 1
-                                processed = True
-
-                        # Si el XML falló o no existe, intentar PDF
-                        if not processed and pdf_path:
-                            logger.info("📄 Procesando PDF como imagen (fallback o sin XML)")
-                            inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
-                            if inv:
-                                result.invoices.append(inv)
-                                result.invoice_count += 1
-                                processed = True
-
-                        # Enlaces si nada funcionó
-                        if not processed and metadata.get("links"):
-                            logger.info(f"🔗 Procesando {len(metadata['links'])} enlaces encontrados")
-                            for link in metadata["links"]:
-                                logger.info(f"🔗 Intentando procesar enlace: {link}")
-                                downloaded_path = download_pdf_from_url(link)
-                                if not downloaded_path:
-                                    logger.warning(f"❌ No se pudo descargar desde el enlace: {link}")
-                                    continue
-
-                                low = downloaded_path.lower()
-                                inv = None
-                                if low.endswith(".xml"):
-                                    logger.info("📄 XML detectado desde enlace, procesando como factura electrónica (SIFEN si aplica)")
-                                    inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, owner_email=self.owner_email)
-                                elif low.endswith(".pdf"):
-                                    logger.info("📄 PDF detectado desde enlace, procesando con OpenAI")
-                                    inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
-                                else:
-                                    logger.warning(f"⚠️ Tipo de archivo no reconocido: {downloaded_path}")
-                                    continue
-
-                                if inv:
-                                    result.invoices.append(inv)
-                                    result.invoice_count += 1
-                                    processed = True
-                    except OpenAIFatalError as e:         # ⬅️ NUEVO
-                        logger.error(f"❌ Error FATAL de OpenAI en correo {eid}: {e}. Abortando lote.")
-                        abort_run = True                   # ⬅️ NUEVO
-                        processed = False                  # ⬅️ aseguramos que NO se marque leído
-                        break                              # ⬅️ cortamos el loop completo
-
-                    except OpenAIRetryableError as e:      # ⬅️ NUEVO
-                        logger.warning(f"⚠️ Error transitorio de OpenAI en correo {eid}: {e}. Se omite este correo.")
-                        processed = False                  # no marcar leído
-                        continue
-                        # Marcar leído si hubo procesamiento OK
-                    if processed:
-                        self.client.mark_seen(eid)
-                        # Limpieza de temporales asociados a este correo
-                        try:
-                            import os
-                            if xml_path and os.path.exists(xml_path):
-                                os.remove(xml_path)
-                            if pdf_path and os.path.exists(pdf_path):
-                                os.remove(pdf_path)
-                        except Exception:
-                            pass
-                    else:
-                        logger.warning(f"⚠️ Ninguna factura procesada del correo {eid}, no se marcará como leído.")
-
-                except Exception as e:
-                    logger.error(f"❌ Error al procesar el correo {eid}: {str(e)}")
-                    continue
-            
-            # Si abortamos por fatal, devolvemos estado de error
-            if abort_run:
-                self.disconnect()
-                return ProcessResult(
-                    success=False,
-                    message="Procesamiento abortado por error fatal de OpenAI (API key/cuota).",
-                    invoice_count=len(result.invoices),
-                    invoices=result.invoices
-            )
-
-            # Persistir en MongoDB (automatizado y manual comparten esta ruta)
-            if result.invoices:
-                try:
-                    repo = MongoInvoiceRepository()
-                    docs = [map_invoice(inv, fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION") for inv in result.invoices]
-                    for d in docs:
-                        repo.save_document(d)
-                    logger.info(f"💾 MongoDB (repo): {len(docs)} facturas almacenadas")
-                    result.message = f"Se procesaron {result.invoice_count} facturas. Persistidas en MongoDB (cabecera + detalle)"
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo en MongoDB (repo): {e}")
-                    result.message = f"Se procesaron {result.invoice_count} facturas, pero falló la persistencia en MongoDB"
-                finally:
-                    try:
-                        repo.close()
-                    except Exception:
-                        pass
-
-            self.disconnect()
-            return result
-
-        except Exception as e:
-            logger.error(f"Error general en el procesamiento: {str(e)}")
-            self.disconnect()
-            return ProcessResult(success=False, message=f"Error en el procesamiento: {str(e)}")
 
     # ------------- EmailProcessor solo para single processing -------------
     # Los jobs programados ahora se manejan por MultiEmailProcessor.start_scheduled_job()
