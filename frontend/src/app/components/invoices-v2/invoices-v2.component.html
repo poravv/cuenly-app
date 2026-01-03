@@ -14,7 +14,8 @@
         </h1>
       </div>
       <div class="d-flex gap-2 mt-2 mt-md-0">
-        <button class="btn btn-danger" (click)="deleteSelected()" [disabled]="!hasSelection || deleteLoading" *ngIf="hasSelection">
+        <button class="btn btn-danger" (click)="deleteSelected()" [disabled]="!hasSelection || deleteLoading"
+          *ngIf="hasSelection">
           <i class="bi bi-trash me-1"></i>
           Eliminar ({{ selectedHeaders.size }})
         </button>
@@ -35,11 +36,13 @@
         </div>
         <div class="col-12 col-md-3">
           <label class="form-label small fw-semibold">Buscar</label>
-          <input type="text" class="form-control" placeholder="Texto (emisor/receptor/nro)" [(ngModel)]="search" (keyup.enter)="refresh()">
+          <input type="text" class="form-control" placeholder="Texto (emisor/receptor/nro)" [(ngModel)]="search"
+            (keyup.enter)="refresh()">
         </div>
         <div class="col-12 col-md-3">
           <label class="form-label small fw-semibold">Nombre Emisor</label>
-          <input type="text" class="form-control" placeholder="Ej: FARMACIA..." [(ngModel)]="emisorNombre" (keyup.enter)="refresh()">
+          <input type="text" class="form-control" placeholder="Ej: FARMACIA..." [(ngModel)]="emisorNombre"
+            (keyup.enter)="refresh()">
         </div>
         <div class="col-12 col-md-2">
           <label class="form-label small fw-semibold">RUC Emisor</label>
@@ -90,7 +93,8 @@
             <thead>
               <tr>
                 <th style="width: 40px;">
-                  <input type="checkbox" class="form-check-input" [checked]="selectAll" (change)="toggleSelectAll()" [disabled]="loading">
+                  <input type="checkbox" class="form-check-input" [checked]="selectAll" (change)="toggleSelectAll()"
+                    [disabled]="loading">
                 </th>
                 <th style="width: 40px;"></th>
                 <th>Fecha</th>
@@ -98,33 +102,46 @@
                 <th>Emisor</th>
                 <th>Receptor</th>
                 <th class="text-end">Total</th>
+                <th class="text-center" style="width: 50px;"></th>
               </tr>
             </thead>
             <tbody>
               <ng-container *ngFor="let h of headers; trackBy: trackByHeaderId">
                 <tr [class.table-active]="isSelected(h.id)">
                   <td>
-                    <input type="checkbox" class="form-check-input" [checked]="isSelected(h.id)" (change)="toggleSelection(h.id)">
+                    <input type="checkbox" class="form-check-input" [checked]="isSelected(h.id)"
+                      (change)="toggleSelection(h.id)">
                   </td>
                   <td>
-                    <button class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center" (click)="toggle(h)" [disabled]="itemsLoading[h.id]" aria-label="Mostrar/ocultar detalle">
-                      <span *ngIf="itemsLoading[h.id]" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                      <i *ngIf="!itemsLoading[h.id]" class="bi" [ngClass]="expanded[h.id] ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+                    <button
+                      class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center"
+                      (click)="toggle(h)" [disabled]="itemsLoading[h.id]" aria-label="Mostrar/ocultar detalle">
+                      <span *ngIf="itemsLoading[h.id]" class="spinner-border spinner-border-sm" role="status"
+                        aria-hidden="true"></span>
+                      <i *ngIf="!itemsLoading[h.id]" class="bi"
+                        [ngClass]="expanded[h.id] ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
                     </button>
                   </td>
                   <td>{{ formatDate(h.fecha_emision) }}</td>
                   <td>
                     <div class="d-flex align-items-center gap-2">
                       <span>{{ h.numero_documento }}</span>
-                      <span class="badge" [ngClass]="condBadgeClass(h.condicion_venta)">{{ h.condicion_venta || 'CONTADO' }}</span>
+                      <span class="badge" [ngClass]="condBadgeClass(h.condicion_venta)">{{ h.condicion_venta ||
+                        'CONTADO' }}</span>
                     </div>
                   </td>
                   <td>{{ h.emisor?.nombre }}</td>
                   <td>{{ h.receptor?.nombre }}</td>
                   <td class="text-end">{{ toCurrency(h.totales?.total || 0) }}</td>
+                  <td class="text-center">
+                    <button class="btn btn-sm btn-outline-secondary" (click)="downloadInvoice(h.id, $event)"
+                      title="Descargar PDF">
+                      <i class="bi bi-download"></i>
+                    </button>
+                  </td>
                 </tr>
                 <tr *ngIf="expanded[h.id]">
-                  <td colspan="7" class="p-0 border-0">
+                  <td colspan="8" class="p-0 border-0">
                     <div class="bg-light rounded-3 p-3 m-2">
                       <div class="d-flex justify-content-between align-items-center mb-2">
                         <div class="fw-semibold">Detalle: {{ h.numero_documento }}</div>
@@ -134,16 +151,20 @@
                         <div class="col-12 col-lg-6">
                           <div class="d-flex flex-wrap gap-2 align-items-center">
                             <span class="badge bg-light text-dark border">Emisor RUC: {{ h.emisor?.ruc || '-' }}</span>
-                            <span class="badge bg-light text-dark border">Receptor RUC: {{ h.receptor?.ruc || '-' }}</span>
-                            <span class="badge" [ngClass]="condBadgeClass(h.condicion_venta)">Condición: {{ h.condicion_venta || 'CONTADO' }}</span>
+                            <span class="badge bg-light text-dark border">Receptor RUC: {{ h.receptor?.ruc || '-'
+                              }}</span>
+                            <span class="badge" [ngClass]="condBadgeClass(h.condicion_venta)">Condición: {{
+                              h.condicion_venta || 'CONTADO' }}</span>
                             <span class="badge bg-secondary">Moneda: {{ h.moneda || 'GS' }}</span>
                           </div>
                         </div>
                         <div class="col-12 col-lg-6">
                           <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
-                            <span class="badge bg-info text-dark" *ngIf="h.cdc">CDC: {{ (h.cdc || '').slice(0,8) }}…</span>
+                            <span class="badge bg-info text-dark" *ngIf="h.cdc">CDC: {{ (h.cdc || '').slice(0,8)
+                              }}…</span>
                             <span class="badge bg-secondary" *ngIf="h.timbrado">Timbrado: {{ h.timbrado }}</span>
-                            <span class="badge bg-light text-dark border">Ítems: {{ h.item_count || (itemsCache[h.id] && itemsCache[h.id].length || 0) }}</span>
+                            <span class="badge bg-light text-dark border">Ítems: {{ h.item_count || (itemsCache[h.id] &&
+                              itemsCache[h.id].length || 0) }}</span>
                             <span class="badge bg-light text-dark border" *ngIf="h.fuente">Fuente: {{ h.fuente }}</span>
                           </div>
                         </div>
@@ -176,7 +197,8 @@
                         </div>
                       </div>
                       <div *ngIf="itemsLoading[h.id]" class="d-flex justify-content-center align-items-center py-3">
-                        <div class="spinner-border text-primary me-2" role="status" style="width: 1.5rem; height: 1.5rem;">
+                        <div class="spinner-border text-primary me-2" role="status"
+                          style="width: 1.5rem; height: 1.5rem;">
                           <span class="visually-hidden">Cargando...</span>
                         </div>
                         <span class="text-muted">Cargando detalles...</span>
@@ -229,7 +251,8 @@
           <div class="d-flex align-items-center gap-3">
             <div class="d-flex align-items-center gap-2">
               <label class="text-muted small mb-0">Por página</label>
-              <select class="form-select form-select-sm w-auto" [ngModel]="pageSize" (ngModelChange)="setPageSize($event)">
+              <select class="form-select form-select-sm w-auto" [ngModel]="pageSize"
+                (ngModelChange)="setPageSize($event)">
                 <option [ngValue]="10">10</option>
                 <option [ngValue]="20">20</option>
                 <option [ngValue]="50">50</option>
@@ -239,9 +262,11 @@
             <div class="btn-group">
               <button class="btn btn-outline-secondary" (click)="prevPage()" [disabled]="page <= 1">Anterior</button>
               <ng-container *ngFor="let p of getPageNumbers()">
-                <button class="btn" [ngClass]="p === page ? 'btn-primary' : 'btn-outline-secondary'" (click)="goToPage(p)">{{ p }}</button>
+                <button class="btn" [ngClass]="p === page ? 'btn-primary' : 'btn-outline-secondary'"
+                  (click)="goToPage(p)">{{ p }}</button>
               </ng-container>
-              <button class="btn btn-outline-secondary" (click)="nextPage()" [disabled]="page >= pageCount()">Siguiente</button>
+              <button class="btn btn-outline-secondary" (click)="nextPage()"
+                [disabled]="page >= pageCount()">Siguiente</button>
             </div>
           </div>
         </div>
@@ -251,7 +276,8 @@
 </div>
 
 <!-- Modal de confirmación de eliminación -->
-<div class="modal fade" [class.show]="showDeleteConfirm" [style.display]="showDeleteConfirm ? 'block' : 'none'" tabindex="-1" *ngIf="showDeleteConfirm">
+<div class="modal fade" [class.show]="showDeleteConfirm" [style.display]="showDeleteConfirm ? 'block' : 'none'"
+  tabindex="-1" *ngIf="showDeleteConfirm">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
@@ -266,7 +292,7 @@
           <div class="alert alert-warning">
             <strong>¡Atención!</strong> Esta acción no se puede deshacer.
           </div>
-          
+
           <!-- Eliminación individual -->
           <div *ngIf="selectedHeaders.size === 1">
             <p class="mb-3">Se eliminará la siguiente factura:</p>
@@ -282,7 +308,7 @@
               </div>
             </div>
           </div>
-          
+
           <!-- Eliminación en lote -->
           <div *ngIf="selectedHeaders.size > 1">
             <p class="mb-3">Se eliminarán <strong>{{ deleteInfo.summary?.total_invoices }}</strong> facturas:</p>
@@ -297,20 +323,20 @@
                 </div>
               </div>
             </div>
-            
+
             <div class="max-height-200 overflow-auto border rounded p-2" *ngIf="deleteInfo.invoices?.length">
               <div class="small" *ngFor="let inv of deleteInfo.invoices">
                 <strong>{{ inv.numero_documento }}</strong> - {{ inv.emisor }} - {{ toCurrency(inv.monto_total) }}
               </div>
             </div>
           </div>
-          
+
           <p class="text-danger mt-3">
             <i class="bi bi-info-circle me-1"></i>
             {{ deleteInfo.warning }}
           </p>
         </div>
-        
+
         <div *ngIf="deleteLoading" class="text-center py-3">
           <div class="spinner-border text-primary me-2" role="status">
             <span class="visually-hidden">Eliminando...</span>

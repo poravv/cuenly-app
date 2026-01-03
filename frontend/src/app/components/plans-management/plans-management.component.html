@@ -282,21 +282,41 @@
         </div>
 
         <div class="features-section">
-          <h5>Características</h5>
+          <h5>Límites y Capacidades</h5>
           
-          <div class="form-row">
-            <div class="form-group">
-              <label>Límite de Facturas IA</label>
-              <input type="number" [(ngModel)]="planForm.features.ai_invoices_limit" 
-                     name="ai_invoices_limit" class="form-control" min="-1">
-              <small class="form-text">(-1 = sin límite)</small>
-            </div>
-            
-            <div class="form-group">
-              <label>Límite de Cuentas de Correo</label>
-              <input type="number" [(ngModel)]="planForm.features.max_email_accounts" 
-                     name="max_email_accounts" class="form-control" min="-1">
-              <small class="form-text">(-1 = sin límite)</small>
+          <div class="limits-container" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Límite de Facturas Procesadas con IA (Mensual)</label>
+                <div class="input-group">
+                  <input type="number" [(ngModel)]="planForm.features.ai_invoices_limit" 
+                         name="ai_invoices_limit" class="form-control" [disabled]="isUnlimited('ai_invoices_limit')">
+                  <div class="input-group-append" style="display: flex; align-items: center; margin-left: 10px;">
+                    <label class="checkbox-label" style="margin: 0;">
+                      <input type="checkbox" [checked]="isUnlimited('ai_invoices_limit')"
+                             (change)="toggleUnlimited('ai_invoices_limit', $event)">
+                      Ilimitado
+                    </label>
+                  </div>
+                </div>
+                <small class="form-text text-muted">Cantidad de facturas que pueden ser procesadas usando IA. Si se supera, se omiten.</small>
+              </div>
+              
+              <div class="form-group">
+                <label>Límite de Cuentas de Correo Sincronizadas</label>
+                <div class="input-group">
+                  <input type="number" [(ngModel)]="planForm.features.max_email_accounts" 
+                         name="max_email_accounts" class="form-control" [disabled]="isUnlimited('max_email_accounts')">
+                  <div class="input-group-append" style="display: flex; align-items: center; margin-left: 10px;">
+                    <label class="checkbox-label" style="margin: 0;">
+                      <input type="checkbox" [checked]="isUnlimited('max_email_accounts')"
+                             (change)="toggleUnlimited('max_email_accounts', $event)">
+                      Ilimitado
+                    </label>
+                  </div>
+                </div>
+                <small class="form-text text-muted">Número máximo de cuentas de correo que el usuario puede conectar.</small>
+              </div>
             </div>
           </div>
 

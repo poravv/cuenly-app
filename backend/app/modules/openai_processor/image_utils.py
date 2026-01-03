@@ -4,21 +4,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def pdf_to_base64_first_page(pdf_path: str) -> str:
+def pdf_to_base64_first_page(doc_path: str) -> str:
     """
-    Convierte la primera página del PDF a JPEG base64 (300dpi aprox).
-    Requiere PyMuPDF.
+    Convierte la primera página del PDF a JPEG base64 (300dpi aprox)
+    O lee directamente si es imagen (JPEG/PNG/WEBP).
     """
     try:
+        lower_path = doc_path.lower()
+        if lower_path.endswith(('.jpg', '.jpeg', '.png', '.webp')):
+            with open(doc_path, "rb") as f:
+                img_bytes = f.read()
+            return base64.b64encode(img_bytes).decode("utf-8")
+            
         import fitz  # PyMuPDF
-        doc = fitz.open(pdf_path)
+        doc = fitz.open(doc_path)
         page = doc[0]
         pix = page.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
         img_bytes = pix.tobytes("jpeg")
         doc.close()
         return base64.b64encode(img_bytes).decode("utf-8")
     except Exception as e:
-        logger.error("Error convirtiendo PDF a imagen: %s", e)
+        logger.error("Error convirtiendo documento a imagen base64: %s", e)
         raise
 
 def ocr_from_base64_image(base64_image: str, lang: str = "spa") -> str:

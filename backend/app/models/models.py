@@ -129,6 +129,7 @@ class InvoiceData(BaseModel):
     monto_total: Optional[float] = 0.0
     iva: Optional[float] = 0.0
     pdf_path: Optional[str] = ""
+    minio_key: Optional[str] = ""
 
     ruc_cliente: Optional[str] = ""
     nombre_cliente: Optional[str] = ""

@@ -1,4 +1,5 @@
 import { Component, OnInit } from '@angular/core';
+import { NotificationService } from '../../services/notification.service';
 import { ApiService } from '../../services/api.service';
 
 @Component({
@@ -36,7 +37,10 @@ export class InvoicesV2Component implements OnInit {
   deleteLoading = false;
   deleteInfo: any = null;
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    private notificationService: NotificationService
+  ) { }
 
   ngOnInit(): void {
     // Valor por defecto al mes actual en formato YYYY-MM
@@ -221,10 +225,10 @@ export class InvoicesV2Component implements OnInit {
   // Métodos de eliminación
   deleteSelected(): void {
     if (this.selectedHeaders.size === 0) return;
-    
+
     const headerIds = Array.from(this.selectedHeaders);
     this.deleteLoading = true;
-    
+
     if (headerIds.length === 1) {
       // Eliminación individual
       this.api.getV2DeleteInfo(headerIds[0]).subscribe({
@@ -258,10 +262,10 @@ export class InvoicesV2Component implements OnInit {
 
   confirmDelete(): void {
     if (!this.deleteInfo || this.selectedHeaders.size === 0) return;
-    
+
     const headerIds = Array.from(this.selectedHeaders);
     this.deleteLoading = true;
-    
+
     if (headerIds.length === 1) {
       // Eliminación individual
       this.api.deleteV2Invoice(headerIds[0]).subscribe({
@@ -311,5 +315,28 @@ export class InvoicesV2Component implements OnInit {
 
   get hasSelection(): boolean {
     return this.selectedHeaders.size > 0;
+  }
+
+  downloadInvoice(headerId: string, event: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (!headerId) return;
+
+    this.notificationService.info('Generando enlace...', 'Procesando');
+
+    this.api.downloadInvoice(headerId).subscribe({
+      next: (res) => {
+        if (res.success && res.download_url) {
+          window.open(res.download_url, '_blank');
+        } else {
+          this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
+        }
+      },
+      error: (err) => {
+        console.error("Error descarga:", err);
+        this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
+      }
+    });
   }
 }

@@ -56,30 +56,30 @@ export class ApiService {
   // Procesar correos
   processEmails(runAsync: boolean = false): Observable<ProcessResult> {
     return this.http.post<ProcessResult>(
-      `${this.apiUrl}/process`, 
+      `${this.apiUrl}/process`,
       { run_async: runAsync },
       { headers: this.getSecureHeaders() }
     );
   }
 
   // Subir un archivo PDF
-  uploadPdf(file: File, metadata: {sender?: string, date?: string}): Observable<ProcessResult> {
+  uploadPdf(file: File, metadata: { sender?: string, date?: string }): Observable<ProcessResult> {
     const formData = new FormData();
     formData.append('file', file);
-    
+
     if (metadata.sender) {
       formData.append('sender', metadata.sender);
     }
-    
+
     if (metadata.date) {
       formData.append('date', metadata.date);
     }
-    
+
     return this.http.post<ProcessResult>(`${this.apiUrl}/upload`, formData);
   }
 
   // Subir un archivo XML
-  uploadXml(file: File, metadata: {sender?: string, date?: string}): Observable<ProcessResult> {
+  uploadXml(file: File, metadata: { sender?: string, date?: string }): Observable<ProcessResult> {
     const formData = new FormData();
     formData.append('file', file);
 
@@ -94,8 +94,15 @@ export class ApiService {
     return this.http.post<ProcessResult>(`${this.apiUrl}/upload-xml`, formData);
   }
 
+  // Subir imagen para procesamiento
+  uploadImage(file: File): Observable<{ success: boolean, invoice_id?: string, error?: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<{ success: boolean, invoice_id?: string, error?: string }>(`${this.apiUrl}/upload-image`, formData);
+  }
+
   // Encolar carga de PDF
-  enqueueUploadPdf(file: File, metadata: {sender?: string, date?: string}): Observable<TaskSubmitResponse> {
+  enqueueUploadPdf(file: File, metadata: { sender?: string, date?: string }): Observable<TaskSubmitResponse> {
     const formData = new FormData();
     formData.append('file', file);
     if (metadata.sender) formData.append('sender', metadata.sender);
@@ -104,7 +111,7 @@ export class ApiService {
   }
 
   // Encolar carga de XML
-  enqueueUploadXml(file: File, metadata: {sender?: string, date?: string}): Observable<TaskSubmitResponse> {
+  enqueueUploadXml(file: File, metadata: { sender?: string, date?: string }): Observable<TaskSubmitResponse> {
     const formData = new FormData();
     formData.append('file', file);
     if (metadata.sender) formData.append('sender', metadata.sender);
@@ -125,40 +132,40 @@ export class ApiService {
   }
 
   // Email Configs CRUD
-  getEmailConfigs(): Observable<{success: boolean, configs: EmailConfig[], total: number}> {
-    return this.http.get<{success: boolean, configs: EmailConfig[], total: number}>(`${this.apiUrl}/email-configs`);
+  getEmailConfigs(): Observable<{ success: boolean, configs: EmailConfig[], total: number }> {
+    return this.http.get<{ success: boolean, configs: EmailConfig[], total: number }>(`${this.apiUrl}/email-configs`);
   }
 
-  createEmailConfig(config: EmailConfig): Observable<{success: boolean, id: string}> {
-    return this.http.post<{success: boolean, id: string}>(`${this.apiUrl}/email-configs`, config);
+  createEmailConfig(config: EmailConfig): Observable<{ success: boolean, id: string }> {
+    return this.http.post<{ success: boolean, id: string }>(`${this.apiUrl}/email-configs`, config);
   }
 
-  updateEmailConfig(id: string, config: EmailConfig): Observable<{success: boolean, id: string}> {
-    return this.http.put<{success: boolean, id: string}>(`${this.apiUrl}/email-configs/${id}`, config);
+  updateEmailConfig(id: string, config: EmailConfig): Observable<{ success: boolean, id: string }> {
+    return this.http.put<{ success: boolean, id: string }>(`${this.apiUrl}/email-configs/${id}`, config);
   }
 
-  deleteEmailConfig(id: string): Observable<{success: boolean}> {
-    return this.http.delete<{success: boolean}>(`${this.apiUrl}/email-configs/${id}`);
+  deleteEmailConfig(id: string): Observable<{ success: boolean }> {
+    return this.http.delete<{ success: boolean }>(`${this.apiUrl}/email-configs/${id}`);
   }
 
-  setEmailConfigEnabled(id: string, enabled: boolean): Observable<{success: boolean, enabled: boolean}> {
-    return this.http.patch<{success: boolean, enabled: boolean}>(`${this.apiUrl}/email-configs/${id}/enabled`, { enabled });
+  setEmailConfigEnabled(id: string, enabled: boolean): Observable<{ success: boolean, enabled: boolean }> {
+    return this.http.patch<{ success: boolean, enabled: boolean }>(`${this.apiUrl}/email-configs/${id}/enabled`, { enabled });
   }
 
-  toggleEmailConfig(id: string): Observable<{success: boolean, enabled: boolean}> {
-    return this.http.post<{success: boolean, enabled: boolean}>(`${this.apiUrl}/email-configs/${id}/toggle`, {});
+  toggleEmailConfig(id: string): Observable<{ success: boolean, enabled: boolean }> {
+    return this.http.post<{ success: boolean, enabled: boolean }>(`${this.apiUrl}/email-configs/${id}/toggle`, {});
   }
-  
+
   // Iniciar job programado
   startJob(): Observable<JobStatus> {
     return this.http.post<JobStatus>(`${this.apiUrl}/job/start`, {});
   }
-  
+
   // Detener job programado
   stopJob(): Observable<JobStatus> {
     return this.http.post<JobStatus>(`${this.apiUrl}/job/stop`, {});
   }
-  
+
   // Obtener estado del job
   getJobStatus(): Observable<JobStatus> {
     return this.http.get<JobStatus>(`${this.apiUrl}/job/status`);
@@ -177,10 +184,10 @@ export class ApiService {
     });
   }
 
-    // Enviar tarea de procesamiento
+  // Enviar tarea de procesamiento
   submitTask(): Observable<TaskSubmitResponse> {
     return this.http.post<TaskSubmitResponse>(
-      `${this.apiUrl}/tasks/process`, 
+      `${this.apiUrl}/tasks/process`,
       {},
       { headers: this.getSecureHeaders() }
     );
@@ -192,8 +199,8 @@ export class ApiService {
   }
 
   // Limpiar tareas antiguas
-  cleanupOldTasks(): Observable<{message: string, cleaned_count: number}> {
-    return this.http.delete<{message: string, cleaned_count: number}>(`${this.apiUrl}/tasks/cleanup`);
+  cleanupOldTasks(): Observable<{ message: string, cleaned_count: number }> {
+    return this.http.delete<{ message: string, cleaned_count: number }>(`${this.apiUrl}/tasks/cleanup`);
   }
 
   // Debug de tareas (solo para desarrollo)
@@ -260,6 +267,10 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/v2/invoices/bulk-delete`, { header_ids: headerIds });
   }
 
+  downloadInvoice(invoiceId: string): Observable<{ success: boolean, download_url: string, filename?: string, message?: string }> {
+    return this.http.get<{ success: boolean, download_url: string, filename?: string, message?: string }>(`${this.apiUrl}/invoices/${invoiceId}/download`);
+  }
+
   getV2DeleteInfo(headerId: string): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/v2/invoices/${headerId}/delete-info`);
   }
@@ -269,8 +280,8 @@ export class ApiService {
   }
 
   // Métodos de administración
-  checkAdminStatus(): Observable<{success: boolean, is_admin: boolean, email: string, message: string}> {
-    return this.http.get<{success: boolean, is_admin: boolean, email: string, message: string}>(`${this.apiUrl}/admin/check`);
+  checkAdminStatus(): Observable<{ success: boolean, is_admin: boolean, email: string, message: string }> {
+    return this.http.get<{ success: boolean, is_admin: boolean, email: string, message: string }>(`${this.apiUrl}/admin/check`);
   }
 
   getAdminUsers(page: number = 1, pageSize: number = 20): Observable<any> {
@@ -279,12 +290,12 @@ export class ApiService {
     });
   }
 
-  updateUserRole(email: string, role: string): Observable<{success: boolean, message: string}> {
-    return this.http.put<{success: boolean, message: string}>(`${this.apiUrl}/admin/users/${email}/role`, { role });
+  updateUserRole(email: string, role: string): Observable<{ success: boolean, message: string }> {
+    return this.http.put<{ success: boolean, message: string }>(`${this.apiUrl}/admin/users/${email}/role`, { role });
   }
 
-  updateUserStatus(email: string, status: string): Observable<{success: boolean, message: string}> {
-    return this.http.put<{success: boolean, message: string}>(`${this.apiUrl}/admin/users/${email}/status`, { status });
+  updateUserStatus(email: string, status: string): Observable<{ success: boolean, message: string }> {
+    return this.http.put<{ success: boolean, message: string }>(`${this.apiUrl}/admin/users/${email}/status`, { status });
   }
 
   getAdminStats(): Observable<any> {
@@ -346,8 +357,8 @@ export class ApiService {
   }
 
   // Verificar estado del trial del usuario
-  getTrialStatus(): Observable<{success: boolean, can_process: boolean, is_trial_user: boolean, trial_expired: boolean, message: string}> {
-    return this.http.get<{success: boolean, can_process: boolean, is_trial_user: boolean, trial_expired: boolean, message: string}>(`${this.apiUrl}/user/trial-status`);
+  getTrialStatus(): Observable<{ success: boolean, can_process: boolean, is_trial_user: boolean, trial_expired: boolean, message: string }> {
+    return this.http.get<{ success: boolean, can_process: boolean, is_trial_user: boolean, trial_expired: boolean, message: string }>(`${this.apiUrl}/user/trial-status`);
   }
 
   requestPlanChange(planId: string): Observable<any> {

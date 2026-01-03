@@ -220,13 +220,21 @@ class UserRepository:
                         'reason': 'subscription_inactive',
                         'message': 'No tienes una suscripción activa'
                     }
-                # Tiene suscripción activa => permitir
+                # Tiene suscripción activa => verificar límite de IA
+                if trial_info.get('ai_limit_reached', False):
+                    return {
+                        'can_use': False,
+                        'reason': 'ai_limit_reached',
+                        'message': f'Has alcanzado y/o superado el límite de {trial_info["ai_invoices_limit"]} facturas con IA de tu plan. Actualiza tu plan para continuar.'
+                    }
+
                 return {
                     'can_use': True,
                     'reason': 'subscription_active',
                     'message': 'Suscripción activa'
                 }
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error checking subscription for {email}: {e}")
                 # Si por alguna razón no podemos verificar, negar por seguridad
                 return {
                     'can_use': False,
