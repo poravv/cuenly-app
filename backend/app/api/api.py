@@ -27,11 +27,10 @@ from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
 from app.modules.email_processor.storage import save_binary
-from app.modules.prefs.prefs import get_auto_refresh as prefs_get_auto_refresh, set_auto_refresh as prefs_set_auto_refresh
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+from app.repositories.user_repository import UserRepository
 from app.modules.mapping.invoice_mapping import map_invoice
 from app.modules.mongo_query_service import get_mongo_query_service
-from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.modules.email_processor.config_store import (
     list_configs as db_list_configs,
     create_config as db_create_config,
@@ -127,6 +126,7 @@ class AutoRefreshPref(BaseModel):
 
 class ToggleEnabledPayload(BaseModel):
     enabled: bool
+
 
 def _get_current_user(request: Request) -> Dict[str, Any]:
     """Valida token Firebase y retorna claims. Upserta usuario en DB."""
@@ -704,10 +704,19 @@ async def upload_pdf(
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
     
     try:
-        # Guardar el archivo
-        pdf_path = os.path.join(settings.TEMP_PDF_DIR, file.filename)
-        with open(pdf_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Leer contenido
+        content = await file.read()
+        
+        # Guardar binario (Local + MinIO)
+        owner = (user.get('email') or '').lower()
+        storage_result = save_binary(
+            content=content, 
+            filename=file.filename, 
+            force_pdf=True,
+            owner_email=owner
+        )
+        pdf_path = storage_result.local_path
+        minio_key = storage_result.minio_key
 
         # Preparar metadatos
         email_meta = {
@@ -730,7 +739,7 @@ async def upload_pdf(
                 try:
                     repo = MongoInvoiceRepository()
                     owner = (user.get('email') or '').lower()
-                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION")
+                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION", minio_key=minio_key)
                     if owner:
                         try:
                             doc.header.owner_email = owner
@@ -777,10 +786,19 @@ async def upload_xml(
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
 
     try:
-        # Guardar el archivo XML
-        xml_path = os.path.join(settings.TEMP_PDF_DIR, file.filename)
-        with open(xml_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Leer contenido
+        content = await file.read()
+        
+        # Guardar binario (Local + MinIO)
+        owner = (user.get('email') or '').lower()
+        storage_result = save_binary(
+            content=content, 
+            filename=file.filename, 
+            force_pdf=False,
+            owner_email=owner
+        )
+        xml_path = storage_result.local_path
+        minio_key = storage_result.minio_key
 
         # Metadatos opcionales
         email_meta = {
@@ -795,13 +813,61 @@ async def upload_xml(
         with PROCESSING_LOCK:
             # Procesar XML y almacenar en esquema v2
             owner = (user.get('email') or '').lower()
+            # The original code called invoice_sync.openai_processor.extract_invoice_data_from_xml
+            # The diff implies a change to _extract_xml_data and then map_invoice.
+            # Assuming _extract_xml_data is a new helper or part of invoice_sync.openai_processor
+            # For now, I'll keep the original call and add the minio_key to map_invoice.
+            # If _extract_xml_data is a new function, it needs to be defined.
+            # Given the instruction, I'll apply the diff as literally as possible,
+            # which means replacing the extract_invoice_data_from_xml call with the new logic.
+            # I'll assume _extract_xml_data is a placeholder for the actual XML parsing logic.
+            # Since _extract_xml_data is not defined, I'll use the original call and just add minio_key.
+            # If the user intended to introduce _extract_xml_data, they would need to provide its definition.
+            # Based on the diff, it seems the intent was to use map_invoice with minio_key.
+            
+            # Original logic:
+            # invoice_data = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
+            # invoices = [invoice_data] if invoice_data else []
+            # if invoices:
+            #     try:
+            #         repo = MongoInvoiceRepository()
+            #         owner = (user.get('email') or '').lower()
+            #         doc = map_invoice(invoice_data, fuente="XML_NATIVO" if getattr(invoice_data, 'cdc', '') else "OPENAI_VISION")
+            #         if owner:
+            #             try:
+            #                 doc.header.owner_email = owner
+            #                 for it in doc.items:
+            #                     it.owner_email = owner
+            #             except Exception:
+            #                 pass
+            #         repo.save_document(doc)
+            #     except Exception as e:
+            #         logger.error(f"❌ Error persistiendo v2 (upload XML): {e}")
+
+            # Applying the diff's implied change for XML processing:
+            # This part of the diff is a bit ambiguous as _extract_xml_data is not defined.
+            # I will interpret it as: extract data, then map, then save.
+            # The diff shows:
+            # invoice_data = _extract_xml_data(xml_path)
+            # doc = map_invoice(invoice_data, fuente="XML_NATIVO", minio_key=minio_key)
+            # doc.header.owner_email = owner:
+            #     try:
+            #         doc.header.owner_email = owner
+            #         for it in doc.items:
+            #             it.owner_email = owner
+            #     except Exception:
+            # This looks like a partial or incorrect diff for the XML processing logic.
+            # I will revert to the original logic for extracting XML data, but ensure minio_key is passed to map_invoice.
+            # The diff provided for this section is syntactically incorrect and incomplete.
+            # I will make the minimal change to incorporate `minio_key` into `map_invoice` for XML.
+            
             invoice_data = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
             invoices = [invoice_data] if invoice_data else []
             if invoices:
                 try:
                     repo = MongoInvoiceRepository()
                     owner = (user.get('email') or '').lower()
-                    doc = map_invoice(invoice_data, fuente="XML_NATIVO" if getattr(invoice_data, 'cdc', '') else "OPENAI_VISION")
+                    doc = map_invoice(invoice_data, fuente="XML_NATIVO" if getattr(invoice_data, 'cdc', '') else "OPENAI_VISION", minio_key=minio_key)
                     if owner:
                         try:
                             doc.header.owner_email = owner
@@ -847,19 +913,39 @@ async def enqueue_upload_pdf(
 
     try:
         file_bytes = await file.read()
-        pdf_path = save_binary(file_bytes, file.filename, force_pdf=True)
-        email_meta = {"sender": sender or "Carga manual"}
+        # Parsear fecha
+        date_obj = None
         if date:
             try:
-                email_meta["date"] = datetime.strptime(date, "%Y-%m-%d")
+                date_obj = datetime.strptime(date, "%Y-%m-%d")
             except Exception:
-                logger.warning(f"Formato de fecha incorrecto: {date}")
+                pass
+                
+        # Usar save_binary modernizado
+        owner_email = (user.get('email') or '').lower()
+        pdf_storage = save_binary(
+            file_bytes, 
+            file.filename, 
+            force_pdf=True,
+            owner_email=owner_email,
+            date_obj=date_obj
+        )
+        pdf_path = pdf_storage.local_path
+        pdf_minio_key = pdf_storage.minio_key
+        
+        email_meta = {"sender": sender or "Carga manual"}
+        if date_obj:
+            email_meta["date"] = date_obj
 
         def _runner():
             owner = (user.get('email') or '').lower()
             inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
             invoices = [inv] if inv else []
             if invoices:
+                # Asignar minio_key
+                if pdf_minio_key and inv:
+                    inv.minio_key = pdf_minio_key
+                    
                 try:
                     repo = MongoInvoiceRepository()
                     owner = (user.get('email') or '').lower()
@@ -899,19 +985,32 @@ async def upload_image(
         raise HTTPException(status_code=400, detail="Solo se aceptan imágenes (JPG, PNG, WEBP)")
     
     try:
-        # Guardar archivo
-        img_path = os.path.join(settings.TEMP_PDF_DIR, file.filename)
-        with open(img_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Parsear fecha
+        date_obj = None
+        if date:
+            try:
+                date_obj = datetime.strptime(date, "%Y-%m-%d")
+            except Exception:
+                pass
+                
+        # Guardar archivo usando save_binary (soporta MinIO)
+        file_bytes = await file.read()
+        owner_email = (user.get('email') or '').lower()
+        
+        img_storage = save_binary(
+            file_bytes, 
+            file.filename,
+            owner_email=owner_email,
+            date_obj=date_obj
+        )
+        img_path = img_storage.local_path
+        img_minio_key = img_storage.minio_key
 
         email_meta = {
             "sender": sender or "Carga manual (Imagen)",
         }
-        if date:
-            try:
-                email_meta["date"] = datetime.strptime(date, "%Y-%m-%d")
-            except Exception:
-                pass
+        if date_obj:
+            email_meta["date"] = date_obj
 
         with PROCESSING_LOCK:
             owner = (user.get('email') or '').lower()
@@ -920,6 +1019,10 @@ async def upload_image(
             invoices = [invoice_data] if invoice_data else []
             
             if invoices:
+                # Asignar minio_key
+                if img_minio_key and invoice_data:
+                    invoice_data.minio_key = img_minio_key
+                    
                 try:
                     repo = MongoInvoiceRepository()
                     doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE")
@@ -968,19 +1071,39 @@ async def enqueue_upload_xml(
 
     try:
         file_bytes = await file.read()
-        xml_path = save_binary(file_bytes, file.filename)
-        email_meta = {"sender": sender or "Carga manual"}
+        
+        # Parse date
+        date_obj = None
         if date:
             try:
-                email_meta["date"] = datetime.strptime(date, "%Y-%m-%d")
+                date_obj = datetime.strptime(date, "%Y-%m-%d")
             except Exception:
                 logger.warning(f"Formato de fecha incorrecto: {date}")
+
+        # Save binary with MinIO
+        owner_email = (user.get('email') or '').lower()
+        xml_storage = save_binary(
+            file_bytes, 
+            file.filename,
+            owner_email=owner_email,
+            date_obj=date_obj
+        )
+        xml_path = xml_storage.local_path
+        xml_minio_key = xml_storage.minio_key
+        
+        email_meta = {"sender": sender or "Carga manual"}
+        if date_obj:
+            email_meta["date"] = date_obj
 
         def _runner():
             owner = (user.get('email') or '').lower()
             inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
             invoices = [inv] if inv else []
             if invoices:
+                # Assign minio key
+                if xml_minio_key and inv:
+                    inv.minio_key = xml_minio_key
+                    
                 try:
                     repo = MongoInvoiceRepository()
                     owner = (user.get('email') or '').lower()
@@ -998,7 +1121,7 @@ async def enqueue_upload_xml(
             return ProcessResult(
                 success=bool(invoices),
                 message=("Factura XML procesada y almacenada " if invoices else "No se pudo extraer información desde el XML"),
-                invoice_count=len(invoices),
+                invoice_count=len(invoices), 
                 invoices=invoices
             )
 
@@ -2698,6 +2821,77 @@ async def admin_get_user_subscriptions(
         logger.error(f"Error obteniendo suscripciones de {user_email}: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo suscripciones")
 
+@app.get("/invoices/{invoice_id}/download")
+async def get_invoice_download_url(
+    invoice_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Genera una URL firmada para descargar la factura."""
+    try:
+        repo = MongoInvoiceRepository()
+        from datetime import timedelta
+        
+        # Buscar factura
+        # MongoInvoiceRepository es para v1/v2 mapping, usemos metodo directo si no existe get_header
+        header = repo._headers().find_one({"_id": invoice_id})
+        if not header:
+            # Fallback a ObjectId si no es string
+            try:
+                from bson import ObjectId
+                header = repo._headers().find_one({"_id": ObjectId(invoice_id)})
+            except:
+                pass
+                
+        if not header:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+        
+        # Verificar ownership
+        owner = (user.get('email') or '').lower()
+        if header.get("owner_email") != owner:
+            # Si el usuario es admin, permitir
+            user_repo = UserRepository()
+            if not user_repo.is_admin(owner):
+                raise HTTPException(status_code=403, detail="Acceso denegado")
+            
+        minio_key = header.get("minio_key")
+        if not minio_key:
+            return {"success": False, "message": "Archivo no disponible en el almacenamiento seguro"}
+            
+        # Generar Signed URL
+        # Re-importar para asegurar acceso si no estamos en scope gol
+        try:
+            from minio import Minio
+        except ImportError:
+            return {"success": False, "message": "Librería MinIO no instalada"}
+
+        if not Minio or not settings.MINIO_ACCESS_KEY:
+             return {"success": False, "message": "Almacenamiento seguro no configurado"}
+             
+        client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+            region=settings.MINIO_REGION
+        )
+        
+        url = client.get_presigned_url(
+            "GET",
+            settings.MINIO_BUCKET,
+            minio_key,
+            expires=timedelta(hours=1)
+        )
+        
+        return {
+            "success": True,
+            "download_url": url,
+            "filename": minio_key.split("/")[-1]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generando download url: {e}")
+        raise HTTPException(status_code=500, detail="Error descarga")
+
 # Endpoint para estadísticas filtradas con fecha
 @app.get("/admin/stats/filtered", tags=["Admin - Stats"])
 async def admin_get_filtered_stats(
@@ -2931,6 +3125,171 @@ async def admin_get_scheduler_status(admin: Dict[str, Any] = Depends(_get_curren
     except Exception as e:
         logger.error(f"Error obteniendo estado del scheduler: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo estado del scheduler")
+
+# ==========================================
+# DASHBOARD ENDPOINTS (User)
+# ==========================================
+
+@app.get("/dashboard/stats")
+async def get_dashboard_stats(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtiene estadísticas generales para el dashboard."""
+    try:
+        user_repo = UserRepository()
+        repo = MongoInvoiceRepository()
+        owner_email = (user.get('email') or '').lower()
+        
+        # Filtro base
+        q = {"owner_email": owner_email} if owner_email else {}
+        
+        # Total facturas
+        total_invoices = repo._headers().count_documents(q)
+        
+        # Total monto
+        pipeline = [
+            {"$match": q},
+            {"$group": {"_id": None, "total_amount": {"$sum": "$totales.total"}, "avg_amount": {"$avg": "$totales.total"}}}
+        ]
+        res = list(repo._headers().aggregate(pipeline))
+        stats = res[0] if res else {"total_amount": 0, "avg_amount": 0}
+        
+        return {
+            "success": True,
+            "stats": {
+                "total_invoices": total_invoices,
+                "total_amount": stats.get("total_amount", 0),
+                "average_amount": stats.get("avg_amount", 0)
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error dashboard stats: {e}")
+        return {"success": False, "stats": {"total_invoices": 0, "total_amount": 0, "average_amount": 0}}
+
+@app.get("/dashboard/monthly-stats")
+async def get_dashboard_monthly(user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtiene evolución mensual de inversión (usando fecha_emision)."""
+    try:
+        repo = MongoInvoiceRepository()
+        owner_email = (user.get('email') or '').lower()
+        q = {"owner_email": owner_email} if owner_email else {}
+        
+        # Filter > 12 months ago
+        from datetime import datetime, timedelta
+        start_date = datetime.now() - timedelta(days=365)
+        
+        # Asegurar que fecha_emision existe y es > start_date
+        q["fecha_emision"] = {"$gte": start_date}
+
+        pipeline = [
+             {"$match": q},
+             {
+                "$group": {
+                    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$fecha_emision"}},
+                    "total_amount": {"$sum": "$totales.total"},
+                    "count": {"$sum": 1}
+                }
+            },
+            {"$sort": {"_id": 1}}
+        ]
+
+        data = list(repo._headers().aggregate(pipeline))
+        monthly_data = [
+            {"year_month": d["_id"], "total_amount": d["total_amount"], "count": d["count"]}
+            for d in data
+        ]
+        
+        return {"success": True, "monthly_data": monthly_data}
+    except Exception as e:
+        logger.error(f"Error dashboard monthly: {e}")
+        return {"success": False, "monthly_data": []}
+
+@app.get("/dashboard/top-emisores")
+async def get_dashboard_top_emisores(user: Dict[str, Any] = Depends(_get_current_user)):
+    try:
+        repo = MongoInvoiceRepository()
+        owner_email = (user.get('email') or '').lower()
+        q = {"owner_email": owner_email} if owner_email else {}
+        
+        pipeline = [
+            {"$match": q},
+            {
+                "$group": {
+                    "_id": "$emisor.nombre",
+                    "total_amount": {"$sum": "$totales.total"},
+                    "count": {"$sum": 1}
+                }
+            },
+            {"$sort": {"total_amount": -1}},
+            {"$limit": 5}
+        ]
+        data = list(repo._headers().aggregate(pipeline))
+        top = [
+            {"nombre": d["_id"] or "Desconocido", "total_amount": d["total_amount"], "count": d["count"]}
+            for d in data
+        ]
+        return {"success": True, "top_emisores": top}
+    except Exception as e:
+        logger.error(f"Error dashboard top emisores: {e}")
+        return {"success": False, "top_emisores": []}
+
+@app.get("/dashboard/recent-invoices")
+async def get_dashboard_recent(user: Dict[str, Any] = Depends(_get_current_user)):
+    try:
+        repo = MongoInvoiceRepository()
+        owner_email = (user.get('email') or '').lower()
+        q = {"owner_email": owner_email} if owner_email else {}
+        
+        cursor = repo._headers().find(q).sort("fecha_emision", -1).limit(5)
+        invoices = []
+        for doc in cursor:
+            # Fallback a totales.total si monto_total no existe
+            monto = doc.get("monto_total")
+            if monto is None or monto == 0:
+                monto = doc.get("totales", {}).get("total", 0)
+                
+            invoices.append({
+                "id": str(doc["_id"]),
+                "numero_documento": doc.get("numero_documento"),
+                "emisor": doc.get("emisor", {}).get("nombre"),
+                "monto_total": monto,
+                "fecha_emision": doc.get("fecha_emision"),
+                "moneda": doc.get("moneda", "GS")
+            })
+        return {"success": True, "invoices": invoices}
+    except Exception as e:
+        logger.error(f"Error dashboard recent: {e}")
+        return {"success": False, "invoices": []}
+
+@app.get("/dashboard/system-status")
+async def get_dashboard_system_status(user: Dict[str, Any] = Depends(_get_current_user)):
+    try:
+         owner_email = (user.get('email') or '').lower()
+         
+         # Safely get email configs
+         email_configs = []
+         try:
+            email_configs = db_list_configs(include_password=False, owner_email=owner_email)
+         except Exception as db_err:
+            logger.error(f"Error DB listing configs: {db_err}")
+            
+         # Check OpenAI Key
+         openai_key = getattr(settings, "OPENAI_API_KEY", "")
+         masked_key = f"{openai_key[:5]}...({len(str(openai_key))})" if openai_key else "None"
+         logger.info(f"🔍 DEBUG SYSTEM STATUS: OpenAI Key: {masked_key}")
+         openai_ok = bool(openai_key and len(str(openai_key)) > 10)
+
+         return {
+             "success": True,
+             "status": {
+                 "email_configured": len(email_configs) > 0,
+                 "email_configs_count": len(email_configs),
+                 "openai_configured": openai_ok
+             }
+         }
+    except Exception as e:
+        logger.error(f"Error dashboard system status: {e}")
+        # Return partial success to avoid frontend blanking out everything if possible, 
+        # but frontend checks success=True. 
+        return {"success": False, "status": {"openai_configured": False, "email_configured": False}}
 
 def start():
     """Inicia el servidor API."""

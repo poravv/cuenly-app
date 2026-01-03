@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     JOB_MAX_RUNTIME_HOURS: int = int(os.getenv("JOB_MAX_RUNTIME_HOURS", 24))  # Parar job después de 24 horas
     JOB_REST_PERIOD_HOURS: int = int(os.getenv("JOB_REST_PERIOD_HOURS", 2))  # Descansar 2 horas después de 24h
     MANUAL_PROCESS_LIMIT: int = int(os.getenv("MANUAL_PROCESS_LIMIT", 10))  # Límite de facturas por proceso manual
+
+    # MinIO / S3 Storage
+    MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "minpoint.mindtechpy.net")
+    MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "")
+    MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "")
+    MINIO_BUCKET: str = os.getenv("MINIO_BUCKET", "bk-invoice")
+    MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "true").lower() in ("1", "true", "yes")
+    MINIO_REGION: str = os.getenv("MINIO_REGION", "py-east-1")
     
     model_config = {
         "env_file": ".env",

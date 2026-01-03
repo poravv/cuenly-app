@@ -4,14 +4,32 @@ import time
 import uuid
 import hashlib
 import logging
+import io
 from datetime import datetime
-from typing import Tuple
+from typing import Tuple, Optional, Union
+from dataclasses import dataclass
+
+try:
+    from minio import Minio
+    from minio.error import S3Error
+except ImportError:
+    Minio = None
+    S3Error = None
 
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 _FALLBACK_DIR = "/tmp/cuenlyapp/temp_pdfs"
+
+@dataclass
+class StoragePath:
+    local_path: str
+    minio_key: str = ""
+    minio_url: str = "" # Signed or public URL (optional usage)
+
+    def __str__(self):
+        return self.local_path
 
 def _ensure_dir(path: str) -> bool:
     """Crea el directorio y valida escritura básica."""
@@ -84,20 +102,81 @@ def _resolve_base_dir() -> str:
     # Intentar usar el configurado; si no se puede escribir, usar fallback
     return ensure_dirs()
 
-def save_binary(content: bytes, filename: str, force_pdf: bool = False) -> str:
-    """Guarda bytes en /temp_pdfs con nombre único."""
+def upload_to_minio(content: bytes, filename: str, owner_email: Optional[str] = None, date_obj: Optional[datetime] = None) -> Tuple[str, str]:
+    """Sube archivo a MinIO y retorna (key, url). Si falla retorna ('', '')."""
+    if not Minio or not settings.MINIO_ACCESS_KEY:
+        return "", ""
+
     try:
+        client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+            region=settings.MINIO_REGION
+        )
+
+        # Structure: /YYYY/user_id/month/filename
+        # user_id sanitizado
+        clean_user = re.sub(r"[^a-zA-Z0-9_\-\.@]", "_", owner_email or "anonymous")
+        dt = date_obj or datetime.now()
+        year = dt.strftime("%Y")
+        month = dt.strftime("%m")
+        clean_fname = sanitize_filename(filename)
+        
+        # Generar nombre único si es necesario, pero intentamos mantener nombre original si se puede
+        # Agregamos timestamp minúsculo al principio para evitar colisiones en nombres comunes
+        ts_small = datetime.now().strftime("%d%H%M")
+        object_name = f"{year}/{clean_user}/{month}/{ts_small}_{clean_fname}"
+
+        if not client.bucket_exists(settings.MINIO_BUCKET):
+            client.make_bucket(settings.MINIO_BUCKET)
+        
+        # Upload
+        client.put_object(
+            settings.MINIO_BUCKET,
+            object_name,
+            io.BytesIO(content),
+            len(content),
+            content_type="application/pdf" if filename.lower().endswith(".pdf") else "application/xml"
+        )
+        
+        logger.info(f"☁️ Subido a MinIO: {object_name}")
+        return object_name, "" # URL will be generated on demand via presigned url
+        
+    except Exception as e:
+        logger.error(f"❌ MinIO upload error: {e}")
+        return "", ""
+
+def save_binary(
+    content: bytes, 
+    filename: str, 
+    force_pdf: bool = False, 
+    owner_email: Optional[str] = None, 
+    date_obj: Optional[datetime] = None
+) -> StoragePath:
+    """Guarda bytes en /temp_pdfs y opcionalmente en MinIO. Retorna StoragePath."""
+    try:
+        # 1. Guardar Localmente (Temp)
         base_dir = ensure_dirs()
         clean = sanitize_filename(filename, force_pdf=force_pdf)
         candidate = unique_name(clean)
-        path = os.path.join(base_dir, candidate)
-        with open(path, "wb") as f:
+        local_path = os.path.join(base_dir, candidate)
+        
+        with open(local_path, "wb") as f:
             f.write(content)
-        logger.info(f"🗂 Archivo guardado: {path}")
-        return path
+        logger.info(f"🗂 Archivo temp guardado: {local_path}")
+        
+        # 2. Subir a MinIO (si configurado)
+        minio_key = ""
+        if settings.MINIO_ACCESS_KEY:
+             minio_key, _ = upload_to_minio(content, clean, owner_email, date_obj)
+             
+        return StoragePath(local_path=local_path, minio_key=minio_key)
+        
     except Exception as e:
         logger.error(f"❌ Error al guardar archivo {filename}: {e}")
-        return ""
+        return StoragePath(local_path="")
 
 def cleanup_temp_dir(older_than_hours: int = 24) -> int:
     """Elimina archivos en el dir temporal más viejo que X horas."""

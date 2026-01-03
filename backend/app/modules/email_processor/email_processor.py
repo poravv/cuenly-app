@@ -791,16 +791,34 @@ class EmailProcessor:
                 is_xml = fname.endswith(".xml") or ctype in (
                     "text/xml", "application/xml", "application/x-iso20022+xml", "application/x-invoice+xml"
                 )
+                
+                # Usar owner_email y date para MinIO structure
                 if is_xml:
-                    xml_path = save_binary(content, fname)
+                    xml_storage = save_binary(
+                        content, fname, 
+                        owner_email=self.owner_email, 
+                        date_obj=metadata.get("date")
+                    )
+                    xml_path = xml_storage.local_path
+                    # Guardamos referencia para asignar después
+                    xml_minio_key = xml_storage.minio_key
+                    
                 elif is_pdf:
-                    pdf_path = save_binary(content, fname, force_pdf=True)
+                    pdf_storage = save_binary(
+                        content, fname, force_pdf=True,
+                        owner_email=self.owner_email,
+                        date_obj=metadata.get("date")
+                    )
+                    pdf_path = pdf_storage.local_path
+                    pdf_minio_key = pdf_storage.minio_key
             
             # Procesar con prioridad: XML > PDF > Enlaces
             # XML primero
             if xml_path:
                 inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
                 if inv:
+                    if 'xml_minio_key' in locals() and xml_minio_key:
+                        inv.minio_key = xml_minio_key
                     self._mark_email_processed(email_id, "xml")
                     return inv
 
@@ -808,6 +826,8 @@ class EmailProcessor:
             if pdf_path:
                 inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
                 if inv:
+                    if 'pdf_minio_key' in locals() and pdf_minio_key:
+                         inv.minio_key = pdf_minio_key
                     self._mark_email_processed(email_id, "pdf")
                     return inv
 
@@ -815,18 +835,31 @@ class EmailProcessor:
             if metadata.get("links"):
                 for link in metadata["links"]:
                     try:
-                        downloaded_path = download_pdf_from_url(link)
-                        if downloaded_path:
-                            if downloaded_path.lower().endswith(".xml"):
-                                inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
-                            elif downloaded_path.lower().endswith(".pdf"):
-                                inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
-                            else:
-                                continue
-                            if inv:
-                                self._mark_email_processed(email_id, "link")
-                                return inv
-                    except Exception:
+                        # download_pdf_from_url ahora retorna StoragePath (porque save_binary lo hace)
+                        storage_result = download_pdf_from_url(link)
+                        
+                        # Manejar si devuelve objeto o string vacío (fallo)
+                        if not storage_result or not hasattr(storage_result, "local_path"):
+                             continue
+                             
+                        downloaded_path = storage_result.local_path
+                        if not downloaded_path:
+                             continue
+
+                        if downloaded_path.lower().endswith(".xml"):
+                            inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                        elif downloaded_path.lower().endswith(".pdf"):
+                            inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                        else:
+                            continue
+                            
+                        if inv:
+                            if storage_result.minio_key:
+                                inv.minio_key = storage_result.minio_key
+                            self._mark_email_processed(email_id, "link")
+                            return inv
+                    except Exception as e:
+                        logger.error(f"Error procesando enlace {link}: {e}")
                         continue
 
             # Si llegamos aquí, no se pudo extraer la factura

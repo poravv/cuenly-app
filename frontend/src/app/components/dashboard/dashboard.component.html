@@ -215,7 +215,8 @@
           </div>
         </div>
         <div class="card-body">
-          <div *ngIf="monthlyData && monthlyData.length > 0" style="height: 300px; display: block;">
+          <div *ngIf="monthlyData && monthlyData.length > 0" class="chart-container"
+            style="position: relative; height: 350px; width: 100%;">
             <canvas baseChart [data]="lineChartData" [options]="lineChartOptions" [type]="lineChartType">
             </canvas>
           </div>
@@ -321,14 +322,18 @@
               </div>
               <div class="flex-grow-1">
                 <div class="fw-semibold text-truncate" style="max-width: 150px;">
-                  {{ invoice.emisor_nombre || invoice.emisor?.nombre || 'Sin emisor' }}
+                  {{ invoice.emisor || invoice.emisor_nombre || 'Sin emisor' }}
                 </div>
                 <small class="text-muted">{{ formatDate(invoice.fecha_emision || invoice.fecha || '') }}</small>
               </div>
               <div class="text-end">
                 <div class="fw-bold text-success small">{{ formatCurrency(invoice.monto_total || invoice.totales?.total
                   || 0) }}</div>
-                <small class="text-muted">{{ invoice.numero_documento || invoice._id || 'N/A' }}</small>
+                <small class="text-muted d-block mb-1">{{ invoice.numero_documento || invoice._id || 'N/A' }}</small>
+                <button class="btn btn-sm btn-light py-0 px-2 text-primary"
+                  (click)="downloadInvoice(invoice.id || invoice._id, $event)" title="Descargar">
+                  <i class="bi bi-download"></i>
+                </button>
               </div>
             </div>
           </div>

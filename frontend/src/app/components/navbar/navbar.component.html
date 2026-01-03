@@ -63,36 +63,13 @@
           </a>
         </li>
 
-        <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"
-            id="uploadDropdown">
-            <i class="bi bi-upload"></i>
-            Cargar Archivos
+        <li class="nav-item">
+          <input #fileInput type="file" class="d-none" accept=".pdf,.xml,image/jpeg,image/png,image/webp"
+            (change)="onFileSelected($event)">
+          <a class="nav-link" href="javascript:void(0)" (click)="fileInput.click()">
+            <i class="bi bi-cloud-upload me-1"></i>
+            Subir Archivo
           </a>
-          <ul class="dropdown-menu" aria-labelledby="uploadDropdown">
-            <li>
-              <a class="dropdown-item" routerLink="/upload">
-                <i class="bi bi-file-earmark-pdf me-2"></i>
-                Subir PDF
-              </a>
-            </li>
-            <li>
-              <a class="dropdown-item" routerLink="/upload-xml">
-                <i class="bi bi-file-earmark-code me-2"></i>
-                Subir XML
-              </a>
-            </li>
-            <li>
-              <hr class="dropdown-divider">
-            </li>
-            <li>
-              <button class="dropdown-item" (click)="imageInput.click()">
-                <i class="bi bi-file-image me-2"></i>
-                Subir Imagen
-              </button>
-              <input #imageInput type="file" class="d-none" accept="image/*" (change)="onImageSelected($event)">
-            </li>
-          </ul>
         </li>
 
       </ul>
@@ -307,3 +284,46 @@
 
 <!-- Trial Banner -->
 <app-trial-banner *ngIf="user"></app-trial-banner>
+
+<!-- Upload Progress Overlay -->
+<!-- Upload Progress Overlay -->
+<div class="upload-overlay" *ngIf="isUploading">
+  <div class="upload-content">
+
+    <!-- Processing State -->
+    <div *ngIf="uploadState === 'processing'">
+      <div class="spinner-container">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Procesando...</span>
+        </div>
+      </div>
+      <h4 class="mb-2">Subiendo Archivo</h4>
+      <p class="text-muted">{{ uploadMessage }}</p>
+    </div>
+
+    <!-- Success State -->
+    <div *ngIf="uploadState === 'success'">
+      <div class="icon-container">
+        <i class="bi bi-check-circle-fill success-icon"></i>
+      </div>
+      <h4 class="mb-2">¡Completado!</h4>
+      <p class="text-muted mb-4">{{ uploadMessage }}</p>
+      <button class="btn btn-success w-100 py-2" (click)="closeUploadModal()">
+        <i class="bi bi-eye me-2"></i> Ver Factura
+      </button>
+    </div>
+
+    <!-- Error State -->
+    <div *ngIf="uploadState === 'error'">
+      <div class="icon-container lead">
+        <i class="bi bi-x-circle-fill error-icon"></i>
+      </div>
+      <h4 class="mb-2">Error</h4>
+      <p class="text-muted mb-4 text-break">{{ uploadMessage }}</p>
+      <button class="btn btn-outline-secondary w-100" (click)="closeUploadModal()">
+        Cerrar
+      </button>
+    </div>
+
+  </div>
+</div>

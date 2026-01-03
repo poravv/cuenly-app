@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { ApiService } from '../../services/api.service';
+import { NotificationService } from '../../services/notification.service';
 
 interface MonthlyStats {
   year_month: string;
@@ -57,7 +58,7 @@ export class InvoiceExplorerComponent implements OnInit {
 
   // Descargas de Excel eliminadas
 
-  constructor(private http: HttpClient, private api: ApiService) { }
+  constructor(private http: HttpClient, private api: ApiService, private notificationService: NotificationService) { }
 
   ngOnInit(): void {
     this.loadAvailableMonths();
@@ -222,5 +223,26 @@ export class InvoiceExplorerComponent implements OnInit {
     } catch {
       return yearMonth;
     }
+  }
+
+  downloadInvoice(headerId: string, event: Event): void {
+    event.stopPropagation();
+    if (!headerId) return;
+
+    this.notificationService.info('Generando enlace de descarga...', 'Procesando');
+
+    this.api.downloadInvoice(headerId).subscribe({
+      next: (res) => {
+        if (res.success && res.download_url) {
+          window.open(res.download_url, '_blank');
+        } else {
+          this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
+        }
+      },
+      error: (err) => {
+        console.error("Error descarga:", err);
+        this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
+      }
+    });
   }
 }

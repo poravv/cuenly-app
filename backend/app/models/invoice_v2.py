@@ -63,6 +63,7 @@ class InvoiceHeader(BaseModel):
     email_origen: Optional[str] = ""
     mes_proceso: Optional[str] = ""
     fuente: Optional[str] = ""  # XML_NATIVO / OPENAI_VISION
+    minio_key: Optional[str] = ""
     owner_email: Optional[str] = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

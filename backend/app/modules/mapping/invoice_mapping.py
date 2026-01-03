@@ -16,7 +16,7 @@ def _split_numero(numero: Optional[str]) -> Tuple[str, str, str, str]:
     return "", "", numero, numero
 
 
-def map_invoice(invoice: InvoiceData, fuente: str = "") -> InvoiceDocument:
+def map_invoice(invoice: InvoiceData, fuente: str = "", minio_key: str = "") -> InvoiceDocument:
     est, pto, num, full = _split_numero(getattr(invoice, "numero_factura", ""))
     fecha: Optional[datetime] = getattr(invoice, "fecha", None)
     if fecha and isinstance(fecha, str):
@@ -72,7 +72,8 @@ def map_invoice(invoice: InvoiceData, fuente: str = "") -> InvoiceDocument:
         ),
         email_origen=getattr(invoice, "email_origen", ""),
         mes_proceso=getattr(invoice, "mes_proceso", ""),
-        fuente=fuente
+        fuente=fuente,
+        minio_key=minio_key
     )
 
     items: List[InvoiceDetail] = []
