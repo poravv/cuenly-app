@@ -196,7 +196,7 @@ jobs:
         run: |
           cd frontend
           # Intentar npm ci primero, si falla usar npm install
-          npm ci || npm install
+          npm ci || npm install --legacy-peer-deps
           
       - name: Run frontend tests
         run: |
