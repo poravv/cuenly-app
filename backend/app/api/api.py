@@ -73,7 +73,12 @@ app.add_middleware(ObservabilityMiddleware)
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, limitar a dominios específicos
+    allow_origins=[
+        "https://app.cuenly.com",
+        "http://localhost:4200", 
+        "http://localhost",
+        "http://127.0.0.1"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -870,13 +875,15 @@ async def enqueue_upload_pdf(
                 except Exception as e:
                     logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
 
-        if not invoices:
-            return job_response(False, "No se pudo extraer información del PDF")
-            
-        return job_response(True, "PDF procesado correctamente", invoice_count=1)
+            if not invoices:
+                return ProcessResult(success=False, message="No se pudo extraer información del PDF")
+            return ProcessResult(success=True, message="PDF procesado correctamente", invoice_count=1, invoices=invoices)
 
-    job_id = task_queue.enqueue("process_pdf_manual", _runner)
-    return {"job_id": job_id}
+        job_id = task_queue.enqueue("process_pdf_manual", _runner)
+        return {"job_id": job_id}
+    except Exception as e:
+        logger.error(f"Error encolando PDF: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload-image", response_model=ProcessResult)
 async def upload_image(
@@ -945,26 +952,9 @@ async def upload_image(
     except Exception as e:
         logger.error(f"Error al procesar imagen: {str(e)}")
         return ProcessResult(success=False, message=f"Error: {str(e)}")
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (tasks upload PDF): {e}")
-            return ProcessResult(
-                success=bool(invoices),
-                message=("Factura procesada y almacenada " if invoices else "No se pudo extraer factura"),
-                invoice_count=len(invoices),
-                invoices=invoices
-            )
 
-        job_id = task_queue.enqueue("upload_pdf", _runner)
-        return {"job_id": job_id}
-    except Exception as e:
-        logger.error(f"Error al encolar PDF: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @app.post("/tasks/upload-xml")
 async def enqueue_upload_xml(

@@ -39,7 +39,7 @@
 
   <!-- Main Content -->
   <div *ngIf="!loading || availableMonths.length" class="row">
-    
+
     <!-- Left Panel - Meses Disponibles -->
     <div class="col-md-4">
       <div class="card">
@@ -50,7 +50,7 @@
           </h5>
         </div>
         <div class="card-body p-0">
-          
+
           <!-- No data state -->
           <div *ngIf="!availableMonths.length && !loading" class="text-center py-4">
             <i class="bi bi-inbox display-6 text-muted"></i>
@@ -63,13 +63,10 @@
 
           <!-- Months list -->
           <div *ngIf="availableMonths.length" class="list-group list-group-flush">
-            <button 
-              *ngFor="let month of availableMonths; trackBy: trackByMonth"
-              type="button"
-              class="list-group-item list-group-item-action"
-              [class.active]="selectedMonth === month.year_month"
+            <button *ngFor="let month of availableMonths; trackBy: trackByMonth" type="button"
+              class="list-group-item list-group-item-action" [class.active]="selectedMonth === month.year_month"
               (click)="selectMonth(month.year_month)">
-              
+
               <div class="d-flex justify-content-between align-items-start">
                 <div class="flex-grow-1">
                   <h6 class="mb-1">{{ formatMonthName(month.year_month) }}</h6>
@@ -91,7 +88,7 @@
 
     <!-- Right Panel - Detalles y Acciones -->
     <div class="col-md-8">
-      
+
       <!-- Selection prompt -->
       <div *ngIf="!selectedMonth" class="card">
         <div class="card-body text-center py-5">
@@ -103,7 +100,7 @@
 
       <!-- Month Details -->
       <div *ngIf="selectedMonth && monthStatistics" class="space-y-4">
-        
+
         <!-- Stats Cards -->
         <div class="row g-3 mb-4">
           <div class="col-sm-6 col-xl-3">
@@ -119,7 +116,7 @@
               </div>
             </div>
           </div>
-          
+
           <div class="col-sm-6 col-xl-3">
             <div class="card bg-success text-white">
               <div class="card-body">
@@ -133,7 +130,7 @@
               </div>
             </div>
           </div>
-          
+
           <div class="col-sm-6 col-xl-3">
             <div class="card bg-info text-white">
               <div class="card-body">
@@ -147,7 +144,7 @@
               </div>
             </div>
           </div>
-          
+
           <div class="col-sm-6 col-xl-3">
             <div class="card bg-warning text-white">
               <div class="card-body">
@@ -210,20 +207,20 @@
                     </tr>
                     <tr>
                       <td><strong>Período:</strong></td>
-                      <td>{{ formatDate(monthStatistics.primera_factura) }} - {{ formatDate(monthStatistics.ultima_factura) }}</td>
+                      <td>{{ formatDate(monthStatistics.primera_factura) }} - {{
+                        formatDate(monthStatistics.ultima_factura) }}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
               <div class="col-md-6">
-                
+
                 <!-- Quality Indicators -->
                 <div class="mb-3">
                   <label class="form-label small">Calidad de Datos</label>
                   <div class="progress mb-1" style="height: 6px;">
-                    <div class="progress-bar" 
-                         [class]="'bg-' + getQualityColor(monthStatistics.porcentaje_cdc)" 
-                         [style.width.%]="monthStatistics.porcentaje_cdc">
+                    <div class="progress-bar" [class]="'bg-' + getQualityColor(monthStatistics.porcentaje_cdc)"
+                      [style.width.%]="monthStatistics.porcentaje_cdc">
                     </div>
                   </div>
                   <small class="text-muted">CDC: {{ monthStatistics.porcentaje_cdc }}%</small>
@@ -231,8 +228,7 @@
 
                 <div class="mb-3">
                   <div class="progress mb-1" style="height: 6px;">
-                    <div class="progress-bar bg-secondary" 
-                         [style.width.%]="monthStatistics.porcentaje_timbrado">
+                    <div class="progress-bar bg-secondary" [style.width.%]="monthStatistics.porcentaje_timbrado">
                     </div>
                   </div>
                   <small class="text-muted">Timbrado: {{ monthStatistics.porcentaje_timbrado }}%</small>
@@ -254,7 +250,7 @@
           </div>
         </div>
 
-        
+
       </div>
 
       <!-- Loading month details -->
@@ -266,7 +262,7 @@
           <p class="mt-3 text-muted">Cargando estadísticas del mes...</p>
         </div>
       </div>
-      
+
       <!-- V2: Headers e Items -->
       <div class="card mt-3" *ngIf="selectedMonth">
         <div class="card-header d-flex justify-content-between align-items-center">
@@ -281,7 +277,7 @@
         </div>
         <div class="card-body">
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle mb-0">
               <thead>
                 <tr>
                   <th>Fecha</th>
@@ -293,48 +289,76 @@
                 </tr>
               </thead>
               <tbody>
-                <tr *ngFor="let h of v2Headers">
-                  <td>{{ formatDate(h.fecha_emision) }}</td>
-                  <td>{{ h.numero_documento }}</td>
-                  <td>{{ h.emisor?.nombre }}</td>
-                  <td>{{ h.receptor?.nombre }}</td>
-                  <td>{{ formatCurrency(h.totales?.total || 0) }}</td>
-                  <td class="text-end">
-                    <button class="btn btn-outline-primary btn-sm" (click)="viewV2Invoice(h.id)">Ver</button>
-                  </td>
-                </tr>
+                <ng-container *ngFor="let h of v2Headers">
+                  <!-- Main Row -->
+                  <tr [class.table-active]="expandedInvoiceId === h.id">
+                    <td>{{ formatDate(h.fecha_emision) }}</td>
+                    <td>{{ h.numero_documento }}</td>
+                    <td>{{ h.emisor?.nombre }}</td>
+                    <td>{{ h.receptor?.nombre }}</td>
+                    <td>{{ formatCurrency(h.totales?.total || 0) }}</td>
+                    <td class="text-end">
+                      <button class="btn btn-sm" [class.btn-primary]="expandedInvoiceId === h.id"
+                        [class.btn-outline-primary]="expandedInvoiceId !== h.id" (click)="viewV2Invoice(h.id)">
+                        {{ expandedInvoiceId === h.id ? 'Ocultar' : 'Ver' }}
+                      </button>
+                    </td>
+                  </tr>
+
+                  <!-- Details Row -->
+                  <tr *ngIf="expandedInvoiceId === h.id" class="bg-light">
+                    <td colspan="6" class="p-3">
+                      <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                          <h6 class="card-title text-primary mb-3">
+                            <i class="bi bi-list-check me-2"></i>
+                            Detalle de Factura ({{ h.numero_documento }})
+                          </h6>
+
+                          <div *ngIf="!v2Items.length && !v2Header" class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                            <span class="ms-2">Cargando ítems...</span>
+                          </div>
+
+                          <div class="table-responsive" *ngIf="v2Items.length > 0">
+                            <table class="table table-sm table-borderless align-middle mb-0">
+                              <thead class="text-muted border-bottom">
+                                <tr>
+                                  <th>#</th>
+                                  <th>Descripción</th>
+                                  <th class="text-end">Cant.</th>
+                                  <th>Unidad</th>
+                                  <th class="text-end">P. Unit</th>
+                                  <th class="text-end">Total</th>
+                                  <th>IVA</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr *ngFor="let it of v2Items">
+                                  <td>{{ it.linea }}</td>
+                                  <td>{{ it.descripcion }}</td>
+                                  <td class="text-end">{{ it.cantidad }}</td>
+                                  <td>{{ it.unidad }}</td>
+                                  <td class="text-end">{{ formatCurrency(it.precio_unitario) }}</td>
+                                  <td class="text-end fw-semibold">{{ formatCurrency(it.total) }}</td>
+                                  <td><span class="badge bg-light text-dark border">{{ it.iva }}%</span></td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div *ngIf="v2Items.length === 0 && v2Header" class="text-center text-muted py-2">
+                            <small>No hay ítems registrados para esta factura.</small>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </ng-container>
               </tbody>
             </table>
           </div>
-          <div class="mt-3" *ngIf="v2Header">
-            <h6>Detalle ({{ v2Header.numero_documento }})</h6>
-            <div class="table-responsive">
-              <table class="table table-sm align-middle">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Descripción</th>
-                    <th class="text-end">Cant.</th>
-                    <th>Unidad</th>
-                    <th class="text-end">P. Unit</th>
-                    <th class="text-end">Total</th>
-                    <th>IVA</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr *ngFor="let it of v2Items">
-                    <td>{{ it.linea }}</td>
-                    <td>{{ it.descripcion }}</td>
-                    <td class="text-end">{{ it.cantidad }}</td>
-                    <td>{{ it.unidad }}</td>
-                    <td class="text-end">{{ formatCurrency(it.precio_unitario) }}</td>
-                    <td class="text-end">{{ formatCurrency(it.total) }}</td>
-                    <td>{{ it.iva }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <!-- Removed detached details section -->
         </div>
       </div>
     </div>
