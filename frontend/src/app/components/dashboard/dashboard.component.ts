@@ -190,11 +190,11 @@ export class DashboardComponent implements OnInit {
     try {
       this.loading = true;
 
-      const stats$ = this.http.get<{ success: boolean, stats: DashboardStats }>(`${this.apiUrl} /dashboard/stats`);
-      const monthly$ = this.http.get<{ success: boolean, monthly_data: MonthlyData[] }>(`${this.apiUrl} /dashboard/monthly - stats`);
-      const topEmisors$ = this.http.get<{ success: boolean, top_emisores: TopEmisor[] }>(`${this.apiUrl} /dashboard/top - emisores`);
-      const recent$ = this.http.get<{ success: boolean, invoices: RecentInvoice[] }>(`${this.apiUrl} /dashboard/recent - invoices`);
-      const status$ = this.http.get<{ success: boolean, status: SystemStatus }>(`${this.apiUrl} /dashboard/system - status`);
+      const stats$ = this.http.get<{ success: boolean, stats: DashboardStats }>(`${this.apiUrl}/dashboard/stats`);
+      const monthly$ = this.http.get<{ success: boolean, monthly_data: MonthlyData[] }>(`${this.apiUrl}/dashboard/monthly-stats`);
+      const topEmisors$ = this.http.get<{ success: boolean, top_emisores: TopEmisor[] }>(`${this.apiUrl}/dashboard/top-emisores`);
+      const recent$ = this.http.get<{ success: boolean, invoices: RecentInvoice[] }>(`${this.apiUrl}/dashboard/recent-invoices`);
+      const status$ = this.http.get<{ success: boolean, status: SystemStatus }>(`${this.apiUrl}/dashboard/system-status`);
 
       forkJoin([stats$, monthly$, topEmisors$, recent$, status$]).subscribe({
         next: ([statsRes, monthlyRes, topRes, recentRes, statusRes]) => {
