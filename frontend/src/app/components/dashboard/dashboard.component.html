@@ -330,8 +330,8 @@
                 <div class="fw-bold text-success small">{{ formatCurrency(invoice.monto_total || invoice.totales?.total
                   || 0) }}</div>
                 <small class="text-muted d-block mb-1">{{ invoice.numero_documento || invoice._id || 'N/A' }}</small>
-                <button class="btn btn-sm btn-light py-0 px-2 text-primary"
-                  (click)="downloadInvoice(invoice.id || invoice._id, $event)" title="Descargar">
+                <button class="btn btn-sm btn-light py-0 px-2 text-primary" (click)="downloadInvoice(invoice, $event)"
+                  title="Descargar">
                   <i class="bi bi-download"></i>
                 </button>
               </div>
