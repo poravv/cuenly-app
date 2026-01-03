@@ -6,6 +6,7 @@ import { UserService, UserProfile } from '../../services/user.service';
 import { FirebaseService } from '../../services/firebase.service';
 import { User } from 'firebase/auth';
 import { Router } from '@angular/router';
+import { ToastrService } from 'ngx-toastr';
 
 @Component({
   selector: 'app-navbar',
@@ -20,17 +21,18 @@ export class NavbarComponent implements OnInit, OnDestroy {
   isProfileDropdownOpen = false;
 
   constructor(
-    private api: ApiService, 
-    private auth: AuthService, 
+    private api: ApiService,
+    private auth: AuthService,
     private userService: UserService,
     private router: Router,
-    private firebase: FirebaseService
-  ) {}
+    private firebase: FirebaseService,
+    private toastr: ToastrService
+  ) { }
 
   ngOnInit(): void {
     // Hacer el componente accesible globalmente para debugging
     (window as any).navbarComponent = this;
-    
+
     // Reaccionar a cambios de autenticación
     this.auth.user$.subscribe(u => {
       this.user = u;
@@ -65,23 +67,23 @@ export class NavbarComponent implements OnInit, OnDestroy {
   }
 
   signIn(): void { this.auth.signInWithGoogle(); }
-  
+
   async signOut(): Promise<void> {
     try {
       console.log('🔐 Cerrando sesión...');
-      
+
       // Track logout
       this.firebase.trackLogout();
-      
+
       await this.auth.signOut();
       console.log('✅ Sesión cerrada correctamente');
-      
+
       // Pequeña pausa para asegurar que la limpieza esté completa
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Opcional: Mostrar mensaje al usuario
       console.log('💡 La próxima vez que inicies sesión podrás seleccionar una cuenta diferente');
-      
+
     } catch (error) {
       console.error('❌ Error al cerrar sesión:', error);
     } finally {
@@ -132,5 +134,54 @@ export class NavbarComponent implements OnInit, OnDestroy {
   onImageError(location: string, event: any): void {
     console.error(`❌ Error cargando imagen en: ${location}`, event);
     console.error('URL de la imagen que falló:', event.target?.src);
+  }
+
+  async onImageSelected(event: any): Promise<void> {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Reset validations
+    if (!file.type.startsWith('image/')) {
+      this.toastr.error('Por favor selecciona un archivo de imagen válido', 'Error');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      this.toastr.error('La imagen es demasiado grande (max 10MB)', 'Error');
+      return;
+    }
+
+    const toast = this.toastr.info('Procesando imagen...', 'Subiendo', {
+      disableTimeOut: true,
+      closeButton: false,
+      progressBar: true
+    });
+
+    try {
+      this.api.uploadImage(file).subscribe({
+        next: (response) => {
+          this.toastr.clear();
+          if (response.success) {
+            this.toastr.success(`Factura procesada correctamente. ID: ${response.invoice_id}`, 'Éxito');
+            // Opcional: Navegar a la factura
+            this.router.navigate(['/invoice-explorer']);
+          } else {
+            this.toastr.error(response.error || 'Error procesando la imagen', 'Error');
+          }
+        },
+        error: (err) => {
+          this.toastr.clear();
+          console.error('Upload error:', err);
+          this.toastr.error(err.error?.detail || 'Error al subir la imagen', 'Error');
+        }
+      });
+    } catch (error) {
+      this.toastr.clear();
+      console.error('Unexpected error:', error);
+      this.toastr.error('Ocurrió un error inesperado', 'Error');
+    }
+
+    // Reset file input
+    event.target.value = '';
   }
 }
