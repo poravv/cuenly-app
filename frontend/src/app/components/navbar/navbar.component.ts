@@ -15,6 +15,12 @@ import { ToastrService } from 'ngx-toastr';
 })
 export class NavbarComponent implements OnInit, OnDestroy {
   status: SystemStatus | null = null;
+  // Estado del Modal de Carga
+  isUploading = false;
+  uploadState: 'processing' | 'success' | 'error' = 'processing';
+  uploadMessage = '';
+  uploadedInvoiceId?: string;
+
   private intervalId: any;
   user: User | null = null;
   userProfile: UserProfile | null = null;
@@ -136,52 +142,79 @@ export class NavbarComponent implements OnInit, OnDestroy {
     console.error('URL de la imagen que falló:', event.target?.src);
   }
 
-  async onImageSelected(event: any): Promise<void> {
+  async onFileSelected(event: any): Promise<void> {
     const file = event.target.files[0];
     if (!file) return;
 
     // Reset validations
-    if (!file.type.startsWith('image/')) {
-      this.toastr.error('Por favor selecciona un archivo de imagen válido', 'Error');
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const isXml = file.type === 'text/xml' || file.type === 'application/xml' || file.name.toLowerCase().endsWith('.xml');
+    const isImage = file.type.startsWith('image/');
+
+    if (!isPdf && !isXml && !isImage) {
+      this.toastr.error('Formato no soportado. Usa PDF, XML o Imágenes.', 'Error');
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) { // 10MB limit
-      this.toastr.error('La imagen es demasiado grande (max 10MB)', 'Error');
+    if (file.size > 10 * 1024 * 1024) {
+      this.toastr.error('El archivo es demasiado grande (max 10MB)', 'Error');
       return;
     }
 
-    const toast = this.toastr.info('Procesando imagen...', 'Subiendo', {
-      disableTimeOut: true,
-      closeButton: false,
-      progressBar: true
-    });
+    // Iniciar Modal
+    this.isUploading = true;
+    this.uploadState = 'processing';
+    this.uploadMessage = `Procesando ${file.name}...`;
+    this.uploadedInvoiceId = undefined;
 
     try {
-      this.api.uploadImage(file).subscribe({
-        next: (response) => {
-          this.toastr.clear();
+      let upload$: any; // Observable
+
+      if (isPdf) {
+        upload$ = this.api.uploadPdf(file, {});
+      } else if (isXml) {
+        upload$ = this.api.uploadXml(file, {});
+      } else {
+        upload$ = this.api.uploadImage(file);
+      }
+
+      upload$.subscribe({
+        next: (response: any) => {
           if (response.success) {
-            this.toastr.success(`Factura procesada correctamente. ID: ${response.invoice_id}`, 'Éxito');
-            // Opcional: Navegar a la factura
-            this.router.navigate(['/invoice-explorer']);
+            this.uploadState = 'success';
+            this.uploadMessage = '¡Archivo procesado correctamente!';
+            this.uploadedInvoiceId = response.invoice_id || (response.invoices && response.invoices[0]?.id);
+
+            // Auto cerrar en 2s si es exitoso (opcional, o dejar botón)
+            // setTimeout(() => this.closeUploadModal(), 3000); 
           } else {
-            this.toastr.error(response.error || 'Error procesando la imagen', 'Error');
+            this.uploadState = 'error';
+            this.uploadMessage = response.message || response.error || 'Error procesando el archivo';
           }
         },
-        error: (err) => {
-          this.toastr.clear();
+        error: (err: any) => {
           console.error('Upload error:', err);
-          this.toastr.error(err.error?.detail || 'Error al subir la imagen', 'Error');
+          this.uploadState = 'error';
+          this.uploadMessage = err.error?.detail || 'Error al subir el archivo. Intenta de nuevo.';
         }
       });
     } catch (error) {
-      this.toastr.clear();
       console.error('Unexpected error:', error);
-      this.toastr.error('Ocurrió un error inesperado', 'Error');
+      this.uploadState = 'error';
+      this.uploadMessage = 'Ocurrió un error inesperado';
     }
 
-    // Reset file input
+    // Reset input
     event.target.value = '';
+  }
+
+  closeUploadModal(): void {
+    if (this.uploadState === 'success' && this.uploadedInvoiceId) {
+      this.router.navigate(['/invoice-explorer']);
+    }
+    this.isUploading = false;
+    this.uploadState = 'processing';
+    this.uploadMessage = '';
+    this.uploadedInvoiceId = undefined;
   }
 }

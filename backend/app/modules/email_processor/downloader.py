@@ -1,10 +1,10 @@
 import logging
 import requests
 import socket
-from typing import Optional
+from typing import Optional, Union
 from urllib.parse import urljoin
 from requests.exceptions import RequestException, Timeout, ConnectionError, HTTPError
-from app.modules.email_processor.storage import save_binary, filename_from_url
+from app.modules.email_processor.storage import save_binary, filename_from_url, StoragePath
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +17,10 @@ BROWSER_HEADERS = {
     'Connection': 'keep-alive',
 }
 
-def download_pdf_from_url(url: str) -> str:
+def download_pdf_from_url(url: str) -> Union[StoragePath, str]:
     """
     Descarga un PDF directo o intenta resolver páginas HTML con enlaces a PDF.
-    Devuelve la ruta del archivo o "".
+    Devuelve StoragePath o "".
     """
     max_retries = 2
     timeout = 15  # Reducido de 30 a 15 segundos
@@ -95,7 +95,7 @@ def download_pdf_from_url(url: str) -> str:
     
     return ""
 
-def _extract_pdf_from_html(html: str, base_url: str) -> str:
+def _extract_pdf_from_html(html: str, base_url: str) -> Union[StoragePath, str]:
     """Extrae PDFs de páginas HTML con timeouts robustos."""
     try:
         from bs4 import BeautifulSoup

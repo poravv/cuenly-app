@@ -4,6 +4,7 @@ import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { NgChartsModule } from 'ng2-charts';
+import { ToastrModule } from 'ngx-toastr';
 
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { UploadComponent } from './components/upload/upload.component';
@@ -61,7 +62,8 @@ import { InvoiceProcessingComponent } from './components/invoice-processing/invo
     ReactiveFormsModule,
     FormsModule,
     BrowserAnimationsModule,
-    NgChartsModule
+    NgChartsModule,
+    ToastrModule.forRoot()
   ],
   providers: [
     { provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true },

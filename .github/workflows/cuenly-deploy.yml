@@ -500,6 +500,12 @@ jobs:
             --from-literal=AUTH_REQUIRE="${{ secrets.AUTH_REQUIRE }}" \
             --from-literal=FIREBASE_PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID }}" \
             --from-literal=MULTI_TENANT_ENFORCE="${{ secrets.MULTI_TENANT_ENFORCE }}" \
+            --from-literal=MINIO_ENDPOINT="${{ secrets.MINIO_ENDPOINT }}" \
+            --from-literal=MINIO_ACCESS_KEY="${{ secrets.MINIO_ACCESS_KEY }}" \
+            --from-literal=MINIO_SECRET_KEY="${{ secrets.MINIO_SECRET_KEY }}" \
+            --from-literal=MINIO_BUCKET="${{ secrets.MINIO_BUCKET }}" \
+            --from-literal=MINIO_SECURE="${{ secrets.MINIO_SECURE }}" \
+            --from-literal=MINIO_REGION="${{ secrets.MINIO_REGION }}" \
             --from-literal=FRONTEND_API_KEY="${FRONTEND_API_KEY_VALUE}"
             
       - name: Create/Update MongoDB secrets

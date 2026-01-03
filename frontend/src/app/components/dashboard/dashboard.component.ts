@@ -1,11 +1,13 @@
-import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { Component, OnInit, ViewChild } from '@angular/core';
+import { Title } from '@angular/platform-browser';
 import { ApiService } from '../../services/api.service';
+import { NotificationService } from '../../services/notification.service';
 import { HttpClient } from '@angular/common/http';
 import { forkJoin } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { ObservabilityService } from '../../services/observability.service';
 import { UserService } from '../../services/user.service';
-import { ChartConfiguration, ChartData, ChartEvent, ChartType } from 'chart.js';
+import { ChartConfiguration, ChartData, ChartEvent, ChartType, ChartOptions } from 'chart.js';
 import { BaseChartDirective } from 'ng2-charts';
 
 interface DashboardStats {
@@ -42,8 +44,9 @@ interface RecentInvoice {
   numero_documento?: string;
   fecha_emision?: string;
   monto_total?: number;
+  id?: string;
   _id?: string;
-  emisor?: {
+  emisor?: string | {
     nombre?: string;
   };
   totales?: {
@@ -63,7 +66,7 @@ interface SystemStatus {
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
-export class DashboardComponent implements OnInit, OnDestroy {
+export class DashboardComponent implements OnInit {
   @ViewChild(BaseChartDirective) chart: BaseChartDirective | undefined;
 
   // Chart Configuration - Monthly Trend
@@ -72,6 +75,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     labels: []
   };
   public lineChartOptions: ChartConfiguration['options'] = {
+    responsive: true,
+    maintainAspectRatio: false,
     elements: {
       line: {
         tension: 0.4
@@ -159,10 +164,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private apiUrl = environment.apiUrl;
 
   constructor(
-    private apiService: ApiService,
+    private api: ApiService,
     private http: HttpClient,
     private observability: ObservabilityService,
-    private userService: UserService
+    private userService: UserService,
+    private notificationService: NotificationService,
+    private titleService: Title,
   ) { }
 
   ngOnInit(): void {
@@ -179,19 +186,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.loadDashboardData();
   }
 
-  ngOnDestroy(): void {
-    // Cleanup if needed
-  }
-
   async loadDashboardData(): Promise<void> {
     try {
       this.loading = true;
 
-      const stats$ = this.http.get<{ success: boolean, stats: DashboardStats }>(`${this.apiUrl}/dashboard/stats`);
-      const monthly$ = this.http.get<{ success: boolean, monthly_data: MonthlyData[] }>(`${this.apiUrl}/dashboard/monthly-stats`);
-      const topEmisors$ = this.http.get<{ success: boolean, top_emisores: TopEmisor[] }>(`${this.apiUrl}/dashboard/top-emisores`);
-      const recent$ = this.http.get<{ success: boolean, invoices: RecentInvoice[] }>(`${this.apiUrl}/dashboard/recent-invoices`);
-      const status$ = this.http.get<{ success: boolean, status: SystemStatus }>(`${this.apiUrl}/dashboard/system-status`);
+      const stats$ = this.http.get<{ success: boolean, stats: DashboardStats }>(`${this.apiUrl} /dashboard/stats`);
+      const monthly$ = this.http.get<{ success: boolean, monthly_data: MonthlyData[] }>(`${this.apiUrl} /dashboard/monthly - stats`);
+      const topEmisors$ = this.http.get<{ success: boolean, top_emisores: TopEmisor[] }>(`${this.apiUrl} /dashboard/top - emisores`);
+      const recent$ = this.http.get<{ success: boolean, invoices: RecentInvoice[] }>(`${this.apiUrl} /dashboard/recent - invoices`);
+      const status$ = this.http.get<{ success: boolean, status: SystemStatus }>(`${this.apiUrl} /dashboard/system - status`);
 
       forkJoin([stats$, monthly$, topEmisors$, recent$, status$]).subscribe({
         next: ([statsRes, monthlyRes, topRes, recentRes, statusRes]) => {
@@ -368,5 +371,35 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     return yearMonth;
+  }
+
+  downloadInvoice(invoice: RecentInvoice, event: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    // Si no hay ID, intentar usar número, pero idealmente necesitamos el ID del header
+    const id = invoice.id || invoice._id;
+    if (!id) {
+      this.notificationService.warning('No se puede descargar: ID no encontrado', 'Aviso');
+      return;
+    }
+
+    this.notificationService.info('Generando enlace...', 'Procesando');
+
+    this.api.downloadInvoice(id).subscribe({
+      next: (res) => {
+        if (res.success && res.download_url) {
+          window.open(res.download_url, '_blank');
+        } else {
+          // Estilo consistente para error de MinIO
+          this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
+        }
+      },
+      error: (err) => {
+        console.error("Error descarga:", err);
+        this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
+      }
+    });
   }
 }

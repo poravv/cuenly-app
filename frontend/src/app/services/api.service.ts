@@ -267,6 +267,10 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/v2/invoices/bulk-delete`, { header_ids: headerIds });
   }
 
+  downloadInvoice(invoiceId: string): Observable<{ success: boolean, download_url: string, filename?: string, message?: string }> {
+    return this.http.get<{ success: boolean, download_url: string, filename?: string, message?: string }>(`${this.apiUrl}/invoices/${invoiceId}/download`);
+  }
+
   getV2DeleteInfo(headerId: string): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/v2/invoices/${headerId}/delete-info`);
   }

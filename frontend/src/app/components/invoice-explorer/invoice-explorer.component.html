@@ -298,6 +298,10 @@
                     <td>{{ h.receptor?.nombre }}</td>
                     <td>{{ formatCurrency(h.totales?.total || 0) }}</td>
                     <td class="text-end">
+                      <button class="btn btn-sm btn-outline-secondary me-2" title="Descargar Factura"
+                        (click)="downloadInvoice(h.id, $event)">
+                        <i class="bi bi-download"></i>
+                      </button>
                       <button class="btn btn-sm" [class.btn-primary]="expandedInvoiceId === h.id"
                         [class.btn-outline-primary]="expandedInvoiceId !== h.id" (click)="viewV2Invoice(h.id)">
                         {{ expandedInvoiceId === h.id ? 'Ocultar' : 'Ver' }}
