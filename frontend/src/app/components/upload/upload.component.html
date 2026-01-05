@@ -2,116 +2,127 @@
   <div class="row">
     <div class="col-12 mb-4 text-center">
       <h1 class="display-5">Carga manual de facturas</h1>
-      <p class="lead">Sube un PDF para procesarlo y extraer sus datos</p>
+      <p class="lead">Sube uno o varios archivos PDF para extraer sus datos</p>
     </div>
   </div>
 
   <div class="row justify-content-center">
-    <div class="col-md-8 col-lg-6">
+    <div class="col-md-9 col-lg-7">
       <div class="card shadow">
         <div class="card-header header-primary">
           <h5 class="card-title mb-0">Formulario de carga</h5>
         </div>
-        
+
         <div class="card-body">
-          <form [formGroup]="uploadForm" (ngSubmit)="onSubmit()">
+          <form [formGroup]="uploadForm">
             <!-- Selector de archivo -->
             <div class="mb-4">
-              <label for="file" class="form-label">Archivo PDF *</label>
+              <label for="file" class="form-label">Archivos (PDF o Imágenes) *</label>
+              <!---// Changed loading to isProcessing-->
               <div class="input-group">
-                <input type="file" class="form-control" id="file" accept=".pdf" (change)="onFileSelected($event)" [disabled]="loading">
+                <input type="file" class="form-control" id="file" accept=".pdf,image/jpeg,image/png,image/webp" multiple
+                  (change)="onFileSelected($event)" [disabled]="isProcessing">
                 <button class="btn btn-outline-primary" type="button" onclick="document.getElementById('file').click()">
                   <i class="bi bi-upload"></i> Examinar
                 </button>
               </div>
-              <div *ngIf="fileName" class="mt-2 text-primary">
-                <i class="bi bi-file-earmark-pdf"></i> {{ fileName }}
+              <div class="form-text">Selecciona múltiples archivos. Las imágenes serán validadas automáticamente.</div>
+            </div>
+
+            <!-- Lista de archivos -->
+            <div class="file-list mt-4" *ngIf="files.length > 0">
+              <h5 class="mb-3">Archivos Seleccionados ({{files.length}})</h5>
+
+              <div class="list-group">
+                <div class="list-group-item d-flex align-items-center justify-content-between p-3"
+                  *ngFor="let item of files; let i = index" [ngClass]="{'list-group-item-danger': item.status === 'error' || item.status === 'invalid_content', 
+                                 'list-group-item-success': item.status === 'success',
+                                 'list-group-item-warning': item.status === 'validating'}">
+
+                  <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
+                    <div class="file-icon me-3">
+                      <i class="bi bi-file-earmark-pdf text-danger fs-4" *ngIf="!item.isImage"></i>
+                      <i class="bi bi-file-earmark-image text-primary fs-4" *ngIf="item.isImage"></i>
+                    </div>
+                    <div class="file-info overflow-hidden">
+                      <div class="fw-bold text-truncate">{{item.file.name}}</div>
+                      <div class="small text-muted" *ngIf="item.status === 'pending'">
+                        {{ (item.file.size / 1024 / 1024) | number:'1.2-2' }} MB - Listo
+                      </div>
+                      <div class="small text-muted" *ngIf="item.status === 'validating'">
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        Analizando...
+                      </div>
+                      <div class="small text-danger fw-bold" *ngIf="item.status === 'invalid_content'">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        {{ item.message }}
+                      </div>
+                      <div class="small" [ngClass]="item.status === 'error' ? 'text-danger' : 'text-primary'"
+                        *ngIf="item.status === 'uploading' || item.status === 'success' || item.status === 'error'">
+                        {{item.message}}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="file-actions ms-3 d-flex align-items-center gap-2">
+                    <!-- Force Upload Button -->
+                    <button class="btn btn-sm btn-outline-warning" type="button"
+                      *ngIf="item.status === 'invalid_content'" (click)="forceUpload(item)">
+                      <i class="bi bi-arrow-up-circle me-1"></i> Forzar
+                    </button>
+
+                    <!-- Progress Bar -->
+                    <div class="progress flex-grow-1" style="width: 100px; height: 6px;"
+                      *ngIf="item.status === 'uploading'">
+                      <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+                        [style.width.%]="item.progress"></div>
+                    </div>
+
+                    <!-- View Button -->
+                    <!-- <button class="btn btn-sm btn-success" *ngIf="item.status === 'success'" (click)="viewInvoice(item)">
+                      <i class="bi bi-eye"></i>
+                    </button> -->
+
+                    <!-- Remove Button -->
+                    <button class="btn btn-sm btn-outline-danger border-0" type="button" (click)="removeFile(i)"
+                      [disabled]="item.status === 'uploading' && !item.isImage">
+                      <i class="bi bi-x-lg"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Botones Globales -->
+              <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                <button type="button" class="btn btn-outline-secondary me-md-2" (click)="resetForm()"
+                  [disabled]="isProcessing">
+                  Cancelar
+                </button>
+                <button type="button" class="btn btn-primary px-4" (click)="onSubmit()" [disabled]="isProcessing">
+                  <span *ngIf="isProcessing" class="spinner-border spinner-border-sm me-2" role="status"
+                    aria-hidden="true"></span>
+                  {{ isProcessing ? 'Procesando...' : 'Procesar Archivos' }}
+                </button>
               </div>
             </div>
-            
-            <!-- Campos adicionales -->
-            <div class="mb-3">
-              <label for="sender" class="form-label">Remitente (opcional)</label>
-              <input type="text" class="form-control" id="sender" formControlName="sender" placeholder="Correo o nombre del remitente" [disabled]="loading">
-            </div>
-            
-            <div class="mb-4">
-              <label for="date" class="form-label">Fecha del documento (opcional)</label>
-              <input type="date" class="form-control" id="date" formControlName="date" [disabled]="loading">
-            </div>
-            
-            <!-- Botones de acción -->
-            <div class="d-grid gap-2">
-              <button type="submit" class="btn btn-success" [disabled]="loading || !selectedFile">
-                <span *ngIf="loading" class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                <i *ngIf="!loading" class="bi bi-cloud-upload"></i>
-                Procesar factura
-              </button>
-              <button type="button" class="btn btn-outline-primary" (click)="goToDashboard()">
-                <i class="bi bi-arrow-left"></i> Volver al dashboard
-              </button>
+
+            <!-- Campos adicionales (Opcionales) -->
+            <div class="mb-3 mt-4" *ngIf="files.length > 0">
+              <hr>
+              <h6 class="text-muted mb-3">Opciones Adicionales</h6>
+              <div class="row">
+                <div class="col-md-6">
+                  <label for="sender" class="form-label">Remitente (opcional)</label>
+                  <input type="text" class="form-control" id="sender" formControlName="sender"
+                    placeholder="Correo o nombre" [disabled]="isProcessing">
+                </div>
+                <div class="col-md-6">
+                  <label for="date" class="form-label">Fecha (opcional)</label>
+                  <input type="date" class="form-control" id="date" formControlName="date" [disabled]="isProcessing">
+                </div>
+              </div>
             </div>
           </form>
-          
-          <!-- Mensajes de error -->
-          <div *ngIf="error" class="alert alert-danger mt-4">
-            <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error }}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Resultados del procesamiento -->
-  <div *ngIf="result" class="row mt-4 justify-content-center">
-    <div class="col-md-8 col-lg-6">
-      <div class="card shadow">
-        <div class="card-header header-secondary">
-          <h5 class="card-title mb-0">Resultado del procesamiento</h5>
-        </div>
-        <div class="card-body">
-          <div class="alert" [ngClass]="{'alert-success': result.success, 'alert-danger': !result.success}">
-            {{ result.message }}
-          </div>
-          
-          <!-- Detalles de la factura procesada -->
-          <div *ngIf="result && result.success && result.invoices && result.invoices.length > 0" class="mt-4">
-            <h6 class="mb-3">Datos extraídos:</h6>
-            <div class="table-responsive">
-              <table class="table table-bordered">
-                <tr>
-                  <th>Fecha</th>
-                  <td>{{ result.invoices[0].fecha ? (result.invoices[0].fecha | date:'dd/MM/yyyy') : 'No detectada' }}</td>
-                </tr>
-                <tr>
-                  <th>RUC Emisor</th>
-                  <td>{{ result.invoices[0].ruc_emisor || 'No detectado' }}</td>
-                </tr>
-                <tr>
-                  <th>Nombre Emisor</th>
-                  <td>{{ result.invoices[0].nombre_emisor || 'No detectado' }}</td>
-                </tr>
-                <tr>
-                  <th>Nro. Factura</th>
-                  <td>{{ result.invoices[0].numero_factura || 'No detectado' }}</td>
-                </tr>
-                <tr>
-                  <th>Monto Total</th>
-                  <td>{{ result.invoices[0].monto_total ? (result.invoices[0].monto_total | currency:'':'symbol':'1.2-2') : 'No detectado' }}</td>
-                </tr>
-                <tr>
-                  <th>IVA</th>
-                  <td>{{ result.invoices[0].iva ? (result.invoices[0].iva | currency:'':'symbol':'1.2-2') : 'No detectado' }}</td>
-                </tr>
-              </table>
-            </div>
-            
-            <div class="d-grid gap-2 mt-3">
-              <button class="btn btn-outline-primary" (click)="resetForm()">
-                <i class="bi bi-arrow-repeat"></i> Procesar otra factura
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
