@@ -1,4 +1,5 @@
 from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -709,7 +710,8 @@ async def upload_pdf(
         
         # Guardar binario (Local + MinIO)
         owner = (user.get('email') or '').lower()
-        storage_result = save_binary(
+        storage_result = await run_in_threadpool(
+            save_binary,
             content=content, 
             filename=file.filename, 
             force_pdf=True,
@@ -731,25 +733,30 @@ async def upload_pdf(
                 logger.warning(f"Formato de fecha incorrecto: {date}")
 
         # Extraer + guardar en esquema v2 (invoice_headers/items)
-        with PROCESSING_LOCK:
-            owner = (user.get('email') or '').lower()
-            invoice_data = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
-            invoices = [invoice_data] if invoice_data else []
-            if invoices:
-                try:
-                    repo = MongoInvoiceRepository()
-                    owner = (user.get('email') or '').lower()
-                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION", minio_key=minio_key)
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
+        def _process_sync():
+            with PROCESSING_LOCK:
+                owner = (user.get('email') or '').lower()
+                invoice_data = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
+                invoices = [invoice_data] if invoice_data else []
+                if invoices:
+                    try:
+                        repo = MongoInvoiceRepository()
+                        owner = (user.get('email') or '').lower()
+                        doc = map_invoice(invoice_data, fuente="OPENAI_VISION", minio_key=minio_key)
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
+                return invoices
+
+        # Ejecutar en threadpool para no bloquear el event loop
+        invoices = await run_in_threadpool(_process_sync)
 
         if not invoices:
             return ProcessResult(
@@ -791,7 +798,8 @@ async def upload_xml(
         
         # Guardar binario (Local + MinIO)
         owner = (user.get('email') or '').lower()
-        storage_result = save_binary(
+        storage_result = await run_in_threadpool(
+            save_binary,
             content=content, 
             filename=file.filename, 
             force_pdf=False,
@@ -810,74 +818,30 @@ async def upload_xml(
             except Exception:
                 logger.warning(f"Formato de fecha incorrecto: {date}")
 
-        with PROCESSING_LOCK:
-            # Procesar XML y almacenar en esquema v2
-            owner = (user.get('email') or '').lower()
-            # The original code called invoice_sync.openai_processor.extract_invoice_data_from_xml
-            # The diff implies a change to _extract_xml_data and then map_invoice.
-            # Assuming _extract_xml_data is a new helper or part of invoice_sync.openai_processor
-            # For now, I'll keep the original call and add the minio_key to map_invoice.
-            # If _extract_xml_data is a new function, it needs to be defined.
-            # Given the instruction, I'll apply the diff as literally as possible,
-            # which means replacing the extract_invoice_data_from_xml call with the new logic.
-            # I'll assume _extract_xml_data is a placeholder for the actual XML parsing logic.
-            # Since _extract_xml_data is not defined, I'll use the original call and just add minio_key.
-            # If the user intended to introduce _extract_xml_data, they would need to provide its definition.
-            # Based on the diff, it seems the intent was to use map_invoice with minio_key.
-            
-            # Original logic:
-            # invoice_data = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
-            # invoices = [invoice_data] if invoice_data else []
-            # if invoices:
-            #     try:
-            #         repo = MongoInvoiceRepository()
-            #         owner = (user.get('email') or '').lower()
-            #         doc = map_invoice(invoice_data, fuente="XML_NATIVO" if getattr(invoice_data, 'cdc', '') else "OPENAI_VISION")
-            #         if owner:
-            #             try:
-            #                 doc.header.owner_email = owner
-            #                 for it in doc.items:
-            #                     it.owner_email = owner
-            #             except Exception:
-            #                 pass
-            #         repo.save_document(doc)
-            #     except Exception as e:
-            #         logger.error(f"❌ Error persistiendo v2 (upload XML): {e}")
+        def _process_sync():
+            with PROCESSING_LOCK:
+                # Procesar XML y almacenar en esquema v2
+                owner = (user.get('email') or '').lower()
+                invoice_data = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
+                invoices = [invoice_data] if invoice_data else []
+                if invoices:
+                    try:
+                        repo = MongoInvoiceRepository()
+                        doc = map_invoice(invoice_data, fuente="XML_NATIVO" if getattr(invoice_data, 'cdc', '') else "OPENAI_VISION", minio_key=minio_key)
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo v2 (upload XML): {e}")
+                return invoices
 
-            # Applying the diff's implied change for XML processing:
-            # This part of the diff is a bit ambiguous as _extract_xml_data is not defined.
-            # I will interpret it as: extract data, then map, then save.
-            # The diff shows:
-            # invoice_data = _extract_xml_data(xml_path)
-            # doc = map_invoice(invoice_data, fuente="XML_NATIVO", minio_key=minio_key)
-            # doc.header.owner_email = owner:
-            #     try:
-            #         doc.header.owner_email = owner
-            #         for it in doc.items:
-            #             it.owner_email = owner
-            #     except Exception:
-            # This looks like a partial or incorrect diff for the XML processing logic.
-            # I will revert to the original logic for extracting XML data, but ensure minio_key is passed to map_invoice.
-            # The diff provided for this section is syntactically incorrect and incomplete.
-            # I will make the minimal change to incorporate `minio_key` into `map_invoice` for XML.
-            
-            invoice_data = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
-            invoices = [invoice_data] if invoice_data else []
-            if invoices:
-                try:
-                    repo = MongoInvoiceRepository()
-                    owner = (user.get('email') or '').lower()
-                    doc = map_invoice(invoice_data, fuente="XML_NATIVO" if getattr(invoice_data, 'cdc', '') else "OPENAI_VISION", minio_key=minio_key)
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (upload XML): {e}")
+        # Ejecutar en threadpool
+        invoices = await run_in_threadpool(_process_sync)
 
         if not invoices:
             return ProcessResult(
@@ -997,9 +961,11 @@ async def upload_image(
         file_bytes = await file.read()
         owner_email = (user.get('email') or '').lower()
         
-        img_storage = save_binary(
-            file_bytes, 
-            file.filename,
+        # Ejecutar save_binary en threadpool para no bloquear por MinIO
+        img_storage = await run_in_threadpool(
+            save_binary,
+            content=file_bytes, 
+            filename=file.filename,
             owner_email=owner_email,
             date_obj=date_obj
         )
@@ -1012,30 +978,36 @@ async def upload_image(
         if date_obj:
             email_meta["date"] = date_obj
 
-        with PROCESSING_LOCK:
-            owner = (user.get('email') or '').lower()
-            # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
-            invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
-            invoices = [invoice_data] if invoice_data else []
-            
-            if invoices:
-                # Asignar minio_key
-                if img_minio_key and invoice_data:
-                    invoice_data.minio_key = img_minio_key
-                    
-                try:
-                    repo = MongoInvoiceRepository()
-                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE")
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
+        def _process_sync():
+            with PROCESSING_LOCK:
+                owner = (user.get('email') or '').lower()
+                # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
+                invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
+                invoices = [invoice_data] if invoice_data else []
+                
+                if invoices:
+                    # Asignar minio_key
+                    if img_minio_key and invoice_data:
+                        invoice_data.minio_key = img_minio_key
+                        
+                    try:
+                        repo = MongoInvoiceRepository()
+                        doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE")
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
+
+                return invoices
+
+        # Ejecutar procesamiento en threadpool para no bloquear el event loop
+        invoices = await run_in_threadpool(_process_sync)
 
         if not invoices:
             return ProcessResult(
