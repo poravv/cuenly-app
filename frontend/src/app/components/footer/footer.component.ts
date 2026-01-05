@@ -5,9 +5,9 @@ import { Component } from '@angular/core';
   template: `
     <footer class="app-footer mt-5">
       <div class="container py-4">
-        <div class="row align-items-center">
+        <div class="row align-items-center text-center text-md-start">
           <div class="col-md-6 mb-3 mb-md-0">
-            <div class="brand d-flex align-items-center mb-1">
+            <div class="brand d-flex align-items-center justify-content-center justify-content-md-start mb-1">
               <div class="footer-logo me-2">
                 <img src="assets/logo.png" alt="CuenlyApp Logo" class="logo-image">
               </div>
@@ -18,7 +18,7 @@ import { Component } from '@angular/core';
             </div>
           </div>
           <div class="col-md-6">
-            <nav class="footer-nav d-flex gap-3 justify-content-md-end">
+            <nav class="footer-nav d-flex gap-3 flex-wrap justify-content-center justify-content-md-end">
               <a class="link" routerLink="/">Dashboard</a>
               
               <a class="link" routerLink="/upload">Subir PDF</a>

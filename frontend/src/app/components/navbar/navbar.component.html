@@ -64,9 +64,7 @@
         </li>
 
         <li class="nav-item">
-          <input #fileInput type="file" class="d-none" accept=".pdf,.xml,image/jpeg,image/png,image/webp"
-            (change)="onFileSelected($event)">
-          <a class="nav-link" href="javascript:void(0)" (click)="fileInput.click()">
+          <a class="nav-link" routerLink="/upload" routerLinkActive="active">
             <i class="bi bi-cloud-upload me-1"></i>
             Subir Archivo
           </a>

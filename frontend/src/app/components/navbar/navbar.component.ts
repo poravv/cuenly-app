@@ -7,6 +7,7 @@ import { FirebaseService } from '../../services/firebase.service';
 import { User } from 'firebase/auth';
 import { Router } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
+import { FileTransferService } from '../../services/file-transfer.service';
 
 @Component({
   selector: 'app-navbar',
@@ -32,7 +33,8 @@ export class NavbarComponent implements OnInit, OnDestroy {
     private userService: UserService,
     private router: Router,
     private firebase: FirebaseService,
-    private toastr: ToastrService
+    private toastr: ToastrService,
+    private fileTransfer: FileTransferService
   ) { }
 
   ngOnInit(): void {
@@ -143,65 +145,52 @@ export class NavbarComponent implements OnInit, OnDestroy {
   }
 
   async onFileSelected(event: any): Promise<void> {
-    const file = event.target.files[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    // Reset validations
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    const isXml = file.type === 'text/xml' || file.type === 'application/xml' || file.name.toLowerCase().endsWith('.xml');
-    const isImage = file.type.startsWith('image/');
+    // Convertir FileList a Array
+    const fileList: File[] = Array.from(files);
 
-    if (!isPdf && !isXml && !isImage) {
-      this.toastr.error('Formato no soportado. Usa PDF, XML o Imágenes.', 'Error');
-      return;
-    }
+    // Validar extensiones
+    const validFiles: File[] = [];
+    let hasInvalid = false;
 
-    if (file.size > 10 * 1024 * 1024) {
-      this.toastr.error('El archivo es demasiado grande (max 10MB)', 'Error');
-      return;
-    }
+    for (const file of fileList) {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isXml = file.type === 'text/xml' || file.type === 'application/xml' || file.name.toLowerCase().endsWith('.xml');
+      const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(file.name);
 
-    // Iniciar Modal
-    this.isUploading = true;
-    this.uploadState = 'processing';
-    this.uploadMessage = `Procesando ${file.name}...`;
-    this.uploadedInvoiceId = undefined;
-
-    try {
-      let upload$: any; // Observable
-
-      if (isPdf) {
-        upload$ = this.api.uploadPdf(file, {});
-      } else if (isXml) {
-        upload$ = this.api.uploadXml(file, {});
-      } else {
-        upload$ = this.api.uploadImage(file);
-      }
-
-      upload$.subscribe({
-        next: (response: any) => {
-          if (response.success) {
-            this.uploadState = 'success';
-            this.uploadMessage = '¡Archivo procesado correctamente!';
-            this.uploadedInvoiceId = response.invoice_id || (response.invoices && response.invoices[0]?.id);
-
-            // Auto cerrar en 2s si es exitoso (opcional, o dejar botón)
-            // setTimeout(() => this.closeUploadModal(), 3000); 
-          } else {
-            this.uploadState = 'error';
-            this.uploadMessage = response.message || response.error || 'Error procesando el archivo';
-          }
-        },
-        error: (err: any) => {
-          console.error('Upload error:', err);
-          this.uploadState = 'error';
-          this.uploadMessage = err.error?.detail || 'Error al subir el archivo. Intenta de nuevo.';
+      if (isPdf || isXml || isImage) {
+        if (file.size <= 10 * 1024 * 1024) {
+          validFiles.push(file);
+        } else {
+          this.toastr.warning(`El archivo ${file.name} es demasiado grande (max 10MB) y fue omitido.`);
         }
-      });
-    } catch (error) {
-      console.error('Unexpected error:', error);
-      this.uploadState = 'error';
-      this.uploadMessage = 'Ocurrió un error inesperado';
+      } else {
+        hasInvalid = true;
+      }
+    }
+
+    if (hasInvalid) {
+      this.toastr.warning('Algunos archivos tienen formato no soportado (use PDF, XML o Imágenes) y fueron omitidos.');
+    }
+
+    if (validFiles.length === 0) {
+      event.target.value = '';
+      return;
+    }
+
+    // Redirigir a página de carga masiva
+    this.fileTransfer.setFiles(validFiles);
+
+    // Determinar a dónde redirigir basado en el tipo predominante
+    const xmlCount = validFiles.filter(f => f.name.toLowerCase().endsWith('.xml')).length;
+
+    // Si la mayoría son XML, ir a upload-xml, si no, ir a upload (PDF/Images)
+    if (xmlCount > validFiles.length / 2) {
+      this.router.navigate(['/upload-xml']);
+    } else {
+      this.router.navigate(['/upload']);
     }
 
     // Reset input
