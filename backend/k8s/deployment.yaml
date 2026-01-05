@@ -47,10 +47,10 @@ spec:
         resources:
           requests:
             memory: "2Gi"      # Reducido para optimizar recursos del cluster
-            cpu: "200m"        # CPU mínima reducida
+            cpu: "500m"        # CPU mínima aumentada para threadpool
           limits:
-            memory: "4Gi"      # Límite reducido
-            cpu: "500m"        # CPU máxima reducida
+            memory: "4Gi"      # Límite
+            cpu: "1000m"       # Aumentado a 1 core completo
         livenessProbe:
           httpGet:
             path: /health
@@ -119,7 +119,7 @@ spec:
     kind: Deployment
     name: cuenly-backend
   minReplicas: 1    # Mínimo 2 réplicas para alta disponibilidad
-  maxReplicas: 2    # Hasta 4 réplicas para picos de carga multi-usuario
+  maxReplicas: 5    # Aumentado a 5 réplicas para picos de carga
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 30
