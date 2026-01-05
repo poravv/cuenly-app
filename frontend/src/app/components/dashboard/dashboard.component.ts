@@ -373,13 +373,12 @@ export class DashboardComponent implements OnInit {
     return yearMonth;
   }
 
-  downloadInvoice(invoice: RecentInvoice, event: Event): void {
+  downloadInvoice(id: string | undefined, event: Event): void {
     if (event) {
       event.stopPropagation();
     }
 
-    // Si no hay ID, intentar usar número, pero idealmente necesitamos el ID del header
-    const id = invoice.id || invoice._id;
+    // Si no hay ID, notificar
     if (!id) {
       this.notificationService.warning('No se puede descargar: ID no encontrado', 'Aviso');
       return;

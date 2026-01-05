@@ -75,7 +75,7 @@ export class ApiService {
       formData.append('date', metadata.date);
     }
 
-    return this.http.post<ProcessResult>(`${this.apiUrl}/upload`, formData);
+    return this.http.post<ProcessResult>(`${this.apiUrl}/api/upload`, formData);
   }
 
   // Subir un archivo XML
@@ -91,14 +91,14 @@ export class ApiService {
       formData.append('date', metadata.date);
     }
 
-    return this.http.post<ProcessResult>(`${this.apiUrl}/upload-xml`, formData);
+    return this.http.post<ProcessResult>(`${this.apiUrl}/api/upload-xml`, formData);
   }
 
   // Subir imagen para procesamiento
   uploadImage(file: File): Observable<{ success: boolean, invoice_id?: string, error?: string }> {
     const formData = new FormData();
     formData.append('file', file);
-    return this.http.post<{ success: boolean, invoice_id?: string, error?: string }>(`${this.apiUrl}/upload-image`, formData);
+    return this.http.post<{ success: boolean, invoice_id?: string, error?: string }>(`${this.apiUrl}/api/upload-image`, formData);
   }
 
   // Encolar carga de PDF
