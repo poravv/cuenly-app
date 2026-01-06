@@ -221,7 +221,7 @@ export class ApiService {
   getV2Headers(params: {
     page?: number; page_size?: number; ruc_emisor?: string; ruc_receptor?: string;
     year_month?: string; date_from?: string; date_to?: string; search?: string;
-    emisor_nombre?: string;
+    emisor_nombre?: string; sort_by?: string;
   }): Observable<any> {
     // Limpiar params: omitir undefined, null y strings vacíos
     const qp: any = {};

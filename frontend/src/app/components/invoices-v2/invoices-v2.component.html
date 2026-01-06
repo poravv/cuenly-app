@@ -52,6 +52,13 @@
           <label class="form-label small fw-semibold">RUC Receptor</label>
           <input type="text" class="form-control" [(ngModel)]="rucReceptor" (keyup.enter)="refresh()">
         </div>
+        <div class="col-12 col-md-2">
+          <label class="form-label small fw-semibold">Ordenar por</label>
+          <select class="form-select" [(ngModel)]="sortBy" (change)="refresh()">
+            <option value="fecha_emision">Fecha Emisión</option>
+            <option value="created_at">Recientemente Procesados</option>
+          </select>
+        </div>
         <div class="col-12 col-md-2 d-grid">
           <button class="btn btn-primary" (click)="refresh()" [disabled]="loading">
             <i class="bi bi-filter-circle me-1"></i> Filtrar

@@ -992,7 +992,7 @@ async def upload_image(
                     
                 try:
                     repo = MongoInvoiceRepository()
-                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE")
+                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE", minio_key=img_minio_key)
                     if owner:
                         try:
                             doc.header.owner_email = owner
@@ -1452,6 +1452,7 @@ async def v2_list_headers(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     search: Optional[str] = None,
+    sort_by: str = Query(default="fecha_emision", description="Campo de ordenamiento: fecha_emision | created_at"),
     emisor_nombre: Optional[str] = Query(default=None, description="Filtro por nombre del emisor (regex i)"),
     user: Dict[str, Any] = Depends(_get_current_user),
 ):
@@ -1493,8 +1494,14 @@ async def v2_list_headers(
             owner = (user.get('email') or '').lower()
             if owner:
                 q['owner_email'] = owner
+        
+        # Lógica de ordenamiento
+        sort_field = "fecha_emision"
+        if sort_by == "created_at":
+            sort_field = "created_at"
+            
         total = coll.count_documents(q)
-        cursor = coll.find(q).sort("fecha_emision", -1).skip((page-1)*page_size).limit(page_size)
+        cursor = coll.find(q).sort(sort_field, -1).skip((page-1)*page_size).limit(page_size)
         items = []
         # Pre-cargar colección de ítems para resumen de descripción
         items_coll = repo._items()

@@ -17,6 +17,7 @@ export class InvoicesV2Component implements OnInit {
   rucEmisor: string = '';
   rucReceptor: string = '';
   emisorNombre: string = '';
+  sortBy: string = 'fecha_emision';
 
   // Paginación
   page = 1;
@@ -65,6 +66,7 @@ export class InvoicesV2Component implements OnInit {
       ruc_emisor: this.rucEmisor || undefined,
       ruc_receptor: this.rucReceptor || undefined,
       emisor_nombre: this.emisorNombre || undefined,
+      sort_by: this.sortBy,
     }).subscribe({
       next: (res) => {
         this.headers = res?.data || [];
