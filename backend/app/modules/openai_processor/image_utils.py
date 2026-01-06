@@ -19,8 +19,12 @@ def pdf_to_base64_first_page(doc_path: str) -> str:
                 # Corregir orientación según EXIF (si existe)
                 img = ImageOps.exif_transpose(img)
                 
-                # Convertir a RGB para eliminar problemas de alpha/16-bit/CMYK
+                # Convertir a RGB y aplicar autocontraste para mejorar fotos "feas"
                 img = img.convert("RGB")
+                try:
+                    img = ImageOps.autocontrast(img, cutoff=0.5)
+                except Exception:
+                    pass  # Ignorar si falla el contraste
                 
                 # Redimensionar si es muy grande (max 2048x2048) para OpenAI vision
                 max_dim = 2048
