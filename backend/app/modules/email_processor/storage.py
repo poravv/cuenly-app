@@ -114,25 +114,14 @@ def _optimize_image(content: bytes) -> bytes:
             # 2. Convertir a RGB
             img = img.convert("RGB")
             
-            # 3. Autocontraste (suave) para mejorar OCR en fotos malas
-            try:
-                img = ImageOps.autocontrast(img, cutoff=0.5)
-            except Exception:
-                pass
-            
-            # 4. Enfocar (Sharpen) para imágenes difusas
-            try:
-                img = img.filter(ImageFilter.SHARPEN)
-            except Exception:
-                pass
-
-            # 5. Redimensionar si es muy grande
-            max_dim = 2048
+            # 3. Redimensionar si es muy grande (Aumentado a 2500 para mejor OCR)
+            max_dim = 2500
             if max(img.size) > max_dim:
                 img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
             
-            # 6. Guardar como JPEG optimizado
+            # 4. Guardar como JPEG
             buf = io.BytesIO()
+            # Conservar calidad alta, sin optimización agresiva de filtros
             img.save(buf, format="JPEG", quality=85, optimize=True)
             return buf.getvalue()
     except Exception as e:
@@ -173,13 +162,28 @@ def upload_to_minio(content: bytes, filename: str, owner_email: Optional[str] = 
         if not client.bucket_exists(settings.MINIO_BUCKET):
             client.make_bucket(settings.MINIO_BUCKET)
         
+        # Determine Content-Type
+        lname = filename.lower()
+        if lname.endswith(".pdf"):
+            ctype = "application/pdf"
+        elif lname.endswith(".xml"):
+            ctype = "application/xml"
+        elif lname.endswith((".jpg", ".jpeg")):
+            ctype = "image/jpeg"
+        elif lname.endswith(".png"):
+            ctype = "image/png"
+        elif lname.endswith(".webp"):
+            ctype = "image/webp"
+        else:
+            ctype = "application/octet-stream"
+
         # Upload
         client.put_object(
             settings.MINIO_BUCKET,
             object_name,
             io.BytesIO(content),
             len(content),
-            content_type="application/pdf" if filename.lower().endswith(".pdf") else "application/xml"
+            content_type=ctype
         )
         
         logger.info(f"☁️ Subido a MinIO: {object_name}")
