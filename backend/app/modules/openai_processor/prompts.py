@@ -102,6 +102,11 @@ Reglas:
 - Moneda: "GS" para Guaraníes, "USD" para Dólares. No conviertas.
 - condicion_venta: CONTADO o CREDITO. tipo_documento: CO (CONTADO) o CR (CREDITO).
 - **IMPORTANTE**: En items, el campo `iva` debe ser el TIPO de IVA (0, 5 o 10), NO el monto del IVA.
+- **FECHAS**:
+  - Prioriza siempre el formato `DD/MM/YYYY`.
+  - Si el año tiene 2 dígitos (ej: "26"), asume `2026` (siglo XXI).
+  - Si hay ambigüedad (ej: `04/01/26`), interpreta `04` como día, `01` como mes y `26` como año (2026).
+  - Asegúrate de extraer la "Fecha de Emisión", no fechas de timbrado o vigencia.
 """.strip()
 
 # CAMPOS ELIMINADOS (no se usan en export):
@@ -158,6 +163,7 @@ Analiza con extrema atención la imagen de una factura paraguaya y devuelve **so
 - El campo `condicion_venta` debe ser exactamente `"CONTADO"` o `"CREDITO"`.
 - El campo `tipo_documento` debe ser `"CO"` si es CONTADO, o `"CR"` si es CREDITO.
 - **Moneda**: "GS" para Guaraníes, "USD" para Dólares (mantener decimales para USD).
+- **FECHAS**: Prioriza formato `DD/MM/YYYY`. Si año es 2 dígitos ("26"), asume `2026`. Si hay ambigüedad (`04/01/26`), es `04-Ene-2026`.
 """.strip()
 
 def build_xml_prompt(xml_content: str) -> str:
