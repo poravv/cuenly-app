@@ -98,6 +98,47 @@ def unique_name(clean_name: str) -> str:
     name, ext = os.path.splitext(clean_name)
     return f"{ts}_{uid}_{name}{ext}"
 
+def _optimize_image(content: bytes) -> bytes:
+    """Redimensiona y optimiza imagen para reducir tamaño (max 2048px, JPEG q='85')."""
+    try:
+        from PIL import Image, ImageOps, ImageFilter
+        import io
+        
+        # Si es muy pequeño (<1MB), quizás no vale la pena el costo de CPU
+        # Pero si queremos estandarizar (ej. PNG a JPEG o rotación), lo hacemos igual.
+        
+        with Image.open(io.BytesIO(content)) as img:
+            # 1. Corregir orientación
+            img = ImageOps.exif_transpose(img)
+            
+            # 2. Convertir a RGB
+            img = img.convert("RGB")
+            
+            # 3. Autocontraste (suave) para mejorar OCR en fotos malas
+            try:
+                img = ImageOps.autocontrast(img, cutoff=0.5)
+            except Exception:
+                pass
+            
+            # 4. Enfocar (Sharpen) para imágenes difusas
+            try:
+                img = img.filter(ImageFilter.SHARPEN)
+            except Exception:
+                pass
+
+            # 5. Redimensionar si es muy grande
+            max_dim = 2048
+            if max(img.size) > max_dim:
+                img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+            
+            # 6. Guardar como JPEG optimizado
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85, optimize=True)
+            return buf.getvalue()
+    except Exception as e:
+        logger.warning(f"⚠️ Falló optimización de imagen en storage: {e}")
+        return content
+
 def _resolve_base_dir() -> str:
     # Intentar usar el configurado; si no se puede escribir, usar fallback
     return ensure_dirs()
@@ -157,6 +198,14 @@ def save_binary(
 ) -> StoragePath:
     """Guarda bytes en /temp_pdfs y opcionalmente en MinIO. Retorna StoragePath."""
     try:
+        # 0. Optimizar si es imagen y no forzamos PDF
+        if not force_pdf and filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
+            content = _optimize_image(content)
+            # Cambiar extensión a .jpeg si se optimizó
+            if not filename.lower().endswith(('.jpg', '.jpeg')):
+                base, _ = os.path.splitext(filename)
+                filename = f"{base}.jpeg"
+
         # 1. Guardar Localmente (Temp)
         base_dir = ensure_dirs()
         clean = sanitize_filename(filename, force_pdf=force_pdf)
@@ -165,7 +214,7 @@ def save_binary(
         
         with open(local_path, "wb") as f:
             f.write(content)
-        logger.info(f"🗂 Archivo temp guardado: {local_path}")
+        logger.info(f"🗂 Archivo temp guardado (size={len(content)}): {local_path}")
         
         # 2. Subir a MinIO (si configurado)
         minio_key = ""
