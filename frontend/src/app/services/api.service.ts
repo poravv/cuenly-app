@@ -94,11 +94,11 @@ export class ApiService {
     return this.http.post<ProcessResult>(`${this.apiUrl}/api/upload-xml`, formData);
   }
 
-  // Subir imagen para procesamiento
-  uploadImage(file: File): Observable<{ success: boolean, invoice_id?: string, error?: string }> {
+  // Subir imagen para procesamiento (Async)
+  uploadImage(file: File): Observable<{ job_id: string }> {
     const formData = new FormData();
     formData.append('file', file);
-    return this.http.post<{ success: boolean, invoice_id?: string, error?: string }>(`${this.apiUrl}/api/upload-image`, formData);
+    return this.http.post<{ job_id: string }>(`${this.apiUrl}/api/upload-image`, formData);
   }
 
   // Encolar carga de PDF

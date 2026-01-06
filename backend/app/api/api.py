@@ -935,7 +935,7 @@ async def enqueue_upload_pdf(
         logger.error(f"Error encolando PDF: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/upload-image", response_model=ProcessResult)
+@app.post("/upload-image", response_model=Dict[str, str])
 async def upload_image(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
@@ -943,6 +943,7 @@ async def upload_image(
     , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
     """
     Sube una imagen (JPG/PNG) para procesarla como factura (vía IA).
+    AHORA ASÍNCRONO: Retorna job_id.
     """
     allowed_exts = ('.jpg', '.jpeg', '.png', '.webp')
     if not (file.filename.lower().endswith(allowed_exts)):
@@ -957,7 +958,7 @@ async def upload_image(
             except Exception:
                 pass
                 
-        # Guardar archivo usando save_binary (soporta MinIO)
+        # Guardar archivo usando save_binary (soporta MinIO + Optimización)
         file_bytes = await file.read()
         owner_email = (user.get('email') or '').lower()
         
@@ -978,55 +979,53 @@ async def upload_image(
         if date_obj:
             email_meta["date"] = date_obj
 
-        def _process_sync():
-            with PROCESSING_LOCK:
-                owner = (user.get('email') or '').lower()
-                # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
-                invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
-                invoices = [invoice_data] if invoice_data else []
-                
-                if invoices:
-                    # Asignar minio_key
-                    if img_minio_key and invoice_data:
-                        invoice_data.minio_key = img_minio_key
-                        
-                    try:
-                        repo = MongoInvoiceRepository()
-                        doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE")
-                        if owner:
-                            try:
-                                doc.header.owner_email = owner
-                                for it in doc.items:
-                                    it.owner_email = owner
-                            except Exception:
-                                pass
-                        repo.save_document(doc)
-                    except Exception as e:
-                        logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
+        def _runner():
+            owner = (user.get('email') or '').lower()
+            # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
+            invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
+            invoices = [invoice_data] if invoice_data else []
+            
+            if invoices:
+                # Asignar minio_key
+                if img_minio_key and invoice_data:
+                    invoice_data.minio_key = img_minio_key
+                    
+                try:
+                    repo = MongoInvoiceRepository()
+                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE")
+                    if owner:
+                        try:
+                            doc.header.owner_email = owner
+                            for it in doc.items:
+                                it.owner_email = owner
+                        except Exception:
+                            pass
+                    repo.save_document(doc)
+                except Exception as e:
+                    logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
 
-                return invoices
+            if not invoices:
+                return ProcessResult(
+                    success=False,
+                    message="No se pudo extraer factura de la imagen",
+                    invoice_count=0,
+                    invoices=[]
+                )
 
-        # Ejecutar procesamiento en threadpool para no bloquear el event loop
-        invoices = await run_in_threadpool(_process_sync)
-
-        if not invoices:
             return ProcessResult(
-                success=False,
-                message="No se pudo extraer factura de la imagen",
-                invoice_count=0,
-                invoices=[]
+                success=True,
+                message=f"Imagen procesada y almacenada",
+                invoice_count=1,
+                invoices=invoices
             )
 
-        return ProcessResult(
-            success=True,
-            message=f"Imagen procesada y almacenada",
-            invoice_count=1,
-            invoices=invoices
-        )
+        # Encolar tarea en lugar de ejecutar síncronamente
+        job_id = task_queue.enqueue("process_image_manual", _runner)
+        return {"job_id": job_id}
 
     except Exception as e:
         logger.error(f"Error al procesar imagen: {str(e)}")
-        return ProcessResult(success=False, message=f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 

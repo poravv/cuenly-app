@@ -182,18 +182,16 @@ export class UploadComponent implements OnInit, OnDestroy {
 
       if (item.isImage) {
         this.api.uploadImage(item.file).subscribe({
-          next: (res: any) => { // Assuming res has success, invoice_id, error
-            if (res.success) {
-              item.status = 'success';
-              item.progress = 100;
-              item.message = 'Imagen subida correctamente';
-              item.invoiceId = res.invoice_id;
-              this.userService.updateProfileAfterProcessing();
+          next: (res: { job_id: string }) => {
+            if (res.job_id) {
+              item.jobId = res.job_id;
+              this.activeJobs.push(res.job_id);
+              item.message = 'Procesando imagen... (Puede demorar unos segundos)';
+              this.startPolling();
             } else {
               item.status = 'error';
-              item.message = res.error || 'Error al subir imagen';
+              item.message = 'No se recibió ID de tarea';
             }
-            this.checkAllFinished();
           },
           error: (err) => {
             item.status = 'error';
