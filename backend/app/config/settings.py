@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     MINIO_BUCKET: str = os.getenv("MINIO_BUCKET", "bk-invoice")
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "true").lower() in ("1", "true", "yes")
     MINIO_REGION: str = os.getenv("MINIO_REGION", "py-east-1")
+
+    # Pagopar Integration
+    PAGOPAR_PUBLIC_KEY: str = os.getenv("PAGOPAR_PUBLIC_KEY", "")
+    PAGOPAR_PRIVATE_KEY: str = os.getenv("PAGOPAR_PRIVATE_KEY", "")
+    # Default to production, override with sandbox URL in dev
+    PAGOPAR_BASE_URL: str = os.getenv("PAGOPAR_BASE_URL", "https://api.pagopar.com/api/pago-recurrente/3.0/")
     
     model_config = {
         "env_file": ".env",

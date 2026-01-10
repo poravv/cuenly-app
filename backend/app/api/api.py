@@ -1,4 +1,5 @@
-from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query, Request
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,6 +85,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include API Routers
+app.include_router(pagopar.router, prefix="/pagopar", tags=["Pagopar"])
+app.include_router(admin_subscriptions.router, prefix="/admin", tags=["Admin Subscriptions"])
+app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
+
+
 # Startup event para inicializar servicios
 @app.on_event("startup")
 async def startup_event():
@@ -129,108 +136,13 @@ class ToggleEnabledPayload(BaseModel):
     enabled: bool
 
 
-def _get_current_user(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y retorna claims. Upserta usuario en DB."""
-    token = extract_bearer_token(request)
-    if not token:
-        if settings.AUTH_REQUIRE:
-            raise HTTPException(status_code=401, detail="Authorization requerido")
-        return {}
-    claims = verify_firebase_token(token)
-    
-    # Intentar registrar/actualizar usuario en DB con manejo de errores mejorado
-    try:
-        user_repo = UserRepository()
-        user_repo.upsert_user({
-            'email': claims.get('email'),
-            'uid': claims.get('user_id'),
-            'name': claims.get('name'),
-            'picture': claims.get('picture') or claims.get('photoURL'),
-        })
-        user_email = claims.get('email', '')
-        observability_logger.log_business_event(
-            "user_authentication_success",
-            user_email=user_email,
-            auth_method="firebase",
-            user_name=claims.get('name'),
-            user_uid=claims.get('user_id')
-        )
-        BusinessEventLogger.log_user_authentication(user_email, True)
-    except Exception as e:
-        user_email = claims.get('email', '')
-        observability_logger.log_error(
-            "user_registration_error",
-            str(e),
-            user_email=user_email,
-            user_uid=claims.get('user_id'),
-            auth_method="firebase"
-        )
-        BusinessEventLogger.log_user_authentication(user_email, False)
-        # No fallar la autenticación, pero loggear el error para diagnóstico
-    # Realizar verificación de suspensión fuera del try/except
-    try:
-        user_repo = UserRepository()
-        db_user = user_repo.get_by_email(claims.get('email'))
-        if db_user and db_user.get('status') == 'suspended':
-            raise HTTPException(status_code=403, detail="Tu cuenta está suspendida. Contacta al administrador.")
-    except HTTPException:
-        # Propagar bloqueo explícito
-        raise
-    except Exception as e:
-        user_email = claims.get('email', '')
-        observability_logger.log_error(
-            "user_status_check_error",
-            str(e),
-            user_email=user_email,
-            endpoint="/api/user/status"
-        )
-    return claims
-
-def _get_current_user_with_trial_info(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y retorna claims con información de trial."""
-    claims = _get_current_user(request)
-    if not claims:
-        return claims
-    
-    # Agregar información del trial
-    trial_info = check_trial_limits_optional(claims)
-    claims['trial_info'] = trial_info
-    return claims
-
-def _get_current_user_with_trial_check(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y verifica que el trial esté válido. Lanza excepción si expiró."""
-    claims = _get_current_user(request)
-    if not claims:
-        return claims
-    
-    # Verificar límites de trial (lanza excepción si expiró)
-    trial_info = check_trial_limits(claims)
-    claims['trial_info'] = trial_info
-    return claims
-
-def _get_current_user_with_ai_check(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y verifica que pueda usar IA. Lanza excepción si no puede."""
-    claims = _get_current_user(request)
-    if not claims:
-        return claims
-    
-    # Verificar límites de trial + IA (lanza excepción si no puede usar IA)
-    trial_info = check_ai_limits(claims)
-    claims['trial_info'] = trial_info
-    return claims
-
-def _get_current_admin(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y verifica que sea admin. Lanza excepción si no es admin."""
-    claims = _get_current_user(request)
-    if not claims:
-        raise HTTPException(status_code=401, detail="Usuario no autenticado")
-    
-    # Verificar si es administrador
-    user_repo = UserRepository()
-    if not user_repo.is_admin(claims.get('email', '')):
-        raise HTTPException(status_code=403, detail="Acceso denegado. Se requieren permisos de administrador.")
-    
-    return claims
+from app.api.deps import (
+    _get_current_user, 
+    _get_current_user_with_trial_info,
+    _get_current_user_with_trial_check,
+    _get_current_user_with_ai_check,
+    _get_current_admin
+)
 
 # Tarea en segundo plano para procesar correos
 def process_emails_task():
@@ -2544,14 +2456,18 @@ async def request_plan_change(
     request: dict,
     current_user: dict = Depends(_get_current_user)
 ):
-    """Solicita cambio de plan para el usuario"""
+    """Solicita cambio de plan - redirige a checkout de Pagopar para pago con tarjeta"""
     try:
         new_plan_id = request.get("plan_id")
         if not new_plan_id:
             raise HTTPException(status_code=400, detail="plan_id es requerido")
         
         from app.repositories.subscription_repository import SubscriptionRepository
+        from app.services.pagopar_service import PagoparService
+        import hashlib
+        
         repo = SubscriptionRepository()
+        pagopar_service = PagoparService()
         
         # Verificar que el plan existe (buscar por código)
         plan = await repo.get_plan_by_code(new_plan_id)
@@ -2562,29 +2478,90 @@ async def request_plan_change(
         current_subscription = await repo.get_user_active_subscription(current_user["email"])
         if current_subscription and current_subscription.get("plan_code") == new_plan_id:
             raise HTTPException(status_code=400, detail="Ya tienes este plan activo")
+            
+        # ============================================================
+        # CREAR PEDIDO EN PAGOPAR (V1.1 Standard)
+        # ============================================================
         
-        # Ejecutar el cambio de plan
-        # Nota: usar "manual" para cumplir con el validador de MongoDB
-        success = await repo.assign_plan_to_user(
-            user_email=current_user["email"],
-            plan_code=new_plan_id,
-            payment_method="manual"
-        )
+        email = current_user["email"]
+        name = current_user.get("name", "Usuario Cuenly")
         
-        if not success:
-            raise HTTPException(status_code=500, detail="Error al cambiar el plan")
+        # Generar ID único para el pedido
+        timestamp = int(time.time())
+        order_id = f"CUENLY-SUB-{timestamp}"
         
-        logger.info(f"✅ Plan cambiado exitosamente: {current_user['email']} -> {plan['name']}")
+        # Obtener datos del comprador del request (si vienen del frontend)
+        buyer_data = request.get("buyer_data", {})
         
-        return {
-            "success": True,
-            "message": f"Plan cambiado exitosamente al {plan['name']}. Los cambios son efectivos inmediatamente.",
-            "data": {
-                "new_plan": plan,
-                "user_email": current_user["email"],
-                "change_date": datetime.now().isoformat()
-            }
+        # Datos del comprador para Pagopar
+        buyer = {
+            "email": email,
+            "nombre": name,
+            "ruc": buyer_data.get("ruc", ""),
+            "telefono": buyer_data.get("telefono", ""),
+            "direccion": buyer_data.get("direccion", ""),
+            "documento": buyer_data.get("documento", ""),
+            "coordenadas": "",
+            "razon_social": buyer_data.get("razon_social") or name,
+            "tipo_documento": buyer_data.get("tipo_documento", "CI"),
+            "ciudad": None,
+            "direccion_referencia": None
         }
+        
+        # Validar campos obligatorios
+        if not buyer["documento"]:
+            raise HTTPException(status_code=400, detail="El número de documento es requerido")
+        if not buyer["telefono"]:
+            raise HTTPException(status_code=400, detail="El número de teléfono es requerido")
+        
+        # Crear pedido en Pagopar
+        amount = plan["price"]
+        description = f"Suscripción {plan['name']}"
+        
+        try:
+            order_hash = await pagopar_service.create_order_v11(
+                order_id, 
+                amount, 
+                description,
+                buyer
+            )
+            
+            if not order_hash:
+                raise Exception("No se pudo generar el hash del pedido")
+            
+            # Guardar orden pendiente en DB para reconciliación en webhook
+            db = repo._get_db()
+            db.pending_subscriptions.insert_one({
+                "user_email": email,
+                "plan_code": new_plan_id,
+                "plan_name": plan["name"],
+                "amount": amount,
+                "order_id": order_id,
+                "order_hash": order_hash,
+                "status": "pending",
+                "created_at": datetime.utcnow()
+            })
+            
+            # Construir URL de checkout
+            checkout_url = f"https://www.pagopar.com/pagos/{order_hash}"
+            
+            return {
+                "success": True,
+                "checkout_url": checkout_url,
+                "order_hash": order_hash,
+                "message": "Redirigiendo a Pagopar para completar el pago..."
+            }
+            
+        except Exception as e:
+            logger.error(f"Error al crear pedido en Pagopar: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error al procesar el pago: {str(e)}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en request_plan_change: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2728,6 +2705,28 @@ async def admin_delete_plan(
     except Exception as e:
         logger.error(f"Error eliminando plan: {e}")
         raise HTTPException(status_code=500, detail="Error eliminando plan")
+
+# ==========================================
+# PUBLIC PLANS ENDPOINTS
+# ==========================================
+
+@app.get("/api/plans", tags=["Plans"])
+@app.get("/plans", tags=["Plans"]) # Alias for convenience
+async def list_public_plans(
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Lista los planes públicos activos disponibles para suscripción.
+    """
+    repo = SubscriptionRepository()
+    # Solo planes activos para usuarios normales
+    plans = await repo.get_all_plans(include_inactive=False)
+    
+    return {
+        "success": True, 
+        "data": plans,
+        "count": len(plans)
+    }
 
 # Endpoints de suscripciones
 @app.get("/admin/subscriptions/stats", tags=["Admin - Subscriptions"])

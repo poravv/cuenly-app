@@ -280,6 +280,21 @@ class UserRepository:
         
         return result.modified_count > 0
 
+    def get_pagopar_user_id(self, email: str) -> Optional[str]:
+        """Obtiene el ID de usuario de Pagopar asociado"""
+        user = self.get_by_email(email)
+        if not user:
+            return None
+        return user.get('pagopar_user_id')
+
+    def update_pagopar_user_id(self, email: str, pagopar_id: str) -> bool:
+        """Asocia el ID de usuario de Pagopar al usuario local"""
+        result = self._coll().update_one(
+            {'email': email.lower()},
+            {'$set': {'pagopar_user_id': pagopar_id}}
+        )
+        return result.modified_count > 0
+
     # Métodos de administración
     def is_admin(self, email: str) -> bool:
         """Verifica si el usuario es administrador"""

@@ -34,7 +34,7 @@ export class UserService {
   constructor(
     private http: HttpClient,
     private observability: ObservabilityService
-  ) { 
+  ) {
     this.observability.info('UserService initialized', 'UserService', {
       base_url: this.baseUrl
     });
@@ -43,19 +43,19 @@ export class UserService {
   getUserProfile(): Observable<UserProfile> {
     // Usar /api como prefijo que ya está configurado en el proxy
     const url = `/api/user/profile`;
-    
+
     // Log API call initiation
     this.observability.debug('Calling getUserProfile', 'UserService', {
       api_url: url,
       action: 'get_user_profile'
     });
     const startTime = performance.now();
-    
+
     return this.http.get<UserProfile>(url).pipe(
       tap({
         next: (profile) => {
           const responseTime = performance.now() - startTime;
-          
+
           // Log successful API call
           this.observability.logApiCall('GET', url, responseTime, true, {
             user_email: profile.email,
@@ -63,10 +63,10 @@ export class UserService {
             trial_expired: profile.trial_expired,
             ai_limit_reached: profile.ai_limit_reached
           });
-          
+
           // Publicar el perfil para que otros componentes reaccionen (navbar, banners)
           this.userProfileSubject.next(profile);
-          
+
           this.observability.debug('User profile loaded successfully', 'UserService', {
             user_email: profile.email,
             status: profile.status,
@@ -75,12 +75,12 @@ export class UserService {
         },
         error: (error) => {
           const responseTime = performance.now() - startTime;
-          
+
           this.observability.logApiCall('GET', url, responseTime, false, {
             error_message: error.message,
             status_code: error.status
           });
-          
+
           this.observability.error('Failed to load user profile', error, 'UserService', {
             api_url: url,
             action: 'get_user_profile'
@@ -106,7 +106,7 @@ export class UserService {
     this.observability.debug('Updating profile after processing', 'UserService', {
       action: 'update_profile_after_processing'
     });
-    
+
     this.refreshUserProfile().subscribe({
       next: (profile) => {
         this.observability.info('Profile updated after processing', 'UserService', {
@@ -122,5 +122,33 @@ export class UserService {
         });
       }
     });
+  }
+
+  /**
+   * NUEVO: Asegurar que el usuario existe en Pagopar
+   * Se llama automáticamente después del login de Firebase
+   */
+  ensurePagoparCustomer(): Observable<any> {
+    const url = `/api/subscriptions/ensure-customer`;
+
+    this.observability.debug('Ensuring Pagopar customer', 'UserService', {
+      action: 'ensure_pagopar_customer'
+    });
+
+    return this.http.post(url, {}).pipe(
+      tap({
+        next: (response: any) => {
+          this.observability.info('Pagopar customer ensured', 'UserService', {
+            pagopar_user_id: response.pagopar_user_id,
+            already_exists: response.already_exists
+          });
+        },
+        error: (error) => {
+          this.observability.error('Error ensuring Pagopar customer', error, 'UserService', {
+            action: 'ensure_pagopar_customer'
+          });
+        }
+      })
+    );
   }
 }

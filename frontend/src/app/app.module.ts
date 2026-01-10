@@ -30,6 +30,8 @@ import { AppRoutingModule } from './app-routing.module';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 import { TrialInterceptor } from './interceptors/trial.interceptor';
 import { InvoiceProcessingComponent } from './components/invoice-processing/invoice-processing.component';
+import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
+import { BancardIframeModalComponent } from './components/bancard-iframe-modal/bancard-iframe-modal.component';
 
 @NgModule({
   declarations: [
@@ -53,7 +55,10 @@ import { InvoiceProcessingComponent } from './components/invoice-processing/invo
     AdminPanelComponent,
     PlansManagementComponent,
     SuspendedComponent,
-    InvoiceProcessingComponent
+    SuspendedComponent,
+    InvoiceProcessingComponent,
+    PaymentMethodsComponent,
+    BancardIframeModalComponent
   ],
   imports: [
     BrowserModule,

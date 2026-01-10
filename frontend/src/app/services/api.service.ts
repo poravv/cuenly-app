@@ -361,16 +361,16 @@ export class ApiService {
     return this.http.get<{ success: boolean, can_process: boolean, is_trial_user: boolean, trial_expired: boolean, message: string }>(`${this.apiUrl}/user/trial-status`);
   }
 
-  requestPlanChange(planId: string): Observable<any> {
-    return this.http.post<any>(`${this.apiUrl}/user/subscription/change-plan`, { plan_id: planId });
+  requestPlanChange(planId: string, buyerData?: any): Observable<any> {
+    return this.http.post(`${this.apiUrl}/user/subscription/change-plan`, {
+      plan_id: planId,
+      buyer_data: buyerData
+    });
   }
 
+  // DEPRECATED: Usar cancelMySubscription() en su lugar
   cancelUserSubscription(): Observable<any> {
-    return this.http.post<any>(`${this.apiUrl}/user/subscription/cancel`, {});
-  }
-
-  getSubscriptionPlans(): Observable<any> {
-    return this.http.get<any>(`${this.apiUrl}/api/plans`);
+    return this.cancelMySubscription();
   }
 
   // Estadísticas filtradas
@@ -414,6 +414,127 @@ export class ApiService {
   // Ejecutar reseteo mensual manual
   executeMonthlyReset(): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
+  }
+
+  // =====================================
+  // PAGOPAR / SUSCRIPCIONES
+  // =====================================
+
+  // PASO 2: Auto-crear/verificar cliente en Pagopar (se llama después del login)
+  ensurePagoparCustomer(): Observable<{ success: boolean, pagopar_user_id: string, message: string }> {
+    return this.http.post<{ success: boolean, pagopar_user_id: string, message: string }>(
+      `/api/subscriptions/ensure-customer`,
+      {}
+    );
+  }
+
+  // PASO 3: Iniciar suscripción (obtener form_id para iframe)
+  subscribeToSelectedPlan(planCode: string): Observable<{ success: boolean, form_id: string, pagopar_user_id: string }> {
+    return this.http.post<{ success: boolean, form_id: string, pagopar_user_id: string }>(
+      `/api/subscriptions/subscribe`,
+      { plan_code: planCode }
+    );
+  }
+
+  // PASO 5: Confirmar tarjeta catastrada y crear suscripción
+  confirmSubscriptionCard(): Observable<{ success: boolean, message: string, subscription: any }> {
+    return this.http.post<{ success: boolean, message: string, subscription: any }>(
+      `/api/subscriptions/confirm-card`,
+      {}
+    );
+  }
+
+  // Obtener mi suscripción activa
+  getMySubscription(): Observable<{ success: boolean, subscription: any }> {
+    return this.http.get<{ success: boolean, subscription: any }>(
+      `/api/subscriptions/my-subscription`
+    );
+  }
+
+  // Cancelar mi suscripción
+  cancelMySubscription(): Observable<{ success: boolean, message: string }> {
+    return this.http.post<{ success: boolean, message: string }>(
+      `/api/subscriptions/cancel`,
+      {}
+    );
+  }
+
+  // Obtener métodos de pago
+  getPaymentMethods(): Observable<any[]> {
+    return this.http.get<any[]>(`/api/subscriptions/payment-methods`);
+  }
+
+  // Eliminar método de pago
+  deletePaymentMethod(cardToken: string): Observable<{ success: boolean, message: string }> {
+    return this.http.delete<{ success: boolean, message: string }>(
+      `/api/subscriptions/payment-methods/${cardToken}`
+    );
+  }
+
+  // Obtener planes de suscripción (nuevo endpoint)
+  getSubscriptionPlans(): Observable<any> {
+    return this.http.get<any>(`/api/subscriptions/plans`);
+  }
+
+  // =====================================
+  // PAGOPAR / MÉTODOS DE PAGO (Legacy - para compatibilidad)
+  // =====================================
+
+  getCards(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/pagopar/cards`);
+  }
+
+  initAddCard(returnUrl: string, provider: 'Bancard' | 'uPay' = 'Bancard'): Observable<{ hash: string, pagopar_user_id: string }> {
+    return this.http.post<{ hash: string, pagopar_user_id: string }>(`${this.apiUrl}/pagopar/cards/init`, {
+      return_url: returnUrl,
+      provider
+    });
+  }
+
+  confirmCard(returnUrl: string): Observable<{ success: boolean }> {
+    return this.http.post<{ success: boolean }>(`${this.apiUrl}/pagopar/cards/confirm`, {
+      return_url: returnUrl
+    });
+  }
+
+  deleteCard(cardToken: string): Observable<{ success: boolean }> {
+    return this.http.delete<{ success: boolean }>(`${this.apiUrl}/pagopar/cards/${cardToken}`);
+  }
+
+  testPay(cardToken: string, orderHash: string): Observable<{ success: boolean }> {
+    return this.http.post<{ success: boolean }>(`${this.apiUrl}/pagopar/pay`, {
+      order_hash: orderHash,
+      card_token: cardToken
+    });
+  }
+
+  // Admin Subscriptions
+  getAdminSubscriptions(page: number = 1, pageSize: number = 20, status: string = 'active'): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/subscriptions`, {
+      params: { page: page.toString(), page_size: pageSize.toString(), status }
+    });
+  }
+
+  retrySubscriptionCharge(subscriptionId: string): Observable<{ success: boolean, message: string }> {
+    return this.http.post<{ success: boolean, message: string }>(`${this.apiUrl}/admin/subscriptions/${subscriptionId}/retry-charge`, {});
+  }
+
+  cancelSubscriptionAdmin(subscriptionId: string, reason: string = 'admin_action'): Observable<{ success: boolean, message: string }> {
+    return this.http.post<{ success: boolean, message: string }>(
+      `${this.apiUrl}/admin/subscriptions/${subscriptionId}/cancel`,
+      { reason }
+    );
+  }
+
+  getSubscriptionDetails(subscriptionId: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/subscriptions/${subscriptionId}`);
+  }
+
+  updateSubscriptionStatus(subscriptionId: string, status: string): Observable<{ success: boolean, message: string }> {
+    return this.http.post<{ success: boolean, message: string }>(
+      `${this.apiUrl}/admin/subscriptions/${subscriptionId}/status`,
+      { status }
+    );
   }
 
   // Métodos genéricos HTTP para compatibilidad

@@ -1,0 +1,67 @@
+<div class="container-fluid px-4 py-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="mb-1">Métodos de Pago</h2>
+      <p class="text-muted">Gestiona tus tarjetas para pagos recurrentes.</p>
+    </div>
+    <button class="btn btn-primary" (click)="openAddCardModal()" [disabled]="processingAdd">
+      <i class="bi bi-plus-lg me-2"></i> 
+      {{ processingAdd ? 'Iniciando...' : 'Nueva Tarjeta' }}
+    </button>
+  </div>
+
+  <div *ngIf="loading" class="text-center py-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Cargando...</span>
+    </div>
+  </div>
+
+  <div *ngIf="!loading && cards.length === 0" class="text-center py-5 bg-light rounded">
+    <i class="bi bi-credit-card text-muted" style="font-size: 3rem;"></i>
+    <h4 class="mt-3">No tienes tarjetas guardadas</h4>
+    <p class="text-muted">Agrega una tarjeta para agilizar tus pagos.</p>
+  </div>
+
+  <div *ngIf="!loading && cards.length > 0" class="row">
+    <div class="col-md-6 col-lg-4 mb-3" *ngFor="let card of cards">
+      <div class="card h-100 shadow-sm border-0">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+              <h5 class="card-title mb-0">{{ card.marca }}</h5>
+              <span class="badge bg-secondary">{{ card.tipo_tarjeta }}</span>
+            </div>
+            <img [src]="card.url_logo" alt="Logo" style="height: 30px;">
+          </div>
+          
+          <p class="h4 text-monospace mb-3">{{ card.tarjeta_numero }}</p>
+          <p class="text-muted small mb-0">{{ card.emisor }}</p>
+        </div>
+        <div class="card-footer bg-transparent border-top-0 d-flex justify-content-between">
+          <button class="btn btn-sm btn-outline-danger" (click)="deleteCard(card)">
+            <i class="bi bi-trash"></i> Eliminar
+          </button>
+           <button class="btn btn-sm btn-outline-success" (click)="testPayment(card)">
+            <i class="bi bi-currency-dollar"></i> Test Pagar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Card Modal (Custom Implement to hold Iframe) -->
+<div class="modal fade" [class.show]="showAddModal" [style.display]="showAddModal ? 'block' : 'none'" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Agregar Tarjeta</h5>
+        <button type="button" class="btn-close" (click)="closeAddModal()"></button>
+      </div>
+      <div class="modal-body p-0" style="min-height: 500px;">
+        <iframe *ngIf="iframeUrl" [src]="iframeUrl" width="100%" height="500px" frameborder="0"></iframe>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop fade show" *ngIf="showAddModal"></div>
