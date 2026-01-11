@@ -1,0 +1,128 @@
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center mb-4">
+                        <div class="profile-avatar-container me-3">
+                            <img *ngIf="profile?.picture" [src]="profile?.picture" alt="Avatar"
+                                class="profile-avatar shadow-sm">
+                            <div *ngIf="!profile?.picture" class="profile-avatar-placeholder shadow-sm">
+                                <i class="bi bi-person-fill"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <h2 class="mb-1 fw-bold text-dark">Mi Perfil</h2>
+                            <p class="text-muted mb-0">{{ profile?.email }}</p>
+                        </div>
+                    </div>
+
+                    <form (ngSubmit)="saveProfile()" #profileForm="ngForm">
+                        <div class="row g-3">
+                            <!-- Nombre -->
+                            <div class="col-12">
+                                <label for="name"
+                                    class="form-label fw-semibold text-secondary small text-uppercase">Nombre
+                                    Completo</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light border-end-0"><i
+                                            class="bi bi-person text-primary"></i></span>
+                                    <input type="text" id="name" name="name" [(ngModel)]="editProfile.name"
+                                        class="form-control bg-light border-start-0" placeholder="Tu nombre completo"
+                                        required>
+                                </div>
+                            </div>
+
+                            <!-- Teléfono -->
+                            <div class="col-md-6">
+                                <label for="phone"
+                                    class="form-label fw-semibold text-secondary small text-uppercase">Celular /
+                                    Teléfono</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light border-end-0"><i
+                                            class="bi bi-phone text-primary"></i></span>
+                                    <input type="tel" id="phone" name="phone" [(ngModel)]="editProfile.phone"
+                                        class="form-control bg-light border-start-0" placeholder="Ej: +595981123456">
+                                </div>
+                                <div class="form-text small">Necesario para cargos recurrentes en Pagopar.</div>
+                            </div>
+
+                            <!-- RUC / CI -->
+                            <div class="col-md-6">
+                                <label for="ruc" class="form-label fw-semibold text-secondary small text-uppercase">RUC
+                                    o Cédula</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light border-end-0"><i
+                                            class="bi bi-card-text text-primary"></i></span>
+                                    <input type="text" id="ruc" name="ruc" [(ngModel)]="editProfile.ruc"
+                                        class="form-control bg-light border-start-0" placeholder="Ej: 1234567-8">
+                                </div>
+                            </div>
+
+                            <!-- Tipo Documento -->
+                            <div class="col-md-6">
+                                <label for="document_type"
+                                    class="form-label fw-semibold text-secondary small text-uppercase">Tipo de
+                                    Documento</label>
+                                <select id="document_type" name="document_type" [(ngModel)]="editProfile.document_type"
+                                    class="form-select bg-light">
+                                    <option value="CI">Cédula de Identidad</option>
+                                    <option value="RUC">RUC</option>
+                                    <option value="PASSPORT">Pasaporte</option>
+                                </select>
+                            </div>
+
+                            <!-- Ciudad -->
+                            <div class="col-md-6">
+                                <label for="city"
+                                    class="form-label fw-semibold text-secondary small text-uppercase">Ciudad</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light border-end-0"><i
+                                            class="bi bi-geo-alt text-primary"></i></span>
+                                    <input type="text" id="city" name="city" [(ngModel)]="editProfile.city"
+                                        class="form-control bg-light border-start-0" placeholder="Ej: Asunción">
+                                </div>
+                            </div>
+
+                            <!-- Dirección -->
+                            <div class="col-12">
+                                <label for="address"
+                                    class="form-label fw-semibold text-secondary small text-uppercase">Dirección
+                                    Completa</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light border-end-0"><i
+                                            class="bi bi-house text-primary"></i></span>
+                                    <input type="text" id="address" name="address" [(ngModel)]="editProfile.address"
+                                        class="form-control bg-light border-start-0"
+                                        placeholder="Calle, número, barrio...">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 d-flex gap-3">
+                            <button type="submit" class="btn btn-primary px-4 py-2 fw-bold flex-grow-1"
+                                [disabled]="saving || !profileForm.valid">
+                                <span *ngIf="!saving"><i class="bi bi-save me-2"></i>Guardar Cambios</span>
+                                <span *ngIf="saving"><span
+                                        class="spinner-border spinner-border-sm me-2"></span>Guardando...</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Ayuda/Información Pagopar -->
+            <div class="alert alert-info mt-4 border-0 shadow-sm" role="alert">
+                <div class="d-flex">
+                    <i class="bi bi-info-circle-fill me-3 fs-4 text-primary"></i>
+                    <div>
+                        <h6 class="alert-heading fw-bold">Información de Facturación</h6>
+                        <p class="mb-0 small text-muted">Asegúrate de completar tu RUC y dirección correctamente. Estos
+                            datos son obligatorios para procesar tus pagos de suscripción de forma segura a través de
+                            Pagopar.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

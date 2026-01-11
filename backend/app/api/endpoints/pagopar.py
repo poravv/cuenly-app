@@ -52,11 +52,14 @@ async def init_add_card(
     3. Return the hash for the iframe.
     """
     email = current_user.get("email")
-    name = current_user.get("name", "Usuario Cuenly")
-    phone = current_user.get("phone", "0981000000") # TODO: Get real phone from profile if available
     
-    # Check local DB for Pagopar ID
-    pagopar_id = user_repo.get_pagopar_user_id(email)
+    # Check local DB for Pagopar ID and Profile info
+    db_user = user_repo.get_by_email(email)
+    pagopar_id = db_user.get("pagopar_user_id") if db_user else None
+    
+    # Get profile data with fallbacks
+    name = (db_user or {}).get("name") or current_user.get("name") or "Usuario Cuenly"
+    phone = (db_user or {}).get("phone") or "0981000000"
     
     if not pagopar_id:
         # We need a numeric ID for Pagopar. Since we use MongoDB ObjectId or Firebase UID (strings),

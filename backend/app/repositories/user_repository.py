@@ -295,6 +295,23 @@ class UserRepository:
         )
         return result.modified_count > 0
 
+    def update_user_profile(self, email: str, profile_data: Dict[str, Any]) -> bool:
+        """Actualiza la información del perfil del usuario."""
+        # Filtrar campos permitidos para actualización
+        allowed_fields = ['name', 'phone', 'ruc', 'address', 'city', 'document_type']
+        update_payload = {k: v for k, v in profile_data.items() if k in allowed_fields}
+        
+        if not update_payload:
+            return False
+            
+        update_payload['last_updated'] = datetime.utcnow()
+        
+        result = self._coll().update_one(
+            {'email': email.lower()},
+            {'$set': update_payload}
+        )
+        return result.modified_count > 0
+
     # Métodos de administración
     def is_admin(self, email: str) -> bool:
         """Verifica si el usuario es administrador"""

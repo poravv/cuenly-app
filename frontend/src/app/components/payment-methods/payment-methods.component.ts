@@ -114,16 +114,10 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
         const urlTree = this.router.createUrlTree([returnPaths], { queryParams: currentParams });
         const returnUrl = window.location.origin + this.router.serializeUrl(urlTree);
 
-        // Default to uPay as per recommendation
+        // Default to uPay as per previous documentation while waiting for support
         this.apiService.initAddCard(returnUrl, 'uPay').subscribe({
             next: (res) => {
                 // Construct iframe URL: https://www.pagopar.com/upay-iframe/?id-form={hash}
-                // Note: For sandbox it might be different, but let's assume standard logic or use base from settings?
-                // Actually, the Iframe URL logic is usually fixed but domains change. 
-                // Sandbox pagopar: "https://www.pagopar.com/upay-iframe/" ???
-                // Wait, the PDF says: "iframe src='https://www.pagopar.com/upay-iframe/?id-form={json.resultado}'"
-                // It doesn't specify Sandbox URL for iframe. Usually it is the same.
-
                 const url = `https://www.pagopar.com/upay-iframe/?id-form=${res.hash}`;
                 this.iframeUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
                 this.showAddModal = true;

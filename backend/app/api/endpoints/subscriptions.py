@@ -86,12 +86,16 @@ async def ensure_pagopar_customer(
         import hashlib
         pagopar_user_id = hashlib.md5(user_email.encode()).hexdigest()[:10]
         
+        # Get user profile for real name/phone
+        user_repo = UserRepository()
+        db_user = user_repo.get_by_email(user_email)
+        
         try:
             await pagopar_service.add_customer(
                 identifier=pagopar_user_id,
-                name=current_user.get("displayName", current_user.get("name", user_email)),
+                name=(db_user or {}).get("name") or current_user.get("displayName") or current_user.get("name") or user_email,
                 email=user_email,
-                phone=current_user.get("phoneNumber", "")
+                phone=(db_user or {}).get("phone") or ""
             )
             
             logger.info(f"✅ Cliente creado en Pagopar: {user_email} -> {pagopar_user_id}")
@@ -188,12 +192,15 @@ async def subscribe(
         pagopar_user_id = hashlib.md5(user_email.encode()).hexdigest()[:10]
         
         # 1. Agregar/verificar cliente en Pagopar
+        user_repo = UserRepository()
+        db_user = user_repo.get_by_email(user_email)
+        
         try:
             await pagopar_service.add_customer(
                 identifier=pagopar_user_id,
-                name=current_user.get("displayName", user_email),
+                name=(db_user or {}).get("name") or current_user.get("displayName") or user_email,
                 email=user_email,
-                phone=current_user.get("phoneNumber", "")
+                phone=(db_user or {}).get("phone") or ""
             )
             logger.info(f"✅ Cliente {user_email} registrado en Pagopar")
         except Exception as e:

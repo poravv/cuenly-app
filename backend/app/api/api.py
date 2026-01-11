@@ -135,6 +135,14 @@ class AutoRefreshPref(BaseModel):
 class ToggleEnabledPayload(BaseModel):
     enabled: bool
 
+class UserProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    ruc: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    document_type: Optional[str] = "CI" # CI, RUC, PASSPORT
+
 
 from app.api.deps import (
     _get_current_user, 
@@ -201,8 +209,59 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
         "ai_invoices_processed": trial_info.get('ai_invoices_processed', 0),
         "ai_invoices_limit": trial_info.get('ai_invoices_limit', 50),
         "ai_limit_reached": trial_info.get('ai_limit_reached', True),
-        "email_processing_start_date": processing_start_date
+        "email_processing_start_date": processing_start_date,
+        "phone": db_user.get('phone', ''),
+        "ruc": db_user.get('ruc', ''),
+        "address": db_user.get('address', ''),
+        "city": db_user.get('city', ''),
+        "document_type": db_user.get('document_type', 'CI')
     }
+
+@app.put("/user/profile")
+@app.put("/api/user/profile") # Alias
+async def update_user_profile(
+    payload: UserProfileUpdate,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Actualiza la información del perfil del usuario.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    email = user.get('email', '')
+    profile_data = payload.dict(exclude_unset=True)
+    
+    if not profile_data:
+        raise HTTPException(status_code=400, detail="No se proporcionaron datos para actualizar")
+    
+    # Validaciones básicas
+    if payload.phone and not payload.phone.replace(' ', '').replace('+', '').isdigit():
+        # Permitimos +, espacios y dígitos, pero al menos debe tener dígitos
+        pass # Podríamos ser más estrictos con regex
+        
+    user_repo = UserRepository()
+    success = user_repo.update_user_profile(email, profile_data)
+    
+    if success:
+        # Intentar actualizar en Pagopar si tiene pagopar_user_id
+        pagopar_user_id = user_repo.get_pagopar_user_id(email)
+        if pagopar_user_id:
+            try:
+                from app.services.pagopar_service import PagoparService
+                pagopar_service = PagoparService()
+                await pagopar_service.add_customer(
+                    identifier=pagopar_user_id,
+                    name=profile_data.get('name', user.get('name', 'Usuario')),
+                    email=email,
+                    phone=profile_data.get('phone', '')
+                )
+            except Exception as e:
+                logger.warning(f"No se pudo sincronizar perfil con Pagopar: {e}")
+        
+        return {"success": True, "message": "Perfil actualizado correctamente"}
+    else:
+        raise HTTPException(status_code=500, detail="Error al actualizar el perfil en la base de datos")
 
 @app.get("/user/trial-status")
 async def get_trial_status(user: Dict[str, Any] = Depends(_get_current_user)):

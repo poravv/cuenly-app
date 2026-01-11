@@ -20,6 +20,7 @@ import { AdminGuard } from './guards/admin.guard';
 import { AdminPanelComponent } from './components/admin-panel/admin-panel.component';
 import { PlansManagementComponent } from './components/plans-management/plans-management.component';
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
+import { ProfileComponent } from './components/profile/profile.component';
 
 const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [LoginGuard] },
@@ -39,6 +40,7 @@ const routes: Routes = [
   { path: 'templates-export/export', component: TemplateExportComponent, canActivate: [AuthGuard] },
   { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard] },
   { path: 'payment-methods', component: PaymentMethodsComponent, canActivate: [AuthGuard] },
+  { path: 'profile', component: ProfileComponent, canActivate: [AuthGuard] },
   { path: 'admin', component: AdminPanelComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'admin/plans', component: PlansManagementComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'ayuda', component: HelpComponent, canActivate: [AuthGuard] },

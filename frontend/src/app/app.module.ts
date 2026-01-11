@@ -32,6 +32,7 @@ import { TrialInterceptor } from './interceptors/trial.interceptor';
 import { InvoiceProcessingComponent } from './components/invoice-processing/invoice-processing.component';
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { BancardIframeModalComponent } from './components/bancard-iframe-modal/bancard-iframe-modal.component';
+import { ProfileComponent } from './components/profile/profile.component';
 
 @NgModule({
   declarations: [
@@ -58,7 +59,8 @@ import { BancardIframeModalComponent } from './components/bancard-iframe-modal/b
     SuspendedComponent,
     InvoiceProcessingComponent,
     PaymentMethodsComponent,
-    BancardIframeModalComponent
+    BancardIframeModalComponent,
+    ProfileComponent
   ],
   imports: [
     BrowserModule,

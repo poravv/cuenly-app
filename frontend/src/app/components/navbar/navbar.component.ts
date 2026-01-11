@@ -68,6 +68,9 @@ export class NavbarComponent implements OnInit, OnDestroy {
   }
 
   private loadStatus(): void {
+    if (this.router.url === '/profile') {
+      return;
+    }
     this.api.getStatus().subscribe({
       next: (s) => (this.status = s),
       error: () => (this.status = this.status) // keep last

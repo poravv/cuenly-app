@@ -21,6 +21,11 @@ export interface UserProfile {
   ai_invoices_limit: number;
   ai_limit_reached: boolean;
   email_processing_start_date?: string;
+  phone?: string;
+  ruc?: string;
+  address?: string;
+  city?: string;
+  document_type?: string;
 }
 
 @Injectable({
@@ -147,6 +152,22 @@ export class UserService {
           this.observability.error('Error ensuring Pagopar customer', error, 'UserService', {
             action: 'ensure_pagopar_customer'
           });
+        }
+      })
+    );
+  }
+
+  updateUserProfile(profileData: Partial<UserProfile>): Observable<any> {
+    const url = `/api/user/profile`;
+    this.observability.debug('Updating user profile', 'UserService', { profileData });
+    return this.http.put(url, profileData).pipe(
+      tap({
+        next: () => {
+          this.observability.info('User profile updated successfully', 'UserService');
+          this.refreshUserProfile().subscribe();
+        },
+        error: (error) => {
+          this.observability.error('Error updating user profile', error, 'UserService');
         }
       })
     );

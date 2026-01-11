@@ -44,7 +44,8 @@ class PagoparService:
             
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                # logger.info(f"Sending request to Pagopar: {url}")
+                logger.info(f"Sending request to Pagopar ({endpoint}): {data.get('identificador')}")
+                # logger.debug(f"Payload: {data}")
                 response = await client.post(url, json=data)
                 response.raise_for_status()
                 result = response.json()
@@ -85,7 +86,7 @@ class PagoparService:
         Token: SHA1(private + "PAGO-RECURRENTE")
         """
         payload = {
-            "identificador": identifier,
+            "identificador": int(identifier) if identifier.isdigit() else identifier,
             "url": redirect_url,
             "proveedor": provider
         }

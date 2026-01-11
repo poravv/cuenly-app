@@ -134,6 +134,12 @@
                   </a>
                 </li> -->
                 <li>
+                  <a class="dropdown-item" routerLink="/profile">
+                    <i class="bi bi-person-circle me-2"></i>
+                    Mi Perfil
+                  </a>
+                </li>
+                <li>
                   <a class="dropdown-item" routerLink="/ayuda">
                     <i class="bi bi-robot me-2"></i>
                     Ayuda AI
@@ -151,11 +157,10 @@
                   </a>
                 </li>
                 <li>
-                  <!-- Temporarily hidden - V3 API not available -->
-                  <!-- <a class="dropdown-item" routerLink="/payment-methods">
-                  <i class="bi bi-wallet2 me-2"></i>
-                  Métodos de Pago
-                </a> -->
+                  <a class="dropdown-item" routerLink="/payment-methods">
+                    <i class="bi bi-wallet2 me-2"></i>
+                    Medios de Pago
+                  </a>
                 </li>
                 <li *ngIf="userProfile && userProfile.is_trial">
                   <div class="dropdown-item-text trial-info">
@@ -244,6 +249,11 @@
                   <i class="bi bi-arrow-right ms-auto"></i>
                 </a>
 
+                <a class="profile-option-item" routerLink="/profile">
+                  <i class="bi bi-person-circle me-2"></i>
+                  Mi Perfil
+                </a>
+
                 <a class="profile-option-item" routerLink="/ayuda">
                   <i class="bi bi-robot me-2"></i>
                   Ayuda AI
@@ -255,6 +265,12 @@
                 <a class="profile-option-item" routerLink="/subscription">
                   <i class="bi bi-credit-card-2-front me-2"></i>
                   Ver Mis Planes
+                  <i class="bi bi-arrow-right ms-auto"></i>
+                </a>
+
+                <a class="profile-option-item" routerLink="/payment-methods">
+                  <i class="bi bi-wallet2 me-2"></i>
+                  Medios de Pago
                   <i class="bi bi-arrow-right ms-auto"></i>
                 </a>
 
