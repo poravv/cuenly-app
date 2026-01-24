@@ -205,8 +205,8 @@ class IMAPClient:
             payload = first.decode('utf-8', errors='ignore').strip() if isinstance(first, (bytes, bytearray)) else str(first).strip()
             return payload.split() if payload else []
 
-        # Sin términos: búsqueda simple
         if not subject_terms:
+            # Sin términos: búsqueda simple sin filtrado de asunto
             try:
                 typ, data = self.conn.uid('SEARCH', *base_flag_args)
                 if typ == 'OK':
@@ -215,35 +215,110 @@ class IMAPClient:
                 logger.error(f"UID SEARCH error sin términos: {e}")
             return sorted(uids, key=lambda x: int(x))
 
-        # Con términos: búsqueda por cada término
-        for term in subject_terms:
-            # Normalización solicitada por usuario:
-            # Quitar acentos para evitar problemas de encoding y facilitar búsqueda.
-            # "Facturación" -> "Facturacion"
-            term_normalized = remove_accents(str(term)).strip()
+        # Con términos: Estrategia "Traer todo y filtrar en casa"
+        # 1. Buscar todos los mensajes que cumplan los criterios base (UNSEEN, fechas)
+        # 2. Bajar los SUBJECTS
+        # 3. Filtrar en Python normalizando ambos lados
+        
+        try:
+            # 1. Obtener candidatos
+            logger.info(f"🔍 Obteniendo candidatos base con flags: {base_flag_args}")
+            typ, data = self.conn.uid('SEARCH', *base_flag_args)
             
-            # Usar el término normalizado (ASCII safe)
-            # Esto evita el uso de CHARSET UTF-8 complejo y los errores de 'ascii codec'.
-            args = base_flag_args + ['SUBJECT', f'"{term_normalized}"']
+            if typ != 'OK':
+                logger.warning(f"UID SEARCH base falló: {typ}")
+                return []
                 
-            logger.debug(f"IMAP UID SEARCH args: {args} (Normalized: '{term}' -> '{term_normalized}')")
-                
-            try:
-                # Ejecutar búsqueda estándar ASCII
-                typ, data = self.conn.uid('SEARCH', *args)
-
-                if typ == 'OK':
-                    uids |= set(_decode_ids(data))
-                else:
-                    logger.warning(f"UID SEARCH falló para term '{term_normalized}': {typ}")
+            candidate_uids = _decode_ids(data)
+            if not candidate_uids:
+                logger.debug("No se encontraron correos candidatos con los filtros base.")
+                return []
+            
+            # Limitar a los N más recientes para evitar sobrecarga si hay miles
+            # (aunque process-direct tiene su propio límite, aquí filtramos subjects)
+            # Ordenamos descendente (más recientes primero)
+            candidate_uids.sort(key=lambda x: int(x), reverse=True)
+            # Analizar un máximo razonable de candidatos (ej. 200) para no colgar el fetch
+            # Si el usuario tiene 5000 correos sin leer, solo miraremos los 200 más recientes.
+            max_candidates = 200
+            if len(candidate_uids) > max_candidates:
+                 logger.info(f"Limstando análisis de asuntos a los {max_candidates} correos más recientes (de {len(candidate_uids)} encontrados)")
+                 candidate_uids = candidate_uids[:max_candidates]
+            
+            # 2. Fetch SUBJECTS en batch
+            # Convertir lista de UIDs a string separado por comas para el fetch
+            uid_str = ",".join(candidate_uids)
+            # Descargar solo cabeceras SUBJECT
+            status, fetch_data = self.conn.uid('FETCH', uid_str, '(BODY.PEEK[HEADER.FIELDS (SUBJECT)])')
+            
+            if status != 'OK':
+                logger.error(f"Error fetching subjects: {status}")
+                return []
+            
+            # 3. Procesar y Filtrar
+            # Normalizar términos de búsqueda
+            normalized_terms = [remove_accents(t).lower() for t in subject_terms if t]
+            
+            matched_uids = set()
+            
+            for response_part in fetch_data:
+                if isinstance(response_part, tuple):
+                    # Estructura típica: (b'UID (BODY[HEADER.FIELDS (SUBJECT)] {len}', b'Subject: ...')
+                    # Necesitamos parsear el UID y el Subject
                     
-            except Exception as e:
-                logger.error(f"Error en UID SEARCH para '{term_normalized}': {e}")
-                            
-            except Exception as e:
-                logger.error(f"Error general procesando búsqueda para '{term}': {e}")
+                    try:
+                        # Parsear UID de la cabecera de respuesta
+                        msg_header = response_part[0] # b'123 (UID 456 BODY...)'
+                        # Extraer UID usando regex o split
+                        # imaplib devuelve: b'seq (UID uid BODY...)'
+                        uid_match = re.search(rb'UID (\d+)', msg_header)
+                        if not uid_match:
+                            continue
+                        uid = uid_match.group(1).decode()
+                        
+                        # Extraer Subject cuerpo
+                        raw_subject = response_part[1]
+                        # Decodificar Subject MIME (ej: =?UTF-8?B?...)
+                        subject_obj = email.message_from_bytes(raw_subject)
+                        subject_header = subject_obj.get('Subject', '')
+                        
+                        # Decodificar fragmentos MIME
+                        decoded_fragments = decode_header(subject_header)
+                        subject_text = ""
+                        for fragment, charset in decoded_fragments:
+                            if isinstance(fragment, bytes):
+                                try:
+                                    if charset:
+                                        subject_text += fragment.decode(charset, errors='replace')
+                                    else:
+                                        subject_text += fragment.decode('utf-8', errors='replace')
+                                except LookupError:
+                                    subject_text += fragment.decode('utf-8', errors='replace')
+                            else:
+                                subject_text += str(fragment)
+                        
+                        # Normalizar subject del correo
+                        subject_normalized = remove_accents(subject_text).lower()
+                        
+                        # Verificar coincidencias
+                        for term in normalized_terms:
+                            if term in subject_normalized:
+                                logger.debug(f"✅ Match encontrado! term='{term}' in subject='{subject_normalized}' (UID: {uid})")
+                                matched_uids.add(uid)
+                                break # Basta con que coincida uno
+                                
+                    except Exception as e:
+                        logger.warning(f"Error procesando header de mensaje: {e}")
+                        continue
 
-        return sorted(uids, key=lambda x: int(x))
+            uids = matched_uids
+            logger.info(f"Filtrado local completado: {len(uids)} correos coinciden con términos {normalized_terms}")
+
+        except Exception as e:
+            logger.error(f"Error en estrategia Fetch-Python: {e}")
+            return []
+
+        return sorted(list(uids), key=lambda x: int(x))
 
     def fetch_message(self, email_uid: str) -> Optional[Message]:
         if not self.conn:
