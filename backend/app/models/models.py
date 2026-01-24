@@ -303,6 +303,7 @@ class MultiEmailConfig(BaseModel):
     refresh_token: Optional[str] = None
     token_expiry: Optional[str] = None  # ISO format string
     oauth_email: Optional[str] = None  # Email asociado a OAuth (puede diferir del username)
+    ai_remaining: Optional[int] = None # Campo temporal para lógica de scheduler
 
 # Modelo para actualizaciones parciales de configuración de email
 class EmailConfigUpdate(BaseModel):
