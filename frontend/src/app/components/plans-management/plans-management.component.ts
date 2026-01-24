@@ -264,6 +264,18 @@ export class PlansManagementComponent implements OnInit {
     );
   }
 
+  duplicatePlan(plan: Plan): void {
+    this.editingPlan = null; // New plan mode
+    this.planForm = { ...plan };
+    // Modify unique fields to avoid collision/confusion
+    this.planForm.name = `${plan.name} (Copia)`;
+    this.planForm.code = `${plan.code}_copy_${Date.now()}`;
+    this.planForm.status = 'inactive'; // Default to inactive for safety
+    this.showPlanForm = true;
+
+    this.notificationService.info('Plan duplicado. Por favor ajuste el código y nombre antes de guardar.');
+  }
+
   cancelPlanForm(): void {
     this.showPlanForm = false;
     this.editingPlan = null;

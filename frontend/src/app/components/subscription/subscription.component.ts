@@ -16,6 +16,7 @@ interface SubscriptionPlan {
   monthly_ai_limit: number;
   description: string;
   is_active: boolean;
+  is_popular: boolean; // Add is_popular flag
 }
 
 interface UserSubscription {
@@ -62,7 +63,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   availablePlans: SubscriptionPlan[] = [];
 
   // UI Estado
-  activeTab = 'current'; // 'current', 'history', 'plans'
+  activeTab = 'plans'; // Changed default to 'plans'
   showPlanChangeModal = false;
   showCancelConfirmModal = false;
   selectedPlanId = '';
@@ -173,7 +174,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
               features: this.extractFeatures(plan.description, plan.features),
               monthly_ai_limit: plan.features?.ai_invoices_limit || 0,
               description: plan.description.split('\n')[0],
-              is_active: plan.active
+              is_active: plan.active,
+              is_popular: plan.is_popular || false
             }));
         },
         error: (error: any) => {
@@ -424,6 +426,10 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     this.router.navigate(['/']);
   }
 
+  isUnlimitedPlan(limit: number): boolean {
+    return limit === -1;
+  }
+
   private mapPlanType(planName: string): 'free' | 'basic' | 'premium' | 'enterprise' {
     const name = planName.toLowerCase();
     if (name.includes('básico') || name.includes('basico')) return 'basic';
@@ -446,7 +452,11 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     // Agregar características del backend
     if (backendFeatures) {
       if (backendFeatures.ai_invoices_limit) {
-        features.push(`Procesamiento IA: ${backendFeatures.ai_invoices_limit} facturas/mes`);
+        if (backendFeatures.ai_invoices_limit === -1) {
+          features.push('Procesamiento IA ilimitado');
+        } else {
+          features.push(`Procesamiento IA: ${backendFeatures.ai_invoices_limit} facturas/mes`);
+        }
       }
       if (backendFeatures.email_processing) {
         features.push('Procesamiento de correos automático');

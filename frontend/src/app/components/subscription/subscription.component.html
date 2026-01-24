@@ -28,6 +28,13 @@
         <!-- Navigation Tabs -->
         <ul class="nav nav-tabs" id="subscriptionTabs" role="tablist">
           <li class="nav-item" role="presentation">
+            <button class="nav-link" [class.active]="activeTab === 'plans'" (click)="setActiveTab('plans')"
+              type="button">
+              <i class="bi bi-list-stars me-2"></i>
+              Planes Disponibles
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
             <button class="nav-link" [class.active]="activeTab === 'current'" (click)="setActiveTab('current')"
               type="button">
               <i class="bi bi-credit-card me-2"></i>
@@ -41,13 +48,6 @@
               Historial
             </button>
           </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" [class.active]="activeTab === 'plans'" (click)="setActiveTab('plans')"
-              type="button">
-              <i class="bi bi-list-stars me-2"></i>
-              Planes Disponibles
-            </button>
-          </li>
         </ul>
       </div>
     </div>
@@ -55,6 +55,79 @@
     <!-- Tab Content -->
     <div class="row justify-content-center">
       <div class="col-lg-10">
+
+        <!-- Available Plans Tab -->
+        <div *ngIf="activeTab === 'plans'" class="tab-pane">
+          <div *ngIf="availablePlans.length > 0" class="available-plans">
+            <div class="row justify-content-center g-4">
+              <div class="col-md-6 col-lg-4 d-flex" *ngFor="let plan of availablePlans">
+                <div class="card h-100 w-100 position-relative border-0 shadow-sm"
+                  [ngClass]="getPlanTypeClass(plan.type)">
+
+                  <!-- Popular Badge -->
+                  <div *ngIf="plan.is_popular" class="popular-badge">
+                    <i class="bi bi-star-fill me-1"></i> POPULAR
+                  </div>
+
+                  <div class="card-header text-center bg-transparent border-bottom-0 pt-4 pb-0">
+                    <h5 class="card-title text-uppercase fw-bold mb-2">{{ plan.name }}</h5>
+                    <div class="plan-type-badge mb-3">
+                      <span class="badge bg-light text-dark border">{{ getPlanTypeName(plan.type) }}</span>
+                    </div>
+                    <div class="plan-price">
+                      <div class="d-flex justify-content-center align-items-baseline">
+                        <span class="h2 mb-0 fw-bold">{{ formatPrice(plan.price, plan.currency) }}</span>
+                        <span class="text-muted ms-1 fw-light" *ngIf="plan.price > 0">/mes</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card-body d-flex flex-column p-4">
+                    <p class="text-muted mb-4 text-center small">{{ plan.description }}</p>
+
+                    <ul class="list-unstyled flex-grow-1 mb-4">
+                      <li *ngFor="let feature of plan.features" class="mb-2 d-flex align-items-start small">
+                        <i class="bi bi-check-circle-fill text-success me-2 mt-1"></i>
+                        <span class="text-secondary">{{ feature }}</span>
+                      </li>
+                    </ul>
+
+                    <div class="ai-limit-container text-center p-2 rounded bg-light mb-3">
+                      <small class="text-uppercase text-muted fw-bold d-block mb-1" style="font-size: 0.65rem;">Límite
+                        IA Mensual</small>
+                      <span *ngIf="isUnlimitedPlan(plan.monthly_ai_limit)"
+                        class="badge bg-success rounded-pill px-3 py-2">
+                        <i class="bi bi-infinity me-1"></i> Ilimitado
+                      </span>
+                      <span *ngIf="!isUnlimitedPlan(plan.monthly_ai_limit)" class="fw-bold text-dark">
+                        {{ plan.monthly_ai_limit | number }} procesamientos
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="card-footer bg-transparent border-0 p-4 pt-0">
+                    <button *ngIf="!isCurrentPlan(plan._id)" class="btn btn-primary w-100 py-2 shadow-sm"
+                      (click)="openPlanChangeModal(plan._id)">
+                      Elegir Plan
+                    </button>
+                    <button *ngIf="isCurrentPlan(plan._id)" class="btn btn-outline-success w-100 py-2 disabled"
+                      style="opacity: 0.8;">
+                      <i class="bi bi-check-circle-fill me-2"></i> Plan Actual
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="availablePlans.length === 0" class="text-center py-5">
+            <div class="mb-3">
+              <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+            </div>
+            <h4 class="mt-3">No hay planes disponibles</h4>
+            <p class="text-muted">En este momento no hay planes de suscripción activos.</p>
+          </div>
+        </div>
 
         <!-- Current Subscription Tab -->
         <div *ngIf="activeTab === 'current'" class="tab-pane">
@@ -200,56 +273,6 @@
             <i class="bi bi-clock-history text-muted" style="font-size: 3rem;"></i>
             <h4 class="mt-3">Sin historial</h4>
             <p class="text-muted">No hay historial de suscripciones disponible</p>
-          </div>
-        </div>
-
-        <!-- Available Plans Tab -->
-        <div *ngIf="activeTab === 'plans'" class="tab-pane">
-          <div *ngIf="availablePlans.length > 0" class="available-plans">
-            <div class="row">
-              <div class="col-md-6 col-lg-4 mb-4" *ngFor="let plan of availablePlans">
-                <div class="card h-100" [ngClass]="getPlanTypeClass(plan.type)">
-                  <div class="card-header text-center">
-                    <h5 class="card-title">{{ plan.name }}</h5>
-                    <div class="plan-type-badge">
-                      <span class="badge">{{ getPlanTypeName(plan.type) }}</span>
-                    </div>
-                    <div class="plan-price mt-2">
-                      <span class="h4">{{ formatPrice(plan.price, plan.currency) }}</span>
-                      <span class="text-muted" *ngIf="plan.price > 0">/mes</span>
-                    </div>
-                  </div>
-                  <div class="card-body">
-                    <p class="text-muted mb-3">{{ plan.description }}</p>
-                    <ul class="list-unstyled">
-                      <li *ngFor="let feature of plan.features" class="mb-2">
-                        <i class="bi bi-check-circle text-success me-2"></i>
-                        {{ feature }}
-                      </li>
-                    </ul>
-                    <p class="small text-muted mt-3">
-                      <strong>Límite IA:</strong> {{ plan.monthly_ai_limit | number }} procesamiento(s)/mes
-                    </p>
-                  </div>
-                  <div class="card-footer text-center">
-                    <button *ngIf="!isCurrentPlan(plan._id)" class="btn btn-primary w-100"
-                      (click)="openPlanChangeModal(plan._id)">
-                      Solicitar Cambio
-                    </button>
-                    <button *ngIf="isCurrentPlan(plan._id)" class="btn btn-success w-100" disabled>
-                      <i class="bi bi-check-circle me-2"></i>
-                      Plan Actual
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div *ngIf="availablePlans.length === 0" class="text-center py-5">
-            <i class="bi bi-list-stars text-muted" style="font-size: 3rem;"></i>
-            <h4 class="mt-3">No hay planes disponibles</h4>
-            <p class="text-muted">No se encontraron planes de suscripción disponibles</p>
           </div>
         </div>
       </div>
