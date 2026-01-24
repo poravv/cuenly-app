@@ -27,11 +27,11 @@ spec:
           command: ["python", "-m", "app.worker"]
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "250m"
-            limits:
-              memory: "1024Mi"
+              memory: "1Gi"
               cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
           envFrom:
             - secretRef:
                 name: backend-env-secrets
