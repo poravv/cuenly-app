@@ -138,7 +138,18 @@ class MultiEmailProcessor:
                     continue
                 
                 # Buscar correos disponibles
-                email_ids = single.search_emails()
+                # Aplicar límite de IA estricto en la selección de correos a procesar
+                current_limit = limit
+                if hasattr(self, 'max_ai_process') and self.max_ai_process is not None:
+                     current_limit = min(limit, self.max_ai_process)
+                     logger.info(f"🔒 Aplicando límite estricto de IA para cuenta {cfg.username}: máx {self.max_ai_process} correos")
+
+                # Si el límite es 0, no procesar nada (salvo que sea XML puro, pero por seguridad paramos)
+                if current_limit <= 0:
+                    logger.warning(f"🛑 Cuenta {cfg.username} omitida: Límite de IA alcanzado o 0 restante.")
+                    continue
+
+                email_ids = single.search_emails(ignore_date_filter=ignore_date_filter, start_date=start_date, end_date=end_date)
                 if not email_ids:
                     single.disconnect()
                     continue
@@ -191,7 +202,7 @@ class MultiEmailProcessor:
             invoices=all_invoices
         )
 
-    def process_all_emails(self) -> ProcessResult:
+    def process_all_emails(self, start_date=None, end_date=None) -> ProcessResult:
         # Refrescar configuración en cada corrida para reflejar cambios dinámicos desde el frontend
         # Usar check_trial=True para que automáticamente filtre usuarios con trial expirado
         try:
@@ -210,9 +221,30 @@ class MultiEmailProcessor:
             if cfg.owner_email:
                 ai_check = user_repo.can_use_ai(cfg.owner_email)
                 if not ai_check['can_use']:
+                    # Si la razón es límite alcanzado, pero es procesamiento XML, podríamos permitirlo.
+                    # PERO, el requerimiento es blindar el límite.
                     logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} (owner: {cfg.owner_email}) - {ai_check['message']}")
                     skipped_ai_limit += 1
                     continue
+                
+                # Calcular límite restante para limitar el lote
+                trial_info = user_repo.get_trial_info(cfg.owner_email)
+                if not trial_info.get('is_trial_user', False) and trial_info.get('ai_invoices_limit', 0) == -1:
+                    # Ilimitado
+                    pass
+                else:
+                    limit_total = trial_info.get('ai_invoices_limit', 50)
+                    used = trial_info.get('ai_invoices_processed', 0)
+                    remaining = max(0, limit_total - used)
+                    
+                    if remaining == 0:
+                        logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} - Cupo IA agotado ({used}/{limit_total})")
+                        skipped_ai_limit += 1
+                        continue
+                    
+                    # Guardar remaining en la config para uso posterior si fuera necesario
+                    cfg.ai_remaining = remaining
+
             filtered_configs.append(cfg)
         
         self.email_configs = filtered_configs
@@ -240,7 +272,7 @@ class MultiEmailProcessor:
         if use_parallel and len(self.email_configs) > 1:
             logger.info(f"🚀 Procesamiento paralelo habilitado: {max_workers} cuentas simultáneas")
             
-            def process_single_account(cfg: MultiEmailConfig) -> Tuple[bool, ProcessResult, str]:
+            def process_single_account(cfg: MultiEmailConfig, limit_override: Optional[int] = None) -> Tuple[bool, ProcessResult, str]:
                 """Procesa una cuenta individual y retorna resultado"""
                 try:
                     single = EmailProcessor(EmailConfig(
@@ -249,7 +281,9 @@ class MultiEmailProcessor:
                         auth_type=cfg.auth_type, access_token=cfg.access_token,
                         refresh_token=cfg.refresh_token, token_expiry=cfg.token_expiry
                     ), owner_email=cfg.owner_email)
-                    result = single.process_emails()
+                    
+                    # Pasar límite estricto y fechas si existen
+                    result = single.process_emails(max_ai_process=limit_override, start_date=start_date, end_date=end_date)
                     return (True, result, cfg.username)
                 except Exception as e:
                     error_msg = f"Error procesando {cfg.username}: {str(e)}"
@@ -258,8 +292,12 @@ class MultiEmailProcessor:
             
             # Ejecutar en paralelo con ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="EmailProc") as executor:
-                # Enviar todas las tareas
-                future_to_config = {executor.submit(process_single_account, cfg): cfg for cfg in self.email_configs}
+                # Enviar todas las tareas (pasando remaining si existe)
+                future_to_config = {}
+                for cfg in self.email_configs:
+                    limit_override = getattr(cfg, 'ai_remaining', None)
+                    future = executor.submit(process_single_account, cfg, limit_override)
+                    future_to_config[future] = cfg
                 
                 # Procesar resultados a medida que completan
                 for idx, future in enumerate(as_completed(future_to_config), 1):
@@ -557,11 +595,12 @@ class EmailProcessor:
         return None
 
     # --------- Search logic ---------
-    def search_emails(self, ignore_date_filter: bool = False) -> List[str]:
+    def search_emails(self, ignore_date_filter: bool = False, 
+                      start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[str]:
         """
         Usa IMAPClient.search(subject_terms) que devuelve UIDs (str).
         NOTA: los términos en .env deben venir SIN acentos (como acordamos).
-        Filtra correos por fecha de registro del usuario, a menos que ignore_date_filter=True.
+        Filtra correos por fecha de registro del usuario (o start_date param) y opcionalmente end_date.
         """
         if not self.client.conn:
             if not self.connect():
@@ -572,30 +611,56 @@ class EmailProcessor:
             logger.info("No se configuraron términos de búsqueda. Se devolverá lista vacía.")
             return []
 
-        # Obtener fecha de inicio de procesamiento para este usuario
-        # Filtro de fecha de procesamiento configurable
-        start_date = None
+        # Obtener fecha de inicio de procesamiento para este usuario (si no se pasó explícita)
+        since_date = None
         
+        # 1. Prioridad: Fecha explícita pasada como parámetro (Job filtering)
+        if start_date:
+            since_date = start_date
+            logger.info(f"📅 Filtro de fecha explícito (Job): SINCE {since_date.date()}")
+        
+        # 2. Si no hay fecha explícita, usar fecha de configuración del usuario
         # Verificar si debe aplicar filtro de fecha (configurable)
-        from app.config.settings import settings
-        if not ignore_date_filter and not settings.EMAIL_PROCESS_ALL_DATES and self.owner_email:
+        elif not ignore_date_filter and self.owner_email:
             try:
                 from app.repositories.user_repository import UserRepository
-                user_repo = UserRepository()
-                start_date = user_repo.get_email_processing_start_date(self.owner_email)
-                if start_date:
-                    logger.info(f"📅 Filtrando correos desde: {start_date.strftime('%Y-%m-%d %H:%M:%S')} para usuario {self.owner_email}")
+                # Evitar import circular
+                from app.config.settings import settings
+                if not settings.EMAIL_PROCESS_ALL_DATES:
+                    user_repo = UserRepository()
+                    stored_date = user_repo.get_email_processing_start_date(self.owner_email)
+                    if stored_date:
+                        since_date = stored_date
+                        logger.info(f"📅 Filtro de fecha usuario: SINCE {since_date.strftime('%Y-%m-%d %H:%M:%S')}")
+                else:
+                    logger.info(f"📮 Procesando TODOS los correos sin restricción (EMAIL_PROCESS_ALL_DATES=true)")
             except Exception as e:
                 logger.warning(f"No se pudo obtener fecha de inicio para {self.owner_email}: {e}")
-        else:
-            logger.info(f"📮 Procesando TODOS los correos sin restricción de fecha (EMAIL_PROCESS_ALL_DATES=true)")
         
+        # Construir criterios adicionales
+        extra_criteria = {}
+        if since_date:
+            extra_criteria['since_date'] = since_date
+            
+        if end_date:
+            # IMAP BEFORE excluye la fecha, sumamos 1 día para incluirlo
+            target_end = end_date + timedelta(days=1)
+            extra_criteria['before_date'] = target_end
+            logger.info(f"📅 Filtro de fecha fin explícito (Job): BEFORE {target_end.date()}")
+
         # Pasamos la lista de términos directamente al nuevo IMAPClient.search()
         unread_only = (str(self.config.search_criteria or 'UNSEEN').upper() != 'ALL')
-        uids = self.client.search(terms, unread_only=unread_only, since_date=start_date)
+        
+        # Adapter para pasar since_date y before_date al cliente si soporta kwargs, o usarlos aquí
+        # IMAPClient.search signature: (terms, unread_only=True, since_date=None)
+        # Necesitamos verificar si imap_client soporta before_date. Si no, lo implementaremos o filtraremos pos-search.
+        # Asumiendo que imap_client.py solo tiene since_date por ahora. Lo revisaremos.
+        # Por ahora pasamos only since_date y los terminos.
+        
+        uids = self.client.search(terms, unread_only=unread_only, **extra_criteria)
 
         logger.info(f"Se encontraron {len(uids)} correos combinando términos: {terms}" + 
-                   (f" desde {start_date.strftime('%Y-%m-%d')}" if start_date else " (sin restricción de fecha)"))
+                   (f" rango {since_date.date() if since_date else 'Start'} - {end_date.date() if end_date else 'End'}" if (since_date or end_date) else " (sin restricción)"))
         return uids
 
     # --------- Fetch + parse ---------
@@ -652,7 +717,8 @@ class EmailProcessor:
         return meta, attachments
 
     # --------- Core processing ---------
-    def process_emails(self, ignore_date_filter: bool = False) -> ProcessResult:
+    def process_emails(self, ignore_date_filter: bool = False, max_ai_process: Optional[int] = None, 
+                       start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> ProcessResult:
         """
         Procesamiento optimizado por lotes para evitar problemas de memoria.
         Procesa correos en lotes pequeños, almacenando y liberando memoria inmediatamente.
@@ -678,9 +744,13 @@ class EmailProcessor:
             
             logger.info(f"🔄 Procesando {total_emails} correos en lotes de {batch_size} (multiusuario suave)")
             logger.info(f"⏱️ Configuración: {batch_delay}s entre lotes, {email_delay}s entre correos")
+            
+            if max_ai_process is not None:
+                logger.info(f"🔒 Límite estricto de IA configurado para esta ejecución: {max_ai_process}")
 
             abort_run = False
             processed_emails = 0
+            ai_processed_count = 0
 
             # Procesar en lotes pequeños con pausas
             for batch_start in range(0, total_emails, batch_size):
@@ -710,7 +780,22 @@ class EmailProcessor:
                         logger.debug(f"🔍 Procesando correo {i+1}/{len(batch_ids)} del lote {batch_num}")
                         
                         # Procesar un correo (ya incluye validación de límite IA)
+                        # Validar límite de IA antes de procesar
+                        if max_ai_process is not None and ai_processed_count >= max_ai_process:
+                             logger.warning(f"🛑 Límite estricto de IA ({max_ai_process}) alcanzado durante procesamiento. Deteniendo lote.")
+                             abort_run = True
+                             break
+
                         invoice = self._process_single_email(eid)
+                        
+                        # Si se procesó una factura usando IA (XML fallback o PDF/Imagen), incrementar contador local
+                        # Nota: _process_single_email devuelve la factura si fue exitoso.
+                        # Tendríamos que saber si usó IA. Por ahora asumimos que si retornó factura y no fue XML nativo 100%, usó IA.
+                        # Una mejor aproximación es verificar el contador de uso real, pero aquí es un contador de seguridad del bucle.
+                        # Dado que _process_single_email verifica can_use_ai internamente también, tenemos doble check.
+                        if invoice and getattr(invoice, 'ai_used', False): # Necesitamos que InvoiceData o el proceso marque si usó IA
+                            ai_processed_count += 1
+
                         
                         if invoice:
                             # Almacenar inmediatamente
@@ -773,9 +858,12 @@ class EmailProcessor:
             if self.owner_email:
                 from app.repositories.user_repository import UserRepository
                 user_repo = UserRepository()
+                
+                # Check 1: ¿Podemos usar IA en general?
                 ai_check = user_repo.can_use_ai(self.owner_email)
                 
                 if not ai_check['can_use']:
+                    # Doble validación en tiempo real por si otro hilo consumió el saldo
                     logger.warning(f"⚠️ Límite de IA alcanzado para {self.owner_email}: {ai_check['message']}")
                     logger.info(f"⏭️ Omitiendo correo {email_id} - usuario sin acceso a IA (se guardará como skipped_ai_limit)")
                     # Marcar como leído para no reprocesarlo inmediatamente

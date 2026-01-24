@@ -148,6 +148,11 @@ class ProfileStatusResponse(BaseModel):
     missing_fields: List[str]
     required_for_subscription: bool
 
+class ProcessRangeRequest(BaseModel):
+    start_date: Optional[str] = None  # YYYY-MM-DD
+    end_date: Optional[str] = None    # YYYY-MM-DD
+    run_async: bool = True
+
 
 from app.api.deps import (
     _get_current_user, 
@@ -165,6 +170,30 @@ def process_emails_task():
         logger.info(f"Tarea en segundo plano completada: {result.message}")
     except Exception as e:
         logger.error(f"Error en tarea en segundo plano: {str(e)}")
+
+def process_emails_range_task(user_email: str, start_date=None, end_date=None):
+    """Tarea background para procesar rango de fechas"""
+    try:
+        from app.modules.email_processor.config_store import get_enabled_configs
+        from app.modules.email_processor.email_processor import MultiEmailProcessor
+        
+        configs = get_enabled_configs(include_password=True, owner_email=user_email) if user_email else []
+        if not configs:
+            logger.warning(f"ProcessRange: Sin configs para {user_email}")
+            return
+
+        email_configs = []
+        for c in configs:
+            config_data = dict(c)
+            config_data['owner_email'] = user_email
+            email_configs.append(MultiEmailConfig(**config_data))
+            
+        mp = MultiEmailProcessor(email_configs=email_configs, owner_email=user_email)
+        logger.info(f"🚀 Iniciando job por rango para {user_email}: {start_date} - {end_date}")
+        mp.process_all_emails(start_date=start_date, end_date=end_date)
+        
+    except Exception as e:
+        logger.error(f"❌ Error en process_emails_range_task para {user_email}: {e}")
 
 @app.get("/")
 async def root():
@@ -680,6 +709,55 @@ async def trigger_retry_skipped(
     except Exception as e:
         logger.error(f"Error encolando job retry_skipped: {e}")
         raise HTTPException(status_code=500, detail="Error interno")
+
+@app.post("/jobs/process-range")
+async def process_range_job(
+    payload: ProcessRangeRequest,
+    background_tasks: BackgroundTasks,
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
+):
+    """
+    Inicia un job de procesamiento filtrado por rango de fechas (fecha del correo).
+    Formatos de fecha: YYYY-MM-DD.
+    """
+    owner_email = (user.get('email') or '').lower()
+    
+    # Validar fechas
+    s_date = None
+    e_date = None
+    if payload.start_date:
+        try:
+            s_date = datetime.strptime(payload.start_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato start_date inválido (Use YYYY-MM-DD)")
+            
+    if payload.end_date:
+        try:
+            e_date = datetime.strptime(payload.end_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato end_date inválido (Use YYYY-MM-DD)")
+
+    if payload.run_async:
+        background_tasks.add_task(process_emails_range_task, owner_email, s_date, e_date)
+        return {"success": True, "message": "Procesamiento por rango iniciado en segundo plano"}
+    else:
+        # Ejecución síncrona (con precaución)
+        try:
+            from app.modules.email_processor.config_store import get_enabled_configs
+            from app.modules.email_processor.email_processor import MultiEmailProcessor
+            
+            configs = get_enabled_configs(include_password=True, owner_email=owner_email) if owner_email else []
+            if not configs:
+                 return {"success": False, "message": "No hay cuentas de correo configuradas"}
+                 
+            email_configs = [MultiEmailConfig(**{**c, 'owner_email': owner_email}) for c in configs]
+            mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
+            
+            result = mp.process_all_emails(start_date=s_date, end_date=e_date)
+            return result
+        except Exception as e:
+            logger.error(f"Error range sync: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload", response_model=ProcessResult)
 async def upload_pdf(

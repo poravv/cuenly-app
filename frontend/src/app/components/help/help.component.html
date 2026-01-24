@@ -34,7 +34,8 @@
           </div>
           <h6 class="fw-bold mb-2">Primeros Pasos</h6>
           <p class="text-muted small mb-3">Configuración inicial y primera automatización</p>
-          <a href="#getting-started" class="btn btn-outline-primary btn-sm">Ver Guía</a>
+          <a (click)="scrollTo('getting-started')" class="btn btn-outline-primary btn-sm" style="cursor: pointer;">Ver
+            Guía</a>
         </div>
       </div>
     </div>
@@ -46,7 +47,8 @@
           </div>
           <h6 class="fw-bold mb-2">Automatización</h6>
           <p class="text-muted small mb-3">Control de procesos automáticos</p>
-          <a href="#automation" class="btn btn-outline-success btn-sm">Ver Detalles</a>
+          <a (click)="scrollTo('automation')" class="btn btn-outline-success btn-sm" style="cursor: pointer;">Ver
+            Detalles</a>
         </div>
       </div>
     </div>
@@ -57,8 +59,9 @@
             <i class="bi bi-upload" style="display: inline-block;"></i>
           </div>
           <h6 class="fw-bold mb-2">Carga Manual</h6>
-          <p class="text-muted small mb-3">Subida de archivos PDF y XML</p>
-          <a href="#manual-upload" class="btn btn-outline-warning btn-sm">Ver Proceso</a>
+          <p class="text-muted small mb-3">Subida de archivos PDF, XML e imágenes</p>
+          <a (click)="scrollTo('manual-upload')" class="btn btn-outline-warning btn-sm" style="cursor: pointer;">Ver
+            Proceso</a>
         </div>
       </div>
     </div>
@@ -70,7 +73,8 @@
           </div>
           <h6 class="fw-bold mb-2">Solución de Problemas</h6>
           <p class="text-muted small mb-3">Errores comunes y soluciones</p>
-          <a href="#troubleshooting" class="btn btn-outline-info btn-sm">Ver FAQ</a>
+          <a (click)="scrollTo('troubleshooting')" class="btn btn-outline-info btn-sm" style="cursor: pointer;">Ver
+            FAQ</a>
         </div>
       </div>
     </div>
@@ -81,7 +85,7 @@
     <div class="col-12">
       <div class="card border-0 shadow-sm">
         <div class="card-body">
-          
+
           <!-- Subscription & Limits Section -->
           <section id="subscription" class="help-section">
             <div class="section-header">
@@ -93,15 +97,19 @@
               </div>
             </div>
             <div class="help-item">
-              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#sub-requirements" aria-expanded="true">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#sub-requirements"
+                aria-expanded="true">
                 <h5 class="fw-semibold mb-0">Requisitos para procesar</h5>
                 <i class="bi bi-chevron-down"></i>
               </div>
               <div id="sub-requirements" class="collapse show help-item-content">
                 <ul class="mb-3">
-                  <li>Tener un período de prueba vigente <strong>o</strong> una <strong>suscripción activa</strong>.</li>
-                  <li>Si tu suscripción está <strong>cancelada o expirada</strong>, no podrás procesar correos ni cargar PDF/XML.</li>
-                  <li>Los límites de IA dependen de tu plan actual.</li>
+                  <li>Tener un período de prueba vigente <strong>o</strong> una <strong>suscripción activa</strong>.
+                  </li>
+                  <li>Si tu suscripción está <strong>cancelada o expirada</strong>, no podrás procesar correos ni cargar
+                    PDF/XML.</li>
+                  <li>Los límites de IA dependen de tu plan actual. <strong>Algunos planes ofrecen procesamiento
+                      ilimitado.</strong></li>
                 </ul>
                 <div class="alert alert-warning border-0">
                   <i class="bi bi-exclamation-triangle me-2"></i>
@@ -120,7 +128,7 @@
                 <h3 class="fw-bold mb-0">Primeros Pasos</h3>
               </div>
             </div>
-            
+
             <div class="help-item">
               <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#overview" aria-expanded="true">
                 <h5 class="fw-semibold mb-0">¿Qué es CuenlyApp?</h5>
@@ -128,8 +136,9 @@
               </div>
               <div id="overview" class="collapse show help-item-content">
                 <p class="text-muted">
-                  CuenlyApp es un sistema inteligente que automatiza la gestión de facturas electrónicas. 
-                  Conecta con tu correo electrónico, procesa facturas automáticamente y almacena los datos estructurados en MongoDB.
+                  CuenlyApp es un sistema inteligente que automatiza la gestión de facturas electrónicas.
+                  Conecta con tu correo electrónico, procesa facturas automáticamente y almacena los datos estructurados
+                  en MongoDB.
                 </p>
                 <div class="alert alert-info border-0">
                   <div class="d-flex align-items-start">
@@ -139,8 +148,8 @@
                       <ul class="mb-0 mt-2">
                         <li>Procesamiento automático de facturas desde el correo</li>
                         <li>Extracción inteligente de datos con IA</li>
-                        
-                        <li>Soporte para PDF y XML (facturas electrónicas)</li>
+
+                        <li>Soporte para PDF, XML e imágenes (facturas electrónicas)</li>
                       </ul>
                     </div>
                   </div>
@@ -167,7 +176,7 @@
               </div>
               <div id="auto-process" class="collapse help-item-content">
                 <p class="text-muted">
-                  La automatización revisa periódicamente tus correos electrónicos en busca de facturas y las procesa 
+                  La automatización revisa periódicamente tus correos electrónicos en busca de facturas y las procesa
                   automáticamente sin intervención manual.
                 </p>
                 <div class="row g-3 mt-2">
@@ -185,7 +194,8 @@
                       <i class="bi bi-envelope text-success"></i>
                       <div>
                         <h6 class="fw-semibold">Revisión de Correos</h6>
-                        <p class="small text-muted mb-0">Busca automáticamente facturas en todas las cuentas configuradas</p>
+                        <p class="small text-muted mb-0">Busca automáticamente facturas en todas las cuentas
+                          configuradas</p>
                       </div>
                     </div>
                   </div>
@@ -239,7 +249,8 @@
               </div>
               <div id="upload-pdf" class="collapse help-item-content">
                 <p class="text-muted">
-                  Los archivos PDF se procesan utilizando inteligencia artificial para extraer la información de la factura. Requiere prueba vigente o suscripción activa.
+                  Los archivos PDF se procesan utilizando inteligencia artificial para extraer la información de la
+                  factura. Requiere prueba vigente o suscripción activa.
                 </p>
                 <div class="upload-steps">
                   <div class="step">
@@ -268,17 +279,60 @@
             </div>
 
             <div class="help-item">
+              <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#upload-image">
+                <h5 class="fw-semibold mb-0">Subir imágenes</h5>
+                <i class="bi bi-chevron-down"></i>
+              </div>
+              <div id="upload-image" class="collapse help-item-content">
+                <p class="text-muted">
+                  Las imágenes de facturas (JPG, PNG, etc.) se procesan utilizando inteligencia artificial con
+                  reconocimiento óptico (OCR) para extraer la información. Requiere prueba vigente o suscripción activa.
+                </p>
+                <div class="upload-steps">
+                  <div class="step">
+                    <div class="step-number">1</div>
+                    <div>
+                      <h6 class="fw-semibold">Navegar a "Cargar Archivos"</h6>
+                      <p class="small text-muted mb-0">Utiliza el menú de navegación y selecciona "Subir Imagen"</p>
+                    </div>
+                  </div>
+                  <div class="step">
+                    <div class="step-number">2</div>
+                    <div>
+                      <h6 class="fw-semibold">Seleccionar imagen</h6>
+                      <p class="small text-muted mb-0">Elige la imagen de la factura (JPG, PNG, JPEG, GIF, WebP)</p>
+                    </div>
+                  </div>
+                  <div class="step">
+                    <div class="step-number">3</div>
+                    <div>
+                      <h6 class="fw-semibold">Procesamiento con IA</h6>
+                      <p class="small text-muted mb-0">La IA analizará la imagen y extraerá automáticamente los datos de
+                        la factura</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="alert alert-info border-0 mt-3">
+                  <i class="bi bi-lightbulb text-info me-2"></i>
+                  <strong>Consejo:</strong> Para mejores resultados, asegúrate de que la imagen esté bien iluminada,
+                  enfocada y que el texto sea legible.
+                </div>
+              </div>
+            </div>
+
+            <div class="help-item">
               <div class="help-item-header" data-bs-toggle="collapse" data-bs-target="#upload-xml">
                 <h5 class="fw-semibold mb-0">Subir archivos XML</h5>
                 <i class="bi bi-chevron-down"></i>
               </div>
               <div id="upload-xml" class="collapse help-item-content">
                 <p class="text-muted">
-                  Los archivos XML (facturas electrónicas) se procesan de forma nativa y suelen tener mayor precisión en la extracción de datos. Requiere prueba vigente o suscripción activa.
+                  Los archivos XML (facturas electrónicas) se procesan de forma nativa y suelen tener mayor precisión en
+                  la extracción de datos. Requiere prueba vigente o suscripción activa.
                 </p>
                 <div class="alert alert-success border-0">
                   <i class="bi bi-check-circle text-success me-2"></i>
-                  <strong>Ventaja:</strong> Los archivos XML no requieren OpenAI para ser procesados y proporcionan 
+                  <strong>Ventaja:</strong> Los archivos XML no requieren OpenAI para ser procesados y proporcionan
                   información más estructurada y precisa.
                 </div>
               </div>
@@ -350,7 +404,7 @@
                       </ul>
                     </div>
                   </div>
-                  
+
                   <div class="faq-item">
                     <div class="faq-question">
                       <i class="bi bi-question-circle text-warning me-2"></i>
@@ -358,7 +412,7 @@
                     </div>
                     <div class="faq-answer">
                       <p class="mb-0">
-                        Intenta subir el archivo manualmente cuando OpenAI esté disponible. Si el problema persiste, 
+                        Intenta subir el archivo manualmente cuando OpenAI esté disponible. Si el problema persiste,
                         verifica que el PDF sea legible y contenga información estructurada de factura.
                       </p>
                     </div>

@@ -99,6 +99,11 @@ class OpenAIProcessor:
                 self.cache.cache_result(pdf_path, cache_data, "openai_vision")
             
             if result:
+                # Marcar que se usó IA para control en bucle
+                if hasattr(result, '__dict__'):
+                    result.ai_used = True
+                elif isinstance(result, dict):
+                    result['ai_used'] = True
                 return result
 
             logger.warning("Ambas estrategias fallaron")
@@ -244,8 +249,16 @@ class OpenAIProcessor:
             invoice = _coerce_invoice_model(data, email_metadata)
             invoice = validate_and_enhance_with_cdc(invoice)
             # Aceptamos resultado OpenAI aunque el CDC falte; registramos advertencia.
+            # Aceptamos resultado OpenAI aunque el CDC falte; registramos advertencia.
             if not _is_valid_cdc(getattr(invoice, 'cdc', '')):
                 logger.warning("CDC no detectado/ inválido tras OpenAI XML. Se mantiene resultado OpenAI.")
+            
+            # Marcar uso de IA para XML fallback
+            if hasattr(invoice, '__dict__'):
+                invoice.ai_used = True
+            elif isinstance(invoice, dict):
+                invoice['ai_used'] = True
+                
             return invoice
         except Exception as e:
             logger.exception("Error procesando XML: %s", e)

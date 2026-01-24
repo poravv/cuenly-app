@@ -154,7 +154,7 @@ class IMAPClient:
         finally:
             self.conn = None
 
-    def search(self, subject_terms: List[str], unread_only: Optional[bool] = None, since_date=None) -> List[str]:
+    def search(self, subject_terms: List[str], unread_only: Optional[bool] = None, since_date=None, before_date=None) -> List[str]:
         """
         Devuelve UIDs de correos que coincidan con cualquiera de los términos de asunto.
         El parámetro unread_only controla si buscar solo no leídos (True) o todos (False).
@@ -176,6 +176,14 @@ class IMAPClient:
             flag_args.append('SINCE')
             flag_args.append(date_str)
             logger.debug(f"Aplicando filtro de fecha SINCE {date_str}")
+        
+        # Agregar filtro de fecha fin si se proporciona
+        if before_date:
+            from datetime import datetime
+            date_str = before_date.strftime("%d-%b-%Y")
+            flag_args.append('BEFORE')
+            flag_args.append(date_str)
+            logger.debug(f"Aplicando filtro de fecha BEFORE {date_str}")
         
         def _to_ascii(s: str) -> str:
             try:

@@ -123,8 +123,8 @@
             <div class="col-md-4">
               <div class="d-grid">
                 <a class="btn btn-outline-primary py-3" routerLink="/upload">
-                  <i class="bi bi-file-pdf me-2"></i>
-                  <div>Subir PDF</div>
+                  <i class="bi bi-file-earmark-text me-2"></i>
+                  <div>Subir PDF / Imagen</div>
                 </a>
               </div>
             </div>
@@ -205,7 +205,8 @@
           </div>
 
           <!-- Error State General -->
-          <div *ngIf="!loading && !processingResult && error && !error?.includes('🚫')" class="alert alert-danger border-0 mx-3">
+          <div *ngIf="!loading && !processingResult && error && !error?.includes('🚫')"
+            class="alert alert-danger border-0 mx-3">
             <div class="d-flex align-items-start">
               <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
               <div>
@@ -333,13 +334,11 @@
                 <div class="mb-3">
                   <label class="form-label fw-semibold small">Intervalo de Procesamiento</label>
                   <div class="input-group">
-                    <select class="form-select"
-                      [ngModel]="jobIntervalInput"
+                    <select class="form-select" [ngModel]="jobIntervalInput"
                       (ngModelChange)="onJobIntervalChange($event)">
                       <option *ngFor="let opt of intervalOptions" [ngValue]="opt">{{ opt }} minutos</option>
                     </select>
-                    <button class="btn btn-outline-primary" (click)="applyJobInterval()"
-                      [disabled]="jobLoading">
+                    <button class="btn btn-outline-primary" (click)="applyJobInterval()" [disabled]="jobLoading">
                       <i class="bi bi-check"></i>
                     </button>
                   </div>
@@ -380,7 +379,8 @@
           </div>
 
           <!-- Error de automatización - Trial Expirado -->
-          <div *ngIf="jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción')" class="alert alert-warning border-0 mt-3">
+          <div *ngIf="jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción')"
+            class="alert alert-warning border-0 mt-3">
             <div class="d-flex align-items-start">
               <i class="bi bi-hourglass-split text-warning me-2 fs-5"></i>
               <div class="flex-grow-1">
@@ -399,7 +399,9 @@
           </div>
 
           <!-- Error de automatización - General -->
-          <div *ngIf="jobError && !(jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción'))" class="alert alert-danger border-0 mt-3">
+          <div
+            *ngIf="jobError && !(jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción'))"
+            class="alert alert-danger border-0 mt-3">
             <i class="bi bi-exclamation-triangle me-2"></i>
             {{ jobError }}
           </div>
