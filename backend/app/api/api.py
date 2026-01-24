@@ -1826,16 +1826,32 @@ async def save_oauth_email_config(
                 detail="Has alcanzado el límite de cuentas de correo. Suscríbete a un plan para agregar más."
             )
     
+    # Verificar si ya existe config para este email para preservar settings
+    existing_config = None
+    try:
+        from app.modules.email_processor.config_store import get_by_username
+        existing_config = get_by_username(gmail_address, owner_email=owner_email)
+    except Exception as e:
+        logger.warning(f"Error checking existing config for {gmail_address}: {e}")
+
+    # Preservar search_terms si existen y no se enviaron nuevos
+    final_search_terms = search_terms
+    if not final_search_terms:
+        if existing_config and existing_config.get("search_terms"):
+            final_search_terms = existing_config.get("search_terms")
+        else:
+            final_search_terms = ["factura", "invoice", "comprobante"]
+
     # Create the email config with OAuth
     config_data = {
-        "name": name or f"Gmail - {gmail_address}",
+        "name": name or (existing_config.get("name") if existing_config else f"Gmail - {gmail_address}"),
         "host": "imap.gmail.com",
         "port": 993,
         "username": gmail_address,
         "password": None,  # No password needed for OAuth
         "use_ssl": True,
         "search_criteria": "UNSEEN",
-        "search_terms": search_terms or ["factura", "invoice", "comprobante"],
+        "search_terms": final_search_terms,
         "provider": "gmail",
         "enabled": True,
         "auth_type": "oauth2",
