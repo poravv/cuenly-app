@@ -14,6 +14,7 @@ graph TD
     subgraph "Backend Services"
         Backend -->|Persistencia| MongoDB[("MongoDB")]
         Backend -->|Cache & Colas| Redis[("Redis")]
+        Backend -->|Object Storage| MinIO[("MinIO (S3)")]
         Backend -->|Procesamiento IA| OpenAI["OpenAI API (GPT-4o)"]
         
         Backend -->|Jobs Internos| SchedulerThread["ScheduledJobRunner (Threads)"]
@@ -33,41 +34,56 @@ graph TD
 *   **Backend**: API RESTful construida con FastAPI (Python 3.11).
 *   **MongoDB**: Base de datos principal (NoSQL) para usuarios, facturas y configuraciones.
 *   **Redis**: Sistema de caché para respuestas de OpenAI y broker de mensajería para colas opcionales (RQ).
+*   **MinIO**: Almacenamiento de objetos compatible con S3 para guardar copias de seguridad de facturas procesadas (Originales PDF/XML).
 *   **Worker**: Servicio separado para procesamiento de tareas en cola (RQ), aunque parte de la carga actual se maneja vía hilos internos en el backend.
 
 ---
 
 ## 2. Flujos de Procesamiento de Documentos
 
-El núcleo de Cuenly es la extracción de datos de facturas desde diversos formatos. Este procesamiento es orquestado por `OpenAIProcessor`.
+El núcleo de Cuenly es la extracción de datos de facturas desde diversos formatos (Adjuntos o Enlaces).
 
-### 2.1 Procesamiento de Imágenes y PDF
+### 2.0 Estrategia de Priorización de Archivos
+El sistema analiza cada correo buscando facturas con la siguiente prioridad estricta para asegurar la máxima precisión al menor costo:
 
-Los archivos PDF se renderizan primero como imágenes (primera página) para ser procesados por modelos de Visión.
+1.  **Adjuntos XML**: Máxima prioridad (Parser nativo, sin costo IA).
+2.  **Adjuntos PDF**: Segunda prioridad (Visión IA).
+3.  **Enlaces Externos**: Último recurso. Se descargan y analizan buscando XML o PDF.
+
+### 2.1 Procesamiento de Imágenes, PDF y Enlaces
+
+Los archivos (ya sean adjuntos o descargados de enlaces) se almacenan primero en MinIO antes de ser procesados.
 
 ```mermaid
 sequenceDiagram
-    participant API as API/Backend
+    participant Mail as Email Processor
+    participant Down as Link Downloader
+    participant MinIO as MinIO Storage
     participant Proc as OpenAIProcessor
-    participant Cache as Redis Cache
-    participant Vision as OpenAI (GPT-4o)
-    participant DB as MongoDB
+    participant API as Backend/API
 
-    API->>Proc: extract_invoice_data(pdf_path)
-    Proc->>Cache: get(pdf_path)
-    alt Cache Hit
-        Cache-->>Proc: JSON Factura
-        Proc-->>API: Resultado Inmediato
-    else Cache Miss
-        Proc->>Proc: Convertir PDF a Imagen (Base64)
-        Proc->>Proc: OCR Ligero (Opcional - Control "Nota Remisión")
-        Proc->>Vision: Chat Completion (Imagen + Prompt V2)
-        Vision-->>Proc: JSON Raw
-        Proc->>Proc: Normalizar & Validar (CDC, Totales)
-        Proc->>Cache: set(pdf_path, data)
-        Proc->>DB: Incrementar Uso IA
-        Proc-->>API: InvoiceData
+    Mail->>Mail: 1. Analizar Adjuntos (XML > PDF)
+    alt Sin Adjuntos Válidos
+        Mail->>Down: 2. Extraer y Descargar Enlaces
+        Down->>Down: Detectar Content-Type (XML/PDF)
     end
+    
+    Mail->>MinIO: 3. Subir Archivo Original (Backup)
+    MinIO-->>Mail: Retorna MinIO Key/URL
+    
+    Mail->>Proc: 4. extract_invoice_data(local_path)
+    
+    alt Es XML (Adjunto o Link)
+        Proc->>Proc: Parser Nativo SIFEN
+        opt Fallo Nativo
+           Proc->>Proc: Fallback OpenAI GPT-4o
+        end
+    else Es PDF (Adjunto o Link)
+        Proc->>Proc: Convertir a Imagen + OCR
+        Proc->>Proc: OpenAI Vision (GPT-4o)
+    end
+    
+    Proc-->>API: InvoiceData Normalizado
 ```
 
 ### 2.2 Procesamiento de XML (Facturación Electrónica)
@@ -169,3 +185,7 @@ sequenceDiagram
 | `MONGODB_URL` | Conexión a base de datos. |
 | `REDIS_URL` | Conexión a Redis (Cache/Colas). |
 | `ENCRYPTION_KEY` | Cifrado de contraseñas de correos almacenadas. |
+| `MINIO_ENDPOINT` | URL del servicio MinIO (S3). |
+| `MINIO_ACCESS_KEY` | Access Key para S3/MinIO. |
+| `MINIO_SECRET_KEY` | Secret Key para S3/MinIO. |
+| `MINIO_BUCKET` | Bucket donde se almacenan las facturas procesadas. |
