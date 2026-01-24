@@ -28,3 +28,6 @@ openpyxl==3.1.2
 prometheus-client==0.19.0
 minio
 httpx
+redis>=5.0.0
+tenacity>=8.2.0
+rq>=1.15.0

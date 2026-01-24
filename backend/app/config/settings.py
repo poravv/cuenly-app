@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "true").lower() in ("1", "true", "yes")
     MINIO_REGION: str = os.getenv("MINIO_REGION", "py-east-1")
 
+    # Redis Configuration
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_SSL: bool = os.getenv("REDIS_SSL", "0").lower() in ("1", "true", "yes")
+    REDIS_DB: int = int(os.getenv("REDIS_DB", 0))
+
     # Pagopar Integration
     PAGOPAR_PUBLIC_KEY: str = os.getenv("PAGOPAR_PUBLIC_KEY", "")
     PAGOPAR_PRIVATE_KEY: str = os.getenv("PAGOPAR_PRIVATE_KEY", "")
