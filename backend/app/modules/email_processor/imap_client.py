@@ -82,6 +82,9 @@ class IMAPClient:
                     else:
                         # Traditional password login
                         self.conn.login(self.username, self.password)
+                    
+                    # Habilitar debug máximo para ver tráfico IMAP
+                    self.conn.debug = 4
                 except (socket.timeout, socket.error, imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
                     logger.warning(f"Error de autenticación IMAP (intento {attempt + 1}): {e}")
                     try:
@@ -220,12 +223,22 @@ class IMAPClient:
                 # Construir argumentos de búsqueda
                 if use_utf8:
                     # Usar CHARSET UTF-8
-                    # NOTA: imaplib en Python 3 codifica automáticamente argumentos string a bytes.
-                    # Al pasar 'CHARSET', 'UTF-8' como primeros argumentos, imaplib envía:
-                    # UID SEARCH CHARSET UTF-8 ...
-                    # El problema anterior era pasar bytes manualmente que imaplib volvía a quoteare u ofuscaba.
-                    # Pasaremos strings normales.
-                    args = ['CHARSET', 'UTF-8'] + base_flag_args + ['SUBJECT', term_str]
+                    # imaplib falla si pasamos str unicode que no sean ascii (UnicodeEncodeError).
+                    # Debemos pasar BYTES codificados en utf-8.
+                    # Además debemos quotear el término para que sea un string IMAP válido.
+                    # Ejemplo: b'"Facturaci\xc3\xb3n"'
+                    
+                    term_bytes_quoted = b'"' + term_str.encode('utf-8') + b'"'
+
+                    # Construir lista de args como bytes
+                    # imaplib acepta bytes y los envía raw
+                    args = [b'CHARSET', b'UTF-8']
+                    for flag in base_flag_args:
+                        # flag 'UNSEEN' es ascii safe
+                        args.append(flag.encode('ascii') if isinstance(flag, str) else flag)
+                    
+                    args.append(b'SUBJECT')
+                    args.append(term_bytes_quoted)
                 else:
                     # Búsqueda ASCII estándar y comillas para frases
                     # Si tiene espacios y es ASCII, necesitamos comillas.
