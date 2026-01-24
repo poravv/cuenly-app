@@ -75,7 +75,8 @@ class MultiEmailProcessor:
     def _remove_duplicate_invoices(self, invoices: List[InvoiceData]) -> List[InvoiceData]:
         return deduplicate_invoices(invoices)
 
-    def process_limited_emails(self, limit: int = 10) -> ProcessResult:
+    def process_limited_emails(self, limit: int = 10, ignore_date_filter: bool = False, 
+                                start_date: Optional[str] = None, end_date: Optional[str] = None) -> ProcessResult:
         """Procesa un número limitado de correos para procesamiento manual"""
         logger.info(f"🔄 Iniciando procesamiento manual limitado a {limit} facturas")
         

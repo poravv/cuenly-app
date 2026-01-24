@@ -51,6 +51,12 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       if (!isNaN(val) && val >= 5000) this.autoRefreshIntervalMs = val;
     }
 
+    // Cargar rango de fechas guardado
+    const savedStartDate = localStorage.getItem('cuenlyapp:dateRangeStart');
+    const savedEndDate = localStorage.getItem('cuenlyapp:dateRangeEnd');
+    if (savedStartDate) this.dateRangeStart = savedStartDate;
+    if (savedEndDate) this.dateRangeEnd = savedEndDate;
+
     this.jobIntervalInput = this.intervalOptions[0];
   }
 
@@ -394,6 +400,17 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   clearDateRangeResult(): void {
     this.dateRangeResult = null;
     this.dateRangeError = null;
+  }
+
+  // Guardar fechas cuando cambien
+  onDateRangeStartChange(value: string): void {
+    this.dateRangeStart = value;
+    localStorage.setItem('cuenlyapp:dateRangeStart', value);
+  }
+
+  onDateRangeEndChange(value: string): void {
+    this.dateRangeEnd = value;
+    localStorage.setItem('cuenlyapp:dateRangeEnd', value);
   }
 
   onJobIntervalChange(val: any): void {

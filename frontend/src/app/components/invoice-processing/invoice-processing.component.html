@@ -394,11 +394,13 @@
                 <div class="row g-3 align-items-end">
                   <div class="col-md-4">
                     <label class="form-label text-white small fw-semibold">Fecha Inicio</label>
-                    <input type="date" class="form-control" [(ngModel)]="dateRangeStart" [disabled]="dateRangeLoading">
+                    <input type="date" class="form-control" [(ngModel)]="dateRangeStart"
+                      (ngModelChange)="onDateRangeStartChange($event)" [disabled]="dateRangeLoading">
                   </div>
                   <div class="col-md-4">
                     <label class="form-label text-white small fw-semibold">Fecha Fin</label>
-                    <input type="date" class="form-control" [(ngModel)]="dateRangeEnd" [disabled]="dateRangeLoading">
+                    <input type="date" class="form-control" [(ngModel)]="dateRangeEnd"
+                      (ngModelChange)="onDateRangeEndChange($event)" [disabled]="dateRangeLoading">
                   </div>
                   <div class="col-md-4">
                     <button class="btn btn-light w-100 fw-semibold" (click)="processDateRange()"
