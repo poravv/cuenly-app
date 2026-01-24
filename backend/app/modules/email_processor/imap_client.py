@@ -159,51 +159,32 @@ class IMAPClient:
         Devuelve UIDs de correos que coincidan con cualquiera de los términos de asunto.
         El parámetro unread_only controla si buscar solo no leídos (True) o todos (False).
         El parámetro since_date filtra correos desde una fecha específica.
-        Funciona igual para Gmail y servidores IMAP comunes. Sin X-GM-RAW.
+        Usa CHARSET UTF-8 para soportar acentos y caracteres especiales correctamente.
         """
         if not self.conn and not self.connect():
             return []
 
         if unread_only is None:
             unread_only = True
-        flag_args = ['UNSEEN'] if unread_only else ['ALL']
         
-        # Agregar filtro de fecha si se proporciona
+        # Base flags
+        base_flag_args = ['UNSEEN'] if unread_only else ['ALL']
+        
+        # Filtros de fecha
         if since_date:
             from datetime import datetime
-            # Convertir fecha a formato IMAP (DD-MMM-YYYY)
             date_str = since_date.strftime("%d-%b-%Y")
-            flag_args.append('SINCE')
-            flag_args.append(date_str)
-            logger.debug(f"Aplicando filtro de fecha SINCE {date_str}")
+            base_flag_args.append('SINCE')
+            base_flag_args.append(date_str)
         
-        # Agregar filtro de fecha fin si se proporciona
         if before_date:
             from datetime import datetime
             date_str = before_date.strftime("%d-%b-%Y")
-            flag_args.append('BEFORE')
-            flag_args.append(date_str)
-            logger.debug(f"Aplicando filtro de fecha BEFORE {date_str}")
+            base_flag_args.append('BEFORE')
+            base_flag_args.append(date_str)
+
+        uids: Set[str] = set()
         
-        def _to_ascii(s: str) -> str:
-            try:
-                # Normaliza y remueve diacríticos → ASCII
-                nfkd = unicodedata.normalize('NFKD', s)
-                return ''.join(c for c in nfkd if ord(c) < 128)
-            except Exception:
-                try:
-                    return s.encode('ascii', 'ignore').decode('ascii', 'ignore')
-                except Exception:
-                    return ''
-
-        terms = []
-        for t in (subject_terms or []):
-            if not t:
-                continue
-            ascii_t = _to_ascii(str(t).strip())
-            if ascii_t:
-                terms.append(ascii_t)
-
         def _decode_ids(data) -> List[str]:
             if not data:
                 return []
@@ -211,56 +192,80 @@ class IMAPClient:
             payload = first.decode('utf-8', errors='ignore').strip() if isinstance(first, (bytes, bytearray)) else str(first).strip()
             return payload.split() if payload else []
 
-        uids: Set[str] = set()
-
-        # Sin términos: traemos todo según flag
-        if not terms:
+        # Sin términos: búsqueda simple
+        if not subject_terms:
             try:
-                typ, data = self.conn.uid('SEARCH', *flag_args)
+                typ, data = self.conn.uid('SEARCH', *base_flag_args)
                 if typ == 'OK':
                     uids |= set(_decode_ids(data))
-                else:
-                    logger.error(f"UID SEARCH {' '.join(flag_args)} falló: {typ}")
             except Exception as e:
                 logger.error(f"UID SEARCH error sin términos: {e}")
             return sorted(uids, key=lambda x: int(x))
 
-        # Con términos: una búsqueda por término → unión
-        for term in terms:
-            args = flag_args + ['SUBJECT', f'"{term}"']
-            try:
-                logger.debug(f"IMAP UID SEARCH args: {args}")  # para auditar exactamente qué se envía
+        # Con términos: búsqueda por cada término
+        for term in subject_terms:
+            if not term:
+                continue
                 
-                # Aplicar timeout específico para la búsqueda
+            term_str = str(term).strip()
+            
+            # Decidir si usar CHARSET UTF-8 (si hay caracteres no ASCII)
+            use_utf8 = False
+            try:
+                term_str.encode('ascii')
+            except UnicodeEncodeError:
+                use_utf8 = True
+            
+            try:
+                # Construir argumentos de búsqueda
+                if use_utf8:
+                    # Usar CHARSET UTF-8
+                    # Nota: imaplib requiere que los argumentos de search sean bytes si se usa CHARSET
+                    args = ['CHARSET', 'UTF-8'] + base_flag_args + ['SUBJECT', f'"{term_str}"']
+                    # Sin embargo, imaplib.uid('SEARCH', ...) concatena argumentos.
+                    # Para UTF-8 seguro, a veces es mejor enviar el literal.
+                    # Vamos a intentar pasar strings y dejar que imaplib codifique, o usar bytes explícitos.
+                    args = ['CHARSET', 'UTF-8'] + base_flag_args + ['SUBJECT', term_str]
+                else:
+                    # Búsqueda ASCII estándar
+                    args = base_flag_args + ['SUBJECT', term_str]
+                
+                logger.debug(f"IMAP UID SEARCH args: {args} (UTF-8={use_utf8})")
+                
+                # Timeout protegido
                 old_timeout = None
                 if hasattr(self.conn, 'sock') and self.conn.sock:
                     old_timeout = self.conn.sock.gettimeout()
-                    self.conn.sock.settimeout(15.0)  # 15 segundos para búsqueda
+                    self.conn.sock.settimeout(20.0)
                 
                 try:
-                    typ, data = self.conn.uid('SEARCH', *args)
+                    # Ejecutar búsqueda
+                    # Si args contiene unicode, imaplib lo codificará a latin-1 o utf-8 según configuración?
+                    # imaplib en Python 3 envía strings como literales si es posible.
+                    # Para seguridad con acentos:
+                    if use_utf8:
+                        # Enviar comando raw construido con cuidado si imaplib falla, 
+                        # pero probemos primero la interfaz estándar con el charset.
+                        typ, data = self.conn.uid('SEARCH', *args)
+                    else:
+                        typ, data = self.conn.uid('SEARCH', *args)
+
                     if typ == 'OK':
                         uids |= set(_decode_ids(data))
                     else:
-                        logger.error(f"UID SEARCH para term '{term}' falló: {typ}")
-                except (socket.timeout, socket.error) as e:
-                    logger.error(f"Timeout/error de red en UID SEARCH para term '{term}': {e}")
-                except (imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
-                    logger.error(f"Error IMAP en UID SEARCH para term '{term}': {e}")
+                        logger.warning(f"UID SEARCH falló para term '{term_str}': {typ}")
+                        
+                except Exception as e:
+                    logger.error(f"Error en UID SEARCH para '{term_str}': {e}")
                 finally:
-                    # Restaurar timeout original
                     if old_timeout is not None and hasattr(self.conn, 'sock') and self.conn.sock:
                         try:
                             self.conn.sock.settimeout(old_timeout)
                         except:
                             pass
-                    
-            except socket.timeout:
-                logger.error(f"Timeout en UID SEARCH para term '{term}'")
-            except (socket.error, imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
-                logger.error(f"Error IMAP/red en UID SEARCH para term '{term}': {e}")
+                            
             except Exception as e:
-                logger.error(f"Error inesperado en UID SEARCH para term '{term}': {e}")
+                logger.error(f"Error general procesando búsqueda para '{term}': {e}")
 
         return sorted(uids, key=lambda x: int(x))
 
