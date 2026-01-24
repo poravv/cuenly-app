@@ -5,6 +5,9 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from app.config.settings import settings
 from app.repositories.subscription_repository import SubscriptionRepository
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class UserRepository:
