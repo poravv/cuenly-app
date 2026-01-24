@@ -380,8 +380,8 @@ class SubscriptionRepository:
                     "user_email": user_email,
                     "status": "ACTIVE"
                     # NO verificar expires_at - las suscripciones son indefinidas
-                },
-                {"_id": 0}
+                }
+                # No excluir _id para poder identificar la suscripción
             )
             
             if not subscription:
@@ -392,7 +392,7 @@ class SubscriptionRepository:
             plan = await self.get_plan_by_code(subscription.get("plan_code"))
             
             # Obtener uso actual de IA del usuario
-            user = self.users_collection.find_one({"email": user_email}, {"ai_invoices_used": 1})
+            user = self.users_collection.find_one({"email": user_email}, {"ai_invoices_processed": 1})
             
             # Usar límite del plan, no del usuario
             if plan and plan.get("features"):
@@ -402,7 +402,7 @@ class SubscriptionRepository:
                 
             # Uso actual del usuario
             if user:
-                subscription["current_ai_usage"] = user.get("ai_invoices_used", 0)
+                subscription["current_ai_usage"] = user.get("ai_invoices_processed", 0)
             else:
                 subscription["current_ai_usage"] = 0
             

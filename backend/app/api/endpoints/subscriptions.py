@@ -384,7 +384,13 @@ async def get_my_subscription(
                 "next_billing_date": subscription.get("next_billing_date").isoformat() if subscription.get("next_billing_date") else None,
                 "last_billing_date": subscription.get("last_billing_date").isoformat() if subscription.get("last_billing_date") else None,
                 "has_payment_method": has_payment_method,
-                "created_at": subscription.get("created_at").isoformat() if subscription.get("created_at") else datetime.utcnow().isoformat()
+                "created_at": subscription.get("created_at").isoformat() if subscription.get("created_at") else None,
+                # Campos para frontend - límites de IA
+                "start_date": subscription.get("started_at").isoformat() if subscription.get("started_at") else (subscription.get("created_at").isoformat() if subscription.get("created_at") else None),
+                "monthly_ai_limit": subscription.get("monthly_ai_limit", 0),
+                "current_ai_usage": subscription.get("current_ai_usage", 0),
+                "plan_features": subscription.get("plan_features", {}),
+                "is_indefinite": subscription.get("is_indefinite", True)
             }
         }
         
