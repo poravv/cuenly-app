@@ -853,6 +853,43 @@ jobs:
             echo "Imágenes actuales: $CURRENT_IMAGES"
             exit 1
           fi
+
+      - name: Deploy Worker Service
+        run: |
+          set -euo pipefail
+          echo "🚀 Desplegando Worker Service..."
+          
+          # Aplicar configuración de worker
+          echo "📋 Aplicando configuración de worker..."
+          kubectl apply -f backend/k8s/worker-deployment.yaml -n ${{ env.NAMESPACE }}
+          
+          # Actualizar imagen del deployment de worker (usa la misma imagen de backend)
+          echo "🔄 Actualizando imagen del worker deployment..."
+          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+          kubectl set image deployment/cuenly-worker \
+            cuenly-worker=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA} \
+            -n ${{ env.NAMESPACE }}
+          
+          # Forzar actualización con anotaciones
+          kubectl patch deployment cuenly-worker -n ${{ env.NAMESPACE }} -p \
+            "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
+          
+          # Esperar que el rollout complete
+          echo "⏳ Esperando rollout del worker..."
+          kubectl rollout status deployment/cuenly-worker -n ${{ env.NAMESPACE }} --timeout=300s
+          
+          # Verificar estado del worker
+          echo "🔍 Verificando worker pod..."
+          WORKER_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          
+          if [ -n "$WORKER_POD" ]; then
+             echo "✅ Worker Pod encontrado: $WORKER_POD"
+             # Verificar logs básicos
+             echo "📜 Logs iniciales del worker:"
+             kubectl logs $WORKER_POD -n ${{ env.NAMESPACE }} --tail=20
+          else
+             echo "⚠️  No se encontró pod de worker corriendo inmediatamente, verificar manualmente."
+          fi
           
       - name: Remove old backend ingress (now handled by frontend)
         run: |
