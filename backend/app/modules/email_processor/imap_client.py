@@ -216,19 +216,27 @@ class IMAPClient:
             except UnicodeEncodeError:
                 use_utf8 = True
             
-            try:
+                try:
                 # Construir argumentos de búsqueda
                 if use_utf8:
                     # Usar CHARSET UTF-8
-                    # Nota: imaplib requiere que los argumentos de search sean bytes si se usa CHARSET
-                    args = ['CHARSET', 'UTF-8'] + base_flag_args + ['SUBJECT', f'"{term_str}"']
-                    # Sin embargo, imaplib.uid('SEARCH', ...) concatena argumentos.
-                    # Para UTF-8 seguro, a veces es mejor enviar el literal.
-                    # Vamos a intentar pasar strings y dejar que imaplib codifique, o usar bytes explícitos.
-                    args = ['CHARSET', 'UTF-8'] + base_flag_args + ['SUBJECT', term_str]
+                    # Para evitar que imaplib intente codificar a ASCII (y falle), enviamos bytes explícitos.
+                    # Convertimos TODOS los argumentos a bytes para consistencia.
+                    
+                    term_bytes = f'"{term_str}"'.encode('utf-8')
+                    
+                    # Convertir base flags a bytes
+                    args = [b'CHARSET', b'UTF-8']
+                    for flag in base_flag_args:
+                        args.append(flag.encode('ascii'))
+                    
+                    args.append(b'SUBJECT')
+                    args.append(term_bytes)
+                    
                 else:
-                    # Búsqueda ASCII estándar
-                    args = base_flag_args + ['SUBJECT', term_str]
+                    # Búsqueda ASCII estándar (imaplib maneja str -> ascii)
+                    # Comillas dobles para soportar espacios en términos ASCII (ej "invoice pdf")
+                    args = base_flag_args + ['SUBJECT', f'"{term_str}"']
                 
                 logger.debug(f"IMAP UID SEARCH args: {args} (UTF-8={use_utf8})")
                 
@@ -240,15 +248,7 @@ class IMAPClient:
                 
                 try:
                     # Ejecutar búsqueda
-                    # Si args contiene unicode, imaplib lo codificará a latin-1 o utf-8 según configuración?
-                    # imaplib en Python 3 envía strings como literales si es posible.
-                    # Para seguridad con acentos:
-                    if use_utf8:
-                        # Enviar comando raw construido con cuidado si imaplib falla, 
-                        # pero probemos primero la interfaz estándar con el charset.
-                        typ, data = self.conn.uid('SEARCH', *args)
-                    else:
-                        typ, data = self.conn.uid('SEARCH', *args)
+                    typ, data = self.conn.uid('SEARCH', *args)
 
                     if typ == 'OK':
                         uids |= set(_decode_ids(data))
