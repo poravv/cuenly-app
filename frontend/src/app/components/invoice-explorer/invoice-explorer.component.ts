@@ -55,6 +55,7 @@ export class InvoiceExplorerComponent implements OnInit {
   v2Header: any | null = null;
   v2Items: any[] = [];
   expandedInvoiceId: string | null = null;
+  canDownload: boolean = true;
 
   // Descargas de Excel eliminadas
 
@@ -62,6 +63,34 @@ export class InvoiceExplorerComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadAvailableMonths();
+    this.checkSubscriptionPermissions();
+  }
+
+  checkSubscriptionPermissions(): void {
+    this.api.getMySubscription().subscribe({
+      next: (res) => {
+        if (res.success && res.subscription) {
+          // Si hay suscripción, verificar feature
+          // Como por ahora no tenemos todos los features mapeados en el frontend, 
+          // usaremos lógica basada en el código del plan si es necesario, 
+          // o confiaremos en lo que el backend responde si extendemos el DTO.
+          // Por ahora, asumimos que si el backend devuelve la suscripcion, chequeamos minio_storage si viniera.
+          // Si no viene, podemos inferir por plan_code (basic = no download si queremos ser estrictos)
+          const planCode = res.subscription.plan_code;
+          if (planCode === 'basic') {
+            this.canDownload = false;
+          } else {
+            this.canDownload = true;
+          }
+        } else {
+          // Si no hay suscripción activa (FREE/Trial), bloqueamos descarga originales
+          this.canDownload = false;
+        }
+      },
+      error: () => {
+        this.canDownload = false; // Fallback a bloqueo por seguridad
+      }
+    });
   }
 
   async loadAvailableMonths(): Promise<void> {
@@ -228,6 +257,11 @@ export class InvoiceExplorerComponent implements OnInit {
   downloadInvoice(headerId: string, event: Event): void {
     event.stopPropagation();
     if (!headerId) return;
+
+    if (!this.canDownload) {
+      this.notificationService.warning('Tu plan actual no permite la descarga de archivos originales.', 'Plan Limitado');
+      return;
+    }
 
     this.notificationService.info('Descargando archivo...', 'Procesando');
 

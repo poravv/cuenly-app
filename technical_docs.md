@@ -34,7 +34,7 @@ graph TD
 *   **Backend**: API RESTful construida con FastAPI (Python 3.11).
 *   **MongoDB**: Base de datos principal (NoSQL) para usuarios, facturas y configuraciones.
 *   **Redis**: Sistema de caché para respuestas de OpenAI y broker de mensajería para colas opcionales (RQ).
-*   **MinIO**: Almacenamiento de objetos compatible con S3 para guardar copias de seguridad de facturas procesadas (Originales PDF/XML).
+*   **MinIO**: Almacenamiento de objetos compatible con S3 para guardar copias de seguridad de facturas procesadas (Originales PDF/XML). Su acceso está restringido según el plan de suscripción.
 *   **Worker**: Servicio separado para procesamiento de tareas en cola (RQ), aunque parte de la carga actual se maneja vía hilos internos en el backend.
 
 ---
@@ -142,6 +142,12 @@ Infraestructura tradicional de workers separada. Actualmente disponible pero con
 *   **Ubicación**: Contenedor `cuenly-worker`
 *   **Colas**: `high`, `default`, `low`.
 *   **Uso**: Diseñado para tareas desacopladas que pueden sobrevivir a reinicios del backend.
+
+### 3.4 DataRetentionJob (Purga de Originales)
+Job diario para cumplir con políticas de privacidad y ahorro de costes.
+*   **Ubicación**: `app.modules.scheduler.jobs.retention_job`
+*   **Frecuencia**: Diaria (03:00 AM).
+*   **Lógica**: Elimina archivos de MinIO con antigüedad > 1 año (según `retention_days` del plan). Mantiene la metadata en MongoDB pero libera espacio de almacenamiento físico.
 
 ---
 

@@ -33,7 +33,7 @@ async def process_recurring_payments_job():
     try:
         now = datetime.utcnow()
         query = {
-            "status": "active",
+            "status": "ACTIVE",
             "next_billing_date": {"$lte": now},
             "pagopar_card_token": {"$exists": True, "$ne": None}
         }
@@ -98,7 +98,7 @@ async def process_recurring_payments_job():
                             "$set": {
                                 "next_billing_date": new_next,
                                 "last_payment_date": now,
-                                "status": "active" # Ensure active
+                                "status": "ACTIVE" # Ensure active
                             }
                         }
                     )

@@ -360,7 +360,7 @@ class SubscriptionRepository:
             subscription = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": "active"
+                    "status": "ACTIVE"
                 },
                 {"_id": 0}
             )
@@ -618,7 +618,7 @@ class SubscriptionRepository:
             
             # Estadísticas generales
             total_subscriptions = self.subscriptions_collection.count_documents({})
-            active_subscriptions = self.subscriptions_collection.count_documents({"status": "active"})
+            active_subscriptions = self.subscriptions_collection.count_documents({"status": "ACTIVE"})
             total_revenue = list(self.subscriptions_collection.aggregate([
                 {"$group": {"_id": None, "total": {"$sum": "$plan_price"}}}
             ]))
@@ -706,7 +706,7 @@ class SubscriptionRepository:
                 "billing_period": plan["billing_period"],
                 # Incluir features del plan para actualizar límites del usuario correctamente
                 "plan_features": plan.get("features", {}),
-                "status": "active",
+                "status": "ACTIVE",
                 "payment_method": payment_method,
                 "payment_reference": kwargs.get("payment_reference", f"admin_assigned_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}")
             }

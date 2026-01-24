@@ -160,6 +160,7 @@ export class DashboardComponent implements OnInit {
   loading = false;
   currentPeriod = 'month';
   Math = Math;
+  canDownload: boolean = true;
 
   private apiUrl = environment.apiUrl;
 
@@ -184,6 +185,23 @@ export class DashboardComponent implements OnInit {
     });
 
     this.loadDashboardData();
+    this.checkSubscriptionPermissions();
+  }
+
+  checkSubscriptionPermissions(): void {
+    this.api.getMySubscription().subscribe({
+      next: (res) => {
+        if (res.success && res.subscription) {
+          const planCode = res.subscription.plan_code;
+          this.canDownload = planCode !== 'basic';
+        } else {
+          this.canDownload = false;
+        }
+      },
+      error: () => {
+        this.canDownload = false;
+      }
+    });
   }
 
   async loadDashboardData(): Promise<void> {
@@ -381,6 +399,11 @@ export class DashboardComponent implements OnInit {
     // Si no hay ID, notificar
     if (!id) {
       this.notificationService.warning('No se puede descargar: ID no encontrado', 'Aviso');
+      return;
+    }
+
+    if (!this.canDownload) {
+      this.notificationService.warning('Tu plan actual no permite la descarga de archivos originales.', 'Plan Limitado');
       return;
     }
 

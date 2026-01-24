@@ -17,6 +17,8 @@ interface Plan {
     api_access: boolean;
     priority_support: boolean;
     custom_templates: boolean;
+    minio_storage: boolean;
+    retention_days: number;
   };
   status: string;
   is_popular: boolean;
@@ -82,7 +84,9 @@ export class PlansManagementComponent implements OnInit {
       export_formats: ['excel', 'csv'],
       api_access: false,
       priority_support: false,
-      custom_templates: false
+      custom_templates: false,
+      minio_storage: false,
+      retention_days: 365
     },
     status: 'active',
     is_popular: false,
@@ -181,7 +185,10 @@ export class PlansManagementComponent implements OnInit {
 
   editPlan(plan: Plan): void {
     this.editingPlan = plan;
-    this.planForm = { ...plan };
+    this.planForm = {
+      ...plan,
+      features: { ...plan.features }
+    };
     this.showPlanForm = true;
   }
 
@@ -200,7 +207,9 @@ export class PlansManagementComponent implements OnInit {
         export_formats: ['excel', 'csv'],
         api_access: false,
         priority_support: false,
-        custom_templates: false
+        custom_templates: false,
+        minio_storage: false,
+        retention_days: 365
       },
       status: 'active',
       is_popular: false,
@@ -266,7 +275,10 @@ export class PlansManagementComponent implements OnInit {
 
   duplicatePlan(plan: Plan): void {
     this.editingPlan = null; // New plan mode
-    this.planForm = { ...plan };
+    this.planForm = {
+      ...plan,
+      features: { ...plan.features }
+    };
     // Modify unique fields to avoid collision/confusion
     this.planForm.name = `${plan.name} (Copia)`;
     this.planForm.code = `${plan.code}_copy_${Date.now()}`;

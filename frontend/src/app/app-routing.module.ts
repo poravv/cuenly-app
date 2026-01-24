@@ -22,6 +22,9 @@ import { AdminPanelComponent } from './components/admin-panel/admin-panel.compon
 import { PlansManagementComponent } from './components/plans-management/plans-management.component';
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { ProfileComponent } from './components/profile/profile.component';
+import { TermsConditionsComponent } from './components/legal/terms-conditions.component';
+import { PrivacyPolicyComponent } from './components/legal/privacy-policy.component';
+import { DataRetentionComponent } from './components/legal/data-retention.component';
 
 const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [LoginGuard] },
@@ -45,6 +48,9 @@ const routes: Routes = [
   { path: 'admin', component: AdminPanelComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'admin/plans', component: PlansManagementComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'ayuda', component: HelpComponent, canActivate: [AuthGuard] },
+  { path: 'terms', component: TermsConditionsComponent },
+  { path: 'privacy', component: PrivacyPolicyComponent },
+  { path: 'retention', component: DataRetentionComponent },
   { path: '**', redirectTo: '', pathMatch: 'full' }
 ];
 

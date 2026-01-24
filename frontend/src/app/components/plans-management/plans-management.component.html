@@ -346,6 +346,20 @@
               <input type="checkbox" [(ngModel)]="planForm.features.custom_templates" name="custom_templates">
               Plantillas Personalizadas
             </label>
+
+            <label class="checkbox-label" style="color: var(--primary); font-weight: bold;">
+              <input type="checkbox" [(ngModel)]="planForm.features.minio_storage" name="minio_storage">
+              Almacenamiento Original (MinIO)
+            </label>
+          </div>
+
+          <div class="form-group mt-3" *ngIf="planForm.features.minio_storage">
+            <label>Días de Retención en MinIO</label>
+            <input type="number" [(ngModel)]="planForm.features.retention_days" name="retention_days"
+              class="form-control" min="1" max="3650">
+            <small class="form-text text-muted">Ej: 365 para 1 año. Los archivos más antiguos serán purgados por el job
+              de
+              retención.</small>
           </div>
         </div>
 

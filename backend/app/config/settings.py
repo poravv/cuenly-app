@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
     # MongoDB
-    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
+    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025_seguro@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "cuenlyapp_warehouse")
     # Forzar colección v2 (headers) como única fuente de verdad
     MONGODB_COLLECTION: str = os.getenv("MONGODB_COLLECTION", "invoice_headers")

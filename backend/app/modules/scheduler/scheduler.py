@@ -10,6 +10,7 @@ from datetime import datetime
 import logging
 from app.modules.monthly_reset_service import MonthlyResetService
 from app.modules.scheduler.jobs.subscription_billing_job import run_billing_job
+from app.modules.scheduler.jobs.retention_job import run_retention_job
 import asyncio
 
 # Configurar logging
@@ -35,6 +36,9 @@ class ScheduledTasks:
             # Programar cobros recurrentes de suscripciones diariamente a las 00:00
             schedule.every().day.at("00:00").do(lambda: asyncio.run(run_billing_job()))
             
+            # Programar purga de archivos antiguos diariamente a las 03:00
+            schedule.every().day.at("03:00").do(lambda: asyncio.run(run_retention_job()))
+            
             # Iniciar el hilo de background
             self.scheduler_thread = threading.Thread(
                 target=self._run_scheduler, 
@@ -47,6 +51,7 @@ class ScheduledTasks:
             logger.info("✅ Scheduler iniciado correctamente")
             logger.info("📅 Reseteo mensual de límites IA a las 00:01 (día 1 de cada mes)")
             logger.info("💳 Cobros recurrentes de suscripciones a las 00:00 (diario)")
+            logger.info("🧹 Purga de archivos antiguos a las 03:00 (diario)")
             
         except Exception as e:
             logger.error(f"❌ Error iniciando scheduler: {str(e)}")

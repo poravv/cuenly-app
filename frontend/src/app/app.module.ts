@@ -33,6 +33,9 @@ import { InvoiceProcessingComponent } from './components/invoice-processing/invo
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { BancardIframeModalComponent } from './components/bancard-iframe-modal/bancard-iframe-modal.component';
 import { ProfileComponent } from './components/profile/profile.component';
+import { TermsConditionsComponent } from './components/legal/terms-conditions.component';
+import { PrivacyPolicyComponent } from './components/legal/privacy-policy.component';
+import { DataRetentionComponent } from './components/legal/data-retention.component';
 
 @NgModule({
   declarations: [
@@ -60,7 +63,10 @@ import { ProfileComponent } from './components/profile/profile.component';
     InvoiceProcessingComponent,
     PaymentMethodsComponent,
     BancardIframeModalComponent,
-    ProfileComponent
+    ProfileComponent,
+    TermsConditionsComponent,
+    PrivacyPolicyComponent,
+    DataRetentionComponent
   ],
   imports: [
     BrowserModule,

@@ -37,6 +37,7 @@ export class InvoicesV2Component implements OnInit {
   showDeleteConfirm = false;
   deleteLoading = false;
   deleteInfo: any = null;
+  canDownload: boolean = true;
 
   constructor(
     private api: ApiService,
@@ -50,6 +51,23 @@ export class InvoicesV2Component implements OnInit {
     const m = String(now.getMonth() + 1).padStart(2, '0');
     this.month = `${y}-${m}`;
     this.loadHeaders();
+    this.checkSubscriptionPermissions();
+  }
+
+  checkSubscriptionPermissions(): void {
+    this.api.getMySubscription().subscribe({
+      next: (res) => {
+        if (res.success && res.subscription) {
+          const planCode = res.subscription.plan_code;
+          this.canDownload = planCode !== 'basic';
+        } else {
+          this.canDownload = false;
+        }
+      },
+      error: () => {
+        this.canDownload = false;
+      }
+    });
   }
 
   loadHeaders(): void {
@@ -324,6 +342,11 @@ export class InvoicesV2Component implements OnInit {
       event.stopPropagation();
     }
     if (!headerId) return;
+
+    if (!this.canDownload) {
+      this.notificationService.warning('Tu plan actual no permite la descarga de archivos originales.', 'Plan Limitado');
+      return;
+    }
 
     this.notificationService.info('Descargando archivo...', 'Procesando');
 

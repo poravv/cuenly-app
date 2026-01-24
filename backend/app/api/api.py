@@ -1,4 +1,4 @@
-from app.api.endpoints import pagopar, admin_subscriptions, subscriptions
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -85,10 +85,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API Routers
+# =========================================
+# API Routers - Módulos Refactorizados
+# =========================================
 app.include_router(pagopar.router, prefix="/pagopar", tags=["Pagopar"])
-app.include_router(admin_subscriptions.router, prefix="/admin", tags=["Admin Subscriptions"])
+app.include_router(admin_subscriptions.router, prefix="/admin/subscriptions", tags=["Admin Subscriptions"])
 app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
+app.include_router(admin_users.router, prefix="/admin/users", tags=["Admin Users"])
+app.include_router(admin_plans.router, prefix="/admin/plans", tags=["Admin Plans"])
+app.include_router(user_profile.router, prefix="/user", tags=["User Profile"])
 
 
 # Startup event para inicializar servicios
@@ -213,19 +218,29 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     
     # Obtener información completa del usuario desde la base de datos
     user_repo = UserRepository()
-    db_user = user_repo.get_by_email(user.get('email', ''))
+    db_user = None
+    try:
+        db_user = user_repo.get_by_email(user.get('email', ''))
+    except Exception as e:
+        logger.error(f"Error fetching user from DB in get_user_profile: {e}")
     
     # Obtener fecha de inicio de procesamiento de correos
     processing_start_date = None
-    try:
-        processing_start_date = user_repo.get_email_processing_start_date(user.get('email', ''))
-        if processing_start_date:
-            processing_start_date = processing_start_date.isoformat()
-    except Exception as e:
-        logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
+    if db_user:
+        try:
+            processing_start_date = user_repo.get_email_processing_start_date(user.get('email', ''))
+            if processing_start_date:
+                processing_start_date = processing_start_date.isoformat()
+        except Exception as e:
+            logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
     
     # Verificar si es admin
-    is_admin = db_user.get('role') == 'admin' if db_user else False
+    is_admin = False
+    if db_user:
+        is_admin = db_user.get('role') == 'admin'
+    else:
+        # Fallback para el usuario principal si la DB falla
+        is_admin = user.get('email') == 'andyvercha@gmail.com'
     
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
@@ -3355,75 +3370,8 @@ async def list_public_plans(
         "count": len(plans)
     }
 
-# Endpoints de suscripciones
-@app.get("/admin/subscriptions/stats", tags=["Admin - Subscriptions"])
-async def admin_get_subscription_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
-    """Obtiene estadísticas de suscripciones"""
-    try:
-        from app.repositories.subscription_repository import SubscriptionRepository
-        repo = SubscriptionRepository()
-        stats = await repo.get_subscription_stats()
-        
-        return {
-            "success": True,
-            "data": stats
-        }
-    except Exception as e:
-        logger.error(f"Error obteniendo estadísticas de suscripciones: {e}")
-        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
-
-@app.post("/admin/subscriptions", tags=["Admin - Subscriptions"])
-async def admin_create_subscription(
-    subscription: SubscriptionCreateRequest,
-    admin: Dict[str, Any] = Depends(_get_current_admin)
-):
-    """Asigna un plan a un usuario"""
-    try:
-        from app.repositories.subscription_repository import SubscriptionRepository
-        repo = SubscriptionRepository()
-        
-        success = await repo.assign_plan_to_user(
-            subscription.user_email,
-            subscription.plan_code,
-            subscription.payment_method
-        )
-        
-        if not success:
-            raise HTTPException(status_code=400, detail="Error asignando plan al usuario")
-        
-        return {
-            "success": True,
-            "message": f"Plan '{subscription.plan_code}' asignado a {subscription.user_email}"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error asignando plan: {e}")
-        raise HTTPException(status_code=500, detail="Error asignando plan")
-
-@app.get("/admin/subscriptions/user/{user_email}", tags=["Admin - Subscriptions"])
-async def admin_get_user_subscriptions(
-    user_email: str,
-    admin: Dict[str, Any] = Depends(_get_current_admin)
-):
-    """Obtiene el historial de suscripciones de un usuario"""
-    try:
-        from app.repositories.subscription_repository import SubscriptionRepository
-        repo = SubscriptionRepository()
-        
-        current_subscription = await repo.get_user_subscription(user_email)
-        history = await repo.get_user_subscriptions_history(user_email)
-        
-        return {
-            "success": True,
-            "data": {
-                "current_subscription": current_subscription,
-                "history": history
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error obteniendo suscripciones de {user_email}: {e}")
-        raise HTTPException(status_code=500, detail="Error obteniendo suscripciones")
+# Endpoints de suscripciones - TODOS MIGRADOS a admin_subscriptions.py
+# Rutas: /admin/subscriptions/stats, POST /admin/subscriptions, GET /admin/subscriptions/user/{user_email}
 
 @app.get("/invoices/{invoice_id}/download")
 async def get_invoice_download_url(
@@ -3456,7 +3404,35 @@ async def get_invoice_download_url(
             user_repo = UserRepository()
             if not user_repo.is_admin(owner):
                 raise HTTPException(status_code=403, detail="Acceso denegado")
+        
+        # Verificar si el plan del usuario permite descarga desde MinIO
+        from app.repositories.subscription_repository import SubscriptionRepository
+        sub_repo = SubscriptionRepository()
+        subscription = await sub_repo.get_user_active_subscription(owner)
+        
+        # Permitir a admins o si el plan lo permite
+        user_repo = UserRepository()
+        is_admin = user_repo.is_admin(owner)
+        
+        if not is_admin:
+            if not subscription:
+                # Si no hay suscripción activa, es un usuario FREE/Trial
+                # Por defecto, si queremos restringir el Trial también, bloqueamos aquí
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
+                )
             
+            # Obtener features del plan
+            plan_code = subscription.get("plan_code")
+            plan = await sub_repo.get_plan_by_code(plan_code)
+            if plan and plan.get("features"):
+                if not plan["features"].get("minio_storage", True):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
+                    )
+
         minio_key = header.get("minio_key")
         if not minio_key:
             return {"success": False, "message": "Archivo no disponible en el almacenamiento seguro"}
@@ -4717,6 +4693,33 @@ async def export_invoices_with_template(
         template_id = export_request.get("template_id")
         filters = export_request.get("filters", {})
         filename = export_request.get("filename", f"facturas_custom_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        
+        # Verificar si el plan del usuario permite exportación
+        from app.repositories.subscription_repository import SubscriptionRepository
+        from app.repositories.user_repository import UserRepository
+        
+        owner = user.get("email", "").lower()
+        user_repo = UserRepository()
+        is_admin = user_repo.is_admin(owner)
+        
+        if not is_admin:
+            sub_repo = SubscriptionRepository()
+            subscription = await sub_repo.get_user_active_subscription(owner)
+            
+            # Formatos permitidos (por ahora solo excel)
+            requested_format = "excel" if filename.endswith((".xlsx", ".xls")) else "unknown"
+            
+            if not subscription:
+                # Usuario FREE: Permitir solo excel
+                if requested_format != "excel":
+                     raise HTTPException(status_code=403, detail="Tu plan no permite este formato de exportación.")
+            else:
+                plan_code = subscription.get("plan_code")
+                plan = await sub_repo.get_plan_by_code(plan_code)
+                if plan and plan.get("features"):
+                    allowed = plan["features"].get("allowed_export_formats", ["excel"])
+                    if requested_format not in allowed:
+                        raise HTTPException(status_code=403, detail=f"El formato {requested_format} no está permitido en tu plan actual.")
         
         if not template_id:
             raise HTTPException(status_code=400, detail="template_id requerido")

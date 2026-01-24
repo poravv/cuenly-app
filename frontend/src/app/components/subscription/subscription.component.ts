@@ -473,6 +473,23 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       if (backendFeatures.custom_templates) {
         features.push('Plantillas personalizadas');
       }
+
+      // Nuevos features de Fase 9
+      if (backendFeatures.minio_storage === true) {
+        features.push('Almacenamiento y descarga de originales');
+      } else if (backendFeatures.minio_storage === false) {
+        features.push('Solo visualización (sin descarga de original)');
+      }
+
+      if (backendFeatures.retention_days) {
+        features.push(`Retención de archivos: ${Math.floor(backendFeatures.retention_days / 30)} meses`);
+      } else {
+        features.push('Retención de archivos: 1 año');
+      }
+
+      if (backendFeatures.allowed_export_formats && Array.isArray(backendFeatures.allowed_export_formats)) {
+        features.push(`Exportación: ${backendFeatures.allowed_export_formats.join(', ').toUpperCase()}`);
+      }
     }
 
     return features;
