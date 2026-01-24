@@ -35,10 +35,18 @@ class OpenAIProcessor:
         self.cfg = cfg
         self.client = make_openai_client(cfg.api_key)
         
-        # Deshabilitar cache por problemas de estabilidad
-        self.cache = None  # Cache FORZADAMENTE deshabilitado
-        
-        logger.info("⚠️ OpenAI Cache deshabilitado por estabilidad")
+        # Inicializar Redis Cache (con fallback graceful si no está disponible)
+        try:
+            from .redis_cache import get_openai_cache
+            self.cache = get_openai_cache()
+            if self.cache.is_available:
+                logger.info("✅ OpenAI Redis Cache habilitado")
+            else:
+                logger.warning("⚠️ Redis no disponible, cache deshabilitado")
+                self.cache = None
+        except Exception as e:
+            logger.warning(f"⚠️ Error inicializando Redis cache: {e}")
+            self.cache = None
 
     # ------------------------------------------------------------------ API --
     def extract_invoice_data(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None, owner_email: Optional[str] = None):
@@ -55,7 +63,7 @@ class OpenAIProcessor:
         try:
             # 1. Verificar cache primero
             if self.cache:
-                cached_result = self.cache.get_cached_result(pdf_path)
+                cached_result = self.cache.get(pdf_path)
                 if cached_result:
                     logger.info(f"🚀 Cache HIT - Resultado instantáneo para {pdf_path}")
                     # Asegurar que el resultado cacheado sea procesado correctamente
@@ -90,13 +98,13 @@ class OpenAIProcessor:
             # Cachear el resultado si existe (como diccionario para serialización)
             if result and self.cache:
                 # Si result es un objeto InvoiceData, convertirlo a dict para cache
-                if hasattr(result, '__dict__'):
+                if hasattr(result, '__dict__') and not isinstance(result, dict):
                     # Es un objeto, extraer sus datos como dict
-                    cache_data = result.__dict__ if hasattr(result, '__dict__') else result
+                    cache_data = vars(result) if hasattr(result, '__dict__') else result
                 else:
                     # Ya es un dict
                     cache_data = result
-                self.cache.cache_result(pdf_path, cache_data, "openai_vision")
+                self.cache.set(pdf_path, cache_data, source="openai_vision")
             
             if result:
                 # Marcar que se usó IA para control en bucle

@@ -2576,6 +2576,40 @@ async def detailed_health():
         logger.error(f"Error en health check detallado: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error en health check: {str(e)}")
 
+@app.get("/health/redis")
+async def redis_health():
+    """
+    Health check específico para Redis.
+    
+    Returns:
+        dict: Estado de conexión Redis y estadísticas de cache.
+    """
+    try:
+        from app.core.redis_client import redis_health_check
+        from app.modules.openai_processor.redis_cache import get_openai_cache
+        
+        redis_status = redis_health_check()
+        
+        # Obtener stats del cache si está disponible
+        cache_stats = {}
+        try:
+            cache = get_openai_cache()
+            cache_stats = cache.stats()
+        except Exception:
+            cache_stats = {"available": False}
+        
+        return {
+            "redis": redis_status,
+            "openai_cache": cache_stats
+        }
+    except Exception as e:
+        logger.error(f"Error en Redis health check: {str(e)}")
+        return {
+            "redis": {"healthy": False, "message": str(e)},
+            "openai_cache": {"available": False}
+        }
+
+
 @app.get("/health/trends")
 async def health_trends():
     """
