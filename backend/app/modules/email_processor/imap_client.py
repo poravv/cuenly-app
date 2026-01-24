@@ -220,20 +220,21 @@ class IMAPClient:
                 # Construir argumentos de búsqueda
                 if use_utf8:
                     # Usar CHARSET UTF-8
-                    # Para evitar que imaplib intente codificar a ASCII (y falle), enviamos bytes explícitos.
-                    term_bytes = f'"{term_str}"'.encode('utf-8')
-                    
-                    # Convertir base flags a bytes
-                    args = [b'CHARSET', b'UTF-8']
-                    for flag in base_flag_args:
-                        args.append(flag.encode('ascii'))
-                    
-                    args.append(b'SUBJECT')
-                    args.append(term_bytes)
-                    
+                    # NOTA: imaplib en Python 3 codifica automáticamente argumentos string a bytes.
+                    # Al pasar 'CHARSET', 'UTF-8' como primeros argumentos, imaplib envía:
+                    # UID SEARCH CHARSET UTF-8 ...
+                    # El problema anterior era pasar bytes manualmente que imaplib volvía a quoteare u ofuscaba.
+                    # Pasaremos strings normales.
+                    args = ['CHARSET', 'UTF-8'] + base_flag_args + ['SUBJECT', term_str]
                 else:
                     # Búsqueda ASCII estándar y comillas para frases
-                    args = base_flag_args + ['SUBJECT', f'"{term_str}"']
+                    # Si tiene espacios y es ASCII, necesitamos comillas.
+                    # imaplib pone comillas si ve espacios? Sí, usualmente.
+                    # Pero para estar seguros con términos compuestos:
+                    if ' ' in term_str:
+                         args = base_flag_args + ['SUBJECT', f'"{term_str}"']
+                    else:
+                         args = base_flag_args + ['SUBJECT', term_str]
                 
                 logger.debug(f"IMAP UID SEARCH args: {args} (UTF-8={use_utf8})")
                 
