@@ -216,13 +216,11 @@ class IMAPClient:
             except UnicodeEncodeError:
                 use_utf8 = True
             
-                try:
+            try:
                 # Construir argumentos de búsqueda
                 if use_utf8:
                     # Usar CHARSET UTF-8
                     # Para evitar que imaplib intente codificar a ASCII (y falle), enviamos bytes explícitos.
-                    # Convertimos TODOS los argumentos a bytes para consistencia.
-                    
                     term_bytes = f'"{term_str}"'.encode('utf-8')
                     
                     # Convertir base flags a bytes
@@ -234,8 +232,7 @@ class IMAPClient:
                     args.append(term_bytes)
                     
                 else:
-                    # Búsqueda ASCII estándar (imaplib maneja str -> ascii)
-                    # Comillas dobles para soportar espacios en términos ASCII (ej "invoice pdf")
+                    # Búsqueda ASCII estándar y comillas para frases
                     args = base_flag_args + ['SUBJECT', f'"{term_str}"']
                 
                 logger.debug(f"IMAP UID SEARCH args: {args} (UTF-8={use_utf8})")
