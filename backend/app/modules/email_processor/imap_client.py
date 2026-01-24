@@ -11,6 +11,16 @@ import os  # legacy references removed; kept for compatibility if needed
 
 logger = logging.getLogger(__name__)
 
+
+def remove_accents(input_str: str) -> str:
+    """Elimina acentos y caracteres especiales para normalizar a ASCII."""
+    if not input_str:
+        return ""
+    # Normalizar unicode caracteres compuestos
+    nfkd_form = unicodedata.normalize('NFKD', input_str)
+    # Filtrar caracteres non-spacing mark y codificar a ASCII
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+
 class IMAPClient:
     """
     Envoltura mínima: conecta, busca por asunto, fetch por UID y marca como leído por UID.
@@ -207,70 +217,28 @@ class IMAPClient:
 
         # Con términos: búsqueda por cada término
         for term in subject_terms:
-            if not term:
-                continue
-                
-            term_str = str(term).strip()
+            # Normalización solicitada por usuario:
+            # Quitar acentos para evitar problemas de encoding y facilitar búsqueda.
+            # "Facturación" -> "Facturacion"
+            term_normalized = remove_accents(str(term)).strip()
             
-            # Decidir si usar CHARSET UTF-8 (si hay caracteres no ASCII)
-            use_utf8 = False
+            # Usar el término normalizado (ASCII safe)
+            # Esto evita el uso de CHARSET UTF-8 complejo y los errores de 'ascii codec'.
+            args = base_flag_args + ['SUBJECT', f'"{term_normalized}"']
+                
+            logger.debug(f"IMAP UID SEARCH args: {args} (Normalized: '{term}' -> '{term_normalized}')")
+                
             try:
-                term_str.encode('ascii')
-            except UnicodeEncodeError:
-                use_utf8 = True
-            
-            try:
-                # Construir argumentos de búsqueda
-                if use_utf8:
-                    # Usar CHARSET UTF-8
-                    # Hack para imaplib: imaplib en Python intenta codificar strings a ascii/latin-1.
-                    # Si le pasamos el string unicode 'Facturación', falla al codificar a ascii.
-                    # Si le pasamos bytes, debemos manejar el quoting nosotros y es propenso a errores (BAD command).
-                    
-                    # Solución robusta: Codificar a UTF-8 bytes, y luego decodificar a Latin-1.
-                    # Esto crea un string "mojibake" que imaplib aceptará, y al enviarlo por el socket
-                    # (codificando a latin-1 internamente), restaurará los bytes UTF-8 originales.
-                    # Además, imaplib se encargará de poner comillas si es necesario.
-                    
-                    term_bytes = term_str.encode('utf-8')
-                    term_mojibake = term_bytes.decode('latin-1')
-                    
-                    args = ['CHARSET', 'UTF-8'] + base_flag_args + ['SUBJECT', term_mojibake]
-                else:
-                    # Búsqueda ASCII estándar y comillas para frases
-                    # Si tiene espacios y es ASCII, necesitamos comillas.
-                    # imaplib pone comillas si ve espacios? Sí, usualmente.
-                    # Pero para estar seguros con términos compuestos:
-                    if ' ' in term_str:
-                         args = base_flag_args + ['SUBJECT', f'"{term_str}"']
-                    else:
-                         args = base_flag_args + ['SUBJECT', term_str]
-                
-                logger.debug(f"IMAP UID SEARCH args: {args} (UTF-8={use_utf8})")
-                
-                # Timeout protegido
-                old_timeout = None
-                if hasattr(self.conn, 'sock') and self.conn.sock:
-                    old_timeout = self.conn.sock.gettimeout()
-                    self.conn.sock.settimeout(20.0)
-                
-                try:
-                    # Ejecutar búsqueda
-                    typ, data = self.conn.uid('SEARCH', *args)
+                # Ejecutar búsqueda estándar ASCII
+                typ, data = self.conn.uid('SEARCH', *args)
 
-                    if typ == 'OK':
-                        uids |= set(_decode_ids(data))
-                    else:
-                        logger.warning(f"UID SEARCH falló para term '{term_str}': {typ}")
-                        
-                except Exception as e:
-                    logger.error(f"Error en UID SEARCH para '{term_str}': {e}")
-                finally:
-                    if old_timeout is not None and hasattr(self.conn, 'sock') and self.conn.sock:
-                        try:
-                            self.conn.sock.settimeout(old_timeout)
-                        except:
-                            pass
+                if typ == 'OK':
+                    uids |= set(_decode_ids(data))
+                else:
+                    logger.warning(f"UID SEARCH falló para term '{term_normalized}': {typ}")
+                    
+            except Exception as e:
+                logger.error(f"Error en UID SEARCH para '{term_normalized}': {e}")
                             
             except Exception as e:
                 logger.error(f"Error general procesando búsqueda para '{term}': {e}")
