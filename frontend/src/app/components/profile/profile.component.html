@@ -19,51 +19,77 @@
 
                     <form (ngSubmit)="saveProfile()" #profileForm="ngForm">
                         <div class="row g-3">
+
+                            <!-- Banner de errores de validación si existen -->
+                            <div *ngIf="validationErrors['general']" class="col-12">
+                                <div class="alert alert-danger d-flex align-items-center mb-0">
+                                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                    <div>{{ validationErrors['general'] }}</div>
+                                </div>
+                            </div>
+
                             <!-- Nombre -->
                             <div class="col-12">
-                                <label for="name"
-                                    class="form-label fw-semibold text-secondary small text-uppercase">Nombre
-                                    Completo</label>
-                                <div class="input-group">
+                                <label for="name" class="form-label fw-semibold text-secondary small text-uppercase">
+                                    Nombre Completo <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group has-validation">
                                     <span class="input-group-text bg-light border-end-0"><i
                                             class="bi bi-person text-primary"></i></span>
                                     <input type="text" id="name" name="name" [(ngModel)]="editProfile.name"
-                                        class="form-control bg-light border-start-0" placeholder="Tu nombre completo"
+                                        class="form-control bg-light border-start-0"
+                                        [class.is-invalid]="validationErrors['name']" placeholder="Tu nombre completo"
                                         required>
+                                    <div class="invalid-feedback ps-2">
+                                        {{ validationErrors['name'] }}
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- Teléfono -->
                             <div class="col-md-6">
-                                <label for="phone"
-                                    class="form-label fw-semibold text-secondary small text-uppercase">Celular /
-                                    Teléfono</label>
-                                <div class="input-group">
+                                <label for="phone" class="form-label fw-semibold text-secondary small text-uppercase">
+                                    Celular / Teléfono <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group has-validation">
                                     <span class="input-group-text bg-light border-end-0"><i
                                             class="bi bi-phone text-primary"></i></span>
                                     <input type="tel" id="phone" name="phone" [(ngModel)]="editProfile.phone"
-                                        class="form-control bg-light border-start-0" placeholder="Ej: +595981123456">
+                                        class="form-control bg-light border-start-0"
+                                        [class.is-invalid]="validationErrors['phone']" placeholder="Ej: 0981123456"
+                                        required>
+                                    <div class="invalid-feedback ps-2">
+                                        {{ validationErrors['phone'] }}
+                                    </div>
                                 </div>
-                                <div class="form-text small">Necesario para cargos recurrentes en Pagopar.</div>
+                                <div class="form-text small" *ngIf="!validationErrors['phone']">Necesario para cargos
+                                    recurrentes en Pagopar.</div>
                             </div>
 
                             <!-- RUC / CI -->
                             <div class="col-md-6">
-                                <label for="ruc" class="form-label fw-semibold text-secondary small text-uppercase">RUC
-                                    o Cédula</label>
-                                <div class="input-group">
+                                <label for="ruc" class="form-label fw-semibold text-secondary small text-uppercase">
+                                    RUC o Cédula <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group has-validation">
                                     <span class="input-group-text bg-light border-end-0"><i
                                             class="bi bi-card-text text-primary"></i></span>
                                     <input type="text" id="ruc" name="ruc" [(ngModel)]="editProfile.ruc"
-                                        class="form-control bg-light border-start-0" placeholder="Ej: 1234567-8">
+                                        class="form-control bg-light border-start-0"
+                                        [class.is-invalid]="validationErrors['ruc']" placeholder="Ej: 1234567-8"
+                                        required>
+                                    <div class="invalid-feedback ps-2">
+                                        {{ validationErrors['ruc'] }}
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- Tipo Documento -->
                             <div class="col-md-6">
                                 <label for="document_type"
-                                    class="form-label fw-semibold text-secondary small text-uppercase">Tipo de
-                                    Documento</label>
+                                    class="form-label fw-semibold text-secondary small text-uppercase">
+                                    Tipo de Documento
+                                </label>
                                 <select id="document_type" name="document_type" [(ngModel)]="editProfile.document_type"
                                     class="form-select bg-light">
                                     <option value="CI">Cédula de Identidad</option>
@@ -74,27 +100,37 @@
 
                             <!-- Ciudad -->
                             <div class="col-md-6">
-                                <label for="city"
-                                    class="form-label fw-semibold text-secondary small text-uppercase">Ciudad</label>
-                                <div class="input-group">
+                                <label for="city" class="form-label fw-semibold text-secondary small text-uppercase">
+                                    Ciudad <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group has-validation">
                                     <span class="input-group-text bg-light border-end-0"><i
                                             class="bi bi-geo-alt text-primary"></i></span>
                                     <input type="text" id="city" name="city" [(ngModel)]="editProfile.city"
-                                        class="form-control bg-light border-start-0" placeholder="Ej: Asunción">
+                                        class="form-control bg-light border-start-0"
+                                        [class.is-invalid]="validationErrors['city']" placeholder="Ej: Asunción"
+                                        required>
+                                    <div class="invalid-feedback ps-2">
+                                        {{ validationErrors['city'] }}
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- Dirección -->
                             <div class="col-12">
-                                <label for="address"
-                                    class="form-label fw-semibold text-secondary small text-uppercase">Dirección
-                                    Completa</label>
-                                <div class="input-group">
+                                <label for="address" class="form-label fw-semibold text-secondary small text-uppercase">
+                                    Dirección Completa <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group has-validation">
                                     <span class="input-group-text bg-light border-end-0"><i
                                             class="bi bi-house text-primary"></i></span>
                                     <input type="text" id="address" name="address" [(ngModel)]="editProfile.address"
                                         class="form-control bg-light border-start-0"
-                                        placeholder="Calle, número, barrio...">
+                                        [class.is-invalid]="validationErrors['address']"
+                                        placeholder="Calle, número, barrio..." required>
+                                    <div class="invalid-feedback ps-2">
+                                        {{ validationErrors['address'] }}
+                                    </div>
                                 </div>
                             </div>
                         </div>

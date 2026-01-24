@@ -325,19 +325,22 @@ export class InvoicesV2Component implements OnInit {
     }
     if (!headerId) return;
 
-    this.notificationService.info('Generando enlace...', 'Procesando');
+    this.notificationService.info('Descargando archivo...', 'Procesando');
 
-    this.api.downloadInvoice(headerId).subscribe({
-      next: (res) => {
-        if (res.success && res.download_url) {
-          window.open(res.download_url, '_blank');
-        } else {
-          this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
-        }
+    // Descargar con autenticación y abrir en nueva pestaña
+    this.api.downloadInvoiceFile(headerId).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
       },
       error: (err) => {
-        console.error("Error descarga:", err);
-        this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
+        console.error('Error descarga:', err);
+        if (err.status === 404) {
+          this.notificationService.error('Archivo no disponible en almacenamiento', 'Error');
+        } else {
+          this.notificationService.error('Error al descargar archivo', 'Error');
+        }
       }
     });
   }

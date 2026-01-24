@@ -312,6 +312,39 @@ class UserRepository:
         )
         return result.modified_count > 0
 
+    def is_profile_complete(self, email: str) -> Dict[str, Any]:
+        """
+        Verifica si el perfil del usuario tiene todos los datos necesarios para operar (ej: suscripciones).
+        Pagopar requiere: Nombre, Teléfono, CI/RUC, Dirección.
+        """
+        user = self.get_by_email(email)
+        if not user:
+            return {
+                'is_complete': False,
+                'missing_fields': ['user_not_found'],
+                'required_for_subscription': False
+            }
+            
+        required_fields = {
+            'name': 'Nombre Completo',
+            'phone': 'Teléfono/Celular',
+            'ruc': 'RUC o Cédula',
+            'address': 'Dirección',
+            'city': 'Ciudad'
+        }
+        
+        missing = []
+        for field, label in required_fields.items():
+            value = user.get(field)
+            if not value or str(value).strip() == '':
+                missing.append(field)
+                
+        return {
+            'is_complete': len(missing) == 0,
+            'missing_fields': missing,
+            'required_for_subscription': len(missing) == 0
+        }
+
     # Métodos de administración
     def is_admin(self, email: str) -> bool:
         """Verifica si el usuario es administrador"""

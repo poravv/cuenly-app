@@ -15,24 +15,45 @@ class IMAPClient:
     """
     Envoltura mínima: conecta, busca por asunto, fetch por UID y marca como leído por UID.
     Pensado para cPanel y Gmail. (Asumiendo términos SIN acentos en .env)
+    Soporta autenticación tradicional (password) y OAuth 2.0 XOAUTH2.
     """
-    def __init__(self, host: str, port: int, username: str, password: str, mailbox: str = "INBOX"):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        username: str,
+        password: str,
+        mailbox: str = "INBOX",
+        auth_type: str = "password",
+        access_token: Optional[str] = None
+    ):
         self.host = host
         self.port = port
         self.username = username
         self.password = password
         self.mailbox = mailbox
+        self.auth_type = auth_type  # "password" or "oauth2"
+        self.access_token = access_token  # For OAuth2 XOAUTH2
         self.conn: Optional[imaplib.IMAP4_SSL] = None
         self.is_gmail: bool = False
 
+    def _xoauth2_callback(self, challenge: bytes) -> bytes:
+        """
+        Callback for IMAP XOAUTH2 authentication.
+        Returns the XOAUTH2 authentication string.
+        """
+        # The challenge is empty for initial auth, we just return the auth string
+        auth_string = f"user={self.username}\x01auth=Bearer {self.access_token}\x01\x01"
+        return auth_string.encode()
+
     def connect(self) -> bool:
-        """Conecta con retry automático y timeouts robustos."""
+        """Conecta con retry automático y timeouts robustos. Soporta OAuth2 XOAUTH2."""
         max_retries = 3
         retry_delay = 2  # segundos
         
         for attempt in range(max_retries):
             try:
-                logger.info(f"Intento de conexión {attempt + 1}/{max_retries} - host: {self.host}, port: {self.port}, username: {self.username}")
+                logger.info(f"Intento de conexión {attempt + 1}/{max_retries} - host: {self.host}, port: {self.port}, username: {self.username}, auth_type: {self.auth_type}")
 
                 self.is_gmail = "imap.gmail.com" in (self.host or "").lower()
                 
@@ -51,9 +72,16 @@ class IMAPClient:
                 if hasattr(self.conn, 'sock') and self.conn.sock:
                     self.conn.sock.settimeout(30.0)  # 30 segundos timeout
                 
-                # Login con manejo de errores específicos
+                # Autenticación: OAuth2 XOAUTH2 o password tradicional
                 try:
-                    self.conn.login(self.username, self.password)
+                    if self.auth_type == "oauth2" and self.access_token:
+                        # Use XOAUTH2 authentication for Gmail
+                        logger.info(f"🔐 Usando autenticación OAuth2 XOAUTH2 para {self.username}")
+                        self.conn.authenticate("XOAUTH2", self._xoauth2_callback)
+                        logger.info(f"✅ Autenticación XOAUTH2 exitosa para {self.username}")
+                    else:
+                        # Traditional password login
+                        self.conn.login(self.username, self.password)
                 except (socket.timeout, socket.error, imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
                     logger.warning(f"Error de autenticación IMAP (intento {attempt + 1}): {e}")
                     try:
@@ -87,7 +115,8 @@ class IMAPClient:
                     time.sleep(retry_delay * (attempt + 1))
                     continue
 
-                logger.info(f"✅ Conexión exitosa al correo {self.username} | is_gmail={self.is_gmail}")
+                auth_method = "XOAUTH2" if self.auth_type == "oauth2" else "password"
+                logger.info(f"✅ Conexión exitosa al correo {self.username} | is_gmail={self.is_gmail} | auth={auth_method}")
                 return True
                 
             except Exception as e:

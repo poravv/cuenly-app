@@ -144,6 +144,14 @@ export class ApiService {
     return this.http.put<{ success: boolean, id: string }>(`${this.apiUrl}/email-configs/${id}`, config);
   }
 
+  /**
+   * Actualización parcial de configuración de email.
+   * Útil para OAuth2 donde solo se pueden editar ciertos campos como search_terms.
+   */
+  patchEmailConfig(id: string, fields: Partial<EmailConfig>): Observable<{ success: boolean, id: string, updated_fields: string[] }> {
+    return this.http.patch<{ success: boolean, id: string, updated_fields: string[] }>(`${this.apiUrl}/email-configs/${id}`, fields);
+  }
+
   deleteEmailConfig(id: string): Observable<{ success: boolean }> {
     return this.http.delete<{ success: boolean }>(`${this.apiUrl}/email-configs/${id}`);
   }
@@ -154,6 +162,50 @@ export class ApiService {
 
   toggleEmailConfig(id: string): Observable<{ success: boolean, enabled: boolean }> {
     return this.http.post<{ success: boolean, enabled: boolean }>(`${this.apiUrl}/email-configs/${id}/toggle`, {});
+  }
+
+  // -----------------------------
+  // OAuth 2.0 for Gmail (XOAUTH2)
+  // -----------------------------
+
+  // Check if Google OAuth is configured
+  getGoogleOAuthStatus(): Observable<{ configured: boolean, provider: string, message: string }> {
+    return this.http.get<{ configured: boolean, provider: string, message: string }>(`${this.apiUrl}/email-configs/oauth/google/status`);
+  }
+
+  // Initiate Google OAuth flow - returns authorization URL
+  initiateGoogleOAuth(loginHint?: string): Observable<{ auth_url: string, state: string, message: string }> {
+    const options: { params?: { [key: string]: string } } = {};
+    if (loginHint) {
+      options.params = { login_hint: loginHint };
+    }
+    return this.http.get<{ auth_url: string, state: string, message: string }>(
+      `${this.apiUrl}/email-configs/oauth/google/authorize`,
+      options
+    );
+  }
+
+  // Save OAuth email configuration after successful authorization
+  saveOAuthEmailConfig(data: {
+    gmail_address: string,
+    access_token: string,
+    refresh_token: string,
+    token_expiry: string,
+    name?: string,
+    search_terms?: string[]
+  }): Observable<{ success: boolean, id: string, message: string }> {
+    return this.http.post<{ success: boolean, id: string, message: string }>(
+      `${this.apiUrl}/email-configs/oauth/save`,
+      data
+    );
+  }
+
+  // Refresh OAuth token for a saved config
+  refreshOAuthToken(configId: string): Observable<{ success: boolean, token_expiry: string, message: string }> {
+    return this.http.post<{ success: boolean, token_expiry: string, message: string }>(
+      `${this.apiUrl}/email-configs/${configId}/oauth/refresh`,
+      {}
+    );
   }
 
   // Iniciar job programado
@@ -267,8 +319,17 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/v2/invoices/bulk-delete`, { header_ids: headerIds });
   }
 
-  downloadInvoice(invoiceId: string): Observable<{ success: boolean, download_url: string, filename?: string, message?: string }> {
-    return this.http.get<{ success: boolean, download_url: string, filename?: string, message?: string }>(`${this.apiUrl}/invoices/${invoiceId}/download`);
+  downloadInvoice(invoiceId: string): Observable<{ success: boolean, download_url: string, filename?: string, content_type?: string, message?: string }> {
+    return this.http.get<{ success: boolean, download_url: string, filename?: string, content_type?: string, message?: string }>(`${this.apiUrl}/invoices/${invoiceId}/download`);
+  }
+
+  /**
+   * Descarga el archivo directamente con autenticación (streaming)
+   */
+  downloadInvoiceFile(invoiceId: string): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/invoices/${invoiceId}/file`, {
+      responseType: 'blob'
+    });
   }
 
   getV2DeleteInfo(headerId: string): Observable<any> {

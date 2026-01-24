@@ -1,7 +1,7 @@
 from app.api.endpoints import pagopar, admin_subscriptions, subscriptions
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
@@ -24,7 +24,7 @@ from app.utils.trial_middleware import check_trial_limits_optional, check_trial_
 from app.utils.security import validate_frontend_key
 from app.repositories.user_repository import UserRepository
 from app.repositories.subscription_repository import SubscriptionRepository
-from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura
+from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura, EmailConfigUpdate
 from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
@@ -143,6 +143,11 @@ class UserProfileUpdate(BaseModel):
     city: Optional[str] = None
     document_type: Optional[str] = "CI" # CI, RUC, PASSPORT
 
+class ProfileStatusResponse(BaseModel):
+    is_complete: bool
+    missing_fields: List[str]
+    required_for_subscription: bool
+
 
 from app.api.deps import (
     _get_current_user, 
@@ -220,25 +225,32 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
 @app.put("/user/profile")
 @app.put("/api/user/profile") # Alias
 async def update_user_profile(
-    payload: UserProfileUpdate,
+    profile_data_update: UserProfileUpdate,  # Renombrado para evitar conflicto nombre
     user: Dict[str, Any] = Depends(_get_current_user)
 ):
     """
     Actualiza la información del perfil del usuario.
+    Sync con Pagopar si existe.
     """
     if not user:
         raise HTTPException(status_code=401, detail="Usuario no autenticado")
     
     email = user.get('email', '')
-    profile_data = payload.dict(exclude_unset=True)
+    profile_data = profile_data_update.dict(exclude_unset=True)
     
     if not profile_data:
         raise HTTPException(status_code=400, detail="No se proporcionaron datos para actualizar")
     
-    # Validaciones básicas
-    if payload.phone and not payload.phone.replace(' ', '').replace('+', '').isdigit():
-        # Permitimos +, espacios y dígitos, pero al menos debe tener dígitos
-        pass # Podríamos ser más estrictos con regex
+    # Validaciones
+    if 'phone' in profile_data:
+        phone = profile_data['phone']
+        if phone and not SecurityValidators.validate_phone(phone):
+             raise HTTPException(status_code=400, detail="Número de teléfono inválido. Verifique longitud y formato.")
+
+    if 'ruc' in profile_data:
+        ruc = profile_data['ruc']
+        if ruc and not SecurityValidators.validate_ruc(ruc):
+             raise HTTPException(status_code=400, detail="RUC inválido. Verifique el formato.")
         
     user_repo = UserRepository()
     success = user_repo.update_user_profile(email, profile_data)
@@ -262,6 +274,20 @@ async def update_user_profile(
         return {"success": True, "message": "Perfil actualizado correctamente"}
     else:
         raise HTTPException(status_code=500, detail="Error al actualizar el perfil en la base de datos")
+
+@app.get("/user/profile/status", response_model=ProfileStatusResponse)
+async def get_profile_status(user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Verifica si el perfil del usuario está completo (requerido para suscripciones).
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    email = user.get('email', '')
+    user_repo = UserRepository()
+    status = user_repo.is_profile_complete(email)
+    
+    return status
 
 @app.get("/user/trial-status")
 async def get_trial_status(user: Dict[str, Any] = Depends(_get_current_user)):
@@ -1130,30 +1156,62 @@ async def test_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Dep
 
 @app.post("/email-configs/{config_id}/test")
 async def test_email_config_by_id(config_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
-    """Prueba una configuración guardada, identificada por su ID en MongoDB."""
+    """Prueba una configuración guardada, identificada por su ID en MongoDB. Soporta OAuth2."""
     try:
-        from app.modules.email_processor.email_processor import EmailProcessor
-        from app.models.models import EmailConfig
+        from app.modules.email_processor.imap_client import IMAPClient
+        from app.modules.oauth.google_oauth import get_google_oauth_manager
 
         db_cfg = db_get_by_id(config_id, include_password=True, owner_email=(user.get('email') or '').lower())
         if not db_cfg:
             raise HTTPException(status_code=404, detail="Configuración no encontrada")
 
-        test_config = EmailConfig(
+        auth_type = db_cfg.get("auth_type", "password")
+        access_token = db_cfg.get("access_token")
+        
+        # For OAuth configs, check if token needs refresh
+        if auth_type == "oauth2" and access_token:
+            token_expiry_str = db_cfg.get("token_expiry")
+            if token_expiry_str:
+                from datetime import datetime
+                try:
+                    token_expiry = datetime.fromisoformat(token_expiry_str.replace('Z', '+00:00'))
+                    oauth_manager = get_google_oauth_manager()
+                    if oauth_manager.is_token_expired(token_expiry):
+                        # Try to refresh the token
+                        refresh_token = db_cfg.get("refresh_token")
+                        if refresh_token:
+                            try:
+                                tokens = await oauth_manager.refresh_access_token(refresh_token)
+                                access_token = tokens.get("access_token")
+                                # Update token in DB
+                                new_expiry = oauth_manager.calculate_token_expiry(tokens.get("expires_in", 3600))
+                                db_update_config(config_id, {
+                                    "access_token": access_token,
+                                    "token_expiry": new_expiry.isoformat()
+                                }, owner_email=(user.get('email') or '').lower())
+                            except Exception as e:
+                                logger.warning(f"Could not refresh token: {e}")
+                                return {"success": False, "message": "Token OAuth expirado. Por favor, reconecta la cuenta."}
+                except Exception as e:
+                    logger.warning(f"Error parsing token expiry: {e}")
+
+        # Create IMAP client with OAuth support
+        client = IMAPClient(
             host=db_cfg.get("host"),
             port=int(db_cfg.get("port", 993)),
             username=db_cfg.get("username"),
             password=db_cfg.get("password") or "",
-            search_criteria=db_cfg.get("search_criteria") or "UNSEEN",
-            search_terms=db_cfg.get("search_terms") or []
+            mailbox="INBOX",
+            auth_type=auth_type,
+            access_token=access_token if auth_type == "oauth2" else None
         )
-
-        processor = EmailProcessor(test_config)
-        success = processor.connect()
-        processor.disconnect()
+        
+        success = client.connect()
+        client.close()
 
         if success:
-            return {"success": True, "message": "Conexión exitosa"}
+            auth_method = "OAuth2" if auth_type == "oauth2" else "contraseña"
+            return {"success": True, "message": f"Conexión exitosa ({auth_method})"}
         else:
             return {"success": False, "message": "Error al conectar"}
     except HTTPException:
@@ -1268,6 +1326,31 @@ async def update_email_config(config_id: str, config: MultiEmailConfig, user: Di
         raise HTTPException(status_code=500, detail="No se pudo actualizar configuración")
 
 
+@app.patch("/email-configs/{config_id}")
+async def patch_email_config(config_id: str, config: EmailConfigUpdate, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Actualización parcial de configuración de email.
+    Permite actualizar solo campos específicos sin requerir todos los campos.
+    Especialmente útil para configuraciones OAuth2 donde solo se pueden editar search_terms.
+    """
+    try:
+        # Solo incluir campos que fueron explícitamente enviados (no None)
+        update_data = {k: v for k, v in config.model_dump().items() if v is not None}
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No se proporcionaron campos para actualizar")
+        
+        ok = db_update_config(config_id, update_data, owner_email=(user.get('email') or '').lower())
+        if not ok:
+            raise HTTPException(status_code=404, detail="Configuración no encontrada")
+        return {"success": True, "id": config_id, "updated_fields": list(update_data.keys())}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en actualización parcial de configuración: {e}")
+        raise HTTPException(status_code=500, detail="No se pudo actualizar configuración")
+
+
 @app.delete("/email-configs/{config_id}")
 async def delete_email_config(config_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
     try:
@@ -1308,6 +1391,379 @@ async def toggle_email_config_enabled(config_id: str, user: Dict[str, Any] = Dep
     except Exception as e:
         logger.error(f"Error alternando 'enabled' de configuración: {e}")
         raise HTTPException(status_code=500, detail="No se pudo alternar el estado")
+
+
+# -----------------------------
+# OAuth 2.0 for Gmail (XOAUTH2)
+# -----------------------------
+
+@app.get("/email-configs/oauth/google/status")
+async def get_google_oauth_status(user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Check if Google OAuth is configured and available.
+    """
+    from app.modules.oauth.google_oauth import get_google_oauth_manager
+    
+    oauth_manager = get_google_oauth_manager()
+    return {
+        "configured": oauth_manager.is_configured(),
+        "provider": "google",
+        "message": "OAuth configurado correctamente" if oauth_manager.is_configured() else "OAuth no configurado. Configure GOOGLE_OAUTH_CLIENT_ID y GOOGLE_OAUTH_CLIENT_SECRET"
+    }
+
+
+@app.get("/email-configs/oauth/google/authorize")
+async def initiate_google_oauth(
+    request: Request,
+    user: Dict[str, Any] = Depends(_get_current_user),
+    login_hint: Optional[str] = Query(None, description="Email to pre-fill in Google sign-in")
+):
+    """
+    Initiate Google OAuth flow for Gmail IMAP access.
+    Returns an authorization URL to redirect the user to.
+    
+    The state parameter encodes the user's email for security validation on callback.
+    """
+    from app.modules.oauth.google_oauth import get_google_oauth_manager
+    import base64
+    import json
+    
+    oauth_manager = get_google_oauth_manager()
+    
+    if not oauth_manager.is_configured():
+        raise HTTPException(
+            status_code=503, 
+            detail="Google OAuth no está configurado. Contacta al administrador."
+        )
+    
+    owner_email = (user.get('email') or '').lower()
+    
+    # Get the host from the request to build the correct redirect URI
+    # This allows the same backend to work for both local and production
+    # Use X-Forwarded-Host (includes port) if available, fallback to host
+    request_host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    redirect_uri = oauth_manager.get_redirect_uri(request_host)
+    
+    # Create state with user info for CSRF protection
+    # Include redirect_uri so callback can use the same one
+    state_data = {
+        "owner_email": owner_email,
+        "redirect_uri": redirect_uri,
+        "timestamp": datetime.now().isoformat(),
+        "nonce": str(uuid.uuid4())
+    }
+    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    
+    auth_url = oauth_manager.generate_auth_url(
+        state=state,
+        login_hint=login_hint,
+        redirect_uri=redirect_uri
+    )
+    
+    logger.info(f"🔐 OAuth authorization initiated for {owner_email} (redirect: {redirect_uri})")
+    
+    return {
+        "auth_url": auth_url,
+        "state": state,
+        "message": "Redirige al usuario a auth_url para autorizar acceso a Gmail"
+    }
+
+
+@app.get("/email-configs/oauth/google/callback")
+async def google_oauth_callback(
+    code: str = Query(..., description="Authorization code from Google"),
+    state: str = Query(..., description="State parameter for CSRF validation"),
+    error: Optional[str] = Query(None, description="Error from Google if authorization failed")
+):
+    """
+    Handle Google OAuth callback after user grants permission.
+    Exchanges the authorization code for access and refresh tokens.
+    
+    This endpoint is called by Google after user authorization.
+    It returns an HTML page that sends the result to the opener window.
+    """
+    from app.modules.oauth.google_oauth import get_google_oauth_manager
+    import base64
+    import json
+    
+    # Handle error from Google
+    if error:
+        logger.error(f"Google OAuth error: {error}")
+        return HTMLResponse(content=_oauth_popup_response(False, f"Error de autorización: {error}"))
+    
+    oauth_manager = get_google_oauth_manager()
+    
+    try:
+        # Decode and validate state
+        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        owner_email = state_data.get("owner_email", "").lower()
+        redirect_uri = state_data.get("redirect_uri", "")
+        
+        if not owner_email:
+            raise ValueError("Invalid state: missing owner_email")
+        
+        # Exchange code for tokens using the same redirect_uri from authorization
+        tokens = await oauth_manager.exchange_code_for_tokens(code, redirect_uri=redirect_uri)
+        
+        access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        expires_in = tokens.get("expires_in", 3600)
+        
+        if not access_token:
+            raise ValueError("No access token received from Google")
+        
+        # Get user info to confirm the Gmail address
+        user_info = await oauth_manager.get_user_info(access_token)
+        gmail_address = user_info.get("email", "").lower()
+        
+        # Calculate token expiry
+        token_expiry = oauth_manager.calculate_token_expiry(expires_in)
+        
+        # SAVE DIRECTLY TO DATABASE - no popup communication needed
+        # Check if this Gmail account already exists for this owner
+        existing_configs = db_list_configs(owner_email=owner_email)
+        existing_gmail_config = next(
+            (c for c in existing_configs if c.get("username", "").lower() == gmail_address),
+            None
+        )
+        
+        if existing_gmail_config:
+            # Update existing config with new OAuth tokens
+            update_data = {
+                "auth_type": "oauth2",
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_expiry": token_expiry.isoformat(),
+                "password": "",  # Clear password for OAuth
+                "enabled": True
+            }
+            db_update_config(existing_gmail_config["id"], update_data, owner_email=owner_email)
+            logger.info(f"✅ Updated existing Gmail config with OAuth for {gmail_address}")
+        else:
+            # Create new config as dict
+            new_config_data = {
+                "name": f"Gmail - {gmail_address}",
+                "host": "imap.gmail.com",
+                "port": 993,
+                "username": gmail_address,
+                "password": "",
+                "use_ssl": True,
+                "auth_type": "oauth2",
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_expiry": token_expiry.isoformat(),
+                "oauth_email": gmail_address,
+                "search_terms": ["factura", "invoice", "comprobante", "documento electronico"],
+                "search_criteria": "UNSEEN",
+                "provider": "gmail",
+                "enabled": True,
+                "owner_email": owner_email
+            }
+            db_create_config(new_config_data, owner_email=owner_email)
+            logger.info(f"✅ Created new Gmail OAuth config for {gmail_address}")
+        
+        logger.info(f"✅ Google OAuth successful for {gmail_address} (owner: {owner_email})")
+        
+        return HTMLResponse(content=_oauth_popup_response(True, "Cuenta Gmail conectada exitosamente. Puedes cerrar esta ventana.", None))
+        
+    except Exception as e:
+        logger.error(f"Google OAuth callback error: {e}")
+        return HTMLResponse(content=_oauth_popup_response(False, f"Error procesando autorización: {str(e)}"))
+
+
+def _oauth_popup_response(success: bool, message: str, data: dict = None) -> str:
+    """
+    Generate an HTML response for the OAuth popup.
+    Since we save directly to DB, we just show success/error and close.
+    """
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Autorización Google - Cuenly</title>
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }}
+            .container {{
+                text-align: center;
+                padding: 40px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 16px;
+                backdrop-filter: blur(10px);
+            }}
+            .icon {{ font-size: 48px; margin-bottom: 20px; }}
+            .message {{ font-size: 18px; margin-bottom: 10px; }}
+            .submessage {{ font-size: 14px; opacity: 0.8; }}
+            .btn {{
+                margin-top: 20px;
+                padding: 12px 24px;
+                background: rgba(255,255,255,0.2);
+                border: 1px solid rgba(255,255,255,0.3);
+                border-radius: 8px;
+                color: white;
+                font-size: 14px;
+                cursor: pointer;
+                transition: background 0.2s;
+            }}
+            .btn:hover {{ background: rgba(255,255,255,0.3); }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="icon">{'✅' if success else '❌'}</div>
+            <div class="message">{message}</div>
+            <div class="submessage">{'Refresca la página de configuración para ver tu cuenta.' if success else 'Intenta nuevamente.'}</div>
+            <button class="btn" onclick="window.close()">Cerrar ventana</button>
+        </div>
+        <script>
+            // Notify parent to refresh if possible
+            if (window.opener && !window.opener.closed) {{
+                try {{
+                    window.opener.postMessage({{ type: 'GOOGLE_OAUTH_COMPLETE', success: {'true' if success else 'false'} }}, '*');
+                }} catch(e) {{}}
+            }}
+            // Auto close after 3 seconds if successful
+            if ({'true' if success else 'false'}) {{
+                setTimeout(() => window.close(), 3000);
+            }}
+        </script>
+    </body>
+    </html>
+    """
+
+
+@app.post("/email-configs/{config_id}/oauth/refresh")
+async def refresh_oauth_token(config_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Refresh the OAuth access token for a saved email configuration.
+    """
+    from app.modules.oauth.google_oauth import get_google_oauth_manager
+    
+    owner_email = (user.get('email') or '').lower()
+    
+    # Get the config from database
+    db_cfg = db_get_by_id(config_id, include_password=True, owner_email=owner_email)
+    if not db_cfg:
+        raise HTTPException(status_code=404, detail="Configuración no encontrada")
+    
+    if db_cfg.get("auth_type") != "oauth2":
+        raise HTTPException(status_code=400, detail="Esta configuración no usa OAuth")
+    
+    refresh_token = db_cfg.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="No hay refresh token almacenado")
+    
+    oauth_manager = get_google_oauth_manager()
+    
+    try:
+        # Refresh the token
+        tokens = await oauth_manager.refresh_access_token(refresh_token)
+        
+        new_access_token = tokens.get("access_token")
+        expires_in = tokens.get("expires_in", 3600)
+        token_expiry = oauth_manager.calculate_token_expiry(expires_in)
+        
+        # Update the config in database
+        update_data = {
+            "access_token": new_access_token,
+            "token_expiry": token_expiry.isoformat()
+        }
+        
+        ok = db_update_config(config_id, update_data, owner_email=owner_email)
+        if not ok:
+            raise HTTPException(status_code=500, detail="No se pudo actualizar el token")
+        
+        logger.info(f"✅ OAuth token refreshed for config {config_id}")
+        
+        return {
+            "success": True,
+            "token_expiry": token_expiry.isoformat(),
+            "message": "Token actualizado exitosamente"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error refreshing OAuth token: {e}")
+        raise HTTPException(status_code=500, detail=f"Error renovando token: {str(e)}")
+
+
+@app.post("/email-configs/oauth/save")
+async def save_oauth_email_config(
+    gmail_address: str = Body(..., embed=True),
+    access_token: str = Body(..., embed=True),
+    refresh_token: str = Body(..., embed=True),
+    token_expiry: str = Body(..., embed=True),
+    name: Optional[str] = Body("", embed=True),
+    search_terms: Optional[List[str]] = Body(None, embed=True),
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Save a new email configuration with OAuth tokens after successful Google authorization.
+    """
+    from app.modules.email_processor.config_store import count_configs_by_owner
+    from app.repositories.subscription_repository import SubscriptionRepository
+    
+    owner_email = (user.get('email') or '').lower()
+    
+    # Validate subscription limits
+    current_count = count_configs_by_owner(owner_email)
+    sub_repo = SubscriptionRepository()
+    subscription = await sub_repo.get_user_active_subscription(owner_email)
+    
+    if subscription:
+        plan_features = subscription.get('plan_features', {})
+        max_accounts = plan_features.get('max_email_accounts', 2)
+        
+        if max_accounts != -1 and current_count >= max_accounts:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Has alcanzado el límite de {max_accounts} cuentas de correo de tu plan."
+            )
+    else:
+        if current_count >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail="Has alcanzado el límite de cuentas de correo. Suscríbete a un plan para agregar más."
+            )
+    
+    # Create the email config with OAuth
+    config_data = {
+        "name": name or f"Gmail - {gmail_address}",
+        "host": "imap.gmail.com",
+        "port": 993,
+        "username": gmail_address,
+        "password": None,  # No password needed for OAuth
+        "use_ssl": True,
+        "search_criteria": "UNSEEN",
+        "search_terms": search_terms or ["factura", "invoice", "comprobante"],
+        "provider": "gmail",
+        "enabled": True,
+        "auth_type": "oauth2",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_expiry": token_expiry,
+        "oauth_email": gmail_address
+    }
+    
+    try:
+        config_id = db_create_config(config_data, owner_email=owner_email)
+        logger.info(f"✅ OAuth email config created for {gmail_address} (owner: {owner_email})")
+        
+        return {
+            "success": True,
+            "id": config_id,
+            "message": "Cuenta de Gmail configurada exitosamente con OAuth"
+        }
+    except Exception as e:
+        logger.error(f"Error creating OAuth email config: {e}")
+        raise HTTPException(status_code=500, detail="No se pudo guardar la configuración")
 
 
 @app.get("/health")
@@ -2897,6 +3353,7 @@ async def get_invoice_download_url(
         # Re-importar para asegurar acceso si no estamos en scope gol
         try:
             from minio import Minio
+            from urllib.parse import urlencode
         except ImportError:
             return {"success": False, "message": "Librería MinIO no instalada"}
 
@@ -2911,21 +3368,145 @@ async def get_invoice_download_url(
             region=settings.MINIO_REGION
         )
         
+        # Determinar Content-Type basado en la extensión del archivo
+        filename = minio_key.split("/")[-1]
+        lname = filename.lower()
+        if lname.endswith(".pdf"):
+            content_type = "application/pdf"
+        elif lname.endswith(".xml"):
+            content_type = "application/xml"
+        elif lname.endswith((".jpg", ".jpeg")):
+            content_type = "image/jpeg"
+        elif lname.endswith(".png"):
+            content_type = "image/png"
+        elif lname.endswith(".webp"):
+            content_type = "image/webp"
+        else:
+            content_type = "application/octet-stream"
+        
+        # Generar URL presignada con headers de respuesta para compatibilidad HTTPS
+        # response_headers fuerza al servidor a devolver estos headers
+        response_headers = {
+            "response-content-type": content_type,
+            "response-content-disposition": f"inline; filename=\"{filename}\""
+        }
+        
         url = client.get_presigned_url(
             "GET",
             settings.MINIO_BUCKET,
             minio_key,
-            expires=timedelta(hours=1)
+            expires=timedelta(hours=1),
+            response_headers=response_headers
         )
         
         return {
             "success": True,
             "download_url": url,
-            "filename": minio_key.split("/")[-1]
+            "filename": filename,
+            "content_type": content_type
         }
         
     except Exception as e:
         logger.error(f"Error generando download url: {e}")
+        raise HTTPException(status_code=500, detail="Error descarga")
+
+
+@app.get("/invoices/{invoice_id}/file")
+async def get_invoice_file_direct(
+    invoice_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Descarga el archivo directamente como streaming (proxy).
+    
+    Este endpoint evita problemas de CORS al servir el archivo
+    directamente desde el backend en lugar de redirigir a MinIO.
+    """
+    from fastapi.responses import StreamingResponse
+    
+    try:
+        repo = MongoInvoiceRepository()
+        
+        # Buscar factura
+        header = repo._headers().find_one({"_id": invoice_id})
+        if not header:
+            try:
+                from bson import ObjectId
+                header = repo._headers().find_one({"_id": ObjectId(invoice_id)})
+            except:
+                pass
+                
+        if not header:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+        
+        # Verificar ownership
+        owner = (user.get('email') or '').lower()
+        if header.get("owner_email") != owner:
+            user_repo = UserRepository()
+            if not user_repo.is_admin(owner):
+                raise HTTPException(status_code=403, detail="Acceso denegado")
+            
+        minio_key = header.get("minio_key")
+        if not minio_key:
+            raise HTTPException(status_code=404, detail="Archivo no disponible")
+            
+        try:
+            from minio import Minio
+        except ImportError:
+            raise HTTPException(status_code=500, detail="MinIO no instalado")
+
+        if not settings.MINIO_ACCESS_KEY:
+            raise HTTPException(status_code=500, detail="MinIO no configurado")
+             
+        client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+            region=settings.MINIO_REGION
+        )
+        
+        # Obtener el archivo desde MinIO
+        response = client.get_object(settings.MINIO_BUCKET, minio_key)
+        
+        # Determinar Content-Type
+        filename = minio_key.split("/")[-1]
+        lname = filename.lower()
+        if lname.endswith(".pdf"):
+            content_type = "application/pdf"
+        elif lname.endswith(".xml"):
+            content_type = "application/xml"
+        elif lname.endswith((".jpg", ".jpeg")):
+            content_type = "image/jpeg"
+        elif lname.endswith(".png"):
+            content_type = "image/png"
+        elif lname.endswith(".webp"):
+            content_type = "image/webp"
+        else:
+            content_type = "application/octet-stream"
+        
+        # Streaming response
+        def iter_content():
+            try:
+                for chunk in response.stream(32*1024):
+                    yield chunk
+            finally:
+                response.close()
+                response.release_conn()
+        
+        return StreamingResponse(
+            iter_content(),
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"inline; filename=\"{filename}\"",
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "private, max-age=3600"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error descargando archivo: {e}")
         raise HTTPException(status_code=500, detail="Error descarga")
 
 # Endpoint para estadísticas filtradas con fecha
@@ -3351,13 +3932,21 @@ if __name__ == "__main__":
     start()
 
 # -----------------------------
-# Preferencias (UI / Auto‑refresh)
+# Preferencias (UI / Auto‑refresh) - Storage en memoria
 # -----------------------------
+_auto_refresh_prefs: Dict[str, Dict] = {}
+
+def prefs_get_auto_refresh(uid: str) -> Dict:
+    return _auto_refresh_prefs.get(uid, {"enabled": False, "interval_ms": 30000})
+
+def prefs_set_auto_refresh(uid: str, enabled: bool, interval_ms: int) -> Dict:
+    _auto_refresh_prefs[uid] = {"enabled": enabled, "interval_ms": interval_ms}
+    return _auto_refresh_prefs[uid]
 
 @app.get("/prefs/auto-refresh", response_model=AutoRefreshPref)
 async def get_auto_refresh(uid: Optional[str] = Query(default="global")):
     try:
-        data = prefs_get_auto_refresh(uid) or {"enabled": False, "interval_ms": 30000}
+        data = prefs_get_auto_refresh(uid)
         return AutoRefreshPref(uid=uid, enabled=bool(data.get("enabled", False)), interval_ms=int(data.get("interval_ms", 30000)))
     except Exception as e:
         logger.error(f"Error al obtener preferencia auto-refresh: {e}")

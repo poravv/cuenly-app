@@ -449,4 +449,38 @@
       <p class="text-muted">Cargando formulario seguro de Bancard.</p>
     </div>
   </div>
+  <!-- NUEVO: Modal Perfil Incompleto -->
+  <div class="modal fade" [class.show]="showIncompleteProfileModal"
+    [style.display]="showIncompleteProfileModal ? 'block' : 'none'" tabindex="-1" *ngIf="showIncompleteProfileModal">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Perfil Incompleto</h5>
+          <button type="button" class="btn-close" (click)="closeIncompleteProfileModal()"></button>
+        </div>
+        <div class="modal-body text-center py-4">
+          <i class="bi bi-person-exclamation text-warning" style="font-size: 3rem;"></i>
+          <p class="mt-3 text-dark fw-bold">Para suscribirte, necesitamos que completes tu perfil.</p>
+          <p class="text-muted">Los siguientes datos son requeridos para la facturación:</p>
+
+          <ul class="list-group list-group-flush text-start mb-3 mx-4">
+            <li class="list-group-item text-danger" *ngFor="let field of missingProfileFields">
+              <i class="bi bi-x-circle me-2"></i> {{ field }}
+            </li>
+          </ul>
+
+          <p class="text-muted small">Serás redirigido a tu perfil para completar estos datos.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" (click)="closeIncompleteProfileModal()">Cancelar</button>
+          <button type="button" class="btn btn-primary" (click)="goToProfileAndComplete()">
+            <i class="bi bi-pencil-square me-2"></i> Ir a mi Perfil
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop fade show" *ngIf="showIncompleteProfileModal" (click)="closeIncompleteProfileModal()">
+  </div>
+
 </div>

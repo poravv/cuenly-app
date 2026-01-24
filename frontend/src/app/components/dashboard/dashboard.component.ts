@@ -386,17 +386,18 @@ export class DashboardComponent implements OnInit {
 
     this.notificationService.info('Generando enlace...', 'Procesando');
 
+    // Obtener URL presignada de MinIO y abrir en nueva pestaña
     this.api.downloadInvoice(id).subscribe({
       next: (res) => {
         if (res.success && res.download_url) {
+          console.log('MinIO URL:', res.download_url); // Para debug
           window.open(res.download_url, '_blank');
         } else {
-          // Estilo consistente para error de MinIO
           this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
         }
       },
       error: (err) => {
-        console.error("Error descarga:", err);
+        console.error('Error descarga:', err);
         this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
       }
     });

@@ -82,10 +82,10 @@
             <div class="dropdown">
               <button class="btn profile-dropdown-btn d-flex align-items-center" type="button" data-bs-toggle="dropdown"
                 aria-expanded="false" id="profileDropdown">
-                <img *ngIf="userProfile?.picture || user.photoURL" [src]="userProfile?.picture || user.photoURL!"
-                  alt="avatar" class="profile-avatar me-2" (load)="onImageLoad('desktop-main')"
+                <img *ngIf="getAvatarUrl() && !profileImageFailed" [src]="getAvatarUrl()!"
+                  alt="avatar" class="profile-avatar me-2" (load)="onImageLoad('desktop-main', $event)"
                   (error)="onImageError('desktop-main', $event)" style="min-width: 32px; min-height: 32px;">
-                <div *ngIf="!userProfile?.picture && !user.photoURL" class="profile-avatar-placeholder me-2">
+                <div *ngIf="shouldShowPlaceholder()" class="profile-avatar-placeholder me-2">
                   <i class="bi bi-person-fill"></i>
                 </div>
                 <div class="profile-info d-none d-xl-block">
@@ -100,10 +100,10 @@
               <ul class="dropdown-menu dropdown-menu-end profile-dropdown-menu" aria-labelledby="profileDropdown">
                 <li class="dropdown-header">
                   <div class="d-flex align-items-center">
-                    <img *ngIf="userProfile?.picture || user.photoURL" [src]="userProfile?.picture || user.photoURL!"
-                      alt="avatar" class="dropdown-avatar me-2" (load)="onImageLoad('dropdown-header')"
+                    <img *ngIf="getAvatarUrl() && !profileImageFailed" [src]="getAvatarUrl()!"
+                      alt="avatar" class="dropdown-avatar me-2" (load)="onImageLoad('dropdown-header', $event)"
                       (error)="onImageError('dropdown-header', $event)">
-                    <div *ngIf="!userProfile?.picture && !user.photoURL" class="dropdown-avatar-placeholder me-2">
+                    <div *ngIf="shouldShowPlaceholder()" class="dropdown-avatar-placeholder me-2">
                       <i class="bi bi-person-fill"></i>
                     </div>
                     <div>
@@ -215,10 +215,10 @@
           <div class="user-profile-mobile d-lg-none">
             <div class="profile-mobile-container p-3 border-top">
               <div class="d-flex align-items-center mb-3">
-                <img *ngIf="userProfile?.picture || user.photoURL" [src]="userProfile?.picture || user.photoURL!"
-                  alt="avatar" class="profile-avatar-mobile me-3" (load)="onImageLoad('mobile')"
+                <img *ngIf="getAvatarUrl() && !profileImageFailed" [src]="getAvatarUrl()!"
+                  alt="avatar" class="profile-avatar-mobile me-3" (load)="onImageLoad('mobile', $event)"
                   (error)="onImageError('mobile', $event)">
-                <div *ngIf="!userProfile?.picture && !user.photoURL" class="profile-avatar-placeholder-mobile me-3">
+                <div *ngIf="shouldShowPlaceholder()" class="profile-avatar-placeholder-mobile me-3">
                   <i class="bi bi-person-fill"></i>
                 </div>
                 <div class="flex-grow-1">

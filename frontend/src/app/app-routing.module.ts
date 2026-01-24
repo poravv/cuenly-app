@@ -14,6 +14,7 @@ import { ExportTemplatesComponent } from './components/export-templates/export-t
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { AuthGuard } from './guards/auth.guard';
+import { ProfileGuard } from './guards/profile.guard';
 import { LoginGuard } from './guards/login.guard';
 import { SuspendedComponent } from './components/suspended/suspended.component';
 import { AdminGuard } from './guards/admin.guard';
@@ -38,8 +39,8 @@ const routes: Routes = [
   { path: 'templates-export/edit/:id', component: TemplateEditorComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/export/:id', component: TemplateExportComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/export', component: TemplateExportComponent, canActivate: [AuthGuard] },
-  { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard] },
-  { path: 'payment-methods', component: PaymentMethodsComponent, canActivate: [AuthGuard] },
+  { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard, ProfileGuard] },
+  { path: 'payment-methods', component: PaymentMethodsComponent, canActivate: [AuthGuard, ProfileGuard] },
   { path: 'profile', component: ProfileComponent, canActivate: [AuthGuard] },
   { path: 'admin', component: AdminPanelComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'admin/plans', component: PlansManagementComponent, canActivate: [AuthGuard, AdminGuard] },

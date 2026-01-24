@@ -83,6 +83,10 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   hasCards = false;
   showNoCardModal = false;
 
+  // Estado de perfil incompleto
+  showIncompleteProfileModal = false;
+  missingProfileFields: string[] = [];
+
   // Datos del comprador para Pagopar (YA NO SE USA - solo para backward compatibility)
   buyerData = {
     tipo_documento: 'CI',
@@ -215,9 +219,33 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
    */
   startCardRegistration(planCode: string): void {
     this.loadingIframe = true;
-
     console.log('🎬 Iniciando catastro de tarjeta para plan:', planCode);
 
+    // PASO 1: Verificar perfil completo
+    this.userService.checkProfileCompleteness()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (status) => {
+          if (!status.is_complete) {
+            console.warn('⚠️ Perfil incompleto:', status.missing_fields);
+            this.missingProfileFields = status.missing_fields;
+            this.showIncompleteProfileModal = true;
+            this.loadingIframe = false;
+            return;
+          }
+
+          // PASO 2: Si está completo, iniciar suscripción
+          this.proceedToSubscribe(planCode);
+        },
+        error: (err) => {
+          console.error('❌ Error verificando perfil:', err);
+          this.notificationService.error('Error verificando estado del perfil');
+          this.loadingIframe = false;
+        }
+      });
+  }
+
+  private proceedToSubscribe(planCode: string): void {
     this.apiService.subscribeToSelectedPlan(planCode)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
@@ -283,6 +311,20 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   closeNoCardModal(): void {
     this.showNoCardModal = false;
+  }
+
+  closeIncompleteProfileModal(): void {
+    this.showIncompleteProfileModal = false;
+  }
+
+  goToProfileAndComplete(): void {
+    this.showIncompleteProfileModal = false;
+    this.router.navigate(['/profile'], {
+      queryParams: {
+        returnUrl: this.router.url,
+        missingFields: this.missingProfileFields.join(',')
+      }
+    });
   }
 
   closePlanChangeModal(): void {

@@ -127,7 +127,9 @@ class MultiEmailProcessor:
                 # Crear procesador para esta cuenta
                 single = EmailProcessor(EmailConfig(
                     host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                    search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                    search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or [],
+                    auth_type=cfg.auth_type, access_token=cfg.access_token,
+                    refresh_token=cfg.refresh_token, token_expiry=cfg.token_expiry
                 ), owner_email=cfg.owner_email)
                 
                 # Conectar y buscar correos
@@ -243,7 +245,9 @@ class MultiEmailProcessor:
                 try:
                     single = EmailProcessor(EmailConfig(
                         host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or [],
+                        auth_type=cfg.auth_type, access_token=cfg.access_token,
+                        refresh_token=cfg.refresh_token, token_expiry=cfg.token_expiry
                     ), owner_email=cfg.owner_email)
                     result = single.process_emails()
                     return (True, result, cfg.username)
@@ -304,7 +308,9 @@ class MultiEmailProcessor:
                 try:
                     single = EmailProcessor(EmailConfig(
                         host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or [],
+                        auth_type=cfg.auth_type, access_token=cfg.access_token,
+                        refresh_token=cfg.refresh_token, token_expiry=cfg.token_expiry
                     ), owner_email=cfg.owner_email)
                     
                     r = single.process_emails()
@@ -454,7 +460,11 @@ class EmailProcessor:
                     username=first.get("username"),
                     password=first.get("password", ""),
                     search_criteria=first.get("search_criteria", "UNSEEN"),
-                    search_terms=first.get("search_terms") or []
+                    search_terms=first.get("search_terms") or [],
+                    auth_type=first.get("auth_type", "password"),
+                    access_token=first.get("access_token"),
+                    refresh_token=first.get("refresh_token"),
+                    token_expiry=first.get("token_expiry")
                 )
             else:
                 raise ValueError("No hay configuraciones de correo habilitadas en la base de datos")
@@ -465,17 +475,27 @@ class EmailProcessor:
         self.connection_pool = get_imap_pool()
         self.current_connection = None
         
+        # Detectar tipo de autenticación OAuth vs password
+        auth_type = getattr(self.config, 'auth_type', 'password')
+        access_token = getattr(self.config, 'access_token', None) if auth_type == 'oauth2' else None
+        
         # Mantener cliente legacy para compatibilidad (puede removerse después)
         self.client = IMAPClient(
-            host=self.config.host, port=self.config.port,
-            username=self.config.username, password=self.config.password, mailbox="INBOX"
+            host=self.config.host, 
+            port=self.config.port,
+            username=self.config.username, 
+            password=self.config.password or "", 
+            mailbox="INBOX",
+            auth_type=auth_type,
+            access_token=access_token
         )
         self.openai_processor = OpenAIProcessor()
         # Estado para scheduler legacy
         self._last_run_iso: Optional[str] = None
 
         ensure_dirs()
-        logger.info(f"✅ EmailProcessor inicializado con pool de conexiones para {self.config.username}")
+        auth_method = "OAuth2" if auth_type == "oauth2" else "password"
+        logger.info(f"✅ EmailProcessor inicializado con pool de conexiones para {self.config.username} (auth={auth_method})")
 
     # --------- IMAP high-level con pool ---------
     def connect(self) -> bool:
