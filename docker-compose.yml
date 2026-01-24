@@ -61,7 +61,6 @@ services:
       retries: 5
       start_period: 40s
 
-  # Frontend - Modo proxy por defecto (con Nginx proxy)
   frontend:
     build:
       context: ./frontend
@@ -85,6 +84,32 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Worker RQ - Procesamiento de jobs en background
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cuenlyapp-worker
+    restart: unless-stopped
+    command: python worker.py
+    env_file:
+      - ./backend/.env
+    environment:
+      - MONGODB_URL=mongodb://cuenlyapp:${MONGODB_ROOT_PASSWORD:-changeme}@mongodb:27017/cuenlyapp_warehouse?authSource=admin
+      - LOG_LEVEL=INFO
+      - TZ=America/Asuncion
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - cuenlyapp-network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
 
   # Servicios para modo desarrollo (perfil dev)
   mongodb-dev:

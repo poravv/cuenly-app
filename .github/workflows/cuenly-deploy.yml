@@ -506,7 +506,11 @@ jobs:
             --from-literal=MINIO_BUCKET="${{ secrets.MINIO_BUCKET }}" \
             --from-literal=MINIO_SECURE="${{ secrets.MINIO_SECURE }}" \
             --from-literal=MINIO_REGION="${{ secrets.MINIO_REGION }}" \
-            --from-literal=FRONTEND_API_KEY="${FRONTEND_API_KEY_VALUE}"
+            --from-literal=FRONTEND_API_KEY="${FRONTEND_API_KEY_VALUE}" \
+            --from-literal=REDIS_HOST="${{ secrets.REDIS_HOST }}" \
+            --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
+            --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
+            --from-literal=REDIS_SSL="${{ secrets.REDIS_SSL }}"
             
       - name: Create/Update MongoDB secrets
         run: |
