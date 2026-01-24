@@ -236,6 +236,16 @@ export class ApiService {
     });
   }
 
+  // Procesar correos en un rango de fechas específico
+  processDateRange(startDate: string, endDate: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/jobs/process-range`, {
+      start_date: startDate,
+      end_date: endDate
+    }, {
+      headers: this.getSecureHeaders()
+    });
+  }
+
   // Enviar tarea de procesamiento
   submitTask(): Observable<TaskSubmitResponse> {
     return this.http.post<TaskSubmitResponse>(

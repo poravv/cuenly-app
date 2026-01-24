@@ -19,7 +19,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   processingPolling: Subscription | null = null;
   error: string | null = null;
   jobError: string | null = null;
-  
+
   // Para actualización automática
   autoRefresh: boolean = false;
   refreshSubscription: Subscription | null = null;
@@ -27,11 +27,19 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   intervalOptions: number[] = [5, 10, 15, 20];
   jobIntervalInput: number | null = null;
   jobIntervalTouched = false;
+
+  // Para procesamiento por rango de fechas
+  dateRangeStart: string = '';
+  dateRangeEnd: string = '';
+  dateRangeLoading = false;
+  dateRangeResult: any = null;
+  dateRangeError: string | null = null;
+
   private storageHandler: any;
   private savePrefTimer: any = null;
-  
+
   constructor(
-    private apiService: ApiService, 
+    private apiService: ApiService,
     private cdr: ChangeDetectorRef,
     private observability: ObservabilityService
   ) {
@@ -98,7 +106,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     };
     window.addEventListener('storage', this.storageHandler);
   }
-  
+
   ngOnDestroy(): void {
     this.stopAutoRefresh();
     if (this.processingPolling) {
@@ -128,7 +136,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       }
     });
   }
-  
+
   getJobStatus(): void {
     this.jobLoading = true;
     this.apiService.getJobStatus().subscribe({
@@ -154,7 +162,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.processingResult = null;
     this.error = null;
-    
+
     // Log user action
     this.observability.logUserAction('process_emails_started', 'InvoiceProcessingComponent', {
       async_mode: async
@@ -168,10 +176,10 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
           this.loading = false;
           return;
         }
-        
+
         this.processingResult = result;
         this.loading = false;
-        
+
         setTimeout(() => {
           this.getSystemStatus();
           this.getJobStatus();
@@ -196,7 +204,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   // Mostrar notificación elegante para trial expirado
   private showTrialExpiredError(message: string): void {
     this.error = `🚫 ${message}`;
-    
+
     // Auto-limpiar el error después de 10 segundos
     setTimeout(() => {
       if (this.error?.includes('🚫')) {
@@ -207,7 +215,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
 
   startJob(): void {
     this.jobLoading = true;
-    
+
     // Verificar trial antes de iniciar automatización
     this.apiService.getTrialStatus().subscribe({
       next: (trialStatus) => {
@@ -216,7 +224,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
           this.jobLoading = false;
           return;
         }
-        
+
         // Trial válido, proceder con el inicio del job
         const targetInterval = (this.jobIntervalInput && this.jobIntervalInput >= 1)
           ? this.getValidInterval(this.jobIntervalInput!)
@@ -230,12 +238,12 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
                 this.jobLoading = false;
                 this.jobIntervalTouched = false;
                 this.jobIntervalInput = this.getValidInterval(this.jobStatus?.interval_minutes ?? targetInterval);
-                
+
                 // Log job started
                 this.observability.logUserAction('scheduled_job_started', 'InvoiceProcessingComponent', {
                   interval_minutes: targetInterval
                 });
-                
+
                 this.startAutoRefresh();
                 setTimeout(() => this.getJobStatus(), 300);
               },
@@ -266,18 +274,18 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       }
     });
   }
-  
+
   stopJob(): void {
     this.jobLoading = true;
-    
+
     this.apiService.stopJob().subscribe({
       next: (result) => {
         this.jobStatus = result;
         this.jobLoading = false;
-        
+
         // Log job stopped
         this.observability.logUserAction('scheduled_job_stopped', 'InvoiceProcessingComponent');
-        
+
         this.stopAutoRefresh();
       },
       error: (err) => {
@@ -289,7 +297,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       }
     });
   }
-  
+
   private unsubscribeRefresh(): void {
     if (this.refreshSubscription) {
       this.refreshSubscription.unsubscribe();
@@ -307,7 +315,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     localStorage.setItem('cuenlyapp:autoRefresh', 'true');
     localStorage.setItem('cuenlyapp:autoRefreshInterval', String(this.autoRefreshIntervalMs));
   }
-  
+
   stopAutoRefresh(): void {
     this.autoRefresh = false;
     this.unsubscribeRefresh();
@@ -329,14 +337,63 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     this.jobLoading = true;
     this.apiService.setJobInterval(target).subscribe({
       next: (st) => { this.jobStatus = st; this.jobLoading = false; },
-      error: (err) => { 
-        this.jobError = 'No se pudo actualizar el intervalo'; 
-        this.jobLoading = false; 
+      error: (err) => {
+        this.jobError = 'No se pudo actualizar el intervalo';
+        this.jobLoading = false;
         this.observability.error('Error updating job interval', err, 'InvoiceProcessingComponent', {
           action: 'updateJobInterval'
         });
       }
     });
+  }
+
+  // Procesar correos en un rango de fechas específico
+  processDateRange(): void {
+    if (!this.dateRangeStart || !this.dateRangeEnd) {
+      this.dateRangeError = 'Por favor selecciona ambas fechas';
+      return;
+    }
+
+    if (this.dateRangeStart > this.dateRangeEnd) {
+      this.dateRangeError = 'La fecha de inicio debe ser anterior a la fecha fin';
+      return;
+    }
+
+    this.dateRangeLoading = true;
+    this.dateRangeResult = null;
+    this.dateRangeError = null;
+
+    this.observability.logUserAction('process_date_range_started', 'InvoiceProcessingComponent', {
+      start_date: this.dateRangeStart,
+      end_date: this.dateRangeEnd
+    });
+
+    this.apiService.processDateRange(this.dateRangeStart, this.dateRangeEnd).subscribe({
+      next: (result) => {
+        this.dateRangeResult = result;
+        this.dateRangeLoading = false;
+
+        // Refrescar estadísticas
+        setTimeout(() => {
+          this.getSystemStatus();
+          this.getJobStatus();
+        }, 1000);
+      },
+      error: (err) => {
+        this.dateRangeError = err.error?.detail || err.error?.message || 'Error al procesar rango de fechas';
+        this.dateRangeLoading = false;
+        this.observability.error('Error processing date range', err, 'InvoiceProcessingComponent', {
+          action: 'processDateRange',
+          start_date: this.dateRangeStart,
+          end_date: this.dateRangeEnd
+        });
+      }
+    });
+  }
+
+  clearDateRangeResult(): void {
+    this.dateRangeResult = null;
+    this.dateRangeError = null;
   }
 
   onJobIntervalChange(val: any): void {
@@ -357,20 +414,20 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     }
     this.savePrefTimer = setTimeout(() => {
       this.apiService.setAutoRefreshPref(this.autoRefresh, this.autoRefreshIntervalMs)
-        .subscribe({ next: () => {}, error: () => {} });
+        .subscribe({ next: () => { }, error: () => { } });
     }, 300);
   }
 
   formatYearMonth(yearMonth: string): string {
     if (yearMonth.length !== 6) return yearMonth;
-    
+
     const year = yearMonth.substring(0, 4);
     const month = yearMonth.substring(4, 6);
     const monthNames = [
       'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
     ];
-    
+
     const monthIndex = parseInt(month, 10) - 1;
     return `${monthNames[monthIndex]} ${year}`;
   }
