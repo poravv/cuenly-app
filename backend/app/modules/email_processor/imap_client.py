@@ -223,22 +223,19 @@ class IMAPClient:
                 # Construir argumentos de búsqueda
                 if use_utf8:
                     # Usar CHARSET UTF-8
-                    # imaplib falla si pasamos str unicode que no sean ascii (UnicodeEncodeError).
-                    # Debemos pasar BYTES codificados en utf-8.
-                    # Además debemos quotear el término para que sea un string IMAP válido.
-                    # Ejemplo: b'"Facturaci\xc3\xb3n"'
+                    # Hack para imaplib: imaplib en Python intenta codificar strings a ascii/latin-1.
+                    # Si le pasamos el string unicode 'Facturación', falla al codificar a ascii.
+                    # Si le pasamos bytes, debemos manejar el quoting nosotros y es propenso a errores (BAD command).
                     
-                    term_bytes_quoted = b'"' + term_str.encode('utf-8') + b'"'
-
-                    # Construir lista de args como bytes
-                    # imaplib acepta bytes y los envía raw
-                    args = [b'CHARSET', b'UTF-8']
-                    for flag in base_flag_args:
-                        # flag 'UNSEEN' es ascii safe
-                        args.append(flag.encode('ascii') if isinstance(flag, str) else flag)
+                    # Solución robusta: Codificar a UTF-8 bytes, y luego decodificar a Latin-1.
+                    # Esto crea un string "mojibake" que imaplib aceptará, y al enviarlo por el socket
+                    # (codificando a latin-1 internamente), restaurará los bytes UTF-8 originales.
+                    # Además, imaplib se encargará de poner comillas si es necesario.
                     
-                    args.append(b'SUBJECT')
-                    args.append(term_bytes_quoted)
+                    term_bytes = term_str.encode('utf-8')
+                    term_mojibake = term_bytes.decode('latin-1')
+                    
+                    args = ['CHARSET', 'UTF-8'] + base_flag_args + ['SUBJECT', term_mojibake]
                 else:
                     # Búsqueda ASCII estándar y comillas para frases
                     # Si tiene espacios y es ASCII, necesitamos comillas.
