@@ -515,7 +515,9 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
 @app.post("/process-direct")
 async def process_emails_direct(
     limit: Optional[int] = 10,
-    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check),
+    # USA _get_current_user_with_trial_check para permitir que llegue al procesador
+    # y allí se aplique la lógica "XML allowed"
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check),
     request: Request = None,
     _frontend_key: bool = Depends(validate_frontend_key)
 ):
