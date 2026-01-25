@@ -104,7 +104,11 @@ async def init_add_card(
 
     # 2. Add Card
     try:
-        iframe_hash = await pagopar_service.init_add_card(pagopar_id, request.return_url, request.provider)
+        # FORCE PROVICER "Bancard"
+        # The user's keys typically only have permission for Bancard. 
+        # Even if frontend requests 'uPay', we override it here to prevent 'El comercio no tiene permisos' error.
+        hashed_provider = "Bancard" 
+        iframe_hash = await pagopar_service.init_add_card(pagopar_id, request.return_url, hashed_provider)
         return {"hash": iframe_hash, "pagopar_user_id": pagopar_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
