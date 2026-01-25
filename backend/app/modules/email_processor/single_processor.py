@@ -17,7 +17,7 @@ from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.modules.mapping.invoice_mapping import map_invoice
 
 
-from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
+from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError, SkipEmailKeepUnread
 
 from .imap_client import IMAPClient, decode_mime_header
 from .link_extractor import extract_links_from_message
@@ -365,17 +365,31 @@ class EmailProcessor:
                             logger.debug(f"✅ Factura procesada: {invoice.numero_factura}")
                     except OpenAIFatalError as e:
                         logger.error(f"❌ Error FATAL de OpenAI en correo {eid}: {e}. Se omite y se continúa con el siguiente.")
-                    except OpenAIRetryableError as e:
-                        logger.warning(f"⚠️ Error transitorio de OpenAI en correo {eid}: {e}. Se omitirá este correo en esta corrida.")
-                    except Exception as e:
-                        logger.error(f"❌ Error procesando correo {eid}: {e}")
-                    finally:
-                        # Marcar como leído inmediatamente después de procesar (o fallar) para evitar reprocesos infinitos
                         try:
                             self.mark_as_read(eid)
-                            logger.debug(f"📧 Correo {eid} marcado como leído")
-                        except Exception as mark_err:
-                            logger.warning(f"⚠️ No se pudo marcar correo {eid} como leído: {mark_err}")
+                        except: pass
+                    except OpenAIRetryableError as e:
+                        logger.warning(f"⚠️ Error transitorio de OpenAI en correo {eid}: {e}. Se omitirá este correo en esta corrida.")
+                        # No marcar como leído para reintentar luego
+                    except SkipEmailKeepUnread:
+                         logger.info(f"🛑 Correo {eid} omitido y preservado como NO LEÍDO (SkipEmailKeepUnread signal).")
+                         # NO llamar a mark_as_read
+                    except Exception as e:
+                        logger.error(f"❌ Error procesando correo {eid}: {e}")
+                        try:
+                            self.mark_as_read(eid)
+                        except: pass
+                    finally:
+                        # LOGICA FINAL DE PAUSA
+                        # Nota: mark_as_read se movió a los bloques except/try específicos arriba 
+                        # o condicionado, ya que el 'finally' incondicional rompía el requerimiento
+                        
+                        # Si fue exitoso (invoice present), marcar leido aqui por seguridad si no se hizo antes
+                        try:
+                            if invoice:
+                                self.mark_as_read(eid)
+                                logger.debug(f"📧 Correo {eid} marcado como leído (success)")
+                        except: pass
 
                         # Pausa suave entre correos para procesamiento multiusuario
                         if i < len(batch_ids) - 1 and not abort_run:  # No pausar después del último correo del lote
@@ -420,8 +434,6 @@ class EmailProcessor:
                 return None
 
             # ✅ VALIDACIÓN INTELIGENTE DE LÍMITE IA
-            # Solo bloqueamos si el usuario no tiene cupo Y el correo NO tiene XML (es decir, requiere IA sí o sí)
-            # Si tiene XML, permitimos avanzar porque el parser nativo no consume cupo.
             if self.owner_email:
                 has_xml = any(
                     (a.get("filename") or "").lower().endswith(".xml") or 
@@ -437,15 +449,13 @@ class EmailProcessor:
                     
                     if not ai_check['can_use']:
                         logger.warning(f"⚠️ Límite de IA alcanzado para {self.owner_email} y no hay XML: {ai_check['message']}")
-                        logger.info(f"⏭️ Omitiendo correo {email_id} - solo contiene PDFs/Imágenes y no hay cupo IA")
+                        logger.info(f"⏭️ Omitiendo correo {email_id} y dejándolo como NO LEÍDO (esperando cupo al mes siguiente)")
                         
-                        try:
-                            self.mark_as_read(email_id)
-                        except:
-                            pass
-                            
-                        self._mark_email_processed(email_id, "skipped_ai_limit")
-                        return None
+                        # Guardar constancia pero NO marcar leído
+                        self._mark_email_processed(email_id, "skipped_ai_limit_unread")
+                        
+                        # Lanzar excepción especial para que el bucle sepa no marcarlo como leído
+                        raise SkipEmailKeepUnread("Límite de IA alcanzado y sin XML")
 
             email_meta_for_ai = {
                 "sender": metadata.get("sender", ""),
