@@ -414,32 +414,38 @@ class EmailProcessor:
             return None
 
         try:
-            # ✅ VALIDAR LÍMITE DE IA ANTES DE PROCESAR
-            if self.owner_email:
-                from app.repositories.user_repository import UserRepository
-                user_repo = UserRepository()
-                
-                # Check 1: ¿Podemos usar IA en general?
-                ai_check = user_repo.can_use_ai(self.owner_email)
-                
-                if not ai_check['can_use']:
-                    # Doble validación en tiempo real por si otro hilo consumió el saldo
-                    logger.warning(f"⚠️ Límite de IA alcanzado para {self.owner_email}: {ai_check['message']}")
-                    logger.info(f"⏭️ Omitiendo correo {email_id} - usuario sin acceso a IA (se guardará como skipped_ai_limit)")
-                    # Marcar como leído para no reprocesarlo inmediatamente
-                    try:
-                        self.mark_as_read(email_id)
-                    except:
-                        pass
-                    # IMPORTANTE: Marcar como 'skipped_ai_limit' para que was_processed() devuelva False (permitiendo reintento)
-                    # pero quede constancia en BD.
-                    self._mark_email_processed(email_id, "skipped_ai_limit")
-                    return None
-            
             metadata, attachments = self.get_email_content(email_id)
             if not metadata:
                 self._mark_email_processed(email_id, "missing_metadata")
                 return None
+
+            # ✅ VALIDACIÓN INTELIGENTE DE LÍMITE IA
+            # Solo bloqueamos si el usuario no tiene cupo Y el correo NO tiene XML (es decir, requiere IA sí o sí)
+            # Si tiene XML, permitimos avanzar porque el parser nativo no consume cupo.
+            if self.owner_email:
+                has_xml = any(
+                    (a.get("filename") or "").lower().endswith(".xml") or 
+                    a.get("content_type", "").lower() in ("text/xml", "application/xml", "application/x-invoice+xml") 
+                    for a in attachments
+                )
+
+                # Si NO hay XML, asumimos que necesitaremos IA (PDF/Imagen/Links)
+                if not has_xml:
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    ai_check = user_repo.can_use_ai(self.owner_email)
+                    
+                    if not ai_check['can_use']:
+                        logger.warning(f"⚠️ Límite de IA alcanzado para {self.owner_email} y no hay XML: {ai_check['message']}")
+                        logger.info(f"⏭️ Omitiendo correo {email_id} - solo contiene PDFs/Imágenes y no hay cupo IA")
+                        
+                        try:
+                            self.mark_as_read(email_id)
+                        except:
+                            pass
+                            
+                        self._mark_email_processed(email_id, "skipped_ai_limit")
+                        return None
 
             email_meta_for_ai = {
                 "sender": metadata.get("sender", ""),
