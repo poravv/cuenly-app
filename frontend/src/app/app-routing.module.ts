@@ -18,8 +18,7 @@ import { ProfileGuard } from './guards/profile.guard';
 import { LoginGuard } from './guards/login.guard';
 import { SuspendedComponent } from './components/suspended/suspended.component';
 import { AdminGuard } from './guards/admin.guard';
-import { AdminPanelComponent } from './components/admin-panel/admin-panel.component';
-import { PlansManagementComponent } from './components/plans-management/plans-management.component';
+
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { ProfileComponent } from './components/profile/profile.component';
 import { TermsConditionsComponent } from './components/legal/terms-conditions.component';
@@ -45,8 +44,11 @@ const routes: Routes = [
   { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard, ProfileGuard] },
   { path: 'payment-methods', component: PaymentMethodsComponent, canActivate: [AuthGuard, ProfileGuard] },
   { path: 'profile', component: ProfileComponent, canActivate: [AuthGuard] },
-  { path: 'admin', component: AdminPanelComponent, canActivate: [AuthGuard, AdminGuard] },
-  { path: 'admin/plans', component: PlansManagementComponent, canActivate: [AuthGuard, AdminGuard] },
+  {
+    path: 'admin',
+    loadChildren: () => import('./modules/admin/admin.module').then(m => m.AdminModule),
+    canActivate: [AuthGuard, AdminGuard]
+  },
   { path: 'ayuda', component: HelpComponent, canActivate: [AuthGuard] },
   { path: 'terms', component: TermsConditionsComponent },
   { path: 'privacy', component: PrivacyPolicyComponent },

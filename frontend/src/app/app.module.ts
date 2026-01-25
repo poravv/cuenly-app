@@ -22,8 +22,7 @@ import { ExportTemplatesComponent } from './components/export-templates/export-t
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { NotificationContainerComponent } from './components/shared/notification-container/notification-container.component';
-import { AdminPanelComponent } from './components/admin-panel/admin-panel.component';
-import { PlansManagementComponent } from './components/plans-management/plans-management.component';
+
 import { SuspendedComponent } from './components/suspended/suspended.component';
 import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
@@ -56,8 +55,7 @@ import { DataRetentionComponent } from './components/legal/data-retention.compon
     TemplateEditorComponent,
     TemplateExportComponent,
     NotificationContainerComponent,
-    AdminPanelComponent,
-    PlansManagementComponent,
+
     SuspendedComponent,
     SuspendedComponent,
     InvoiceProcessingComponent,

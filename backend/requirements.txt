@@ -31,3 +31,4 @@ httpx
 redis>=5.0.0
 tenacity>=8.2.0
 rq>=1.15.0
+python-magic>=0.4.27

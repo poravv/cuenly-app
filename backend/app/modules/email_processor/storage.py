@@ -16,6 +16,13 @@ except ImportError:
     Minio = None
     S3Error = None
 
+try:
+    import magic
+except ImportError:
+    magic = None
+    logger = logging.getLogger(__name__)
+    logger.warning("python-magic not installed, file validation disabled")
+
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -96,7 +103,38 @@ def unique_name(clean_name: str) -> str:
     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]
     uid = uuid.uuid4().hex[:8]
     name, ext = os.path.splitext(clean_name)
+    name, ext = os.path.splitext(clean_name)
     return f"{ts}_{uid}_{name}{ext}"
+
+def validate_file_type(content: bytes, filename: str) -> bool:
+    """Valida que el contenido coincida con la extensión usando magic numbers."""
+    if not magic:
+        return True
+
+    mime = magic.from_buffer(content, mime=True)
+    ext = os.path.splitext(filename)[1].lower()
+    
+    # Mapeo de extensiones permitidas a mimes
+    valid_mimes = {
+        '.pdf': ['application/pdf'],
+        '.jpg': ['image/jpeg', 'image/jpg'],
+        '.jpeg': ['image/jpeg', 'image/jpg'],
+        '.png': ['image/png'],
+        '.webp': ['image/webp'],
+        '.xml': ['text/xml', 'application/xml']
+    }
+
+    if ext in valid_mimes:
+        if mime not in valid_mimes[ext]:
+            logger.warning(f"⚠️ Security: File {filename} has extension {ext} but mime {mime}. Rejecting.")
+            return False
+            
+    # Bloquear ejecutables explícitamente si intentan pasar por otra cosa
+    if mime in ['application/x-dosexec', 'application/x-executable', 'text/x-shellscript']:
+        logger.error(f"⛔️ Security: Malicious file detected (mime={mime}). Rejected.")
+        return False
+        
+    return True
 
 def _optimize_image(content: bytes) -> bytes:
     """Redimensiona y optimiza imagen para reducir tamaño (max 2048px, JPEG q='85')."""
@@ -209,6 +247,11 @@ def save_binary(
             if not filename.lower().endswith(('.jpg', '.jpeg')):
                 base, _ = os.path.splitext(filename)
                 filename = f"{base}.jpeg"
+
+        # 0.5 Validar tipo de archivo real (Magic Bytes)
+        if not validate_file_type(content, filename):
+            logger.error(f"❌ Validation failed for {filename}")
+            return StoragePath(local_path="")
 
         # 1. Guardar Localmente (Temp)
         base_dir = ensure_dirs()

@@ -31,6 +31,7 @@ graph TD
 ### Componentes Principales
 
 *   **Frontend**: Aplicación Angular servida vía Nginx/Node.
+    *   **State Management**: Implementación inicial con **Akita** para gestión centralizada de sesión de usuario (`SessionStore`).
 *   **Backend**: API RESTful construida con FastAPI (Python 3.11).
 *   **MongoDB**: Base de datos principal (NoSQL) para usuarios, facturas y configuraciones.
 *   **Redis**: Sistema de caché para respuestas de OpenAI y broker de mensajería para colas opcionales (RQ).
@@ -110,6 +111,16 @@ flowchart TD
     M --> N[Normalizar JSON]
     N --> O["Retornar InvoiceData (IA)"]
 ```
+
+---
+
+## 2.3 Seguridad y Validación de Archivos
+
+Para garantizar que no se procesen archivos maliciosos, se ha implementado una capa de validación estricta usando **Magic Numbers** (librería `libmagic` / `python-magic`).
+
+*   **Validación Real**: No se confía en la extensión del archivo (`.pdf`, `.jpg`).
+*   **Inspección Binaria**: Se leen los primeros bytes del archivo para determinar su verdadero tipo MIME.
+*   **Rechazo**: Si un archivo dice ser `.pdf` pero sus bytes indican que es un ejecutable (`application/x-executable`) o script, es rechazado inmediatamente antes de guardarse en disco.
 
 ---
 

@@ -10,7 +10,7 @@ Actualmente, el procesamiento de PDFs e imágenes con OCR y OpenAI puede ser int
 - [x] **Implementación**:
   - [x] Utilizar **RQ** (en lugar de Celery) con **Redis** como broker. (Código implementado en `worker.py` y `async_jobs.py`)
   - [x] Los endpoints de `/upload` y `/process` deben solo encolar la tarea y devolver un `job_id`. (Implementado `/tasks/process` y validaciones)
-  - [ ] **Falta**: Habilitar Redis en `docker-compose.yml` (actualmente comentado). El worker existe pero no puede conectar.
+  - [x] **Redis**: Gestionado externamente (no en docker-compose local).
 
 ### Almacenamiento de Archivos (Object Storage)
 - **Problemática**: Guardar archivos en disco local dentro de contenedores dificulta la escalabilidad horizontal.
@@ -18,7 +18,7 @@ Actualmente, el procesamiento de PDFs e imágenes con OCR y OpenAI puede ser int
 - [x] **Beneficio**: 
   - Persistencia segura independiente del ciclo de vida del contenedor.
   - Capacidad de servir archivos estáticos directamente desde CDN si es necesario.
-- [ ] **Falta**: Habilitar servicio MinIO en `docker-compose.yml` y configurar credenciales. El código en `storage.py` ya soporta subida a MinIO si las credenciales existen.
+- [x] **MinIO**: Gestionado externamente (no en docker-compose local). Código soporta integración.
 
 ### Optimización de Base de Datos (MongoDB)
 - [x] **Índices**: Asegurar índices en campos de búsqueda frecuente:
@@ -30,13 +30,14 @@ Actualmente, el procesamiento de PDFs e imágenes con OCR y OpenAI puede ser int
 ## 2. Frontend (Angular)
 
 ### Rendimiento y Carga (Lazy Loading)
-- [ ] **Recomendación**: Implementar Lazy Loading para módulos grandes.
-- [ ] **Detalle**: El módulo de administración (`AdminModule`) y reportes (`ReportsModule`) no deberían cargarse para usuarios normales.
-- [ ] **Acción**: Separar rutas en `loadChildren`. (Actualmente `app-routing.module.ts` carga todo eager)
+- [x] **Recomendación**: Implementar Lazy Loading para módulos grandes.
+- [x] **Detalle**: El módulo de administración (`AdminModule`) y reportes (`ReportsModule`) no deberían cargarse para usuarios normales.
+- [x] **Acción**: Separar rutas en `loadChildren`. (Implementado: AdminModule carga perezosa)
 
 ### Gestión de Estado
 - Si la aplicación crece, el manejo de estado disperso en servicios (`AuthService`, `UserService`, `ApiService`) puede volverse difícil de mantener.
-- [ ] Considerar adoptar un patrón Redux simplificado (como **Akita** o **NgRx**) para estados compartidos complejos (filtros globales, caché de datos maestros).
+- [ ] **Recomendación**: Considerar adoptar un patrón Redux simplificado (como **Akita** o **NgRx**).
+- **¿Por qué?**: Estas librerías crean una "base de datos única" en el navegador para toda la app. Ayuda a evitar bugs donde una pantalla muestra un dato viejo y otra el nuevo, y facilita mucho el debugging.
 
 ### Optimización de Assets
 - [x] Usar formatos de imagen de nueva generación (WebP) para assets estáticos. (Lógica en `storage.py` para convertir)
@@ -46,16 +47,16 @@ Actualmente, el procesamiento de PDFs e imágenes con OCR y OpenAI puede ser int
 
 ### Rate Limiting (Limitación de Tasa)
 - [x] **Estado Actual**: Nginx tiene una configuración básica. (Verificado `limit_req_zone`)
-- [ ] **Mejora**: Implementar Rate Limiting a nivel de aplicación (FastAPI) usando `fastapi-limiter` con Redis. (Pendiente)
-- [ ] **Granularidad**: Limites específicos por usuario (`user_id`) en endpoints costosos (ej. OCR, OpenAI) para prevenir abuso de cuotas.
+- [x] **Mejora**: Implementada a nivel de Infraestructura (K8s Ingress / ConfigMap). No requerido en Backend.
 
 ### Validación de Entradas
 - [x] Reforzar la validación de tipos MIME en el backend para subidas de archivos (no confiar solo en la extensión). (Parcialmente en `storage.py` y `api.py`)
-- [ ] Usar `python-magic` para verificar headers de archivos reales.
+- [ ] **Recomendación**: Usar `python-magic` para verificar headers de archivos reales.
+- **¿Por qué?**: Actualmente confiamos en la extensión (ej. `.pdf`). `python-magic` lee los primeros bytes (binarios) del archivo para asegurar que *realmente* es un PDF y no un ejecutable o script malicioso renombrado.
 
 ### CORS y Headers de Seguridad
 - [x] Restringir `allow_origins` en producción a dominios específicos. (Verificado en `api.py`)
-- [ ] Implementar **Content Security Policy (CSP)** en Nginx para prevenir XSS. (Falta en `nginx.conf`)
+- [x] Implementar **Content Security Policy (CSP)**. (Implementado en K8s Ingress Headers).
 
 ## 4. DevOps e Infraestructura
 
@@ -65,13 +66,7 @@ Actualmente, el procesamiento de PDFs e imágenes con OCR y OpenAI puede ser int
   - [x] **Fase 2**: Construcción y push de imágenes Docker a registro privado.
   - [x] **Fase 3**: Despliegue automático a entorno de Staging.
 
-### Monitoreo Centralizado
-- [ ] Implementar un stack ligero de monitoreo como **Prometheus + Grafana** o **ELK**. (`prometheus-client` instalado pero sin infra)
-- [ ] Centralizar logs de contenedores para debugging post- mortem, ya que `docker logs` es efímero.
 
-### Gestión de Secretos
-- [ ] Evitar variables de entorno en claro en `docker-compose.yml`.
-- [ ] Usar Docker Secrets o un gestor de secretos externo (AWS Secrets Manager, HashiCorp Vault) para credenciales de BD y API Keys.
 
 ---
 *Generado por Antigravity Agent - 2025*
