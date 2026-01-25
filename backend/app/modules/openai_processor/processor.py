@@ -61,6 +61,18 @@ class OpenAIProcessor:
         from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
         
         try:
+            # 0. CHECK DE SEGURIDAD: Validar límite de IA antes de consumir tokens
+            if owner_email:
+                try:
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    ai_check = user_repo.can_use_ai(owner_email)
+                    if not ai_check['can_use']:
+                        logger.warning(f"🛑 AI limit reached for {owner_email}: {ai_check['message']}. Aborting extraction.")
+                        return None
+                except Exception as e:
+                    logger.warning(f"⚠️ Error verifying AI limit for {owner_email}: {e}")
+
             # 1. Verificar cache primero
             if self.cache:
                 cached_result = self.cache.get(pdf_path)
@@ -74,20 +86,26 @@ class OpenAIProcessor:
                         # Si ya es un objeto válido, devolverlo directamente
                         return cached_result
             
-            # NOTA: Se desactiva el camino 'texto' por solicitud.
-            # Mantener este bloque comentado por si se necesita reactivar en el futuro.
+            # 1.5 Intentar estrategia por texto (más económica y rápida)
+            # NOTA: Se comenta temporalmente porque está causando fallos en el flujo.
             # if has_extractable_text_or_ocr(pdf_path):
             #     result = self._process_as_text(pdf_path, email_metadata)
             #     if result:
+            #         # Marcar que se usó IA (aunque sea texto consume tokens)
+            #         if hasattr(result, '__dict__'):
+            #             result.ai_used = True
+            #         elif isinstance(result, dict):
+            #             result['ai_used'] = True
             #         return result
-            #     logger.warning("Texto falló → intentamos por imagen")
+            #     logger.warning("Texto falló o insuficiente → intentamos por imagen")
 
-            # Ir directo a la estrategia por imagen (Vision/OCR)
+            # 2. Ir directo a la estrategia por imagen (Vision/OCR)
             result = self._process_as_image(pdf_path, email_metadata)
             
             # Si el procesamiento fue exitoso y usó IA, incrementar contador
             if result and owner_email:
                 try:
+                    # NOTA: user_repo ya importado arriba si owner_email existe
                     from app.repositories.user_repository import UserRepository
                     user_repo = UserRepository()
                     updated_info = user_repo.increment_ai_usage(owner_email, 1)
@@ -107,11 +125,15 @@ class OpenAIProcessor:
                 self.cache.set(pdf_path, cache_data, source="openai_vision")
             
             if result:
-                # Marcar que se usó IA para control en bucle
-                if hasattr(result, '__dict__'):
-                    result.ai_used = True
-                elif isinstance(result, dict):
-                    result['ai_used'] = True
+                # Marcar que se usó IA para control en bucle (intentar seguro)
+                try:
+                    if isinstance(result, dict):
+                        result['ai_used'] = True
+                    else:
+                         # Pydantic v1/v2 compat
+                        object.__setattr__(result, 'ai_used', True)
+                except Exception:
+                    pass
                 return result
 
             logger.warning("Ambas estrategias fallaron")
@@ -228,6 +250,23 @@ class OpenAIProcessor:
                 logger.warning("Parser nativo falló: %s. Se usa OpenAI como fallback", e)
 
             # 2) Fallback: usar OpenAI con prompt XML
+            # CHECK DE SEGURIDAD: Validar límite de IA antes de fallback
+            if owner_email:
+                try:
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    ai_check = user_repo.can_use_ai(owner_email)
+                    if not ai_check['can_use']:
+                        logger.warning(f"🛑 AI limit reached for {owner_email} during XML fallback: {ai_check['message']}. Aborting AI fallback.")
+                        # Retornar lo que se pudo extraer nativamente (si algo) o None
+                        if 'native' in locals() and native:
+                            logger.info("Returning partial native result instead of AI fallback due to limit.")
+                            invoice = _coerce_invoice_model(native, email_metadata)
+                            return validate_and_enhance_with_cdc(invoice)
+                        return None
+                except Exception as e:
+                    logger.warning(f"⚠️ Error verifying AI limit for {owner_email}: {e}")
+
             prompt = build_xml_prompt(xml_content)
             messages = messages_user_only(prompt)
 

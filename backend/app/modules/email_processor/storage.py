@@ -124,6 +124,8 @@ def validate_file_type(content: bytes, filename: str) -> bool:
         '.xml': ['text/xml', 'application/xml']
     }
 
+    logger.info(f"🔍 Validating file: {filename} (ext={ext}) -> Detected MIME: {mime}")
+
     if ext in valid_mimes:
         if mime not in valid_mimes[ext]:
             logger.warning(f"⚠️ Security: File {filename} has extension {ext} but mime {mime}. Rejecting.")
