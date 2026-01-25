@@ -84,9 +84,23 @@ class MultiEmailProcessor:
             if cfg.owner_email:
                 ai_check = user_repo.can_use_ai(cfg.owner_email)
                 if not ai_check['can_use']:
-                    logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} (owner: {cfg.owner_email}) - {ai_check['message']}")
-                    errors.append(f"Cuenta {cfg.username}: {ai_check['message']}")
-                    continue
+                    # MODIFICADO: No bloquear aquí. Permitir que pase para que SingleProcessor chequee si hay XML.
+                    # Solo advertir.
+                    logger.info(f"ℹ️ Cuenta {cfg.username} tiene límite de IA alcanzado, pero se procesará para buscar XMLs: {ai_check['message']}")
+                
+                # Calcular límite restante para informar (no para bloquear)
+                trial_info = user_repo.get_trial_info(cfg.owner_email)
+                if not trial_info.get('is_trial_user', False) and trial_info.get('ai_invoices_limit', 0) == -1:
+                    cfg.ai_remaining = -1
+                else:
+                    limit_total = trial_info.get('ai_invoices_limit', 50)
+                    used = trial_info.get('ai_invoices_processed', 0)
+                    remaining = max(0, limit_total - used)
+                    cfg.ai_remaining = remaining
+                    
+                    if remaining == 0:
+                        logger.info(f"ℹ️ Cuenta {cfg.username} tiene cupo IA agotado (0/{limit_total}), pero buscará XMLs nativos.")
+
             filtered_configs.append(cfg)
         
         if not filtered_configs:
@@ -203,16 +217,11 @@ class MultiEmailProcessor:
             if cfg.owner_email:
                 ai_check = user_repo.can_use_ai(cfg.owner_email)
                 if not ai_check['can_use']:
-                    # Si la razón es límite alcanzado, pero es procesamiento XML, podríamos permitirlo.
-                    # PERO, el requerimiento es blindar el límite.
-                    logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} (owner: {cfg.owner_email}) - {ai_check['message']}")
-                    skipped_ai_limit += 1
-                    continue
+                    logger.info(f"ℹ️ Cuenta {cfg.username} tiene límite de IA alcanzado, pero se procesará para buscar XMLs: {ai_check['message']}")
                 
-                # Calcular límite restante para limitar el lote
+                # Calcular límite restante
                 trial_info = user_repo.get_trial_info(cfg.owner_email)
                 if not trial_info.get('is_trial_user', False) and trial_info.get('ai_invoices_limit', 0) == -1:
-                    # Ilimitado
                     pass
                 else:
                     limit_total = trial_info.get('ai_invoices_limit', 50)
@@ -220,9 +229,7 @@ class MultiEmailProcessor:
                     remaining = max(0, limit_total - used)
                     
                     if remaining == 0:
-                        logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} - Cupo IA agotado ({used}/{limit_total})")
-                        skipped_ai_limit += 1
-                        continue
+                         logger.info(f"ℹ️ Cuenta {cfg.username} tiene cupo IA agotado (0/{limit_total}), pero buscará XMLs nativos.")
                     
                     # Guardar remaining en la config para uso posterior si fuera necesario
                     cfg.ai_remaining = remaining
