@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from app.repositories.user_repository import UserRepository
+from app.repositories.subscription_repository import SubscriptionRepository
 from app.services.pagopar_service import PagoparService
 import hashlib
 import logging
@@ -13,6 +14,7 @@ router = APIRouter()
 
 pagopar_service = PagoparService()
 user_repo = UserRepository()
+sub_repo = SubscriptionRepository()
 
 class AddCardRequest(BaseModel):
     return_url: str
@@ -28,17 +30,37 @@ class PayRequest(BaseModel):
     order_hash: str
     card_token: str
 
+# Helper function to get pagopar_id consistently from both collections
+def _get_pagopar_id(email: str) -> Optional[str]:
+    """
+    Get pagopar_user_id from users collection, falling back to payment_methods.
+    Also syncs the ID to users collection if only found in payment_methods.
+    """
+    pagopar_id = user_repo.get_pagopar_user_id(email)
+    
+    if not pagopar_id:
+        payment_method = sub_repo.get_user_payment_method(email)
+        if payment_method:
+            pagopar_id = payment_method.get("pagopar_user_id")
+            if pagopar_id:
+                logger.info(f"📎 Usando pagopar_id de payment_methods: {pagopar_id}")
+                user_repo.update_pagopar_user_id(email, pagopar_id)
+    
+    return pagopar_id
+
 @router.get("/cards")
 async def list_cards(current_user: dict = Depends(_get_current_user)):
     """List saved cards for the current user."""
     email = current_user.get("email")
-    pagopar_id = user_repo.get_pagopar_user_id(email)
+    pagopar_id = _get_pagopar_id(email)
     
     if not pagopar_id:
+        logger.warning(f"⚠️ list_cards: No se encontró pagopar_id para {email}")
         return []
 
     cards = await pagopar_service.list_cards(pagopar_id)
     return cards
+
 
 @router.post("/cards/init")
 async def init_add_card(
@@ -57,61 +79,88 @@ async def init_add_card(
     db_user = user_repo.get_by_email(email)
     pagopar_id = db_user.get("pagopar_user_id") if db_user else None
     
+    # CRITICAL: Also check payment_methods collection (where /ensure-customer stores the ID)
+    # This ensures consistency with the /subscriptions/ensure-customer endpoint
+    if not pagopar_id:
+        payment_method = sub_repo.get_user_payment_method(email)
+        if payment_method:
+            pagopar_id = payment_method.get("pagopar_user_id")
+            logger.info(f"📎 Usando pagopar_id existente de payment_methods: {pagopar_id}")
+            # Sync to users collection for future lookups
+            if pagopar_id:
+                user_repo.update_pagopar_user_id(email, pagopar_id)
+    
     # Get profile data with fallbacks
     name = (db_user or {}).get("name") or current_user.get("name") or "Usuario Cuenly"
     phone = (db_user or {}).get("phone") or "0981000000"
     
     if not pagopar_id:
-        # We need a numeric ID for Pagopar. Since we use MongoDB ObjectId or Firebase UID (strings),
-        # we might need to hash/map it, or ask Pagopar if string ID is supported.
-        # The docs say "identificador: Corresponde al ID del usuario... ejemplo 1".
-        # It seems it expects an Integer in the example, but JSON supports strings.
-        # Let's try to use a hashed integer or a sequential ID.
-        # Ideally, we should add an auto-incrementing integer ID to our users, or hash the email/uid to a safe int range.
-        # For MVP, let's try using a hash of the UID modulo a large number to get a pseudo-unique int.
-        # RISK: Collisions. Better solution: User counter in DB.
-        # Let's assume for now we use a deterministic integer from the UID string hash.
-        
-        # NOTE: Pagopar sometimes accepts strings. If extraction showed "1" as example but type wasn't explicit.
-        # Let's try passing the string UID first. If it fails, we'll hash it.
-        # Actually, looking at docs: "identificador: 1". 
-        # Let's try to register with the UID string.
-        
-        # Use UID or generate one
-        user_identifier = str(int(hashlib.sha256(email.encode('utf-8')).hexdigest(), 16) % 10**8) # 8 digit int
+        # Generate a unique identifier for Pagopar using MD5 hash
+        # IMPORTANT: Use MD5[:10] for consistency with /subscriptions/ensure-customer
+        user_identifier = hashlib.md5(email.encode()).hexdigest()[:10]
         
         try:
             # 1. Add Customer to Pagopar
-            # Note: If this fails with "Comercio no tiene permisos", it might be that the feature is not enabled.
-            # We try to proceed to add_card anyway, as sometimes user creation is implicit or optional.
+            # CRÍTICO: Este paso es OBLIGATORIO antes de poder agregar tarjetas
+            # Si falla, NO podemos continuar porque PagoPar retornará "No existe comprador"
+            logger.info(f"🔄 Registrando nuevo cliente en PagoPar: {email} (ID: {user_identifier})")
             res = await pagopar_service.add_customer(user_identifier, name, email, phone)
             
-            if res.get("respuesta"):
-                # Save this ID
-                pagopar_id = user_identifier
-                user_repo.update_pagopar_user_id(email, pagopar_id)
-            else:
-                 logger.warning(f"Pagopar add_customer failed: {res.get('resultado')}. Proceeding to add_card...")
-                 # We still assume we can try to use the identifier
-                 pagopar_id = user_identifier
-                 user_repo.update_pagopar_user_id(email, pagopar_id)
-
-        except Exception as e:
-            logger.error(f"Error registering user in Pagopar (ignoring): {str(e)}")
-            # Fallback: assume ID is valid and try to proceed
+            # Verificar que la respuesta sea exitosa
+            if not res.get("respuesta"):
+                error_msg = res.get("resultado", "Error desconocido")
+                logger.error(f"❌ No se pudo registrar cliente en PagoPar: {error_msg}")
+                
+                # Verificar si es un error de permisos del comercio
+                if "permisos" in error_msg.lower() or "no tiene permisos" in error_msg.lower():
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"El comercio no tiene permisos habilitados para pagos recurrentes. Error de PagoPar: {error_msg}"
+                    )
+                
+                # Para otros errores, lanzar excepción genérica
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"No se pudo registrar el cliente en PagoPar: {error_msg}. Contacte al administrador."
+                )
+            
+            # Cliente registrado exitosamente
             pagopar_id = user_identifier
             user_repo.update_pagopar_user_id(email, pagopar_id)
+            logger.info(f"✅ Cliente registrado exitosamente en PagoPar: {email}")
+
+        except HTTPException:
+            # Re-lanzar excepciones HTTP
+            raise
+        except Exception as e:
+            logger.error(f"💥 Error inesperado al registrar usuario en Pagopar: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error al comunicarse con PagoPar: {str(e)}"
+            )
 
     # 2. Add Card
     try:
-        # FORCE PROVICER "Bancard"
-        # The user's keys typically only have permission for Bancard. 
-        # Even if frontend requests 'uPay', we override it here to prevent 'El comercio no tiene permisos' error.
-        hashed_provider = "Bancard" 
-        iframe_hash = await pagopar_service.init_add_card(pagopar_id, request.return_url, hashed_provider)
+        iframe_hash = await pagopar_service.init_add_card(pagopar_id, request.return_url, request.provider)
         return {"hash": iframe_hash, "pagopar_user_id": pagopar_id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_str = str(e)
+        if "No existe comprador" in error_str:
+            logger.warning(f"⚠️ Error 'No existe comprador' detectado para det-{pagopar_id}. Intentando auto-registro...")
+            try:
+                # Intentar registrar al cliente con el ID que ya tenemos
+                await pagopar_service.add_customer(pagopar_id, name, email, phone)
+                logger.info(f"✅ Auto-registro exitoso para {email}. Reintentando add_card...")
+                
+                # Reintentar add_card
+                iframe_hash = await pagopar_service.init_add_card(pagopar_id, request.return_url, request.provider)
+                return {"hash": iframe_hash, "pagopar_user_id": pagopar_id}
+            except Exception as retry_error:
+                logger.error(f"❌ Falló el auto-registro/reintento: {retry_error}")
+                raise HTTPException(status_code=500, detail=f"Error irrecobertible de PagoPar: {str(retry_error)}")
+        
+        # Si no es ese error, relanzar
+        raise HTTPException(status_code=500, detail=error_str)
 
 @router.post("/cards/confirm")
 async def confirm_card(
@@ -122,10 +171,10 @@ async def confirm_card(
     Confirm card addition after Pagopar redirect.
     """
     email = current_user.get("email")
-    pagopar_id = user_repo.get_pagopar_user_id(email)
+    pagopar_id = _get_pagopar_id(email)
     
     if not pagopar_id:
-        raise HTTPException(status_code=400, detail="User not registered in Pagopar")
+        raise HTTPException(status_code=400, detail="Usuario no registrado en Pagopar. Por favor, agregue una tarjeta primero.")
 
     success = await pagopar_service.confirm_card(pagopar_id, request.return_url)
     if not success:
@@ -140,10 +189,10 @@ async def delete_card(
 ):
     """Delete a saved card."""
     email = current_user.get("email")
-    pagopar_id = user_repo.get_pagopar_user_id(email)
+    pagopar_id = _get_pagopar_id(email)
     
     if not pagopar_id:
-        raise HTTPException(status_code=400, detail="User not registered in Pagopar")
+        raise HTTPException(status_code=400, detail="Usuario no registrado en Pagopar")
 
     success = await pagopar_service.delete_card(pagopar_id, card_token)
     if not success:
@@ -161,10 +210,10 @@ async def pay(
     Requires an existing order hash (created separately via 'iniciar-transaccion').
     """
     email = current_user.get("email")
-    pagopar_id = user_repo.get_pagopar_user_id(email)
+    pagopar_id = _get_pagopar_id(email)
     
     if not pagopar_id:
-        raise HTTPException(status_code=400, detail="User not registered in Pagopar")
+        raise HTTPException(status_code=400, detail="Usuario no registrado en Pagopar")
 
     success = await pagopar_service.process_payment(pagopar_id, request.order_hash, request.card_token)
     if not success:

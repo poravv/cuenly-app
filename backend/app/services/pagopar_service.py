@@ -30,8 +30,18 @@ class PagoparService:
         # logger.debug(f"Generating token for op: {operation}. Hash(*** + {operation}) = {token}")
         return token
 
-    async def _post(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Helper to send POST requests to Pagopar API"""
+    async def _post(self, endpoint: str, data: Dict[str, Any], raise_on_error: bool = False) -> Dict[str, Any]:
+        """
+        Helper to send POST requests to Pagopar API
+        
+        Args:
+            endpoint: API endpoint name (e.g., 'agregar-cliente')
+            data: Payload to send
+            raise_on_error: If True, raises exception when respuesta=false. If False, returns result as-is.
+        
+        Returns:
+            Response JSON from Pagopar
+        """
         url = f"{self.base_url}/{endpoint}/"
         
         # Inject public key if not present
@@ -53,17 +63,24 @@ class PagoparService:
                 # Check Pagopar application-level success flag
                 if not result.get("respuesta"):
                     error_msg = result.get("resultado", "Unknown error from Pagopar")
-                    logger.error(f"Pagopar API Error ({endpoint}): {error_msg}")
-                    # You might want to raise a custom exception here
-                    raise Exception(f"Pagopar Error: {error_msg}")
+                    logger.warning(f"Pagopar API returned respuesta=false ({endpoint}): {error_msg}")
                     
+                    if raise_on_error:
+                        raise Exception(f"Pagopar Error: {error_msg}")
+                    
+                # Return result regardless of success/failure (caller decides how to handle)
                 return result
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP Error interacting with Pagopar: {e.response.text}")
-                raise e
+                logger.error(f"HTTP Error interacting with Pagopar ({endpoint}): {e.response.text}")
+                raise Exception(f"HTTP {e.response.status_code}: {e.response.text}")
+            except httpx.RequestError as e:
+                logger.error(f"Request Error interacting with Pagopar ({endpoint}): {str(e)}")
+                raise Exception(f"Network error: {str(e)}")
             except Exception as e:
-                logger.error(f"Error interacting with Pagopar: {str(e)}")
-                raise e
+                if "Pagopar Error:" in str(e):
+                    raise  # Re-raise Pagopar errors
+                logger.error(f"Unexpected error interacting with Pagopar ({endpoint}): {str(e)}")
+                raise
 
     async def add_customer(self, identifier: str, name: str, email: str, phone: str = "") -> Dict[str, Any]:
         """
@@ -90,7 +107,7 @@ class PagoparService:
             "url": redirect_url,
             "proveedor": provider
         }
-        response = await self._post("agregar-tarjeta", payload)
+        response = await self._post("agregar-tarjeta", payload, raise_on_error=True)
         return response.get("resultado", "")
 
     async def confirm_card(self, identifier: str, redirect_url: str) -> bool:
@@ -104,7 +121,7 @@ class PagoparService:
             "url": redirect_url
         }
         try:
-            await self._post("confirmar-tarjeta", payload)
+            await self._post("confirmar-tarjeta", payload, raise_on_error=True)
             return True
         except Exception:
             return False
@@ -120,7 +137,20 @@ class PagoparService:
         }
         try:
             response = await self._post("listar-tarjeta", payload)
-            return response.get("resultado", [])
+            
+            # Check if response was successful
+            if not response.get("respuesta"):
+                error_msg = response.get("resultado", "Error desconocido")
+                logger.warning(f"⚠️ list_cards failed for {identifier}: {error_msg}")
+                return []
+            
+            # Ensure resultado is a list (not a string like "No existe comprador")
+            resultado = response.get("resultado", [])
+            if isinstance(resultado, list):
+                return resultado
+            else:
+                logger.warning(f"⚠️ list_cards: resultado no es una lista: {resultado}")
+                return []
         except Exception as e:
             logger.error(f"Error listing cards for {identifier}: {e}")
             return []
@@ -136,12 +166,12 @@ class PagoparService:
             "tarjeta": card_token
         }
         try:
-            await self._post("eliminar-tarjeta", payload)
+            await self._post("eliminar-tarjeta", payload, raise_on_error=True)
             return True
         except Exception:
             try:
                 # Try typo "elliminar" just in case based on doc warning
-                await self._post("elliminar-tarjeta", payload)
+                await self._post("elliminar-tarjeta", payload, raise_on_error=True)
                 return True
             except Exception:
                 return False
@@ -272,7 +302,7 @@ class PagoparService:
             "tarjeta": card_token 
         }
         try:
-            await self._post("pagar", payload)
+            await self._post("pagar", payload, raise_on_error=True)
             return True
         except Exception:
             return False
