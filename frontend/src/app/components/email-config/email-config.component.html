@@ -70,7 +70,6 @@
                   <div class="card-body text-center py-4">
                     <img *ngIf="provider.id === 'gmail'" src="assets/google.svg" width="40" height="40" alt="Gmail" class="mb-2">
                     <i *ngIf="provider.id === 'outlook'" class="bi bi-microsoft fs-1 text-primary mb-2 d-block"></i>
-                    <i *ngIf="provider.id === 'yahoo'" class="bi bi-envelope-fill fs-1 text-danger mb-2 d-block"></i>
                     <i *ngIf="provider.id === 'other'" class="bi bi-gear-fill fs-1 text-secondary mb-2 d-block"></i>
                     <div class="fw-semibold">{{ provider.name }}</div>
                     <small *ngIf="provider.supportsOAuth" class="text-success d-block mt-1">
@@ -227,12 +226,12 @@
             </button>
           </div>
 
-          <!-- Yahoo and Other - Manual Config -->
-          <div *ngIf="selectedProvider === 'yahoo' || selectedProvider === 'other'">
+          <!-- Custom Provider - Manual Config -->
+          <div *ngIf="selectedProvider === 'other'">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <h6 class="mb-0">
                 <i class="bi bi-gear me-2"></i>
-                {{ selectedProvider === 'yahoo' ? 'Configurar Yahoo Mail' : 'Configuración Personalizada' }}
+                Configuración Personalizada
               </h6>
               <button class="btn btn-sm btn-outline-secondary" (click)="selectedProvider = ''">
                 <i class="bi bi-arrow-left"></i> Cambiar proveedor
@@ -247,8 +246,7 @@
                   <div class="mb-3">
                     <label for="host" class="form-label">Servidor IMAP *</label>
                     <input type="text" class="form-control" id="host" [(ngModel)]="newConfig.host" 
-                           name="host" required placeholder="ej: imap.ejemplo.com"
-                           [readonly]="selectedProvider === 'yahoo'">
+                           name="host" required placeholder="ej: imap.ejemplo.com">
                   </div>
                   <div class="mb-3">
                     <label for="port" class="form-label">Puerto *</label>
@@ -278,9 +276,6 @@
                     <label for="password" class="form-label">Contraseña *</label>
                     <input type="password" class="form-control" id="password" [(ngModel)]="newConfig.password" 
                            name="password" required>
-                    <div class="form-text" *ngIf="selectedProvider === 'yahoo'">
-                      Para Yahoo, usa una contraseña de aplicación.
-                    </div>
                   </div>
                 </div>
               </div>

@@ -12,23 +12,23 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   emailConfigs: EmailConfig[] = [];
   newConfig: EmailConfig = this.createEmptyConfig();
   showAddForm = false;
-  testResults: { [key: string]: EmailTestResult; [key: number]: EmailTestResult } = {} as any;
-  testing: { [key: string]: boolean; [key: number]: boolean } = {} as any;
+  testResults: { [key: string]: EmailTestResult;[key: number]: EmailTestResult } = {} as any;
+  testing: { [key: string]: boolean;[key: number]: boolean } = {} as any;
   loading = false;
   error: string | null = null;
-  
+
   // Límites de cuentas de correo por plan
   maxEmailAccounts: number = 1;
   canAddMore: boolean = true;
-  
+
   // OAuth state
   googleOAuthConfigured: boolean = false;
   oauthLoading: boolean = false;
   pendingOAuthData: any = null;
-  
+
   // Provider selection for new config
   selectedProvider: string = '';
-  
+
   // Configuraciones predefinidas para proveedores comunes
   providers = [
     {
@@ -42,19 +42,11 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     {
       name: 'Outlook/Hotmail',
       id: 'outlook',
-      host: 'imap-mail.outlook.com', 
+      host: 'imap-mail.outlook.com',
       port: 993,
       use_ssl: true,
       supportsOAuth: false,  // Próximamente
       comingSoon: true
-    },
-    {
-      name: 'Yahoo',
-      id: 'yahoo',
-      host: 'imap.mail.yahoo.com',
-      port: 993,
-      use_ssl: true,
-      supportsOAuth: false
     },
     {
       name: 'Personalizado',
@@ -140,7 +132,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         this.maxEmailAccounts = resp.max_allowed || 1;
         this.canAddMore = resp.can_add_more !== undefined ? resp.can_add_more : true;
         this.loading = false;
-        
+
         // Mostrar información de límite si está cerca
         if (!this.canAddMore) {
           const limit = this.maxEmailAccounts === -1 ? 'ilimitadas' : this.maxEmailAccounts;
@@ -198,7 +190,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     }
 
     this.oauthLoading = true;
-    
+
     this.apiService.initiateGoogleOAuth().subscribe({
       next: (response) => {
         // Open Google OAuth in a popup window
@@ -206,13 +198,13 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         const height = 700;
         const left = (window.innerWidth - width) / 2;
         const top = (window.innerHeight - height) / 2;
-        
+
         const popup = window.open(
           response.auth_url,
           'Google OAuth',
           `width=${width},height=${height},left=${left},top=${top},scrollbars=yes`
         );
-        
+
         if (!popup) {
           this.notificationService.error(
             'No se pudo abrir la ventana de autorización. Por favor habilita los popups para este sitio.',
@@ -233,7 +225,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
   handleGoogleOAuthCallback(data: any): void {
     this.oauthLoading = false;
-    
+
     if (!data.success) {
       this.notificationService.error(data.message || 'Error en la autorización de Google', 'OAuth Error');
       return;
@@ -241,7 +233,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
     // Store OAuth data and show confirmation
     this.pendingOAuthData = data.data;
-    
+
     // Auto-save the OAuth configuration
     this.saveOAuthConfig();
   }
@@ -253,7 +245,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     }
 
     const oauthData = this.pendingOAuthData;
-    
+
     this.apiService.saveOAuthEmailConfig({
       gmail_address: oauthData.gmail_address,
       access_token: oauthData.access_token,
@@ -282,7 +274,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
   refreshOAuthToken(config: EmailConfig): void {
     if (!config.id) return;
-    
+
     this.apiService.refreshOAuthToken(config.id).subscribe({
       next: (response) => {
         this.notificationService.success('Token OAuth actualizado', 'Token Renovado');
@@ -319,7 +311,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   testConfiguration(config: EmailConfig, index?: number): void {
     const testIndex = index !== undefined ? index : -1;
     this.testing[testIndex] = true;
-    
+
     const isExisting = testIndex >= 0 && !!config?.id;
     const obs = isExisting
       ? this.apiService.testEmailConfigById(config.id!)
@@ -369,7 +361,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       );
       return;
     }
-    
+
     // Validación básica
     if (!this.newConfig.host || !this.newConfig.username || !this.newConfig.password) {
       this.notificationService.warning('Por favor completa todos los campos obligatorios', 'Validación');
@@ -438,7 +430,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const host = (config.host || '').toLowerCase();
     if (host.includes('gmail')) return 'Gmail';
     if (host.includes('outlook') || host.includes('hotmail') || host.includes('office365')) return 'Outlook';
-    if (host.includes('yahoo')) return 'Yahoo';
     return 'Otro';
   }
 
@@ -446,7 +437,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   filterText: string = '';
   editing: { [id: string]: boolean } = {};
   editData: { [id: string]: EmailConfig } = {};
-  saving: { [id: string]: boolean; [key: number]: boolean } = {} as any;
+  saving: { [id: string]: boolean;[key: number]: boolean } = {} as any;
 
   keyFor(i: number, cfg: EmailConfig): string {
     return (cfg.id || `idx_${i}`);
@@ -494,15 +485,15 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const id = cfg.id;
     const key = this.keyFor(i, cfg);
     const editedData = this.editData[key];
-    
+
     this.saving[key] = true;
-    
+
     if (this.isOAuthConfig(cfg)) {
       // OAuth2: usar PATCH para actualización parcial (solo search_terms)
       const partialPayload = {
         search_terms: (editedData.search_terms || []).filter((t: string) => (t || '').trim() !== '')
       };
-      
+
       this.apiService.patchEmailConfig(id, partialPayload).subscribe({
         next: () => {
           this.emailConfigs[i] = { ...cfg, ...partialPayload };
@@ -519,7 +510,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       // Password auth: usar PUT con payload completo
       const payload = this.cloneConfig(editedData);
       if (!payload.password) delete (payload as any).password;
-      
+
       this.apiService.updateEmailConfig(id, payload as EmailConfig).subscribe({
         next: () => {
           this.emailConfigs[i] = { ...cfg, ...payload };
