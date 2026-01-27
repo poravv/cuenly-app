@@ -144,7 +144,7 @@ class SubscriptionRepository:
                 target_date = datetime.utcnow()
             
             query = {
-                "status": "ACTIVE",
+                "status": "active",  # lowercase per MongoDB schema
                 "next_billing_date": {"$lte": target_date, "$ne": None}
             }
             
@@ -360,7 +360,7 @@ class SubscriptionRepository:
             subscription = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": "ACTIVE"
+                    "status": "active"  # lowercase per MongoDB schema
                 },
                 {"_id": 0}
             )
@@ -378,7 +378,7 @@ class SubscriptionRepository:
             subscription = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": "ACTIVE"
+                    "status": "active"  # lowercase per MongoDB schema
                     # NO verificar expires_at - las suscripciones son indefinidas
                 }
                 # No excluir _id para poder identificar la suscripción
@@ -428,7 +428,7 @@ class SubscriptionRepository:
             s = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": "ACTIVE"
+                    "status": "active"  # lowercase per MongoDB schema
                     # No verificar expires_at - suscripciones indefinidas
                 },
                 {"_id": 1}
@@ -492,7 +492,7 @@ class SubscriptionRepository:
             result = self.subscriptions_collection.update_many(
                 {
                     "user_email": user_email,
-                    "status": "ACTIVE"
+                    "status": "active"  # lowercase per MongoDB schema
                 },
                 {
                     "$set": {
@@ -618,7 +618,7 @@ class SubscriptionRepository:
             
             # Estadísticas generales
             total_subscriptions = self.subscriptions_collection.count_documents({})
-            active_subscriptions = self.subscriptions_collection.count_documents({"status": "ACTIVE"})
+            active_subscriptions = self.subscriptions_collection.count_documents({"status": "active"})
             total_revenue = list(self.subscriptions_collection.aggregate([
                 {"$group": {"_id": None, "total": {"$sum": "$plan_price"}}}
             ]))
@@ -706,7 +706,7 @@ class SubscriptionRepository:
                 "billing_period": plan["billing_period"],
                 # Incluir features del plan para actualizar límites del usuario correctamente
                 "plan_features": plan.get("features", {}),
-                "status": "ACTIVE",
+                "status": "active",  # lowercase per MongoDB schema
                 "payment_method": payment_method,
                 "payment_reference": kwargs.get("payment_reference", f"admin_assigned_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}")
             }
