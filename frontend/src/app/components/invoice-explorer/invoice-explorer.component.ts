@@ -55,6 +55,7 @@ export class InvoiceExplorerComponent implements OnInit {
   v2Header: any | null = null;
   v2Items: any[] = [];
   expandedInvoiceId: string | null = null;
+  canDownload: boolean = true;
 
   // Descargas de Excel eliminadas
 
@@ -62,6 +63,34 @@ export class InvoiceExplorerComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadAvailableMonths();
+    this.checkSubscriptionPermissions();
+  }
+
+  checkSubscriptionPermissions(): void {
+    this.api.getMySubscription().subscribe({
+      next: (res) => {
+        if (res.success && res.subscription) {
+          // Si hay suscripción, verificar feature
+          // Como por ahora no tenemos todos los features mapeados en el frontend, 
+          // usaremos lógica basada en el código del plan si es necesario, 
+          // o confiaremos en lo que el backend responde si extendemos el DTO.
+          // Por ahora, asumimos que si el backend devuelve la suscripcion, chequeamos minio_storage si viniera.
+          // Si no viene, podemos inferir por plan_code (basic = no download si queremos ser estrictos)
+          const planCode = res.subscription.plan_code;
+          if (planCode === 'basic') {
+            this.canDownload = false;
+          } else {
+            this.canDownload = true;
+          }
+        } else {
+          // Si no hay suscripción activa (FREE/Trial), bloqueamos descarga originales
+          this.canDownload = false;
+        }
+      },
+      error: () => {
+        this.canDownload = false; // Fallback a bloqueo por seguridad
+      }
+    });
   }
 
   async loadAvailableMonths(): Promise<void> {
@@ -229,19 +258,27 @@ export class InvoiceExplorerComponent implements OnInit {
     event.stopPropagation();
     if (!headerId) return;
 
-    this.notificationService.info('Generando enlace de descarga...', 'Procesando');
+    if (!this.canDownload) {
+      this.notificationService.warning('Tu plan actual no permite la descarga de archivos originales.', 'Plan Limitado');
+      return;
+    }
 
-    this.api.downloadInvoice(headerId).subscribe({
-      next: (res) => {
-        if (res.success && res.download_url) {
-          window.open(res.download_url, '_blank');
-        } else {
-          this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
-        }
+    this.notificationService.info('Descargando archivo...', 'Procesando');
+
+    // Descargar con autenticación y abrir en nueva pestaña
+    this.api.downloadInvoiceFile(headerId).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => window.URL.revokeObjectURL(url), 60000);
       },
       error: (err) => {
-        console.error("Error descarga:", err);
-        this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
+        console.error('Error descarga:', err);
+        if (err.status === 404) {
+          this.notificationService.error('Archivo no disponible en almacenamiento', 'Error');
+        } else {
+          this.notificationService.error('Error al descargar archivo', 'Error');
+        }
       }
     });
   }

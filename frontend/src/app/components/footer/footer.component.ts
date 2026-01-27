@@ -23,6 +23,10 @@ import { Component } from '@angular/core';
               
               <a class="link" routerLink="/upload">Subir PDF</a>
               <a class="link" routerLink="/upload-xml">Subir XML</a>
+              <div class="vr mx-2 text-muted opacity-25 d-none d-md-block"></div>
+              <a class="link" routerLink="/terms">Términos</a>
+              <a class="link" routerLink="/privacy">Privacidad</a>
+              <a class="link" routerLink="/retention">Retención de Datos</a>
             </nav>
           </div>
         </div>

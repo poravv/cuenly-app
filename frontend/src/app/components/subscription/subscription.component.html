@@ -10,7 +10,7 @@
 
   <!-- Main Content -->
   <div *ngIf="!loading" class="container-fluid px-4 py-5">
-    
+
     <!-- Header Section -->
     <div class="row justify-content-center mb-4">
       <div class="col-lg-10">
@@ -28,30 +28,24 @@
         <!-- Navigation Tabs -->
         <ul class="nav nav-tabs" id="subscriptionTabs" role="tablist">
           <li class="nav-item" role="presentation">
-            <button class="nav-link" 
-                    [class.active]="activeTab === 'current'"
-                    (click)="setActiveTab('current')"
-                    type="button">
+            <button class="nav-link" [class.active]="activeTab === 'plans'" (click)="setActiveTab('plans')"
+              type="button">
+              <i class="bi bi-list-stars me-2"></i>
+              Planes Disponibles
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" [class.active]="activeTab === 'current'" (click)="setActiveTab('current')"
+              type="button">
               <i class="bi bi-credit-card me-2"></i>
               Plan Actual
             </button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link" 
-                    [class.active]="activeTab === 'history'"
-                    (click)="setActiveTab('history')"
-                    type="button">
+            <button class="nav-link" [class.active]="activeTab === 'history'" (click)="setActiveTab('history')"
+              type="button">
               <i class="bi bi-clock-history me-2"></i>
               Historial
-            </button>
-          </li>
-          <li class="nav-item" role="presentation">
-            <button class="nav-link" 
-                    [class.active]="activeTab === 'plans'"
-                    (click)="setActiveTab('plans')"
-                    type="button">
-              <i class="bi bi-list-stars me-2"></i>
-              Planes Disponibles
             </button>
           </li>
         </ul>
@@ -61,7 +55,80 @@
     <!-- Tab Content -->
     <div class="row justify-content-center">
       <div class="col-lg-10">
-        
+
+        <!-- Available Plans Tab -->
+        <div *ngIf="activeTab === 'plans'" class="tab-pane">
+          <div *ngIf="availablePlans.length > 0" class="available-plans">
+            <div class="row justify-content-center g-4">
+              <div class="col-md-6 col-lg-4 d-flex" *ngFor="let plan of availablePlans">
+                <div class="card h-100 w-100 position-relative border-0 shadow-sm"
+                  [ngClass]="getPlanTypeClass(plan.type)">
+
+                  <!-- Popular Badge -->
+                  <div *ngIf="plan.is_popular" class="popular-badge">
+                    <i class="bi bi-star-fill me-1"></i> POPULAR
+                  </div>
+
+                  <div class="card-header text-center bg-transparent border-bottom-0 pt-4 pb-0">
+                    <h5 class="card-title text-uppercase fw-bold mb-2">{{ plan.name }}</h5>
+                    <div class="plan-type-badge mb-3">
+                      <span class="badge bg-light text-dark border">{{ getPlanTypeName(plan.type) }}</span>
+                    </div>
+                    <div class="plan-price">
+                      <div class="d-flex justify-content-center align-items-baseline">
+                        <span class="h2 mb-0 fw-bold">{{ formatPrice(plan.price, plan.currency) }}</span>
+                        <span class="text-muted ms-1 fw-light" *ngIf="plan.price > 0">/mes</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card-body d-flex flex-column p-4">
+                    <p class="text-muted mb-4 text-center small">{{ plan.description }}</p>
+
+                    <ul class="list-unstyled flex-grow-1 mb-4">
+                      <li *ngFor="let feature of plan.features" class="mb-2 d-flex align-items-start small">
+                        <i class="bi bi-check-circle-fill text-success me-2 mt-1"></i>
+                        <span class="text-secondary">{{ feature }}</span>
+                      </li>
+                    </ul>
+
+                    <div class="ai-limit-container text-center p-2 rounded bg-light mb-3">
+                      <small class="text-uppercase text-muted fw-bold d-block mb-1" style="font-size: 0.65rem;">Límite
+                        IA Mensual</small>
+                      <span *ngIf="isUnlimitedPlan(plan.monthly_ai_limit)"
+                        class="badge bg-success rounded-pill px-3 py-2">
+                        <i class="bi bi-infinity me-1"></i> Ilimitado
+                      </span>
+                      <span *ngIf="!isUnlimitedPlan(plan.monthly_ai_limit)" class="fw-bold text-dark">
+                        {{ plan.monthly_ai_limit | number }} procesamientos
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="card-footer bg-transparent border-0 p-4 pt-0">
+                    <button *ngIf="!isCurrentPlan(plan._id)" class="btn btn-primary w-100 py-2 shadow-sm"
+                      (click)="openPlanChangeModal(plan._id)">
+                      Elegir Plan
+                    </button>
+                    <button *ngIf="isCurrentPlan(plan._id)" class="btn btn-outline-success w-100 py-2 disabled"
+                      style="opacity: 0.8;">
+                      <i class="bi bi-check-circle-fill me-2"></i> Plan Actual
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="availablePlans.length === 0" class="text-center py-5">
+            <div class="mb-3">
+              <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+            </div>
+            <h4 class="mt-3">No hay planes disponibles</h4>
+            <p class="text-muted">En este momento no hay planes de suscripción activos.</p>
+          </div>
+        </div>
+
         <!-- Current Subscription Tab -->
         <div *ngIf="activeTab === 'current'" class="tab-pane">
           <div *ngIf="currentSubscription" class="subscription-details">
@@ -79,16 +146,17 @@
                       <div class="col-md-6">
                         <p><strong>Fecha de inicio:</strong></p>
                         <p class="text-muted">{{ formatDate(currentSubscription.start_date) }}</p>
-                        
+
                         <p><strong>Fecha de vencimiento:</strong></p>
                         <p class="text-muted">
-                          {{ currentSubscription.end_date ? formatDate(currentSubscription.end_date) : 'Sin vencimiento' }}
+                          {{ currentSubscription.end_date ? formatDate(currentSubscription.end_date) : 'Sin vencimiento'
+                          }}
                         </p>
                       </div>
                       <div class="col-md-6">
                         <p><strong>Límite mensual de IA:</strong></p>
                         <p class="text-muted">{{ currentSubscription.monthly_ai_limit | number }} procesamiento(s)</p>
-                        
+
                         <p><strong>Uso actual:</strong></p>
                         <p class="text-muted">{{ currentSubscription.current_ai_usage | number }} procesamiento(s)</p>
                       </div>
@@ -96,7 +164,7 @@
                   </div>
                 </div>
               </div>
-              
+
               <div class="col-lg-4">
                 <div class="card">
                   <div class="card-header">
@@ -104,11 +172,10 @@
                   </div>
                   <div class="card-body">
                     <div class="progress mb-3" style="height: 10px;">
-                      <div class="progress-bar" 
-                           [style.width.%]="usagePercentage"
-                           [class.bg-success]="usagePercentage < 50"
-                           [class.bg-warning]="usagePercentage >= 50 && usagePercentage < 80"
-                           [class.bg-danger]="usagePercentage >= 80">
+                      <div class="progress-bar" [style.width.%]="usagePercentage"
+                        [class.bg-success]="usagePercentage < 50"
+                        [class.bg-warning]="usagePercentage >= 50 && usagePercentage < 80"
+                        [class.bg-danger]="usagePercentage >= 80">
                       </div>
                     </div>
                     <div class="d-flex justify-content-between small text-muted">
@@ -120,20 +187,19 @@
                     </p>
                     <hr class="my-3" />
                     <div class="d-grid">
-                      <button class="btn btn-outline-danger"
-                              (click)="openCancelConfirmModal()"
-                              [disabled]="cancelling">
+                      <button class="btn btn-outline-danger" (click)="openCancelConfirmModal()" [disabled]="cancelling">
                         <span *ngIf="cancelling" class="spinner-border spinner-border-sm me-2"></span>
                         {{ cancelling ? 'Cancelando...' : 'Cancelar suscripción' }}
                       </button>
-                      <small class="text-muted mt-2 text-center">Esta acción cancela inmediatamente tu plan actual.</small>
+                      <small class="text-muted mt-2 text-center">Esta acción cancela inmediatamente tu plan
+                        actual.</small>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          
+
           <div *ngIf="!currentSubscription" class="text-center py-5">
             <i class="bi bi-exclamation-circle text-muted" style="font-size: 3rem;"></i>
             <h4 class="mt-3">Sin suscripción activa</h4>
@@ -170,15 +236,15 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr *ngFor="let history of subscriptionHistory" [ngClass]="'status-' + (history.status || 'inactive')">
+                      <tr *ngFor="let history of subscriptionHistory"
+                        [ngClass]="'status-' + (history.status || 'inactive')">
                         <td class="plan-cell">
                           <i class="bi bi-star-fill plan-icon me-2"></i>
                           <strong>{{ history.plan_name }}</strong>
                         </td>
                         <td>
                           <span class="badge" [ngClass]="getStatusBadgeClass(history.status)">
-                            <i class="bi me-1"
-                               [ngClass]="{
+                            <i class="bi me-1" [ngClass]="{
                                  'bi-check-circle': history.status === 'active',
                                  'bi-clock-history': history.status === 'pending',
                                  'bi-dash-circle': history.status === 'inactive',
@@ -202,64 +268,11 @@
               </div>
             </div>
           </div>
-          
+
           <div *ngIf="subscriptionHistory.length === 0" class="text-center py-5">
             <i class="bi bi-clock-history text-muted" style="font-size: 3rem;"></i>
             <h4 class="mt-3">Sin historial</h4>
             <p class="text-muted">No hay historial de suscripciones disponible</p>
-          </div>
-        </div>
-
-        <!-- Available Plans Tab -->
-        <div *ngIf="activeTab === 'plans'" class="tab-pane">
-          <div *ngIf="availablePlans.length > 0" class="available-plans">
-            <div class="row">
-              <div class="col-md-6 col-lg-4 mb-4" *ngFor="let plan of availablePlans">
-                <div class="card h-100" [ngClass]="getPlanTypeClass(plan.type)">
-                  <div class="card-header text-center">
-                    <h5 class="card-title">{{ plan.name }}</h5>
-                    <div class="plan-type-badge">
-                      <span class="badge">{{ getPlanTypeName(plan.type) }}</span>
-                    </div>
-                    <div class="plan-price mt-2">
-                      <span class="h4">{{ formatPrice(plan.price, plan.currency) }}</span>
-                      <span class="text-muted" *ngIf="plan.price > 0">/mes</span>
-                    </div>
-                  </div>
-                  <div class="card-body">
-                    <p class="text-muted mb-3">{{ plan.description }}</p>
-                    <ul class="list-unstyled">
-                      <li *ngFor="let feature of plan.features" class="mb-2">
-                        <i class="bi bi-check-circle text-success me-2"></i>
-                        {{ feature }}
-                      </li>
-                    </ul>
-                    <p class="small text-muted mt-3">
-                      <strong>Límite IA:</strong> {{ plan.monthly_ai_limit | number }} procesamiento(s)/mes
-                    </p>
-                  </div>
-                  <div class="card-footer text-center">
-                    <button *ngIf="!isCurrentPlan(plan._id)" 
-                            class="btn btn-primary w-100"
-                            (click)="openPlanChangeModal(plan._id)">
-                      Solicitar Cambio
-                    </button>
-                    <button *ngIf="isCurrentPlan(plan._id)" 
-                            class="btn btn-success w-100" 
-                            disabled>
-                      <i class="bi bi-check-circle me-2"></i>
-                      Plan Actual
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div *ngIf="availablePlans.length === 0" class="text-center py-5">
-            <i class="bi bi-list-stars text-muted" style="font-size: 3rem;"></i>
-            <h4 class="mt-3">No hay planes disponibles</h4>
-            <p class="text-muted">No se encontraron planes de suscripción disponibles</p>
           </div>
         </div>
       </div>
@@ -267,8 +280,8 @@
   </div>
 
   <!-- Plan Change Modal -->
-  <div class="modal fade" [class.show]="showPlanChangeModal" [style.display]="showPlanChangeModal ? 'block' : 'none'" 
-       tabindex="-1" *ngIf="showPlanChangeModal">
+  <div class="modal fade" [class.show]="showPlanChangeModal" [style.display]="showPlanChangeModal ? 'block' : 'none'"
+    tabindex="-1" *ngIf="showPlanChangeModal">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
@@ -284,7 +297,8 @@
                   <div class="compare-name">{{ currentSubscription.plan_name }}</div>
                   <div class="compare-meta">
                     <span class="chip">Límite IA: {{ currentSubscription.monthly_ai_limit | number }}/mes</span>
-                    <span class="chip muted" *ngIf="currentSubscription.end_date">Vence: {{ formatDate(currentSubscription.end_date) }}</span>
+                    <span class="chip muted" *ngIf="currentSubscription.end_date">Vence: {{
+                      formatDate(currentSubscription.end_date) }}</span>
                   </div>
                 </div>
               </div>
@@ -303,11 +317,52 @@
 
           <div class="alert alert-warning border-0">
             <i class="bi bi-exclamation-triangle me-2"></i>
-            El cambio es inmediato y reemplaza tu plan actual. No hay prorrateo y el conteo de uso sigue vigente según tus límites.
+            El cambio es inmediato y reemplaza tu plan actual. No hay prorrateo y el conteo de uso sigue vigente según
+            tus límites.
+          </div>
+
+          <!-- Formulario de Datos Personales -->
+          <div class="personal-data-form mt-4">
+            <h6 class="mb-3"><i class="bi bi-person-badge me-2"></i>Datos para Facturación</h6>
+
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Tipo de Documento*</label>
+                <select class="form-select" [(ngModel)]="buyerData.tipo_documento">
+                  <option value="CI">Cédula de Identidad</option>
+                  <option value="RUC">RUC</option>
+                  <option value="PASAPORTE">Pasaporte</option>
+                </select>
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label">Número de Documento*</label>
+                <input type="text" class="form-control" [(ngModel)]="buyerData.documento" placeholder="Ej: 1234567"
+                  required>
+              </div>
+
+              <div class="col-md-6" *ngIf="buyerData.tipo_documento === 'RUC'">
+                <label class="form-label">RUC (Formato: 1234567-8)*</label>
+                <input type="text" class="form-control" [(ngModel)]="buyerData.ruc" placeholder="1234567-8" required>
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label">Teléfono*</label>
+                <input type="tel" class="form-control" [(ngModel)]="buyerData.telefono" placeholder="Ej: 0981234567"
+                  required>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Dirección (Opcional)</label>
+                <input type="text" class="form-control" [(ngModel)]="buyerData.direccion"
+                  placeholder="Ej: Av. Mariscal López 123">
+              </div>
+            </div>
           </div>
 
           <div class="form-check my-3">
-            <input class="form-check-input" type="checkbox" id="confirmChangeCheck" [(ngModel)]="confirmChangeAcknowledged">
+            <input class="form-check-input" type="checkbox" id="confirmChangeCheck"
+              [(ngModel)]="confirmChangeAcknowledged">
             <label class="form-check-label" for="confirmChangeCheck">
               Entiendo las implicaciones del cambio de plan y deseo continuar.
             </label>
@@ -315,17 +370,16 @@
 
           <div class="mb-3">
             <label for="changeReason" class="form-label">Motivo del cambio (opcional)</label>
-            <textarea class="form-control" id="changeReason" rows="2" [(ngModel)]="changeReason" placeholder="Opcional: detalla el motivo del cambio"></textarea>
+            <textarea class="form-control" id="changeReason" rows="2" [(ngModel)]="changeReason"
+              placeholder="Opcional: detalla el motivo del cambio"></textarea>
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" (click)="closePlanChangeModal()">
             Cancelar
           </button>
-          <button type="button" 
-                  class="btn btn-primary" 
-                  (click)="submitPlanChange()"
-                  [disabled]="submittingPlanChange || !confirmChangeAcknowledged">
+          <button type="button" class="btn btn-primary" (click)="submitPlanChange()"
+            [disabled]="submittingPlanChange || !confirmChangeAcknowledged">
             <span *ngIf="submittingPlanChange" class="spinner-border spinner-border-sm me-2"></span>
             {{ submittingPlanChange ? 'Enviando...' : 'Confirmar cambio' }}
           </button>
@@ -338,8 +392,8 @@
   <div class="modal-backdrop fade show" *ngIf="showPlanChangeModal" (click)="closePlanChangeModal()"></div>
 
   <!-- Cancel Subscription Modal -->
-  <div class="modal fade" [class.show]="showCancelConfirmModal" [style.display]="showCancelConfirmModal ? 'block' : 'none'" 
-       tabindex="-1" *ngIf="showCancelConfirmModal">
+  <div class="modal fade" [class.show]="showCancelConfirmModal"
+    [style.display]="showCancelConfirmModal ? 'block' : 'none'" tabindex="-1" *ngIf="showCancelConfirmModal">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
@@ -347,16 +401,14 @@
           <button type="button" class="btn-close" (click)="closeCancelConfirmModal()"></button>
         </div>
         <div class="modal-body">
-          <p>¿Seguro que deseas cancelar tu suscripción actual? No podrás procesar correos ni usar funciones de IA después de cancelar.</p>
+          <p>¿Seguro que deseas cancelar tu suscripción actual? No podrás procesar correos ni usar funciones de IA
+            después de cancelar.</p>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" (click)="closeCancelConfirmModal()">
             Volver
           </button>
-          <button type="button" 
-                  class="btn btn-danger" 
-                  (click)="confirmCancel()"
-                  [disabled]="cancelling">
+          <button type="button" class="btn btn-danger" (click)="confirmCancel()" [disabled]="cancelling">
             <span *ngIf="cancelling" class="spinner-border spinner-border-sm me-2"></span>
             {{ cancelling ? 'Cancelando...' : 'Confirmar cancelación' }}
           </button>
@@ -367,4 +419,91 @@
 
   <!-- Modal Backdrop for Cancel -->
   <div class="modal-backdrop fade show" *ngIf="showCancelConfirmModal" (click)="closeCancelConfirmModal()"></div>
+
+  <!-- No Card Modal -->
+  <div class="modal fade" [class.show]="showNoCardModal" [style.display]="showNoCardModal ? 'block' : 'none'"
+    tabindex="-1" *ngIf="showNoCardModal">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Método de pago requerido</h5>
+          <button type="button" class="btn-close" (click)="closeNoCardModal()"></button>
+        </div>
+        <div class="modal-body text-center py-4">
+          <i class="bi bi-credit-card text-muted" style="font-size: 3rem;"></i>
+          <p class="mt-3 text-dark">Para suscribirte a un plan, necesitas agregar una tarjeta de crédito/débito para los
+            cobros recurrentes.</p>
+          <p class="text-muted small">Serás redirigido para añadir tu tarjeta de forma segura.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" (click)="closeNoCardModal()">Cancelar</button>
+          <button type="button" class="btn btn-primary" (click)="goToAddCard()">
+            <i class="bi bi-plus-lg me-2"></i> Agregar Tarjeta
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop fade show" *ngIf="showNoCardModal" (click)="closeNoCardModal()"></div>
+
+  <!-- NUEVO: Modal de iframe de Bancard -->
+  <app-bancard-iframe-modal *ngIf="showBancardIframeModal" [formId]="bancardFormId"
+    (completed)="onBancardIframeComplete()" (closed)="closeBancardModal()">
+  </app-bancard-iframe-modal>
+
+  <!-- NUEVO: Overlay de confirmación de tarjeta -->
+  <div *ngIf="confirmingCard" class="confirm-overlay">
+    <div class="confirm-card">
+      <div class="spinner-border text-primary mb-3" role="status" style="width: 4rem; height: 4rem;">
+        <span class="visually-hidden">Procesando...</span>
+      </div>
+      <h4 class="mb-2">Confirmando tarjeta...</h4>
+      <p class="text-muted">Estamos activando tu suscripción. Por favor espera.</p>
+    </div>
+  </div>
+
+  <!-- Loading overlay mientras se carga iframe -->
+  <div *ngIf="loadingIframe" class="confirm-overlay">
+    <div class="confirm-card">
+      <div class="spinner-border text-primary mb-3" role="status" style="width: 4rem; height: 4rem;">
+        <span class="visually-hidden">Cargando...</span>
+      </div>
+      <h4 class="mb-2">Preparando formulario...</h4>
+      <p class="text-muted">Cargando formulario seguro de Bancard.</p>
+    </div>
+  </div>
+  <!-- NUEVO: Modal Perfil Incompleto -->
+  <div class="modal fade" [class.show]="showIncompleteProfileModal"
+    [style.display]="showIncompleteProfileModal ? 'block' : 'none'" tabindex="-1" *ngIf="showIncompleteProfileModal">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Perfil Incompleto</h5>
+          <button type="button" class="btn-close" (click)="closeIncompleteProfileModal()"></button>
+        </div>
+        <div class="modal-body text-center py-4">
+          <i class="bi bi-person-exclamation text-warning" style="font-size: 3rem;"></i>
+          <p class="mt-3 text-dark fw-bold">Para suscribirte, necesitamos que completes tu perfil.</p>
+          <p class="text-muted">Los siguientes datos son requeridos para la facturación:</p>
+
+          <ul class="list-group list-group-flush text-start mb-3 mx-4">
+            <li class="list-group-item text-danger" *ngFor="let field of missingProfileFields">
+              <i class="bi bi-x-circle me-2"></i> {{ field }}
+            </li>
+          </ul>
+
+          <p class="text-muted small">Serás redirigido a tu perfil para completar estos datos.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" (click)="closeIncompleteProfileModal()">Cancelar</button>
+          <button type="button" class="btn btn-primary" (click)="goToProfileAndComplete()">
+            <i class="bi bi-pencil-square me-2"></i> Ir a mi Perfil
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop fade show" *ngIf="showIncompleteProfileModal" (click)="closeIncompleteProfileModal()">
+  </div>
+
 </div>

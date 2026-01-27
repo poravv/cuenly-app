@@ -26,4 +26,9 @@ motor==3.3.2
 google-auth==2.34.0
 openpyxl==3.1.2
 prometheus-client==0.19.0
-minio==7.2.3
+minio
+httpx
+redis>=5.0.0
+tenacity>=8.2.0
+rq>=1.15.0
+python-magic>=0.4.27

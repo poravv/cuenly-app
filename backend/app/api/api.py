@@ -1,6 +1,7 @@
-from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query, Request
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
@@ -23,7 +24,7 @@ from app.utils.trial_middleware import check_trial_limits_optional, check_trial_
 from app.utils.security import validate_frontend_key
 from app.repositories.user_repository import UserRepository
 from app.repositories.subscription_repository import SubscriptionRepository
-from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura
+from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus, MultiEmailConfig, ProductoFactura, EmailConfigUpdate
 from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
@@ -84,6 +85,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# =========================================
+# API Routers - Módulos Refactorizados
+# =========================================
+app.include_router(pagopar.router, prefix="/pagopar", tags=["Pagopar"])
+app.include_router(admin_subscriptions.router, prefix="/admin/subscriptions", tags=["Admin Subscriptions"])
+app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
+app.include_router(admin_users.router, prefix="/admin/users", tags=["Admin Users"])
+app.include_router(admin_plans.router, prefix="/admin/plans", tags=["Admin Plans"])
+app.include_router(user_profile.router, prefix="/user", tags=["User Profile"])
+
+
 # Startup event para inicializar servicios
 @app.on_event("startup")
 async def startup_event():
@@ -128,109 +140,32 @@ class AutoRefreshPref(BaseModel):
 class ToggleEnabledPayload(BaseModel):
     enabled: bool
 
+class UserProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    ruc: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    document_type: Optional[str] = "CI" # CI, RUC, PASSPORT
 
-def _get_current_user(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y retorna claims. Upserta usuario en DB."""
-    token = extract_bearer_token(request)
-    if not token:
-        if settings.AUTH_REQUIRE:
-            raise HTTPException(status_code=401, detail="Authorization requerido")
-        return {}
-    claims = verify_firebase_token(token)
-    
-    # Intentar registrar/actualizar usuario en DB con manejo de errores mejorado
-    try:
-        user_repo = UserRepository()
-        user_repo.upsert_user({
-            'email': claims.get('email'),
-            'uid': claims.get('user_id'),
-            'name': claims.get('name'),
-            'picture': claims.get('picture') or claims.get('photoURL'),
-        })
-        user_email = claims.get('email', '')
-        observability_logger.log_business_event(
-            "user_authentication_success",
-            user_email=user_email,
-            auth_method="firebase",
-            user_name=claims.get('name'),
-            user_uid=claims.get('user_id')
-        )
-        BusinessEventLogger.log_user_authentication(user_email, True)
-    except Exception as e:
-        user_email = claims.get('email', '')
-        observability_logger.log_error(
-            "user_registration_error",
-            str(e),
-            user_email=user_email,
-            user_uid=claims.get('user_id'),
-            auth_method="firebase"
-        )
-        BusinessEventLogger.log_user_authentication(user_email, False)
-        # No fallar la autenticación, pero loggear el error para diagnóstico
-    # Realizar verificación de suspensión fuera del try/except
-    try:
-        user_repo = UserRepository()
-        db_user = user_repo.get_by_email(claims.get('email'))
-        if db_user and db_user.get('status') == 'suspended':
-            raise HTTPException(status_code=403, detail="Tu cuenta está suspendida. Contacta al administrador.")
-    except HTTPException:
-        # Propagar bloqueo explícito
-        raise
-    except Exception as e:
-        user_email = claims.get('email', '')
-        observability_logger.log_error(
-            "user_status_check_error",
-            str(e),
-            user_email=user_email,
-            endpoint="/api/user/status"
-        )
-    return claims
+class ProfileStatusResponse(BaseModel):
+    is_complete: bool
+    missing_fields: List[str]
+    required_for_subscription: bool
 
-def _get_current_user_with_trial_info(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y retorna claims con información de trial."""
-    claims = _get_current_user(request)
-    if not claims:
-        return claims
-    
-    # Agregar información del trial
-    trial_info = check_trial_limits_optional(claims)
-    claims['trial_info'] = trial_info
-    return claims
+class ProcessRangeRequest(BaseModel):
+    start_date: Optional[str] = None  # YYYY-MM-DD
+    end_date: Optional[str] = None    # YYYY-MM-DD
+    run_async: bool = True
 
-def _get_current_user_with_trial_check(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y verifica que el trial esté válido. Lanza excepción si expiró."""
-    claims = _get_current_user(request)
-    if not claims:
-        return claims
-    
-    # Verificar límites de trial (lanza excepción si expiró)
-    trial_info = check_trial_limits(claims)
-    claims['trial_info'] = trial_info
-    return claims
 
-def _get_current_user_with_ai_check(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y verifica que pueda usar IA. Lanza excepción si no puede."""
-    claims = _get_current_user(request)
-    if not claims:
-        return claims
-    
-    # Verificar límites de trial + IA (lanza excepción si no puede usar IA)
-    trial_info = check_ai_limits(claims)
-    claims['trial_info'] = trial_info
-    return claims
-
-def _get_current_admin(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y verifica que sea admin. Lanza excepción si no es admin."""
-    claims = _get_current_user(request)
-    if not claims:
-        raise HTTPException(status_code=401, detail="Usuario no autenticado")
-    
-    # Verificar si es administrador
-    user_repo = UserRepository()
-    if not user_repo.is_admin(claims.get('email', '')):
-        raise HTTPException(status_code=403, detail="Acceso denegado. Se requieren permisos de administrador.")
-    
-    return claims
+from app.api.deps import (
+    _get_current_user, 
+    _get_current_user_with_trial_info,
+    _get_current_user_with_trial_check,
+    _get_current_user_with_ai_check,
+    _get_current_admin
+)
 
 # Tarea en segundo plano para procesar correos
 def process_emails_task():
@@ -240,6 +175,30 @@ def process_emails_task():
         logger.info(f"Tarea en segundo plano completada: {result.message}")
     except Exception as e:
         logger.error(f"Error en tarea en segundo plano: {str(e)}")
+
+def process_emails_range_task(user_email: str, start_date=None, end_date=None):
+    """Tarea background para procesar rango de fechas"""
+    try:
+        from app.modules.email_processor.config_store import get_enabled_configs
+        from app.modules.email_processor.email_processor import MultiEmailProcessor
+        
+        configs = get_enabled_configs(include_password=True, owner_email=user_email) if user_email else []
+        if not configs:
+            logger.warning(f"ProcessRange: Sin configs para {user_email}")
+            return
+
+        email_configs = []
+        for c in configs:
+            config_data = dict(c)
+            config_data['owner_email'] = user_email
+            email_configs.append(MultiEmailConfig(**config_data))
+            
+        mp = MultiEmailProcessor(email_configs=email_configs, owner_email=user_email)
+        logger.info(f"🚀 Iniciando job por rango para {user_email}: {start_date} - {end_date}")
+        mp.process_all_emails(start_date=start_date, end_date=end_date)
+        
+    except Exception as e:
+        logger.error(f"❌ Error en process_emails_range_task para {user_email}: {e}")
 
 @app.get("/")
 async def root():
@@ -259,19 +218,29 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     
     # Obtener información completa del usuario desde la base de datos
     user_repo = UserRepository()
-    db_user = user_repo.get_by_email(user.get('email', ''))
+    db_user = None
+    try:
+        db_user = user_repo.get_by_email(user.get('email', ''))
+    except Exception as e:
+        logger.error(f"Error fetching user from DB in get_user_profile: {e}")
     
     # Obtener fecha de inicio de procesamiento de correos
     processing_start_date = None
-    try:
-        processing_start_date = user_repo.get_email_processing_start_date(user.get('email', ''))
-        if processing_start_date:
-            processing_start_date = processing_start_date.isoformat()
-    except Exception as e:
-        logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
+    if db_user:
+        try:
+            processing_start_date = user_repo.get_email_processing_start_date(user.get('email', ''))
+            if processing_start_date:
+                processing_start_date = processing_start_date.isoformat()
+        except Exception as e:
+            logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
     
     # Verificar si es admin
-    is_admin = db_user.get('role') == 'admin' if db_user else False
+    is_admin = False
+    if db_user:
+        is_admin = db_user.get('role') == 'admin'
+    else:
+        # Fallback para el usuario principal si la DB falla
+        is_admin = user.get('email') == 'andyvercha@gmail.com'
     
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
@@ -289,8 +258,80 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
         "ai_invoices_processed": trial_info.get('ai_invoices_processed', 0),
         "ai_invoices_limit": trial_info.get('ai_invoices_limit', 50),
         "ai_limit_reached": trial_info.get('ai_limit_reached', True),
-        "email_processing_start_date": processing_start_date
+        "email_processing_start_date": processing_start_date,
+        "phone": db_user.get('phone', ''),
+        "ruc": db_user.get('ruc', ''),
+        "address": db_user.get('address', ''),
+        "city": db_user.get('city', ''),
+        "document_type": db_user.get('document_type', 'CI')
     }
+
+@app.put("/user/profile")
+@app.put("/api/user/profile") # Alias
+async def update_user_profile(
+    profile_data_update: UserProfileUpdate,  # Renombrado para evitar conflicto nombre
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Actualiza la información del perfil del usuario.
+    Sync con Pagopar si existe.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    email = user.get('email', '')
+    profile_data = profile_data_update.dict(exclude_unset=True)
+    
+    if not profile_data:
+        raise HTTPException(status_code=400, detail="No se proporcionaron datos para actualizar")
+    
+    # Validaciones
+    if 'phone' in profile_data:
+        phone = profile_data['phone']
+        if phone and not SecurityValidators.validate_phone(phone):
+             raise HTTPException(status_code=400, detail="Número de teléfono inválido. Verifique longitud y formato.")
+
+    if 'ruc' in profile_data:
+        ruc = profile_data['ruc']
+        if ruc and not SecurityValidators.validate_ruc(ruc):
+             raise HTTPException(status_code=400, detail="RUC inválido. Verifique el formato.")
+        
+    user_repo = UserRepository()
+    success = user_repo.update_user_profile(email, profile_data)
+    
+    if success:
+        # Intentar actualizar en Pagopar si tiene pagopar_user_id
+        pagopar_user_id = user_repo.get_pagopar_user_id(email)
+        if pagopar_user_id:
+            try:
+                from app.services.pagopar_service import PagoparService
+                pagopar_service = PagoparService()
+                await pagopar_service.add_customer(
+                    identifier=pagopar_user_id,
+                    name=profile_data.get('name', user.get('name', 'Usuario')),
+                    email=email,
+                    phone=profile_data.get('phone', '')
+                )
+            except Exception as e:
+                logger.warning(f"No se pudo sincronizar perfil con Pagopar: {e}")
+        
+        return {"success": True, "message": "Perfil actualizado correctamente"}
+    else:
+        raise HTTPException(status_code=500, detail="Error al actualizar el perfil en la base de datos")
+
+@app.get("/user/profile/status", response_model=ProfileStatusResponse)
+async def get_profile_status(user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Verifica si el perfil del usuario está completo (requerido para suscripciones).
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+    
+    email = user.get('email', '')
+    user_repo = UserRepository()
+    status = user_repo.is_profile_complete(email)
+    
+    return status
 
 @app.get("/user/trial-status")
 async def get_trial_status(user: Dict[str, Any] = Depends(_get_current_user)):
@@ -474,7 +515,9 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
 @app.post("/process-direct")
 async def process_emails_direct(
     limit: Optional[int] = 10,
-    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check),
+    # USA _get_current_user_with_trial_check para permitir que llegue al procesador
+    # y allí se aplique la lógica "XML allowed"
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check),
     request: Request = None,
     _frontend_key: bool = Depends(validate_frontend_key)
 ):
@@ -683,6 +726,55 @@ async def trigger_retry_skipped(
     except Exception as e:
         logger.error(f"Error encolando job retry_skipped: {e}")
         raise HTTPException(status_code=500, detail="Error interno")
+
+@app.post("/jobs/process-range")
+async def process_range_job(
+    payload: ProcessRangeRequest,
+    background_tasks: BackgroundTasks,
+    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
+):
+    """
+    Inicia un job de procesamiento filtrado por rango de fechas (fecha del correo).
+    Formatos de fecha: YYYY-MM-DD.
+    """
+    owner_email = (user.get('email') or '').lower()
+    
+    # Validar fechas
+    s_date = None
+    e_date = None
+    if payload.start_date:
+        try:
+            s_date = datetime.strptime(payload.start_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato start_date inválido (Use YYYY-MM-DD)")
+            
+    if payload.end_date:
+        try:
+            e_date = datetime.strptime(payload.end_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Formato end_date inválido (Use YYYY-MM-DD)")
+
+    if payload.run_async:
+        background_tasks.add_task(process_emails_range_task, owner_email, s_date, e_date)
+        return {"success": True, "message": "Procesamiento por rango iniciado en segundo plano"}
+    else:
+        # Ejecución síncrona (con precaución)
+        try:
+            from app.modules.email_processor.config_store import get_enabled_configs
+            from app.modules.email_processor.email_processor import MultiEmailProcessor
+            
+            configs = get_enabled_configs(include_password=True, owner_email=owner_email) if owner_email else []
+            if not configs:
+                 return {"success": False, "message": "No hay cuentas de correo configuradas"}
+                 
+            email_configs = [MultiEmailConfig(**{**c, 'owner_email': owner_email}) for c in configs]
+            mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
+            
+            result = mp.process_all_emails(start_date=s_date, end_date=e_date)
+            return result
+        except Exception as e:
+            logger.error(f"Error range sync: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload", response_model=ProcessResult)
 async def upload_pdf(
@@ -1159,30 +1251,62 @@ async def test_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Dep
 
 @app.post("/email-configs/{config_id}/test")
 async def test_email_config_by_id(config_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
-    """Prueba una configuración guardada, identificada por su ID en MongoDB."""
+    """Prueba una configuración guardada, identificada por su ID en MongoDB. Soporta OAuth2."""
     try:
-        from app.modules.email_processor.email_processor import EmailProcessor
-        from app.models.models import EmailConfig
+        from app.modules.email_processor.imap_client import IMAPClient
+        from app.modules.oauth.google_oauth import get_google_oauth_manager
 
         db_cfg = db_get_by_id(config_id, include_password=True, owner_email=(user.get('email') or '').lower())
         if not db_cfg:
             raise HTTPException(status_code=404, detail="Configuración no encontrada")
 
-        test_config = EmailConfig(
+        auth_type = db_cfg.get("auth_type", "password")
+        access_token = db_cfg.get("access_token")
+        
+        # For OAuth configs, check if token needs refresh
+        if auth_type == "oauth2" and access_token:
+            token_expiry_str = db_cfg.get("token_expiry")
+            if token_expiry_str:
+                from datetime import datetime
+                try:
+                    token_expiry = datetime.fromisoformat(token_expiry_str.replace('Z', '+00:00'))
+                    oauth_manager = get_google_oauth_manager()
+                    if oauth_manager.is_token_expired(token_expiry):
+                        # Try to refresh the token
+                        refresh_token = db_cfg.get("refresh_token")
+                        if refresh_token:
+                            try:
+                                tokens = await oauth_manager.refresh_access_token(refresh_token)
+                                access_token = tokens.get("access_token")
+                                # Update token in DB
+                                new_expiry = oauth_manager.calculate_token_expiry(tokens.get("expires_in", 3600))
+                                db_update_config(config_id, {
+                                    "access_token": access_token,
+                                    "token_expiry": new_expiry.isoformat()
+                                }, owner_email=(user.get('email') or '').lower())
+                            except Exception as e:
+                                logger.warning(f"Could not refresh token: {e}")
+                                return {"success": False, "message": "Token OAuth expirado. Por favor, reconecta la cuenta."}
+                except Exception as e:
+                    logger.warning(f"Error parsing token expiry: {e}")
+
+        # Create IMAP client with OAuth support
+        client = IMAPClient(
             host=db_cfg.get("host"),
             port=int(db_cfg.get("port", 993)),
             username=db_cfg.get("username"),
             password=db_cfg.get("password") or "",
-            search_criteria=db_cfg.get("search_criteria") or "UNSEEN",
-            search_terms=db_cfg.get("search_terms") or []
+            mailbox="INBOX",
+            auth_type=auth_type,
+            access_token=access_token if auth_type == "oauth2" else None
         )
-
-        processor = EmailProcessor(test_config)
-        success = processor.connect()
-        processor.disconnect()
+        
+        success = client.connect()
+        client.close()
 
         if success:
-            return {"success": True, "message": "Conexión exitosa"}
+            auth_method = "OAuth2" if auth_type == "oauth2" else "contraseña"
+            return {"success": True, "message": f"Conexión exitosa ({auth_method})"}
         else:
             return {"success": False, "message": "Error al conectar"}
     except HTTPException:
@@ -1297,6 +1421,31 @@ async def update_email_config(config_id: str, config: MultiEmailConfig, user: Di
         raise HTTPException(status_code=500, detail="No se pudo actualizar configuración")
 
 
+@app.patch("/email-configs/{config_id}")
+async def patch_email_config(config_id: str, config: EmailConfigUpdate, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Actualización parcial de configuración de email.
+    Permite actualizar solo campos específicos sin requerir todos los campos.
+    Especialmente útil para configuraciones OAuth2 donde solo se pueden editar search_terms.
+    """
+    try:
+        # Solo incluir campos que fueron explícitamente enviados (no None)
+        update_data = {k: v for k, v in config.model_dump().items() if v is not None}
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No se proporcionaron campos para actualizar")
+        
+        ok = db_update_config(config_id, update_data, owner_email=(user.get('email') or '').lower())
+        if not ok:
+            raise HTTPException(status_code=404, detail="Configuración no encontrada")
+        return {"success": True, "id": config_id, "updated_fields": list(update_data.keys())}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en actualización parcial de configuración: {e}")
+        raise HTTPException(status_code=500, detail="No se pudo actualizar configuración")
+
+
 @app.delete("/email-configs/{config_id}")
 async def delete_email_config(config_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
     try:
@@ -1337,6 +1486,395 @@ async def toggle_email_config_enabled(config_id: str, user: Dict[str, Any] = Dep
     except Exception as e:
         logger.error(f"Error alternando 'enabled' de configuración: {e}")
         raise HTTPException(status_code=500, detail="No se pudo alternar el estado")
+
+
+# -----------------------------
+# OAuth 2.0 for Gmail (XOAUTH2)
+# -----------------------------
+
+@app.get("/email-configs/oauth/google/status")
+async def get_google_oauth_status(user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Check if Google OAuth is configured and available.
+    """
+    from app.modules.oauth.google_oauth import get_google_oauth_manager
+    
+    oauth_manager = get_google_oauth_manager()
+    return {
+        "configured": oauth_manager.is_configured(),
+        "provider": "google",
+        "message": "OAuth configurado correctamente" if oauth_manager.is_configured() else "OAuth no configurado. Configure GOOGLE_OAUTH_CLIENT_ID y GOOGLE_OAUTH_CLIENT_SECRET"
+    }
+
+
+@app.get("/email-configs/oauth/google/authorize")
+async def initiate_google_oauth(
+    request: Request,
+    user: Dict[str, Any] = Depends(_get_current_user),
+    login_hint: Optional[str] = Query(None, description="Email to pre-fill in Google sign-in")
+):
+    """
+    Initiate Google OAuth flow for Gmail IMAP access.
+    Returns an authorization URL to redirect the user to.
+    
+    The state parameter encodes the user's email for security validation on callback.
+    """
+    from app.modules.oauth.google_oauth import get_google_oauth_manager
+    import base64
+    import json
+    
+    oauth_manager = get_google_oauth_manager()
+    
+    if not oauth_manager.is_configured():
+        raise HTTPException(
+            status_code=503, 
+            detail="Google OAuth no está configurado. Contacta al administrador."
+        )
+    
+    owner_email = (user.get('email') or '').lower()
+    
+    # Get the host from the request to build the correct redirect URI
+    # This allows the same backend to work for both local and production
+    # Use X-Forwarded-Host (includes port) if available, fallback to host
+    request_host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    redirect_uri = oauth_manager.get_redirect_uri(request_host)
+    
+    # Create state with user info for CSRF protection
+    # Include redirect_uri so callback can use the same one
+    state_data = {
+        "owner_email": owner_email,
+        "redirect_uri": redirect_uri,
+        "timestamp": datetime.now().isoformat(),
+        "nonce": str(uuid.uuid4())
+    }
+    state = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    
+    auth_url = oauth_manager.generate_auth_url(
+        state=state,
+        login_hint=login_hint,
+        redirect_uri=redirect_uri
+    )
+    
+    logger.info(f"🔐 OAuth authorization initiated for {owner_email} (redirect: {redirect_uri})")
+    
+    return {
+        "auth_url": auth_url,
+        "state": state,
+        "message": "Redirige al usuario a auth_url para autorizar acceso a Gmail"
+    }
+
+
+@app.get("/email-configs/oauth/google/callback")
+async def google_oauth_callback(
+    code: str = Query(..., description="Authorization code from Google"),
+    state: str = Query(..., description="State parameter for CSRF validation"),
+    error: Optional[str] = Query(None, description="Error from Google if authorization failed")
+):
+    """
+    Handle Google OAuth callback after user grants permission.
+    Exchanges the authorization code for access and refresh tokens.
+    
+    This endpoint is called by Google after user authorization.
+    It returns an HTML page that sends the result to the opener window.
+    """
+    from app.modules.oauth.google_oauth import get_google_oauth_manager
+    import base64
+    import json
+    
+    # Handle error from Google
+    if error:
+        logger.error(f"Google OAuth error: {error}")
+        return HTMLResponse(content=_oauth_popup_response(False, f"Error de autorización: {error}"))
+    
+    oauth_manager = get_google_oauth_manager()
+    
+    try:
+        # Decode and validate state
+        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        owner_email = state_data.get("owner_email", "").lower()
+        redirect_uri = state_data.get("redirect_uri", "")
+        
+        if not owner_email:
+            raise ValueError("Invalid state: missing owner_email")
+        
+        # Exchange code for tokens using the same redirect_uri from authorization
+        tokens = await oauth_manager.exchange_code_for_tokens(code, redirect_uri=redirect_uri)
+        
+        access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        expires_in = tokens.get("expires_in", 3600)
+        
+        if not access_token:
+            raise ValueError("No access token received from Google")
+        
+        # Get user info to confirm the Gmail address
+        user_info = await oauth_manager.get_user_info(access_token)
+        gmail_address = user_info.get("email", "").lower()
+        
+        # Calculate token expiry
+        token_expiry = oauth_manager.calculate_token_expiry(expires_in)
+        
+        # SAVE DIRECTLY TO DATABASE - no popup communication needed
+        # Check if this Gmail account already exists for this owner
+        existing_configs = db_list_configs(owner_email=owner_email)
+        existing_gmail_config = next(
+            (c for c in existing_configs if c.get("username", "").lower() == gmail_address),
+            None
+        )
+        
+        if existing_gmail_config:
+            # Update existing config with new OAuth tokens
+            update_data = {
+                "auth_type": "oauth2",
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_expiry": token_expiry.isoformat(),
+                "password": "",  # Clear password for OAuth
+                "enabled": True
+            }
+            db_update_config(existing_gmail_config["id"], update_data, owner_email=owner_email)
+            logger.info(f"✅ Updated existing Gmail config with OAuth for {gmail_address}")
+        else:
+            # Create new config as dict
+            new_config_data = {
+                "name": f"Gmail - {gmail_address}",
+                "host": "imap.gmail.com",
+                "port": 993,
+                "username": gmail_address,
+                "password": "",
+                "use_ssl": True,
+                "auth_type": "oauth2",
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_expiry": token_expiry.isoformat(),
+                "oauth_email": gmail_address,
+                "search_terms": ["factura", "invoice", "comprobante", "documento electronico"],
+                "search_criteria": "UNSEEN",
+                "provider": "gmail",
+                "enabled": True,
+                "owner_email": owner_email
+            }
+            db_create_config(new_config_data, owner_email=owner_email)
+            logger.info(f"✅ Created new Gmail OAuth config for {gmail_address}")
+        
+        logger.info(f"✅ Google OAuth successful for {gmail_address} (owner: {owner_email})")
+        
+        return HTMLResponse(content=_oauth_popup_response(True, "Cuenta Gmail conectada exitosamente. Puedes cerrar esta ventana.", None))
+        
+    except Exception as e:
+        logger.error(f"Google OAuth callback error: {e}")
+        return HTMLResponse(content=_oauth_popup_response(False, f"Error procesando autorización: {str(e)}"))
+
+
+def _oauth_popup_response(success: bool, message: str, data: dict = None) -> str:
+    """
+    Generate an HTML response for the OAuth popup.
+    Since we save directly to DB, we just show success/error and close.
+    """
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Autorización Google - Cuenly</title>
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }}
+            .container {{
+                text-align: center;
+                padding: 40px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 16px;
+                backdrop-filter: blur(10px);
+            }}
+            .icon {{ font-size: 48px; margin-bottom: 20px; }}
+            .message {{ font-size: 18px; margin-bottom: 10px; }}
+            .submessage {{ font-size: 14px; opacity: 0.8; }}
+            .btn {{
+                margin-top: 20px;
+                padding: 12px 24px;
+                background: rgba(255,255,255,0.2);
+                border: 1px solid rgba(255,255,255,0.3);
+                border-radius: 8px;
+                color: white;
+                font-size: 14px;
+                cursor: pointer;
+                transition: background 0.2s;
+            }}
+            .btn:hover {{ background: rgba(255,255,255,0.3); }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="icon">{'✅' if success else '❌'}</div>
+            <div class="message">{message}</div>
+            <div class="submessage">{'Refresca la página de configuración para ver tu cuenta.' if success else 'Intenta nuevamente.'}</div>
+            <button class="btn" onclick="window.close()">Cerrar ventana</button>
+        </div>
+        <script>
+            // Notify parent to refresh if possible
+            if (window.opener && !window.opener.closed) {{
+                try {{
+                    window.opener.postMessage({{ type: 'GOOGLE_OAUTH_COMPLETE', success: {'true' if success else 'false'} }}, '*');
+                }} catch(e) {{}}
+            }}
+            // Auto close after 3 seconds if successful
+            if ({'true' if success else 'false'}) {{
+                setTimeout(() => window.close(), 3000);
+            }}
+        </script>
+    </body>
+    </html>
+    """
+
+
+@app.post("/email-configs/{config_id}/oauth/refresh")
+async def refresh_oauth_token(config_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Refresh the OAuth access token for a saved email configuration.
+    """
+    from app.modules.oauth.google_oauth import get_google_oauth_manager
+    
+    owner_email = (user.get('email') or '').lower()
+    
+    # Get the config from database
+    db_cfg = db_get_by_id(config_id, include_password=True, owner_email=owner_email)
+    if not db_cfg:
+        raise HTTPException(status_code=404, detail="Configuración no encontrada")
+    
+    if db_cfg.get("auth_type") != "oauth2":
+        raise HTTPException(status_code=400, detail="Esta configuración no usa OAuth")
+    
+    refresh_token = db_cfg.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="No hay refresh token almacenado")
+    
+    oauth_manager = get_google_oauth_manager()
+    
+    try:
+        # Refresh the token
+        tokens = await oauth_manager.refresh_access_token(refresh_token)
+        
+        new_access_token = tokens.get("access_token")
+        expires_in = tokens.get("expires_in", 3600)
+        token_expiry = oauth_manager.calculate_token_expiry(expires_in)
+        
+        # Update the config in database
+        update_data = {
+            "access_token": new_access_token,
+            "token_expiry": token_expiry.isoformat()
+        }
+        
+        ok = db_update_config(config_id, update_data, owner_email=owner_email)
+        if not ok:
+            raise HTTPException(status_code=500, detail="No se pudo actualizar el token")
+        
+        logger.info(f"✅ OAuth token refreshed for config {config_id}")
+        
+        return {
+            "success": True,
+            "token_expiry": token_expiry.isoformat(),
+            "message": "Token actualizado exitosamente"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error refreshing OAuth token: {e}")
+        raise HTTPException(status_code=500, detail=f"Error renovando token: {str(e)}")
+
+
+@app.post("/email-configs/oauth/save")
+async def save_oauth_email_config(
+    gmail_address: str = Body(..., embed=True),
+    access_token: str = Body(..., embed=True),
+    refresh_token: str = Body(..., embed=True),
+    token_expiry: str = Body(..., embed=True),
+    name: Optional[str] = Body("", embed=True),
+    search_terms: Optional[List[str]] = Body(None, embed=True),
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Save a new email configuration with OAuth tokens after successful Google authorization.
+    """
+    from app.modules.email_processor.config_store import count_configs_by_owner
+    from app.repositories.subscription_repository import SubscriptionRepository
+    
+    owner_email = (user.get('email') or '').lower()
+    
+    # Validate subscription limits
+    current_count = count_configs_by_owner(owner_email)
+    sub_repo = SubscriptionRepository()
+    subscription = await sub_repo.get_user_active_subscription(owner_email)
+    
+    if subscription:
+        plan_features = subscription.get('plan_features', {})
+        max_accounts = plan_features.get('max_email_accounts', 2)
+        
+        if max_accounts != -1 and current_count >= max_accounts:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Has alcanzado el límite de {max_accounts} cuentas de correo de tu plan."
+            )
+    else:
+        if current_count >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail="Has alcanzado el límite de cuentas de correo. Suscríbete a un plan para agregar más."
+            )
+    
+    # Verificar si ya existe config para este email para preservar settings
+    existing_config = None
+    try:
+        from app.modules.email_processor.config_store import get_by_username
+        existing_config = get_by_username(gmail_address, owner_email=owner_email)
+    except Exception as e:
+        logger.warning(f"Error checking existing config for {gmail_address}: {e}")
+
+    # Preservar search_terms si existen y no se enviaron nuevos
+    final_search_terms = search_terms
+    if not final_search_terms:
+        if existing_config and existing_config.get("search_terms"):
+            final_search_terms = existing_config.get("search_terms")
+        else:
+            final_search_terms = ["factura", "invoice", "comprobante"]
+
+    # Create the email config with OAuth
+    config_data = {
+        "name": name or (existing_config.get("name") if existing_config else f"Gmail - {gmail_address}"),
+        "host": "imap.gmail.com",
+        "port": 993,
+        "username": gmail_address,
+        "password": None,  # No password needed for OAuth
+        "use_ssl": True,
+        "search_criteria": "UNSEEN",
+        "search_terms": final_search_terms,
+        "provider": "gmail",
+        "enabled": True,
+        "auth_type": "oauth2",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_expiry": token_expiry,
+        "oauth_email": gmail_address
+    }
+    
+    try:
+        config_id = db_create_config(config_data, owner_email=owner_email)
+        logger.info(f"✅ OAuth email config created for {gmail_address} (owner: {owner_email})")
+        
+        return {
+            "success": True,
+            "id": config_id,
+            "message": "Cuenta de Gmail configurada exitosamente con OAuth"
+        }
+    except Exception as e:
+        logger.error(f"Error creating OAuth email config: {e}")
+        raise HTTPException(status_code=500, detail="No se pudo guardar la configuración")
 
 
 @app.get("/health")
@@ -2071,6 +2609,40 @@ async def detailed_health():
         logger.error(f"Error en health check detallado: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error en health check: {str(e)}")
 
+@app.get("/health/redis")
+async def redis_health():
+    """
+    Health check específico para Redis.
+    
+    Returns:
+        dict: Estado de conexión Redis y estadísticas de cache.
+    """
+    try:
+        from app.core.redis_client import redis_health_check
+        from app.modules.openai_processor.redis_cache import get_openai_cache
+        
+        redis_status = redis_health_check()
+        
+        # Obtener stats del cache si está disponible
+        cache_stats = {}
+        try:
+            cache = get_openai_cache()
+            cache_stats = cache.stats()
+        except Exception:
+            cache_stats = {"available": False}
+        
+        return {
+            "redis": redis_status,
+            "openai_cache": cache_stats
+        }
+    except Exception as e:
+        logger.error(f"Error en Redis health check: {str(e)}")
+        return {
+            "redis": {"healthy": False, "message": str(e)},
+            "openai_cache": {"available": False}
+        }
+
+
 @app.get("/health/trends")
 async def health_trends():
     """
@@ -2544,14 +3116,18 @@ async def request_plan_change(
     request: dict,
     current_user: dict = Depends(_get_current_user)
 ):
-    """Solicita cambio de plan para el usuario"""
+    """Solicita cambio de plan - redirige a checkout de Pagopar para pago con tarjeta"""
     try:
         new_plan_id = request.get("plan_id")
         if not new_plan_id:
             raise HTTPException(status_code=400, detail="plan_id es requerido")
         
         from app.repositories.subscription_repository import SubscriptionRepository
+        from app.services.pagopar_service import PagoparService
+        import hashlib
+        
         repo = SubscriptionRepository()
+        pagopar_service = PagoparService()
         
         # Verificar que el plan existe (buscar por código)
         plan = await repo.get_plan_by_code(new_plan_id)
@@ -2562,29 +3138,90 @@ async def request_plan_change(
         current_subscription = await repo.get_user_active_subscription(current_user["email"])
         if current_subscription and current_subscription.get("plan_code") == new_plan_id:
             raise HTTPException(status_code=400, detail="Ya tienes este plan activo")
+            
+        # ============================================================
+        # CREAR PEDIDO EN PAGOPAR (V1.1 Standard)
+        # ============================================================
         
-        # Ejecutar el cambio de plan
-        # Nota: usar "manual" para cumplir con el validador de MongoDB
-        success = await repo.assign_plan_to_user(
-            user_email=current_user["email"],
-            plan_code=new_plan_id,
-            payment_method="manual"
-        )
+        email = current_user["email"]
+        name = current_user.get("name", "Usuario Cuenly")
         
-        if not success:
-            raise HTTPException(status_code=500, detail="Error al cambiar el plan")
+        # Generar ID único para el pedido
+        timestamp = int(time.time())
+        order_id = f"CUENLY-SUB-{timestamp}"
         
-        logger.info(f"✅ Plan cambiado exitosamente: {current_user['email']} -> {plan['name']}")
+        # Obtener datos del comprador del request (si vienen del frontend)
+        buyer_data = request.get("buyer_data", {})
         
-        return {
-            "success": True,
-            "message": f"Plan cambiado exitosamente al {plan['name']}. Los cambios son efectivos inmediatamente.",
-            "data": {
-                "new_plan": plan,
-                "user_email": current_user["email"],
-                "change_date": datetime.now().isoformat()
-            }
+        # Datos del comprador para Pagopar
+        buyer = {
+            "email": email,
+            "nombre": name,
+            "ruc": buyer_data.get("ruc", ""),
+            "telefono": buyer_data.get("telefono", ""),
+            "direccion": buyer_data.get("direccion", ""),
+            "documento": buyer_data.get("documento", ""),
+            "coordenadas": "",
+            "razon_social": buyer_data.get("razon_social") or name,
+            "tipo_documento": buyer_data.get("tipo_documento", "CI"),
+            "ciudad": None,
+            "direccion_referencia": None
         }
+        
+        # Validar campos obligatorios
+        if not buyer["documento"]:
+            raise HTTPException(status_code=400, detail="El número de documento es requerido")
+        if not buyer["telefono"]:
+            raise HTTPException(status_code=400, detail="El número de teléfono es requerido")
+        
+        # Crear pedido en Pagopar
+        amount = plan["price"]
+        description = f"Suscripción {plan['name']}"
+        
+        try:
+            order_hash = await pagopar_service.create_order_v11(
+                order_id, 
+                amount, 
+                description,
+                buyer
+            )
+            
+            if not order_hash:
+                raise Exception("No se pudo generar el hash del pedido")
+            
+            # Guardar orden pendiente en DB para reconciliación en webhook
+            db = repo._get_db()
+            db.pending_subscriptions.insert_one({
+                "user_email": email,
+                "plan_code": new_plan_id,
+                "plan_name": plan["name"],
+                "amount": amount,
+                "order_id": order_id,
+                "order_hash": order_hash,
+                "status": "pending",
+                "created_at": datetime.utcnow()
+            })
+            
+            # Construir URL de checkout
+            checkout_url = f"https://www.pagopar.com/pagos/{order_hash}"
+            
+            return {
+                "success": True,
+                "checkout_url": checkout_url,
+                "order_hash": order_hash,
+                "message": "Redirigiendo a Pagopar para completar el pago..."
+            }
+            
+        except Exception as e:
+            logger.error(f"Error al crear pedido en Pagopar: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error al procesar el pago: {str(e)}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en request_plan_change: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2729,75 +3366,30 @@ async def admin_delete_plan(
         logger.error(f"Error eliminando plan: {e}")
         raise HTTPException(status_code=500, detail="Error eliminando plan")
 
-# Endpoints de suscripciones
-@app.get("/admin/subscriptions/stats", tags=["Admin - Subscriptions"])
-async def admin_get_subscription_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
-    """Obtiene estadísticas de suscripciones"""
-    try:
-        from app.repositories.subscription_repository import SubscriptionRepository
-        repo = SubscriptionRepository()
-        stats = await repo.get_subscription_stats()
-        
-        return {
-            "success": True,
-            "data": stats
-        }
-    except Exception as e:
-        logger.error(f"Error obteniendo estadísticas de suscripciones: {e}")
-        raise HTTPException(status_code=500, detail="Error obteniendo estadísticas")
+# ==========================================
+# PUBLIC PLANS ENDPOINTS
+# ==========================================
 
-@app.post("/admin/subscriptions", tags=["Admin - Subscriptions"])
-async def admin_create_subscription(
-    subscription: SubscriptionCreateRequest,
-    admin: Dict[str, Any] = Depends(_get_current_admin)
+@app.get("/api/plans", tags=["Plans"])
+@app.get("/plans", tags=["Plans"]) # Alias for convenience
+async def list_public_plans(
+    user: Dict[str, Any] = Depends(_get_current_user)
 ):
-    """Asigna un plan a un usuario"""
-    try:
-        from app.repositories.subscription_repository import SubscriptionRepository
-        repo = SubscriptionRepository()
-        
-        success = await repo.assign_plan_to_user(
-            subscription.user_email,
-            subscription.plan_code,
-            subscription.payment_method
-        )
-        
-        if not success:
-            raise HTTPException(status_code=400, detail="Error asignando plan al usuario")
-        
-        return {
-            "success": True,
-            "message": f"Plan '{subscription.plan_code}' asignado a {subscription.user_email}"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error asignando plan: {e}")
-        raise HTTPException(status_code=500, detail="Error asignando plan")
+    """
+    Lista los planes públicos activos disponibles para suscripción.
+    """
+    repo = SubscriptionRepository()
+    # Solo planes activos para usuarios normales
+    plans = await repo.get_all_plans(include_inactive=False)
+    
+    return {
+        "success": True, 
+        "data": plans,
+        "count": len(plans)
+    }
 
-@app.get("/admin/subscriptions/user/{user_email}", tags=["Admin - Subscriptions"])
-async def admin_get_user_subscriptions(
-    user_email: str,
-    admin: Dict[str, Any] = Depends(_get_current_admin)
-):
-    """Obtiene el historial de suscripciones de un usuario"""
-    try:
-        from app.repositories.subscription_repository import SubscriptionRepository
-        repo = SubscriptionRepository()
-        
-        current_subscription = await repo.get_user_subscription(user_email)
-        history = await repo.get_user_subscriptions_history(user_email)
-        
-        return {
-            "success": True,
-            "data": {
-                "current_subscription": current_subscription,
-                "history": history
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error obteniendo suscripciones de {user_email}: {e}")
-        raise HTTPException(status_code=500, detail="Error obteniendo suscripciones")
+# Endpoints de suscripciones - TODOS MIGRADOS a admin_subscriptions.py
+# Rutas: /admin/subscriptions/stats, POST /admin/subscriptions, GET /admin/subscriptions/user/{user_email}
 
 @app.get("/invoices/{invoice_id}/download")
 async def get_invoice_download_url(
@@ -2830,7 +3422,35 @@ async def get_invoice_download_url(
             user_repo = UserRepository()
             if not user_repo.is_admin(owner):
                 raise HTTPException(status_code=403, detail="Acceso denegado")
+        
+        # Verificar si el plan del usuario permite descarga desde MinIO
+        from app.repositories.subscription_repository import SubscriptionRepository
+        sub_repo = SubscriptionRepository()
+        subscription = await sub_repo.get_user_active_subscription(owner)
+        
+        # Permitir a admins o si el plan lo permite
+        user_repo = UserRepository()
+        is_admin = user_repo.is_admin(owner)
+        
+        if not is_admin:
+            if not subscription:
+                # Si no hay suscripción activa, es un usuario FREE/Trial
+                # Por defecto, si queremos restringir el Trial también, bloqueamos aquí
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
+                )
             
+            # Obtener features del plan
+            plan_code = subscription.get("plan_code")
+            plan = await sub_repo.get_plan_by_code(plan_code)
+            if plan and plan.get("features"):
+                if not plan["features"].get("minio_storage", True):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
+                    )
+
         minio_key = header.get("minio_key")
         if not minio_key:
             return {"success": False, "message": "Archivo no disponible en el almacenamiento seguro"}
@@ -2839,6 +3459,7 @@ async def get_invoice_download_url(
         # Re-importar para asegurar acceso si no estamos en scope gol
         try:
             from minio import Minio
+            from urllib.parse import urlencode
         except ImportError:
             return {"success": False, "message": "Librería MinIO no instalada"}
 
@@ -2853,21 +3474,145 @@ async def get_invoice_download_url(
             region=settings.MINIO_REGION
         )
         
+        # Determinar Content-Type basado en la extensión del archivo
+        filename = minio_key.split("/")[-1]
+        lname = filename.lower()
+        if lname.endswith(".pdf"):
+            content_type = "application/pdf"
+        elif lname.endswith(".xml"):
+            content_type = "application/xml"
+        elif lname.endswith((".jpg", ".jpeg")):
+            content_type = "image/jpeg"
+        elif lname.endswith(".png"):
+            content_type = "image/png"
+        elif lname.endswith(".webp"):
+            content_type = "image/webp"
+        else:
+            content_type = "application/octet-stream"
+        
+        # Generar URL presignada con headers de respuesta para compatibilidad HTTPS
+        # response_headers fuerza al servidor a devolver estos headers
+        response_headers = {
+            "response-content-type": content_type,
+            "response-content-disposition": f"inline; filename=\"{filename}\""
+        }
+        
         url = client.get_presigned_url(
             "GET",
             settings.MINIO_BUCKET,
             minio_key,
-            expires=timedelta(hours=1)
+            expires=timedelta(hours=1),
+            response_headers=response_headers
         )
         
         return {
             "success": True,
             "download_url": url,
-            "filename": minio_key.split("/")[-1]
+            "filename": filename,
+            "content_type": content_type
         }
         
     except Exception as e:
         logger.error(f"Error generando download url: {e}")
+        raise HTTPException(status_code=500, detail="Error descarga")
+
+
+@app.get("/invoices/{invoice_id}/file")
+async def get_invoice_file_direct(
+    invoice_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """Descarga el archivo directamente como streaming (proxy).
+    
+    Este endpoint evita problemas de CORS al servir el archivo
+    directamente desde el backend en lugar de redirigir a MinIO.
+    """
+    from fastapi.responses import StreamingResponse
+    
+    try:
+        repo = MongoInvoiceRepository()
+        
+        # Buscar factura
+        header = repo._headers().find_one({"_id": invoice_id})
+        if not header:
+            try:
+                from bson import ObjectId
+                header = repo._headers().find_one({"_id": ObjectId(invoice_id)})
+            except:
+                pass
+                
+        if not header:
+            raise HTTPException(status_code=404, detail="Factura no encontrada")
+        
+        # Verificar ownership
+        owner = (user.get('email') or '').lower()
+        if header.get("owner_email") != owner:
+            user_repo = UserRepository()
+            if not user_repo.is_admin(owner):
+                raise HTTPException(status_code=403, detail="Acceso denegado")
+            
+        minio_key = header.get("minio_key")
+        if not minio_key:
+            raise HTTPException(status_code=404, detail="Archivo no disponible")
+            
+        try:
+            from minio import Minio
+        except ImportError:
+            raise HTTPException(status_code=500, detail="MinIO no instalado")
+
+        if not settings.MINIO_ACCESS_KEY:
+            raise HTTPException(status_code=500, detail="MinIO no configurado")
+             
+        client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+            region=settings.MINIO_REGION
+        )
+        
+        # Obtener el archivo desde MinIO
+        response = client.get_object(settings.MINIO_BUCKET, minio_key)
+        
+        # Determinar Content-Type
+        filename = minio_key.split("/")[-1]
+        lname = filename.lower()
+        if lname.endswith(".pdf"):
+            content_type = "application/pdf"
+        elif lname.endswith(".xml"):
+            content_type = "application/xml"
+        elif lname.endswith((".jpg", ".jpeg")):
+            content_type = "image/jpeg"
+        elif lname.endswith(".png"):
+            content_type = "image/png"
+        elif lname.endswith(".webp"):
+            content_type = "image/webp"
+        else:
+            content_type = "application/octet-stream"
+        
+        # Streaming response
+        def iter_content():
+            try:
+                for chunk in response.stream(32*1024):
+                    yield chunk
+            finally:
+                response.close()
+                response.release_conn()
+        
+        return StreamingResponse(
+            iter_content(),
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"inline; filename=\"{filename}\"",
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "private, max-age=3600"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error descargando archivo: {e}")
         raise HTTPException(status_code=500, detail="Error descarga")
 
 # Endpoint para estadísticas filtradas con fecha
@@ -3293,13 +4038,21 @@ if __name__ == "__main__":
     start()
 
 # -----------------------------
-# Preferencias (UI / Auto‑refresh)
+# Preferencias (UI / Auto‑refresh) - Storage en memoria
 # -----------------------------
+_auto_refresh_prefs: Dict[str, Dict] = {}
+
+def prefs_get_auto_refresh(uid: str) -> Dict:
+    return _auto_refresh_prefs.get(uid, {"enabled": False, "interval_ms": 30000})
+
+def prefs_set_auto_refresh(uid: str, enabled: bool, interval_ms: int) -> Dict:
+    _auto_refresh_prefs[uid] = {"enabled": enabled, "interval_ms": interval_ms}
+    return _auto_refresh_prefs[uid]
 
 @app.get("/prefs/auto-refresh", response_model=AutoRefreshPref)
 async def get_auto_refresh(uid: Optional[str] = Query(default="global")):
     try:
-        data = prefs_get_auto_refresh(uid) or {"enabled": False, "interval_ms": 30000}
+        data = prefs_get_auto_refresh(uid)
         return AutoRefreshPref(uid=uid, enabled=bool(data.get("enabled", False)), interval_ms=int(data.get("interval_ms", 30000)))
     except Exception as e:
         logger.error(f"Error al obtener preferencia auto-refresh: {e}")
@@ -3958,6 +4711,33 @@ async def export_invoices_with_template(
         template_id = export_request.get("template_id")
         filters = export_request.get("filters", {})
         filename = export_request.get("filename", f"facturas_custom_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        
+        # Verificar si el plan del usuario permite exportación
+        from app.repositories.subscription_repository import SubscriptionRepository
+        from app.repositories.user_repository import UserRepository
+        
+        owner = user.get("email", "").lower()
+        user_repo = UserRepository()
+        is_admin = user_repo.is_admin(owner)
+        
+        if not is_admin:
+            sub_repo = SubscriptionRepository()
+            subscription = await sub_repo.get_user_active_subscription(owner)
+            
+            # Formatos permitidos (por ahora solo excel)
+            requested_format = "excel" if filename.endswith((".xlsx", ".xls")) else "unknown"
+            
+            if not subscription:
+                # Usuario FREE: Permitir solo excel
+                if requested_format != "excel":
+                     raise HTTPException(status_code=403, detail="Tu plan no permite este formato de exportación.")
+            else:
+                plan_code = subscription.get("plan_code")
+                plan = await sub_repo.get_plan_by_code(plan_code)
+                if plan and plan.get("features"):
+                    allowed = plan["features"].get("allowed_export_formats", ["excel"])
+                    if requested_format not in allowed:
+                        raise HTTPException(status_code=403, detail=f"El formato {requested_format} no está permitido en tu plan actual.")
         
         if not template_id:
             raise HTTPException(status_code=400, detail="template_id requerido")

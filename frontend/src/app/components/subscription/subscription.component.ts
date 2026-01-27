@@ -16,6 +16,7 @@ interface SubscriptionPlan {
   monthly_ai_limit: number;
   description: string;
   is_active: boolean;
+  is_popular: boolean; // Add is_popular flag
 }
 
 interface UserSubscription {
@@ -52,36 +53,70 @@ interface PlanChangeRequest {
 })
 export class SubscriptionComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
-  
+
   // Estado de carga
   loading = false;
-  
+
   // Datos de suscripción
   currentSubscription: UserSubscription | null = null;
   subscriptionHistory: SubscriptionHistory[] = [];
   availablePlans: SubscriptionPlan[] = [];
-  
+
   // UI Estado
-  activeTab = 'current'; // 'current', 'history', 'plans'
+  activeTab = 'plans'; // Changed default to 'plans'
   showPlanChangeModal = false;
   showCancelConfirmModal = false;
   selectedPlanId = '';
   changeReason = '';
   cancelling = false;
   confirmChangeAcknowledged = false;
-  
+
   // Estado de envío
   submittingPlanChange = false;
+
+  // NUEVO: Estado para iframe de Bancard
+  showBancardIframeModal = false;
+  bancardFormId = '';
+  loadingIframe = false;
+  confirmingCard = false;
+
+  // Estado de tarjetas (ya no se usa el check previo)
+  hasCards = false;
+  showNoCardModal = false;
+
+  // Estado de perfil incompleto
+  showIncompleteProfileModal = false;
+  missingProfileFields: string[] = [];
+
+  // Datos del comprador para Pagopar (YA NO SE USA - solo para backward compatibility)
+  buyerData = {
+    tipo_documento: 'CI',
+    documento: '',
+    ruc: '',
+    telefono: '',
+    direccion: '',
+    razon_social: ''
+  };
 
   constructor(
     private apiService: ApiService,
     private notificationService: NotificationService,
     private router: Router,
     private userService: UserService
-  ) {}
+  ) { }
 
   ngOnInit(): void {
     this.loadSubscriptionData();
+    // Ya no necesitamos checkCards() - el flujo es diferente
+  }
+
+  checkCards(): void {
+    this.apiService.getCards().subscribe({
+      next: (cards) => {
+        this.hasCards = cards && cards.length > 0;
+      },
+      error: () => this.hasCards = false
+    });
   }
 
   ngOnDestroy(): void {
@@ -91,15 +126,14 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   private loadSubscriptionData(): void {
     this.loading = true;
-    
-    // Cargar suscripción actual
-    this.apiService.getUserSubscription()
+
+    // Cargar suscripción actual usando NUEVO endpoint
+    this.apiService.getMySubscription()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response: any) => {
-          if (response.success && response.data) {
-            // Los datos ya vienen en el formato correcto
-            this.currentSubscription = response.data;
+          if (response.success && response.subscription) {
+            this.currentSubscription = response.subscription;
           } else {
             this.currentSubscription = null;
           }
@@ -124,26 +158,25 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
         }
       });
 
-    // Cargar planes disponibles
+    // Cargar planes disponibles usando NUEVO endpoint
     this.apiService.getSubscriptionPlans()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response: any) => {
-          if (response.success && response.data) {
-            this.availablePlans = response.data
-              .filter((plan: any) => plan.status === 'active')
-              .map((plan: any) => ({
-                _id: plan.code, // Usamos el código como ID
-                name: plan.name,
-                type: this.mapPlanType(plan.name), // Mapear tipo basado en el nombre
-                price: plan.price,
-                currency: plan.currency,
-                features: this.extractFeatures(plan.description, plan.features),
-                monthly_ai_limit: plan.features?.ai_invoices_limit || 0,
-                description: plan.description.split('\n')[0], // Primera línea como descripción
-                is_active: plan.status === 'active'
-              }));
-          }
+        next: (plans: any[]) => {
+          this.availablePlans = plans
+            .filter((plan: any) => plan.active)
+            .map((plan: any) => ({
+              _id: plan.code,
+              name: plan.name,
+              type: this.mapPlanType(plan.name),
+              price: plan.amount,
+              currency: plan.currency,
+              features: this.extractFeatures(plan.description, plan.features),
+              monthly_ai_limit: plan.features?.ai_invoices_limit || 0,
+              description: plan.description.split('\n')[0],
+              is_active: plan.active,
+              is_popular: plan.is_popular || false
+            }));
         },
         error: (error: any) => {
           console.error('Error loading plans:', error);
@@ -176,11 +209,124 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       this.notificationService.info('Ya tienes este plan activo');
       return;
     }
-    
+
+    // NUEVO FLUJO: Iniciar catastro de tarjeta directamente
     this.selectedPlanId = planId;
-    this.changeReason = '';
-    this.confirmChangeAcknowledged = false;
-    this.showPlanChangeModal = true;
+    this.startCardRegistration(planId);
+  }
+
+  /**
+   * PASO 3: Iniciar catastro de tarjeta
+   * Llama a /subscriptions/subscribe para obtener form_id
+   */
+  startCardRegistration(planCode: string): void {
+    this.loadingIframe = true;
+    console.log('🎬 Iniciando catastro de tarjeta para plan:', planCode);
+
+    // PASO 1: Verificar perfil completo
+    this.userService.checkProfileCompleteness()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (status) => {
+          if (!status.is_complete) {
+            console.warn('⚠️ Perfil incompleto:', status.missing_fields);
+            this.missingProfileFields = status.missing_fields;
+            this.showIncompleteProfileModal = true;
+            this.loadingIframe = false;
+            return;
+          }
+
+          // PASO 2: Si está completo, iniciar suscripción
+          this.proceedToSubscribe(planCode);
+        },
+        error: (err) => {
+          console.error('❌ Error verificando perfil:', err);
+          this.notificationService.error('Error verificando estado del perfil');
+          this.loadingIframe = false;
+        }
+      });
+  }
+
+  private proceedToSubscribe(planCode: string): void {
+    this.apiService.subscribeToSelectedPlan(planCode)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          console.log('✅ Form ID recibido:', response.form_id);
+          this.bancardFormId = response.form_id;
+          this.showBancardIframeModal = true; // Mostrar modal con iframe
+          this.loadingIframe = false;
+        },
+        error: (err) => {
+          console.error('❌ Error iniciando suscripción:', err);
+          this.notificationService.error(
+            err.error?.detail || 'Error iniciando el proceso de suscripción'
+          );
+          this.loadingIframe = false;
+        }
+      });
+  }
+
+  /**
+   * PASO 5: Confirmar tarjeta (llamado cuando el usuario completa el iframe)
+   */
+  onBancardIframeComplete(): void {
+    console.log('✅ Usuario completó formulario de Bancard');
+    this.showBancardIframeModal = false;
+    this.confirmingCard = true;
+
+    this.notificationService.info('Confirmando tarjeta y activando suscripción...');
+
+    this.apiService.confirmSubscriptionCard()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          console.log('✅ Suscripción confirmada:', response);
+          this.notificationService.success('¡Suscripción activada exitosamente!');
+          this.confirmingCard = false;
+          this.loadSubscriptionData(); // Recargar datos
+          this.setActiveTab('current'); // Ir a la pestaña de suscripción actual
+          this.userService.refreshUserProfile().subscribe(); // Refrescar perfil
+        },
+        error: (err) => {
+          console.error('❌ Error confirmando tarjeta:', err);
+          this.notificationService.error(
+            err.error?.detail || 'Error confirmando la tarjeta. Por favor, contacta a soporte.'
+          );
+          this.confirmingCard = false;
+        }
+      });
+  }
+
+  /**
+   * Cerrar modal de iframe de Bancard
+   */
+  closeBancardModal(): void {
+    this.showBancardIframeModal = false;
+    this.bancardFormId = '';
+  }
+
+  // DEPRECATED: Ya no se usa - mantenido para compatibilidad
+  goToAddCard(): void {
+    this.router.navigate(['/payment-methods'], { queryParams: { return: '/subscription' } });
+  }
+
+  closeNoCardModal(): void {
+    this.showNoCardModal = false;
+  }
+
+  closeIncompleteProfileModal(): void {
+    this.showIncompleteProfileModal = false;
+  }
+
+  goToProfileAndComplete(): void {
+    this.showIncompleteProfileModal = false;
+    this.router.navigate(['/profile'], {
+      queryParams: {
+        returnUrl: this.router.url,
+        missingFields: this.missingProfileFields.join(',')
+      }
+    });
   }
 
   closePlanChangeModal(): void {
@@ -190,48 +336,10 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     this.confirmChangeAcknowledged = false;
   }
 
+  // DEPRECATED: Ya no se usa el formulario de datos del comprador
   submitPlanChange(): void {
-    if (!this.selectedPlanId) {
-      this.notificationService.error('Selecciona un plan válido');
-      return;
-    }
-    if (!this.confirmChangeAcknowledged) {
-      this.notificationService.warning('Debes confirmar que entiendes las implicaciones del cambio de plan');
-      return;
-    }
-
-    this.submittingPlanChange = true;
-    
-    this.apiService.requestPlanChange(this.selectedPlanId)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (response: any) => {
-          this.notificationService.success('Solicitud de cambio de plan enviada correctamente');
-          this.closePlanChangeModal();
-          this.submittingPlanChange = false;
-          // Recargar datos
-          this.loadSubscriptionData();
-          // Refrescar perfil global para que navbar/banners reaccionen
-          this.userService.refreshUserProfile().subscribe();
-          
-          // Actualización agresiva con delay para asegurar consistencia
-          setTimeout(() => {
-            this.userService.refreshUserProfile().subscribe({
-              next: (profile) => {
-                console.log('🔄 Perfil actualizado después de cambio de plan:', profile);
-              },
-              error: (error) => {
-                console.warn('⚠️ Error actualizando perfil después de cambio de plan:', error);
-              }
-            });
-          }, 2000); // Delay de 2 segundos para permitir que el backend procese completamente
-        },
-        error: (error: any) => {
-          console.error('Error requesting plan change:', error);
-          this.notificationService.error('Error al enviar la solicitud de cambio de plan');
-          this.submittingPlanChange = false;
-        }
-      });
+    // Este método ya no se usa - el flujo ahora va directo al iframe
+    console.warn('submitPlanChange() está deprecated - usar startCardRegistration()');
   }
 
   get selectedPlan(): SubscriptionPlan | undefined {
@@ -318,6 +426,10 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     this.router.navigate(['/']);
   }
 
+  isUnlimitedPlan(limit: number): boolean {
+    return limit === -1;
+  }
+
   private mapPlanType(planName: string): 'free' | 'basic' | 'premium' | 'enterprise' {
     const name = planName.toLowerCase();
     if (name.includes('básico') || name.includes('basico')) return 'basic';
@@ -328,7 +440,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   private extractFeatures(description: string, backendFeatures: any): string[] {
     const features: string[] = [];
-    
+
     // Extraer características de la descripción
     const lines = description.split('\n').filter(line => line.trim());
     lines.forEach(line => {
@@ -340,7 +452,11 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     // Agregar características del backend
     if (backendFeatures) {
       if (backendFeatures.ai_invoices_limit) {
-        features.push(`Procesamiento IA: ${backendFeatures.ai_invoices_limit} facturas/mes`);
+        if (backendFeatures.ai_invoices_limit === -1) {
+          features.push('Procesamiento IA ilimitado');
+        } else {
+          features.push(`Procesamiento IA: ${backendFeatures.ai_invoices_limit} facturas/mes`);
+        }
       }
       if (backendFeatures.email_processing) {
         features.push('Procesamiento de correos automático');
@@ -356,6 +472,23 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       }
       if (backendFeatures.custom_templates) {
         features.push('Plantillas personalizadas');
+      }
+
+      // Nuevos features de Fase 9
+      if (backendFeatures.minio_storage === true) {
+        features.push('Almacenamiento y descarga de originales');
+      } else if (backendFeatures.minio_storage === false) {
+        features.push('Solo visualización (sin descarga de original)');
+      }
+
+      if (backendFeatures.retention_days) {
+        features.push(`Retención de archivos: ${Math.floor(backendFeatures.retention_days / 30)} meses`);
+      } else {
+        features.push('Retención de archivos: 1 año');
+      }
+
+      if (backendFeatures.allowed_export_formats && Array.isArray(backendFeatures.allowed_export_formats)) {
+        features.push(`Exportación: ${backendFeatures.allowed_export_formats.join(', ').toUpperCase()}`);
       }
     }
 
@@ -374,7 +507,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   confirmCancel(): void {
     if (this.cancelling) return;
     this.cancelling = true;
-    this.apiService.cancelUserSubscription()
+
+    this.apiService.cancelMySubscription()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response: any) => {

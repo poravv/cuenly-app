@@ -123,8 +123,8 @@
             <div class="col-md-4">
               <div class="d-grid">
                 <a class="btn btn-outline-primary py-3" routerLink="/upload">
-                  <i class="bi bi-file-pdf me-2"></i>
-                  <div>Subir PDF</div>
+                  <i class="bi bi-file-earmark-text me-2"></i>
+                  <div>Subir PDF / Imagen</div>
                 </a>
               </div>
             </div>
@@ -205,7 +205,8 @@
           </div>
 
           <!-- Error State General -->
-          <div *ngIf="!loading && !processingResult && error && !error?.includes('🚫')" class="alert alert-danger border-0 mx-3">
+          <div *ngIf="!loading && !processingResult && error && !error?.includes('🚫')"
+            class="alert alert-danger border-0 mx-3">
             <div class="d-flex align-items-start">
               <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
               <div>
@@ -333,13 +334,11 @@
                 <div class="mb-3">
                   <label class="form-label fw-semibold small">Intervalo de Procesamiento</label>
                   <div class="input-group">
-                    <select class="form-select"
-                      [ngModel]="jobIntervalInput"
+                    <select class="form-select" [ngModel]="jobIntervalInput"
                       (ngModelChange)="onJobIntervalChange($event)">
                       <option *ngFor="let opt of intervalOptions" [ngValue]="opt">{{ opt }} minutos</option>
                     </select>
-                    <button class="btn btn-outline-primary" (click)="applyJobInterval()"
-                      [disabled]="jobLoading">
+                    <button class="btn btn-outline-primary" (click)="applyJobInterval()" [disabled]="jobLoading">
                       <i class="bi bi-check"></i>
                     </button>
                   </div>
@@ -379,8 +378,76 @@
             </div>
           </div>
 
+          <!-- Procesamiento por Rango de Fechas -->
+          <div *ngIf="!jobLoading && jobStatus" class="row g-4 mt-2">
+            <div class="col-12">
+              <div class="bg-gradient rounded-3 p-4"
+                style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <h6 class="fw-bold mb-3 d-flex align-items-center text-white">
+                  <i class="bi bi-calendar-range me-2"></i>
+                  Procesar Rango de Fechas
+                </h6>
+                <p class="text-white-50 small mb-3">
+                  Procesa correos de un período específico. Útil para reprocesar facturas antiguas.
+                </p>
+
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-4">
+                    <label class="form-label text-white small fw-semibold">Fecha Inicio</label>
+                    <input type="date" class="form-control" [(ngModel)]="dateRangeStart"
+                      (ngModelChange)="onDateRangeStartChange($event)" [disabled]="dateRangeLoading">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label text-white small fw-semibold">Fecha Fin</label>
+                    <input type="date" class="form-control" [(ngModel)]="dateRangeEnd"
+                      (ngModelChange)="onDateRangeEndChange($event)" [disabled]="dateRangeLoading">
+                  </div>
+                  <div class="col-md-4">
+                    <button class="btn btn-light w-100 fw-semibold" (click)="processDateRange()"
+                      [disabled]="dateRangeLoading || !dateRangeStart || !dateRangeEnd">
+                      <span *ngIf="!dateRangeLoading">
+                        <i class="bi bi-play-circle me-2"></i>Procesar Rango
+                      </span>
+                      <span *ngIf="dateRangeLoading">
+                        <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Resultado del procesamiento -->
+                <div *ngIf="dateRangeResult" class="alert alert-light mt-3 mb-0">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                      <i class="bi bi-check-circle-fill text-success me-2"></i>
+                      <strong>Procesamiento completado:</strong>
+                      {{ dateRangeResult.total_processed || 0 }} facturas procesadas
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary" (click)="clearDateRangeResult()">
+                      <i class="bi bi-x"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Error -->
+                <div *ngIf="dateRangeError" class="alert alert-danger mt-3 mb-0">
+                  <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                      {{ dateRangeError }}
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger" (click)="dateRangeError = null">
+                      <i class="bi bi-x"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Error de automatización - Trial Expirado -->
-          <div *ngIf="jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción')" class="alert alert-warning border-0 mt-3">
+          <div *ngIf="jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción')"
+            class="alert alert-warning border-0 mt-3">
             <div class="d-flex align-items-start">
               <i class="bi bi-hourglass-split text-warning me-2 fs-5"></i>
               <div class="flex-grow-1">
@@ -399,7 +466,9 @@
           </div>
 
           <!-- Error de automatización - General -->
-          <div *ngIf="jobError && !(jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción'))" class="alert alert-danger border-0 mt-3">
+          <div
+            *ngIf="jobError && !(jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción'))"
+            class="alert alert-danger border-0 mt-3">
             <i class="bi bi-exclamation-triangle me-2"></i>
             {{ jobError }}
           </div>

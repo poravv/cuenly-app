@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cuenly-worker
+  namespace: cuenly-backend
+  labels:
+    app: cuenly-worker
+    tier: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cuenly-worker
+      tier: worker
+  template:
+    metadata:
+      labels:
+        app: cuenly-worker
+        tier: worker
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: cuenly-worker
+          image: ghcr.io/averach/cuenly-backend:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "app.worker"]
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          envFrom:
+            - secretRef:
+                name: backend-env-secrets
+            - secretRef:
+                name: cuenly-backend-secrets
+          # Liveness probe: checks if the process is running
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "ps aux | grep 'app.worker' | grep -v grep"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 3

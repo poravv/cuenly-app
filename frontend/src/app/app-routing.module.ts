@@ -14,17 +14,22 @@ import { ExportTemplatesComponent } from './components/export-templates/export-t
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { AuthGuard } from './guards/auth.guard';
+import { ProfileGuard } from './guards/profile.guard';
 import { LoginGuard } from './guards/login.guard';
 import { SuspendedComponent } from './components/suspended/suspended.component';
 import { AdminGuard } from './guards/admin.guard';
-import { AdminPanelComponent } from './components/admin-panel/admin-panel.component';
-import { PlansManagementComponent } from './components/plans-management/plans-management.component';
+
+import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
+import { ProfileComponent } from './components/profile/profile.component';
+import { TermsConditionsComponent } from './components/legal/terms-conditions.component';
+import { PrivacyPolicyComponent } from './components/legal/privacy-policy.component';
+import { DataRetentionComponent } from './components/legal/data-retention.component';
 
 const routes: Routes = [
   { path: 'login', component: LoginComponent, canActivate: [LoginGuard] },
   { path: 'suspended', component: SuspendedComponent },
   { path: '', component: DashboardComponent, canActivate: [AuthGuard] },
-    { path: 'manage-invoices', component: InvoiceProcessingComponent, canActivate: [AuthGuard] },
+  { path: 'manage-invoices', component: InvoiceProcessingComponent, canActivate: [AuthGuard] },
   { path: 'upload', component: UploadComponent, canActivate: [AuthGuard] },
   { path: 'upload-xml', component: UploadXmlComponent, canActivate: [AuthGuard] },
   { path: 'invoice-explorer', component: InvoiceExplorerComponent, canActivate: [AuthGuard] },
@@ -36,10 +41,18 @@ const routes: Routes = [
   { path: 'templates-export/edit/:id', component: TemplateEditorComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/export/:id', component: TemplateExportComponent, canActivate: [AuthGuard] },
   { path: 'templates-export/export', component: TemplateExportComponent, canActivate: [AuthGuard] },
-  { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard] },
-  { path: 'admin', component: AdminPanelComponent, canActivate: [AuthGuard, AdminGuard] },
-  { path: 'admin/plans', component: PlansManagementComponent, canActivate: [AuthGuard, AdminGuard] },
+  { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard, ProfileGuard] },
+  { path: 'payment-methods', component: PaymentMethodsComponent, canActivate: [AuthGuard, ProfileGuard] },
+  { path: 'profile', component: ProfileComponent, canActivate: [AuthGuard] },
+  {
+    path: 'admin',
+    loadChildren: () => import('./modules/admin/admin.module').then(m => m.AdminModule),
+    canActivate: [AuthGuard, AdminGuard]
+  },
   { path: 'ayuda', component: HelpComponent, canActivate: [AuthGuard] },
+  { path: 'terms', component: TermsConditionsComponent },
+  { path: 'privacy', component: PrivacyPolicyComponent },
+  { path: 'retention', component: DataRetentionComponent },
   { path: '**', redirectTo: '', pathMatch: 'full' }
 ];
 

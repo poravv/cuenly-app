@@ -68,8 +68,42 @@ export interface EmailConfig {
   use_ssl: boolean;
   search_terms: string[];
   search_criteria?: string;
-  provider?: string;
+  provider?: string;  // 'gmail', 'outlook', 'yahoo', 'other'
   enabled?: boolean;
+  // OAuth 2.0 fields
+  auth_type?: 'password' | 'oauth2';
+  access_token?: string;
+  refresh_token?: string;
+  token_expiry?: string;
+  oauth_email?: string;
+}
+
+export interface OAuthStatus {
+  configured: boolean;
+  provider: string;
+  message: string;
+}
+
+export interface OAuthAuthorizationResponse {
+  auth_url: string;
+  state: string;
+  message: string;
+}
+
+export interface OAuthCallbackData {
+  success: boolean;
+  gmail_address?: string;
+  access_token?: string;
+  refresh_token?: string;
+  token_expiry?: string;
+  owner_email?: string;
+  message?: string;
+}
+
+export interface OAuthSaveResponse {
+  success: boolean;
+  id: string;
+  message: string;
 }
 
 export interface EmailConfigsResponse {

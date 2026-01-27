@@ -13,40 +13,32 @@
   </div>
 
   <div *ngIf="!loading" class="admin-content">
-    
+
     <div class="tab-navigation">
-      <button 
-        class="tab-button" 
-        [class.active]="activeTab === 'stats'"
-        (click)="setActiveTab('stats')">
+      <button class="tab-button" [class.active]="activeTab === 'stats'" (click)="setActiveTab('stats')">
         <i class="bi bi-graph-up"></i>
         Estadísticas
       </button>
-      <button 
-        class="tab-button" 
-        [class.active]="activeTab === 'users'"
-        (click)="setActiveTab('users')">
+      <button class="tab-button" [class.active]="activeTab === 'users'" (click)="setActiveTab('users')">
         <i class="bi bi-people"></i>
         Usuarios
       </button>
-      <button 
-        class="tab-button" 
-        [class.active]="activeTab === 'plans'"
-        (click)="setActiveTab('plans')">
+      <button class="tab-button" [class.active]="activeTab === 'plans'" (click)="setActiveTab('plans')">
         <i class="bi bi-credit-card"></i>
         Planes
       </button>
-      <button 
-        class="tab-button" 
-        [class.active]="activeTab === 'ai-limits'"
-        (click)="setActiveTab('ai-limits')">
+      <button class="tab-button" [class.active]="activeTab === 'subscriptions'" (click)="setActiveTab('subscriptions')">
+        <i class="bi bi-arrow-repeat"></i>
+        Suscripciones
+      </button>
+      <button class="tab-button" [class.active]="activeTab === 'ai-limits'" (click)="setActiveTab('ai-limits')">
         <i class="bi bi-robot"></i>
         Límites IA
       </button>
     </div>
-    
+
     <div *ngIf="activeTab === 'stats'" class="tab-content">
-      
+
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-icon users">
@@ -57,7 +49,7 @@
             <p>Total Usuarios</p>
           </div>
         </div>
-        
+
         <div class="stat-card">
           <div class="stat-icon active">
             <i class="bi bi-person-check"></i>
@@ -67,7 +59,7 @@
             <p>Usuarios Activos</p>
           </div>
         </div>
-        
+
         <div class="stat-card">
           <div class="stat-icon invoices">
             <i class="bi bi-receipt"></i>
@@ -77,7 +69,7 @@
             <p>Total Facturas</p>
           </div>
         </div>
-        
+
         <div class="stat-card">
           <div class="stat-icon items">
             <i class="bi bi-list-check"></i>
@@ -100,9 +92,7 @@
               <div *ngFor="let month of getRecentMonths()" class="chart-bar">
                 <div class="bar-label">{{month.month}}</div>
                 <div class="bar-container">
-                  <div 
-                    class="bar" 
-                    [style.height.%]="(month.count / getRecentMonths()[0].count) * 100">
+                  <div class="bar" [style.height.%]="(month.count / getRecentMonths()[0].count) * 100">
                   </div>
                 </div>
                 <div class="bar-value">{{month.count}}</div>
@@ -132,19 +122,19 @@
 
       <div class="advanced-stats-section">
         <h3>Estadísticas Filtradas</h3>
-        
+
         <div class="filters-form">
           <div class="filter-row">
             <div class="filter-group">
               <label>Fecha Inicio:</label>
               <input type="date" [(ngModel)]="statsFilters.start_date" class="form-control">
             </div>
-            
+
             <div class="filter-group">
               <label>Fecha Fin:</label>
               <input type="date" [(ngModel)]="statsFilters.end_date" class="form-control">
             </div>
-            
+
             <div class="filter-group">
               <label>Usuario:</label>
               <select [(ngModel)]="statsFilters.user_email" class="form-control">
@@ -154,7 +144,7 @@
                 </option>
               </select>
             </div>
-            
+
             <div class="filter-group">
               <button class="btn btn-primary" (click)="loadFilteredStats()" [disabled]="loadingFilteredStats">
                 <i class="bi bi-search"></i>
@@ -190,8 +180,7 @@
             <div class="daily-chart">
               <div *ngFor="let day of filteredStats.stats.daily_breakdown" class="daily-bar">
                 <div class="bar-container">
-                  <div class="bar" 
-                       [style.height.%]="getBarHeight(day.count, getMaxDailyCount())">
+                  <div class="bar" [style.height.%]="getBarHeight(day.count, getMaxDailyCount())">
                   </div>
                 </div>
                 <div class="bar-label">{{formatShortDate(day._id)}}</div>
@@ -205,8 +194,7 @@
             <div class="hourly-chart">
               <div *ngFor="let hour of filteredStats.stats.hourly_breakdown" class="hourly-bar">
                 <div class="bar-container">
-                  <div class="bar" 
-                       [style.height.%]="getBarHeight(hour.count, getMaxHourlyCount())">
+                  <div class="bar" [style.height.%]="getBarHeight(hour.count, getMaxHourlyCount())">
                   </div>
                 </div>
                 <div class="bar-label">{{hour._id}}:00</div>
@@ -231,10 +219,10 @@
           </div>
         </div>
       </div>
-    </div>        
+    </div>
 
     <div *ngIf="activeTab === 'users'" class="tab-content">
-      
+
       <div class="users-section">
         <div class="section-header">
           <h3>Gestión de Usuarios</h3>
@@ -292,26 +280,20 @@
                 </td>
                 <td class="actions">
                   <div class="action-buttons">
-                    <button 
-                      *ngIf="user.email !== 'andyvercha@gmail.com'"
-                      class="btn-action"
-                      [class.btn-promote]="user.role === 'user'"
-                      [class.btn-demote]="user.role === 'admin'"
+                    <button *ngIf="user.email !== 'andyvercha@gmail.com'" class="btn-action"
+                      [class.btn-promote]="user.role === 'user'" [class.btn-demote]="user.role === 'admin'"
                       (click)="updateUserRole(user, user.role === 'admin' ? 'user' : 'admin')"
                       [title]="user.role === 'admin' ? 'Quitar admin' : 'Hacer admin'">
                       <i [class]="user.role === 'admin' ? 'bi bi-person-dash' : 'bi bi-person-plus'"></i>
                     </button>
-                    
-                    <button 
-                      *ngIf="user.email !== 'andyvercha@gmail.com'"
-                      class="btn-action"
-                      [class.btn-suspend]="user.status === 'active'"
-                      [class.btn-activate]="user.status === 'suspended'"
+
+                    <button *ngIf="user.email !== 'andyvercha@gmail.com'" class="btn-action"
+                      [class.btn-suspend]="user.status === 'active'" [class.btn-activate]="user.status === 'suspended'"
                       (click)="updateUserStatus(user, user.status === 'active' ? 'suspended' : 'active')"
                       [title]="user.status === 'active' ? 'Suspender' : 'Activar'">
                       <i [class]="user.status === 'active' ? 'bi bi-person-slash' : 'bi bi-person-check'"></i>
                     </button>
-                    
+
                     <span *ngIf="user.email === 'andyvercha@gmail.com'" class="protected-admin">
                       <i class="bi bi-shield-check" title="Administrador protegido"></i>
                     </span>
@@ -323,31 +305,85 @@
         </div>
 
         <div *ngIf="totalPages > 1" class="pagination">
-          <button 
-            class="btn-page" 
-            [disabled]="currentPage <= 1"
-            (click)="prevPage()">
+          <button class="btn-page" [disabled]="currentPage <= 1" (click)="prevPage()">
             <i class="bi bi-chevron-left"></i>
             Anterior
           </button>
-          
+
           <span class="page-info">
             Página {{currentPage}} de {{totalPages}}
           </span>
-          
-          <button 
-            class="btn-page" 
-            [disabled]="currentPage >= totalPages"
-            (click)="nextPage()">
+
+          <button class="btn-page" [disabled]="currentPage >= totalPages" (click)="nextPage()">
             Siguiente
             <i class="bi bi-chevron-right"></i>
           </button>
         </div>
       </div>
     </div>
-    
+
     <div *ngIf="activeTab === 'plans'" class="tab-content">
       <app-plans-management></app-plans-management>
+    </div>
+
+    <div *ngIf="activeTab === 'subscriptions'" class="tab-content">
+      <div class="users-section"> <!-- Reusing users-section class for consistent styling -->
+        <div class="section-header">
+          <h3>Gestión de Suscripciones</h3>
+          <div class="section-actions">
+            <span class="total-count">Total: {{formatNumber(totalSubscriptions)}}</span>
+          </div>
+        </div>
+
+        <div *ngIf="loadingSubscriptions" class="loading-users">
+          <div class="spinner-small"></div>
+          <span>Cargando suscripciones...</span>
+        </div>
+
+        <div *ngIf="!loadingSubscriptions" class="users-table-container">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th>Usuario</th>
+                <th>Plan</th>
+                <th>Estado</th>
+                <th>Inicio</th>
+                <th>Próx. Cobro</th>
+                <th>Tarjeta</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let sub of subscriptions">
+                <td>
+                  <div class="user-details">
+                    <strong>{{sub.user_email}}</strong>
+                  </div>
+                </td>
+                <td>{{sub.plan_name}}</td>
+                <td>
+                  <span [class]="getStatusClass(sub.status)">{{sub.status}}</span>
+                </td>
+                <td>{{formatDate(sub.started_at)}}</td>
+                <td>
+                  <span [style.color]="sub.next_billing_date < dateNow ? 'red' : 'inherit'">
+                    {{formatDate(sub.next_billing_date)}}
+                  </span>
+                </td>
+                <td>
+                  <span *ngIf="sub.has_card" class="badge-success"><i class="bi bi-credit-card"></i> Vinculada</span>
+                  <span *ngIf="!sub.has_card" class="badge-warning">Sin Tarjeta</span>
+                </td>
+                <td class="actions">
+                  <button class="btn-action btn-promote" (click)="retryCharge(sub)" title="Reintentar Cobro">
+                    <i class="bi bi-currency-dollar"></i>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- AI Limits Tab -->
@@ -363,7 +399,7 @@
       <!-- Scheduler Status -->
       <div class="ai-limits-section">
         <h4>Estado del Reseteo Automático</h4>
-        
+
         <div *ngIf="loadingSchedulerStatus" class="loading">
           <div class="spinner-small"></div>
           <span>Cargando estado del scheduler...</span>
@@ -380,17 +416,19 @@
                 <p>{{formatDate(schedulerStatus.next_reset_date)}}</p>
               </div>
             </div>
-            
+
             <div class="info-card">
-              <div class="info-icon" [class.success]="schedulerStatus.scheduler.running" [class.danger]="!schedulerStatus.scheduler.running">
-                <i class="bi" [class.bi-play-circle]="schedulerStatus.scheduler.running" [class.bi-pause-circle]="!schedulerStatus.scheduler.running"></i>
+              <div class="info-icon" [class.success]="schedulerStatus.scheduler.running"
+                [class.danger]="!schedulerStatus.scheduler.running">
+                <i class="bi" [class.bi-play-circle]="schedulerStatus.scheduler.running"
+                  [class.bi-pause-circle]="!schedulerStatus.scheduler.running"></i>
               </div>
               <div class="info-content">
                 <h5>Scheduler</h5>
                 <p>{{schedulerStatus.scheduler.running ? 'Activo' : 'Inactivo'}}</p>
               </div>
             </div>
-            
+
             <div class="info-card">
               <div class="info-icon warning" *ngIf="schedulerStatus.should_run_today">
                 <i class="bi bi-exclamation-triangle"></i>
@@ -410,7 +448,7 @@
       <!-- Reset Statistics -->
       <div class="ai-limits-section">
         <h4>Estadísticas de Reseteo</h4>
-        
+
         <div *ngIf="loadingResetStats" class="loading">
           <div class="spinner-small"></div>
           <span>Cargando estadísticas...</span>
@@ -427,7 +465,7 @@
                 <p>Suscripciones Activas</p>
               </div>
             </div>
-            
+
             <div class="stat-card">
               <div class="stat-icon success">
                 <i class="bi bi-arrow-clockwise"></i>
@@ -444,15 +482,12 @@
       <!-- Manual Actions -->
       <div class="ai-limits-section">
         <h4>Acciones Manuales</h4>
-        
+
         <div class="manual-actions">
           <div class="action-group">
             <h5>Reseteo Mensual Manual</h5>
             <p>Ejecuta el reseteo mensual de límites para todos los usuarios con planes activos</p>
-            <button 
-              class="btn btn-warning" 
-              (click)="executeMonthlyReset()"
-              [disabled]="loadingMonthlyReset">
+            <button class="btn btn-warning" (click)="executeMonthlyReset()" [disabled]="loadingMonthlyReset">
               <i class="bi bi-arrow-repeat"></i>
               <span *ngIf="!loadingMonthlyReset">Ejecutar Reseteo Mensual</span>
               <span *ngIf="loadingMonthlyReset">Ejecutando...</span>
@@ -462,7 +497,7 @@
           <div class="action-group">
             <h5>Reset Individual</h5>
             <p>Resetea los límites de IA de un usuario específico</p>
-            
+
             <div class="user-reset-form">
               <div class="form-group">
                 <label>Usuario:</label>
@@ -473,10 +508,8 @@
                   </option>
                 </select>
               </div>
-              
-              <button 
-                class="btn btn-info" 
-                (click)="resetUserLimits()"
+
+              <button class="btn btn-info" (click)="resetUserLimits()"
                 [disabled]="!selectedUserForReset || loadingUserReset">
                 <i class="bi bi-person-refresh"></i>
                 <span *ngIf="!loadingUserReset">Resetear Usuario</span>

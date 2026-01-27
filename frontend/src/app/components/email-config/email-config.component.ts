@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { EmailConfig, EmailTestResult, EmailConfigsResponse } from '../../models/invoice.model';
@@ -8,7 +8,7 @@ import { EmailConfig, EmailTestResult, EmailConfigsResponse } from '../../models
   templateUrl: './email-config.component.html',
   styleUrls: ['./email-config.component.scss']
 })
-export class EmailConfigComponent implements OnInit {
+export class EmailConfigComponent implements OnInit, OnDestroy {
   emailConfigs: EmailConfig[] = [];
   newConfig: EmailConfig = this.createEmptyConfig();
   showAddForm = false;
@@ -21,31 +21,48 @@ export class EmailConfigComponent implements OnInit {
   maxEmailAccounts: number = 1;
   canAddMore: boolean = true;
   
+  // OAuth state
+  googleOAuthConfigured: boolean = false;
+  oauthLoading: boolean = false;
+  pendingOAuthData: any = null;
+  
+  // Provider selection for new config
+  selectedProvider: string = '';
+  
   // Configuraciones predefinidas para proveedores comunes
   providers = [
     {
       name: 'Gmail',
+      id: 'gmail',
       host: 'imap.gmail.com',
       port: 993,
-      use_ssl: true
+      use_ssl: true,
+      supportsOAuth: true
     },
     {
       name: 'Outlook/Hotmail',
+      id: 'outlook',
       host: 'imap-mail.outlook.com', 
       port: 993,
-      use_ssl: true
+      use_ssl: true,
+      supportsOAuth: false,  // Próximamente
+      comingSoon: true
     },
     {
       name: 'Yahoo',
+      id: 'yahoo',
       host: 'imap.mail.yahoo.com',
       port: 993,
-      use_ssl: true
+      use_ssl: true,
+      supportsOAuth: false
     },
     {
       name: 'Personalizado',
+      id: 'other',
       host: '',
       port: 993,
-      use_ssl: true
+      use_ssl: true,
+      supportsOAuth: false
     }
   ];
 
@@ -57,6 +74,62 @@ export class EmailConfigComponent implements OnInit {
   ngOnInit(): void {
     // Cargar configuraciones desde el backend
     this.loadConfigs();
+    // Check Google OAuth availability
+    this.checkGoogleOAuthStatus();
+    // Listen for OAuth callback messages
+    window.addEventListener('message', this.handleOAuthMessage.bind(this));
+    // Check for OAuth result in localStorage (fallback mechanism)
+    this.checkLocalStorageOAuth();
+  }
+
+  ngOnDestroy(): void {
+    window.removeEventListener('message', this.handleOAuthMessage.bind(this));
+  }
+
+  @HostListener('window:message', ['$event'])
+  handleOAuthMessage(event: MessageEvent): void {
+    // Handle new simplified OAuth complete message
+    if (event.data?.type === 'GOOGLE_OAUTH_COMPLETE') {
+      this.oauthLoading = false;
+      if (event.data.success) {
+        this.loadConfigs();
+        this.showAddForm = false;
+        this.selectedProvider = '';
+        this.notificationService.success('Cuenta Gmail conectada exitosamente', 'OAuth Completado');
+      }
+      return;
+    }
+    // Legacy handler for full OAuth callback data
+    if (event.data?.type === 'GOOGLE_OAUTH_CALLBACK') {
+      this.handleGoogleOAuthCallback(event.data);
+    }
+  }
+
+  checkLocalStorageOAuth(): void {
+    try {
+      const stored = localStorage.getItem('cuenly_oauth_result');
+      if (stored) {
+        localStorage.removeItem('cuenly_oauth_result');
+        const result = JSON.parse(stored);
+        if (result?.success && result?.data) {
+          console.log('OAuth result recovered from localStorage');
+          this.handleGoogleOAuthCallback(result);
+        }
+      }
+    } catch (e) {
+      console.error('Error checking localStorage OAuth:', e);
+    }
+  }
+
+  checkGoogleOAuthStatus(): void {
+    this.apiService.getGoogleOAuthStatus().subscribe({
+      next: (status) => {
+        this.googleOAuthConfigured = status.configured;
+      },
+      error: () => {
+        this.googleOAuthConfigured = false;
+      }
+    });
   }
 
   loadConfigs(): void {
@@ -98,14 +171,137 @@ export class EmailConfigComponent implements OnInit {
       search_terms: ['factura', 'invoice', 'comprobante'],
       search_criteria: 'UNSEEN',
       provider: 'other',
-      enabled: true
+      enabled: true,
+      auth_type: 'password'
     };
   }
 
   selectProvider(provider: any): void {
+    this.selectedProvider = provider.id;
     this.newConfig.host = provider.host;
     this.newConfig.port = provider.port;
     this.newConfig.use_ssl = provider.use_ssl;
+    this.newConfig.provider = provider.id;
+  }
+
+  // -----------------------------
+  // Google OAuth Flow
+  // -----------------------------
+
+  initiateGoogleOAuth(): void {
+    if (!this.canAddMore) {
+      this.notificationService.error(
+        `Has alcanzado el límite de ${this.maxEmailAccounts} cuentas de correo. Actualiza tu plan para agregar más.`,
+        'Límite alcanzado'
+      );
+      return;
+    }
+
+    this.oauthLoading = true;
+    
+    this.apiService.initiateGoogleOAuth().subscribe({
+      next: (response) => {
+        // Open Google OAuth in a popup window
+        const width = 600;
+        const height = 700;
+        const left = (window.innerWidth - width) / 2;
+        const top = (window.innerHeight - height) / 2;
+        
+        const popup = window.open(
+          response.auth_url,
+          'Google OAuth',
+          `width=${width},height=${height},left=${left},top=${top},scrollbars=yes`
+        );
+        
+        if (!popup) {
+          this.notificationService.error(
+            'No se pudo abrir la ventana de autorización. Por favor habilita los popups para este sitio.',
+            'Popup bloqueado'
+          );
+          this.oauthLoading = false;
+        }
+        // OAuth callback will be handled by handleOAuthMessage
+      },
+      error: (err) => {
+        console.error('Error initiating OAuth', err);
+        this.oauthLoading = false;
+        const errorMsg = err?.error?.detail || 'No se pudo iniciar la autorización de Google';
+        this.notificationService.error(errorMsg, 'Error OAuth');
+      }
+    });
+  }
+
+  handleGoogleOAuthCallback(data: any): void {
+    this.oauthLoading = false;
+    
+    if (!data.success) {
+      this.notificationService.error(data.message || 'Error en la autorización de Google', 'OAuth Error');
+      return;
+    }
+
+    // Store OAuth data and show confirmation
+    this.pendingOAuthData = data.data;
+    
+    // Auto-save the OAuth configuration
+    this.saveOAuthConfig();
+  }
+
+  saveOAuthConfig(): void {
+    if (!this.pendingOAuthData) {
+      this.notificationService.error('No hay datos de OAuth pendientes', 'Error');
+      return;
+    }
+
+    const oauthData = this.pendingOAuthData;
+    
+    this.apiService.saveOAuthEmailConfig({
+      gmail_address: oauthData.gmail_address,
+      access_token: oauthData.access_token,
+      refresh_token: oauthData.refresh_token,
+      token_expiry: oauthData.token_expiry,
+      name: `Gmail - ${oauthData.gmail_address}`,
+      search_terms: ['factura', 'invoice', 'comprobante', 'documento electronico']
+    }).subscribe({
+      next: (response) => {
+        this.pendingOAuthData = null;
+        this.showAddForm = false;
+        this.selectedProvider = '';
+        this.loadConfigs();
+        this.notificationService.success(
+          `Cuenta ${oauthData.gmail_address} conectada exitosamente con OAuth`,
+          'Gmail Conectado'
+        );
+      },
+      error: (err) => {
+        console.error('Error saving OAuth config', err);
+        const errorMsg = err?.error?.detail || 'No se pudo guardar la configuración OAuth';
+        this.notificationService.error(errorMsg, 'Error al guardar');
+      }
+    });
+  }
+
+  refreshOAuthToken(config: EmailConfig): void {
+    if (!config.id) return;
+    
+    this.apiService.refreshOAuthToken(config.id).subscribe({
+      next: (response) => {
+        this.notificationService.success('Token OAuth actualizado', 'Token Renovado');
+        this.loadConfigs();
+      },
+      error: (err) => {
+        console.error('Error refreshing OAuth token', err);
+        this.notificationService.error('No se pudo renovar el token OAuth', 'Error');
+      }
+    });
+  }
+
+  isOAuthConfig(config: EmailConfig): boolean {
+    return config.auth_type === 'oauth2';
+  }
+
+  isTokenExpired(config: EmailConfig): boolean {
+    if (!config.token_expiry) return true;
+    return new Date(config.token_expiry) <= new Date();
   }
 
   addSearchTerm(): void {
@@ -234,6 +430,8 @@ export class EmailConfigComponent implements OnInit {
   cancelAdd(): void {
     this.newConfig = this.createEmptyConfig();
     this.showAddForm = false;
+    this.selectedProvider = '';
+    this.pendingOAuthData = null;
   }
 
   getProvider(config: EmailConfig): string {
@@ -295,22 +493,46 @@ export class EmailConfigComponent implements OnInit {
     if (!cfg || !cfg.id) return;
     const id = cfg.id;
     const key = this.keyFor(i, cfg);
-    const payload = this.cloneConfig(this.editData[key]);
-    if (!payload.password) delete (payload as any).password;
+    const editedData = this.editData[key];
+    
     this.saving[key] = true;
-    this.apiService.updateEmailConfig(id, payload).subscribe({
-      next: () => {
-        const updated = { ...cfg, ...payload } as EmailConfig;
-        this.emailConfigs[i] = updated;
-        this.saving[key] = false;
-        this.cancelEdit(i);
-      },
-      error: (err) => {
-        console.error('Error guardando configuración', err);
-        this.saving[key] = false;
-        this.testResults[key] = { success: false, message: 'No se pudo guardar', connection_test: false, login_test: false };
-      }
-    });
+    
+    if (this.isOAuthConfig(cfg)) {
+      // OAuth2: usar PATCH para actualización parcial (solo search_terms)
+      const partialPayload = {
+        search_terms: (editedData.search_terms || []).filter((t: string) => (t || '').trim() !== '')
+      };
+      
+      this.apiService.patchEmailConfig(id, partialPayload).subscribe({
+        next: () => {
+          this.emailConfigs[i] = { ...cfg, ...partialPayload };
+          this.saving[key] = false;
+          this.cancelEdit(i);
+        },
+        error: (err) => {
+          console.error('Error guardando configuración OAuth2', err);
+          this.saving[key] = false;
+          this.testResults[key] = { success: false, message: 'No se pudo guardar', connection_test: false, login_test: false };
+        }
+      });
+    } else {
+      // Password auth: usar PUT con payload completo
+      const payload = this.cloneConfig(editedData);
+      if (!payload.password) delete (payload as any).password;
+      
+      this.apiService.updateEmailConfig(id, payload as EmailConfig).subscribe({
+        next: () => {
+          this.emailConfigs[i] = { ...cfg, ...payload };
+          this.saving[key] = false;
+          this.cancelEdit(i);
+        },
+        error: (err) => {
+          console.error('Error guardando configuración', err);
+          this.saving[key] = false;
+          this.testResults[key] = { success: false, message: 'No se pudo guardar', connection_test: false, login_test: false };
+        }
+      });
+    }
   }
 
   addEditSearchTerm(key: string): void {

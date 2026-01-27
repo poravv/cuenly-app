@@ -293,9 +293,35 @@ class MultiEmailConfig(BaseModel):
     use_ssl: bool = True
     search_criteria: str = "UNSEEN"
     search_terms: Optional[List[str]] = None
-    provider: str = "other"
+    provider: str = "other"  # "gmail", "outlook", "yahoo", "other"
     enabled: bool = True
     owner_email: Optional[str] = None  # Campo agregado para multiusuario
+    
+    # OAuth 2.0 fields for Gmail XOAUTH2
+    auth_type: str = "password"  # "password" | "oauth2"
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_expiry: Optional[str] = None  # ISO format string
+    oauth_email: Optional[str] = None  # Email asociado a OAuth (puede diferir del username)
+    ai_remaining: Optional[int] = None # Campo temporal para lógica de scheduler
+
+# Modelo para actualizaciones parciales de configuración de email
+class EmailConfigUpdate(BaseModel):
+    """Modelo para actualizar parcialmente una configuración de email.
+    Todos los campos son opcionales para permitir actualizaciones parciales.
+    Útil especialmente para OAuth2 donde solo se pueden editar search_terms.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    name: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    use_ssl: Optional[bool] = None
+    search_criteria: Optional[str] = None
+    search_terms: Optional[List[str]] = None
+    provider: Optional[str] = None
+    enabled: Optional[bool] = None
 
 class EmailConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -310,6 +336,11 @@ class EmailConfig(BaseModel):
         "documento electrónico", "documento electronico",
         "DOCUMENTO ELECTRONICO", "DOCUMENTO ELECTRÓNICO"
     ])
+    # OAuth 2.0 fields
+    auth_type: str = "password"  # 'password' or 'oauth2'
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_expiry: Optional[str] = None
 
 class ProcessResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
     # MongoDB
-    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
+    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025_seguro@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "cuenlyapp_warehouse")
     # Forzar colección v2 (headers) como única fuente de verdad
     MONGODB_COLLECTION: str = os.getenv("MONGODB_COLLECTION", "invoice_headers")
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     EMAIL_PROCESSING_DELAY: float = float(os.getenv("EMAIL_PROCESSING_DELAY", 0.5))  # Segundos entre correos
     
     # Email Processing - Procesamiento paralelo
-    MAX_CONCURRENT_ACCOUNTS: int = int(os.getenv("MAX_CONCURRENT_ACCOUNTS", 10))  # Cuentas procesadas simultáneamente
+    MAX_CONCURRENT_ACCOUNTS: int = int(os.getenv("MAX_CONCURRENT_ACCOUNTS", 30))  # Cuentas procesadas simultáneamente
     ENABLE_PARALLEL_PROCESSING: bool = os.getenv("ENABLE_PARALLEL_PROCESSING", "true").lower() in ("1", "true", "yes")
     
     # Job Processing Limits
@@ -66,6 +66,19 @@ class Settings(BaseSettings):
     MINIO_BUCKET: str = os.getenv("MINIO_BUCKET", "bk-invoice")
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "true").lower() in ("1", "true", "yes")
     MINIO_REGION: str = os.getenv("MINIO_REGION", "py-east-1")
+
+    # Redis Configuration
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_SSL: bool = os.getenv("REDIS_SSL", "0").lower() in ("1", "true", "yes")
+    REDIS_DB: int = int(os.getenv("REDIS_DB", 0))
+
+    # Pagopar Integration
+    PAGOPAR_PUBLIC_KEY: str = os.getenv("PAGOPAR_PUBLIC_KEY", "")
+    PAGOPAR_PRIVATE_KEY: str = os.getenv("PAGOPAR_PRIVATE_KEY", "")
+    # Default to production, override with sandbox URL in dev
+    PAGOPAR_BASE_URL: str = os.getenv("PAGOPAR_BASE_URL", "https://api.pagopar.com/api/pago-recurrente/3.0/")
     
     model_config = {
         "env_file": ".env",

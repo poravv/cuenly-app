@@ -10,7 +10,8 @@ class ScheduledJobRunner:
     Ejecuta 'target' cada 'interval_minutes' en un hilo daemon.
     No depende de 'schedule'.
     """
-    def __init__(self, interval_minutes: int, target: Callable[[], object]):
+    def __init__(self, interval_minutes: int, target: Callable[[], object], 
+                 start_date=None, end_date=None, stop_after_range: bool = False):
         self.interval_minutes = max(1, int(interval_minutes or 1))
         self.target = target
         self._thread: Optional[threading.Thread] = None
@@ -19,6 +20,11 @@ class ScheduledJobRunner:
         self._next_run_ts: Optional[float] = None
         self._last_run_ts: Optional[float] = None
         self._last_result: Optional[object] = None
+        
+        # Configuración de fechas
+        self.start_date = start_date
+        self.end_date = end_date
+        self.stop_after_range = stop_after_range
 
     @property
     def is_running(self) -> bool:
@@ -47,7 +53,21 @@ class ScheduledJobRunner:
             if self._next_run_ts is not None and now >= self._next_run_ts:
                 try:
                     self._last_run_ts = now
-                    self._last_result = self.target()
+                    
+                    # Ejecutar target pasando fechas si se requieren
+                    # Detectar si target acepta argumentos (muy básico, asumimos kwargs)
+                    try:
+                        self._last_result = self.target(start_date=self.start_date, end_date=self.end_date)
+                    except TypeError:
+                        # Fallback por si la función no acepta argumentos
+                        self._last_result = self.target()
+                        
+                    # Si es un job de rango único (stop_after_range), detenerse después de una ejecución exitosa
+                    if self.stop_after_range:
+                        logger.info("Job de rango de fechas completado. Deteniendo scheduler automáticamente.")
+                        self.stop()
+                        return
+
                 except Exception as e:
                     logger.exception(f"Error ejecutando job programado: {e}")
                 finally:

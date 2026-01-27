@@ -35,10 +35,18 @@ class OpenAIProcessor:
         self.cfg = cfg
         self.client = make_openai_client(cfg.api_key)
         
-        # Deshabilitar cache por problemas de estabilidad
-        self.cache = None  # Cache FORZADAMENTE deshabilitado
-        
-        logger.info("⚠️ OpenAI Cache deshabilitado por estabilidad")
+        # Inicializar Redis Cache (con fallback graceful si no está disponible)
+        try:
+            from .redis_cache import get_openai_cache
+            self.cache = get_openai_cache()
+            if self.cache.is_available:
+                logger.info("✅ OpenAI Redis Cache habilitado")
+            else:
+                logger.warning("⚠️ Redis no disponible, cache deshabilitado")
+                self.cache = None
+        except Exception as e:
+            logger.warning(f"⚠️ Error inicializando Redis cache: {e}")
+            self.cache = None
 
     # ------------------------------------------------------------------ API --
     def extract_invoice_data(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None, owner_email: Optional[str] = None):
@@ -53,9 +61,21 @@ class OpenAIProcessor:
         from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
         
         try:
+            # 0. CHECK DE SEGURIDAD: Validar límite de IA antes de consumir tokens
+            if owner_email:
+                try:
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    ai_check = user_repo.can_use_ai(owner_email)
+                    if not ai_check['can_use']:
+                        logger.warning(f"🛑 AI limit reached for {owner_email}: {ai_check['message']}. Aborting extraction.")
+                        return None
+                except Exception as e:
+                    logger.warning(f"⚠️ Error verifying AI limit for {owner_email}: {e}")
+
             # 1. Verificar cache primero
             if self.cache:
-                cached_result = self.cache.get_cached_result(pdf_path)
+                cached_result = self.cache.get(pdf_path)
                 if cached_result:
                     logger.info(f"🚀 Cache HIT - Resultado instantáneo para {pdf_path}")
                     # Asegurar que el resultado cacheado sea procesado correctamente
@@ -66,20 +86,26 @@ class OpenAIProcessor:
                         # Si ya es un objeto válido, devolverlo directamente
                         return cached_result
             
-            # NOTA: Se desactiva el camino 'texto' por solicitud.
-            # Mantener este bloque comentado por si se necesita reactivar en el futuro.
+            # 1.5 Intentar estrategia por texto (más económica y rápida)
+            # NOTA: Se comenta temporalmente porque está causando fallos en el flujo.
             # if has_extractable_text_or_ocr(pdf_path):
             #     result = self._process_as_text(pdf_path, email_metadata)
             #     if result:
+            #         # Marcar que se usó IA (aunque sea texto consume tokens)
+            #         if hasattr(result, '__dict__'):
+            #             result.ai_used = True
+            #         elif isinstance(result, dict):
+            #             result['ai_used'] = True
             #         return result
-            #     logger.warning("Texto falló → intentamos por imagen")
+            #     logger.warning("Texto falló o insuficiente → intentamos por imagen")
 
-            # Ir directo a la estrategia por imagen (Vision/OCR)
+            # 2. Ir directo a la estrategia por imagen (Vision/OCR)
             result = self._process_as_image(pdf_path, email_metadata)
             
             # Si el procesamiento fue exitoso y usó IA, incrementar contador
             if result and owner_email:
                 try:
+                    # NOTA: user_repo ya importado arriba si owner_email existe
                     from app.repositories.user_repository import UserRepository
                     user_repo = UserRepository()
                     updated_info = user_repo.increment_ai_usage(owner_email, 1)
@@ -90,15 +116,24 @@ class OpenAIProcessor:
             # Cachear el resultado si existe (como diccionario para serialización)
             if result and self.cache:
                 # Si result es un objeto InvoiceData, convertirlo a dict para cache
-                if hasattr(result, '__dict__'):
+                if hasattr(result, '__dict__') and not isinstance(result, dict):
                     # Es un objeto, extraer sus datos como dict
-                    cache_data = result.__dict__ if hasattr(result, '__dict__') else result
+                    cache_data = vars(result) if hasattr(result, '__dict__') else result
                 else:
                     # Ya es un dict
                     cache_data = result
-                self.cache.cache_result(pdf_path, cache_data, "openai_vision")
+                self.cache.set(pdf_path, cache_data, source="openai_vision")
             
             if result:
+                # Marcar que se usó IA para control en bucle (intentar seguro)
+                try:
+                    if isinstance(result, dict):
+                        result['ai_used'] = True
+                    else:
+                         # Pydantic v1/v2 compat
+                        object.__setattr__(result, 'ai_used', True)
+                except Exception:
+                    pass
                 return result
 
             logger.warning("Ambas estrategias fallaron")
@@ -215,6 +250,23 @@ class OpenAIProcessor:
                 logger.warning("Parser nativo falló: %s. Se usa OpenAI como fallback", e)
 
             # 2) Fallback: usar OpenAI con prompt XML
+            # CHECK DE SEGURIDAD: Validar límite de IA antes de fallback
+            if owner_email:
+                try:
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    ai_check = user_repo.can_use_ai(owner_email)
+                    if not ai_check['can_use']:
+                        logger.warning(f"🛑 AI limit reached for {owner_email} during XML fallback: {ai_check['message']}. Aborting AI fallback.")
+                        # Retornar lo que se pudo extraer nativamente (si algo) o None
+                        if 'native' in locals() and native:
+                            logger.info("Returning partial native result instead of AI fallback due to limit.")
+                            invoice = _coerce_invoice_model(native, email_metadata)
+                            return validate_and_enhance_with_cdc(invoice)
+                        return None
+                except Exception as e:
+                    logger.warning(f"⚠️ Error verifying AI limit for {owner_email}: {e}")
+
             prompt = build_xml_prompt(xml_content)
             messages = messages_user_only(prompt)
 
@@ -244,8 +296,16 @@ class OpenAIProcessor:
             invoice = _coerce_invoice_model(data, email_metadata)
             invoice = validate_and_enhance_with_cdc(invoice)
             # Aceptamos resultado OpenAI aunque el CDC falte; registramos advertencia.
+            # Aceptamos resultado OpenAI aunque el CDC falte; registramos advertencia.
             if not _is_valid_cdc(getattr(invoice, 'cdc', '')):
                 logger.warning("CDC no detectado/ inválido tras OpenAI XML. Se mantiene resultado OpenAI.")
+            
+            # Marcar uso de IA para XML fallback
+            if hasattr(invoice, '__dict__'):
+                invoice.ai_used = True
+            elif isinstance(invoice, dict):
+                invoice['ai_used'] = True
+                
             return invoice
         except Exception as e:
             logger.exception("Error procesando XML: %s", e)

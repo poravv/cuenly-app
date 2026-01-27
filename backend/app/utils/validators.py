@@ -98,12 +98,33 @@ class SecurityValidators:
         clean_ruc = re.sub(r'[^0-9]', '', ruc)
         
         # Validar longitud (7-8 dígitos + dígito verificador)
-        if len(clean_ruc) < 8 or len(clean_ruc) > 9:
+        if len(clean_ruc) < 6 or len(clean_ruc) > 10: # Ajustamos rangos para ser mas flexibles
             return False
-        
-        # Patrón básico para RUC paraguayo
-        pattern = r'^\d{7,8}-?\d$'
+            
+        # Patter más flexible para RUC: digitos, guion opcional y digito verificador
+        pattern = r'^\d{3,9}-?\d?$'
         return bool(re.match(pattern, ruc))
+
+    @staticmethod
+    def validate_phone(phone: str) -> bool:
+        """
+        Valida formato de teléfono (sencillo, para asegurar digitos y longitud razonable)
+        Args:
+            phone: Número de teléfono
+        Returns:
+            bool: True si es válido
+        """
+        if not phone:
+            return True # Opcional si vacio, pero el endpoint requerirá si es necesario
+            
+        # Permitir +, espacios y guiones
+        clean_phone = re.sub(r'[^0-9]', '', phone)
+        
+        # Longitud minima de Paraguay (9 digitos ej 0981xxxxxx)
+        if len(clean_phone) < 6 or len(clean_phone) > 15:
+            return False
+            
+        return True
 
     @staticmethod
     def validate_monetary_amount(amount: Any) -> bool:

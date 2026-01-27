@@ -28,9 +28,9 @@ interface UserStats {
 interface InvoiceStats {
   total_invoices: number;
   total_items: number;
-  monthly_invoices: Array<{_id: string; count: number; total_amount: number}>;
-  daily_invoices: Array<{_id: string; count: number}>;
-  user_invoices: Array<{_id: string; count: number; total_amount: number}>;
+  monthly_invoices: Array<{ _id: string; count: number; total_amount: number }>;
+  daily_invoices: Array<{ _id: string; count: number }>;
+  user_invoices: Array<{ _id: string; count: number; total_amount: number }>;
 }
 
 interface SchedulerStatus {
@@ -57,7 +57,7 @@ export class AdminPanelComponent implements OnInit {
   loading = true;
   loadingUsers = false;
   loadingFilteredStats = false;
-  
+
   // AI Limits
   loadingSchedulerStatus = false;
   loadingResetStats = false;
@@ -66,47 +66,58 @@ export class AdminPanelComponent implements OnInit {
   schedulerStatus: SchedulerStatus | null = null;
   resetStats: ResetStats | null = null;
   selectedUserForReset = '';
-  
+
   // Tabs
-  activeTab = 'stats'; // 'stats', 'users', 'plans', 'ai-limits'
-  
+  // Tabs
+  activeTab = 'stats'; // 'stats', 'users', 'plans', 'ai-limits', 'subscriptions'
+
+  // Subscriptions
+  subscriptions: any[] = [];
+  loadingSubscriptions = false;
+  totalSubscriptions = 0;
+  subscriptionsPage = 1;
+  subscriptionsPageSize = 20;
+  subscriptionsTotalPages = 0;
+  subscriptionsStatusFilter = 'all';
+
   // Users
   users: User[] = [];
   totalUsers = 0;
   currentPage = 1;
   pageSize = 20;
   totalPages = 0;
-  
+
   // Filtros de estadísticas
   statsFilters = {
     start_date: '',
     end_date: '',
     user_email: ''
   };
-  
+
   // Estadísticas filtradas
   filteredStats: any = null;
   selectedUser: User | null = null;
-  
+
   // Stats
   userStats: UserStats = { total_users: 0, active_users: 0, admin_users: 0, trial_users: 0 };
-  invoiceStats: InvoiceStats = { 
-    total_invoices: 0, 
-    total_items: 0, 
-    monthly_invoices: [], 
-    daily_invoices: [], 
-    user_invoices: [] 
+  invoiceStats: InvoiceStats = {
+    total_invoices: 0,
+    total_items: 0,
+    monthly_invoices: [],
+    daily_invoices: [],
+    user_invoices: []
   };
-  
+
   // Modals
   showUserModal = false;
+  dateNow = new Date().toISOString();
 
   constructor(
     private apiService: ApiService,
     private notificationService: NotificationService,
     private observability: ObservabilityService,
     private userService: UserService
-  ) {}
+  ) { }
 
   ngOnInit(): void {
     // Log admin panel access - CRÍTICO para auditoría
@@ -117,7 +128,7 @@ export class AdminPanelComponent implements OnInit {
       security_event: true,
       audit_trail: true
     });
-    
+
     this.observability.logPageView('AdminPanel');
     this.loadData();
   }
@@ -125,12 +136,12 @@ export class AdminPanelComponent implements OnInit {
   loadData(): void {
     this.loading = true;
     const currentUser = this.userService.getCurrentProfile();
-    
+
     this.observability.debug('Loading admin panel data', 'AdminPanelComponent', {
       admin_email: currentUser?.email,
       action: 'load_admin_data'
     });
-    
+
     this.loadStats();
     this.loadUsers();
   }
@@ -174,7 +185,7 @@ export class AdminPanelComponent implements OnInit {
   // Gestión de usuarios
   updateUserRole(user: User, newRole: string): void {
     const roleText = newRole === 'admin' ? 'administrador' : 'usuario';
-    
+
     this.notificationService.warning(
       `¿Estás seguro de cambiar el rol de ${user.email} a ${roleText}?`,
       'Confirmar cambio de rol',
@@ -194,7 +205,7 @@ export class AdminPanelComponent implements OnInit {
               security_event: true,
               audit_trail: true
             });
-            
+
             this.apiService.updateUserRole(user.email, newRole).subscribe({
               next: (response) => {
                 if (response.success) {
@@ -209,7 +220,7 @@ export class AdminPanelComponent implements OnInit {
                     audit_trail: true,
                     success: true
                   });
-                  
+
                   user.role = newRole;
                   this.notificationService.success(
                     `Rol actualizado correctamente para ${user.email}`,
@@ -227,7 +238,7 @@ export class AdminPanelComponent implements OnInit {
                   security_event: true,
                   audit_trail: true
                 });
-                
+
                 this.notificationService.error(
                   'No se pudo actualizar el rol del usuario',
                   'Error actualizando rol'
@@ -243,7 +254,7 @@ export class AdminPanelComponent implements OnInit {
   updateUserStatus(user: User, newStatus: string): void {
     const action = newStatus === 'suspended' ? 'suspender' : 'activar';
     const statusText = newStatus === 'suspended' ? 'suspendido' : 'activo';
-    
+
     // Log intento de cambio de estado - CRÍTICO para auditoría
     const currentUser = this.userService.getCurrentProfile();
     this.observability.warn('User status change attempt', 'AdminPanelComponent', {
@@ -256,7 +267,7 @@ export class AdminPanelComponent implements OnInit {
       audit_trail: true,
       is_suspension: newStatus === 'suspended'
     });
-    
+
     const extraNote = newStatus === 'suspended' ? ' Esto cancelará cualquier suscripción activa.' : '';
     this.notificationService.warning(
       `¿Estás seguro de ${action} a ${user.email}?${extraNote}`,
@@ -310,6 +321,9 @@ export class AdminPanelComponent implements OnInit {
   // Tabs
   setActiveTab(tab: string): void {
     this.activeTab = tab;
+    if (tab === 'subscriptions') {
+      this.loadSubscriptions();
+    }
   }
 
   // Mensajes de notificación
@@ -354,7 +368,7 @@ export class AdminPanelComponent implements OnInit {
   }
 
   // Métodos para obtener datos para mostrar
-  getTopUsers(): Array<{email: string, count: number, total: number}> {
+  getTopUsers(): Array<{ email: string, count: number, total: number }> {
     return this.invoiceStats.user_invoices.slice(0, 5).map(item => ({
       email: item._id,
       count: item.count,
@@ -362,7 +376,7 @@ export class AdminPanelComponent implements OnInit {
     }));
   }
 
-  getRecentMonths(): Array<{month: string, count: number, total: number}> {
+  getRecentMonths(): Array<{ month: string, count: number, total: number }> {
     return this.invoiceStats.monthly_invoices.slice(-6).map(item => ({
       month: item._id,
       count: item.count,
@@ -419,9 +433,9 @@ export class AdminPanelComponent implements OnInit {
   formatShortDate(dateStr: string): string {
     try {
       const date = new Date(dateStr);
-      return date.toLocaleDateString('es-ES', { 
-        month: '2-digit', 
-        day: '2-digit' 
+      return date.toLocaleDateString('es-ES', {
+        month: '2-digit',
+        day: '2-digit'
       });
     } catch {
       return dateStr;
@@ -552,6 +566,63 @@ export class AdminPanelComponent implements OnInit {
             } finally {
               this.loadingUserReset = false;
             }
+          }
+        }
+      }
+    );
+  }
+
+  // =====================================
+  // SUBSCRIPCIONES
+  // =====================================
+
+  loadSubscriptions(): void {
+    this.loadingSubscriptions = true;
+    this.apiService.getAdminSubscriptions(this.subscriptionsPage, this.subscriptionsPageSize, this.subscriptionsStatusFilter).subscribe({
+      next: (response) => {
+        if (response.data) {
+          this.subscriptions = response.data;
+          this.totalSubscriptions = response.total;
+          this.subscriptionsTotalPages = response.pages;
+        }
+        this.loadingSubscriptions = false;
+      },
+      error: (error) => {
+        console.error('Error loading subscriptions:', error);
+        this.showError('Error cargando suscripciones');
+        this.loadingSubscriptions = false;
+      }
+    });
+  }
+
+  onSubscriptionsPageChange(page: number): void {
+    if (page >= 1 && page <= this.subscriptionsTotalPages) {
+      this.subscriptionsPage = page;
+      this.loadSubscriptions();
+    }
+  }
+
+  retryCharge(sub: any): void {
+    this.notificationService.warning(
+      `¿Reintentar cobro para ${sub.user_email}?`,
+      'Confirmar cobro manual',
+      {
+        persistent: true,
+        action: {
+          label: 'Cobrar',
+          handler: () => {
+            // Show loading indicator?
+            this.apiService.retrySubscriptionCharge(sub._id).subscribe({
+              next: (res) => {
+                if (res.success) {
+                  this.notificationService.success('Cobro exitoso', 'Éxito');
+                  this.loadSubscriptions();
+                } else {
+                  this.notificationService.error(res.message || 'Fallo el cobro', 'Error');
+                }
+              },
+              error: (err) => this.showError('Error al procesar cobro: ' + err.message)
+            });
           }
         }
       }

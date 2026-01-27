@@ -83,9 +83,13 @@ class IMAPConnectionPool:
         return f"{config.host}:{config.port}:{config.username}"
     
     def _create_connection(self, config: EmailConfig) -> Optional[IMAPConnection]:
-        """Crea una nueva conexión IMAP con retry automático."""
+        """Crea una nueva conexión IMAP con retry automático. Soporta OAuth2 XOAUTH2."""
         max_retries = 3
         retry_delay = 2  # segundos
+        
+        # Detectar tipo de autenticación
+        auth_type = getattr(config, 'auth_type', 'password')
+        access_token = getattr(config, 'access_token', None)
         
         for attempt in range(max_retries):
             try:
@@ -103,9 +107,20 @@ class IMAPConnectionPool:
                 if hasattr(conn, 'sock') and conn.sock:
                     conn.sock.settimeout(30.0)  # 30 segundos timeout general
                 
-                # Autenticar con timeout
+                # Autenticar: OAuth2 XOAUTH2 o password tradicional
                 try:
-                    conn.login(config.username, config.password)
+                    if auth_type == "oauth2" and access_token:
+                        # XOAUTH2 authentication for Gmail
+                        def xoauth2_callback(challenge):
+                            auth_string = f"user={config.username}\x01auth=Bearer {access_token}\x01\x01"
+                            return auth_string.encode()
+                        
+                        logger.info(f"🔐 Usando autenticación OAuth2 XOAUTH2 para {config.username}")
+                        conn.authenticate("XOAUTH2", xoauth2_callback)
+                        logger.info(f"✅ Autenticación XOAUTH2 exitosa para {config.username}")
+                    else:
+                        # Traditional password login
+                        conn.login(config.username, config.password)
                 except (socket.timeout, socket.error, imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
                     logger.warning(f"Error de autenticación IMAP (intento {attempt + 1}/{max_retries}): {e}")
                     try:
@@ -127,7 +142,8 @@ class IMAPConnectionPool:
                     last_used=datetime.now()
                 )
                 
-                logger.info(f"✅ Nueva conexión IMAP creada para {config.username} en {connection_time:.2f}s (intento {attempt + 1})")
+                auth_method = "XOAUTH2" if auth_type == "oauth2" else "password"
+                logger.info(f"✅ Nueva conexión IMAP creada para {config.username} en {connection_time:.2f}s (intento {attempt + 1}, auth={auth_method})")
                 return imap_conn
                 
             except (socket.timeout, socket.error, socket.gaierror, OSError) as e:

@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     poppler-utils \
     build-essential \
     curl \
+    libmagic1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

@@ -1,0 +1,46 @@
+<div class="modal-overlay" (click)="close()">
+  <div class="modal-dialog" (click)="$event.stopPropagation()">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">
+          <i class="bi bi-credit-card me-2"></i>
+          Registrar Tarjeta
+        </h3>
+        <button type="button" class="btn-close" (click)="close()" aria-label="Cerrar"></button>
+      </div>
+      
+      <div class="modal-body">
+        <!-- Loading State -->
+        <div *ngIf="loading && !error" class="text-center py-5">
+          <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">Cargando...</span>
+          </div>
+          <p class="text-muted">Cargando formulario seguro de Bancard...</p>
+        </div>
+        
+        <!-- Error State -->
+        <div *ngIf="error" class="alert alert-danger">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          Error cargando el formulario de Bancard. Por favor, intenta nuevamente.
+        </div>
+        
+        <!-- Info -->
+        <div *ngIf="!loading && !error" class="alert alert-info mb-3">
+          <i class="bi bi-shield-check me-2"></i>
+          <strong>Pago 100% seguro:</strong> Tus datos de tarjeta son procesados directamente por Bancard.
+          Cuenly no almacena ni tiene acceso a tu información bancaria.
+        </div>
+        
+        <!-- Bancard Iframe Container -->
+        <div id="bancard-iframe-container" class="iframe-wrapper"></div>
+      </div>
+      
+      <div class="modal-footer">
+        <small class="text-muted">
+          <i class="bi bi-lock-fill me-1"></i>
+          Conexión segura con Bancard
+        </small>
+      </div>
+    </div>
+  </div>
+</div>

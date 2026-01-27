@@ -160,6 +160,7 @@ export class DashboardComponent implements OnInit {
   loading = false;
   currentPeriod = 'month';
   Math = Math;
+  canDownload: boolean = true;
 
   private apiUrl = environment.apiUrl;
 
@@ -184,6 +185,23 @@ export class DashboardComponent implements OnInit {
     });
 
     this.loadDashboardData();
+    this.checkSubscriptionPermissions();
+  }
+
+  checkSubscriptionPermissions(): void {
+    this.api.getMySubscription().subscribe({
+      next: (res) => {
+        if (res.success && res.subscription) {
+          const planCode = res.subscription.plan_code;
+          this.canDownload = planCode !== 'basic';
+        } else {
+          this.canDownload = false;
+        }
+      },
+      error: () => {
+        this.canDownload = false;
+      }
+    });
   }
 
   async loadDashboardData(): Promise<void> {
@@ -384,19 +402,25 @@ export class DashboardComponent implements OnInit {
       return;
     }
 
+    if (!this.canDownload) {
+      this.notificationService.warning('Tu plan actual no permite la descarga de archivos originales.', 'Plan Limitado');
+      return;
+    }
+
     this.notificationService.info('Generando enlace...', 'Procesando');
 
+    // Obtener URL presignada de MinIO y abrir en nueva pestaña
     this.api.downloadInvoice(id).subscribe({
       next: (res) => {
         if (res.success && res.download_url) {
+          console.log('MinIO URL:', res.download_url); // Para debug
           window.open(res.download_url, '_blank');
         } else {
-          // Estilo consistente para error de MinIO
           this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
         }
       },
       error: (err) => {
-        console.error("Error descarga:", err);
+        console.error('Error descarga:', err);
         this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
       }
     });

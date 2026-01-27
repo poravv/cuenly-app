@@ -5,6 +5,9 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from app.config.settings import settings
 from app.repositories.subscription_repository import SubscriptionRepository
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class UserRepository:
@@ -279,6 +282,71 @@ class UserRepository:
         )
         
         return result.modified_count > 0
+
+    def get_pagopar_user_id(self, email: str) -> Optional[str]:
+        """Obtiene el ID de usuario de Pagopar asociado"""
+        user = self.get_by_email(email)
+        if not user:
+            return None
+        return user.get('pagopar_user_id')
+
+    def update_pagopar_user_id(self, email: str, pagopar_id: str) -> bool:
+        """Asocia el ID de usuario de Pagopar al usuario local"""
+        result = self._coll().update_one(
+            {'email': email.lower()},
+            {'$set': {'pagopar_user_id': pagopar_id}}
+        )
+        return result.modified_count > 0
+
+    def update_user_profile(self, email: str, profile_data: Dict[str, Any]) -> bool:
+        """Actualiza la información del perfil del usuario."""
+        # Filtrar campos permitidos para actualización
+        allowed_fields = ['name', 'phone', 'ruc', 'address', 'city', 'document_type']
+        update_payload = {k: v for k, v in profile_data.items() if k in allowed_fields}
+        
+        if not update_payload:
+            return False
+            
+        update_payload['last_updated'] = datetime.utcnow()
+        
+        result = self._coll().update_one(
+            {'email': email.lower()},
+            {'$set': update_payload}
+        )
+        return result.modified_count > 0
+
+    def is_profile_complete(self, email: str) -> Dict[str, Any]:
+        """
+        Verifica si el perfil del usuario tiene todos los datos necesarios para operar (ej: suscripciones).
+        Pagopar requiere: Nombre, Teléfono, CI/RUC, Dirección.
+        """
+        user = self.get_by_email(email)
+        if not user:
+            return {
+                'is_complete': False,
+                'missing_fields': ['user_not_found'],
+                'required_for_subscription': False
+            }
+            
+        required_fields = {
+            'name': 'Nombre Completo',
+            'phone': 'Teléfono/Celular',
+            'ruc': 'RUC o Cédula',
+            'address': 'Dirección',
+            'city': 'Ciudad'
+        }
+        
+        missing = []
+        for field, label in required_fields.items():
+            value = user.get(field)
+            if not value or str(value).strip() == '':
+                missing.append(field)
+                
+        return {
+            'is_complete': len(missing) == 0,
+            'missing_fields': missing,
+            'required_for_subscription': len(missing) == 0
+        }
 
     # Métodos de administración
     def is_admin(self, email: str) -> bool:
