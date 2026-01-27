@@ -211,12 +211,19 @@ async def subscribe(
         # 2. Verificar Tarjetas Existentes SIEMPRE (auto-detectar)
         # Si el usuario ya tiene tarjetas, activar directamente sin pedir nueva
         existing_cards = []
-        pagopar_id_lookup = pagopar_user_id  # Usamos el ID que generamos
+        pagopar_id_lookup = pagopar_user_id  # Default al ID generado por hash
         
-        # También verificar si hay un método de pago guardado con otro ID
-        pm = sub_repo.get_user_payment_method(user_email)
-        if pm and pm.get("pagopar_user_id"):
-            pagopar_id_lookup = pm.get("pagopar_user_id")
+        # IMPORTANTE: Primero verificar si ya existe un pagopar_id guardado en users collection
+        saved_pagopar_id = user_repo.get_pagopar_user_id(user_email)
+        if saved_pagopar_id:
+            pagopar_id_lookup = saved_pagopar_id
+            logger.info(f"📎 Usando pagopar_id existente de users: {pagopar_id_lookup}")
+        else:
+            # Fallback: verificar si hay un método de pago guardado con otro ID
+            pm = sub_repo.get_user_payment_method(user_email)
+            if pm and pm.get("pagopar_user_id"):
+                pagopar_id_lookup = pm.get("pagopar_user_id")
+                logger.info(f"📎 Usando pagopar_id de payment_methods: {pagopar_id_lookup}")
         
         try:
             existing_cards = await pagopar_service.list_cards(pagopar_id_lookup)
