@@ -486,6 +486,7 @@ class SubscriptionRepository:
         """
         Cancelar (anular) todas las suscripciones activas de un usuario.
         Puede ser por solicitud del usuario o acción del admin.
+        Returns True if any subscriptions were cancelled, False otherwise.
         """
         try:
             user_email = (user_email or "").lower()
@@ -496,7 +497,7 @@ class SubscriptionRepository:
                 },
                 {
                     "$set": {
-                        "status": "CANCELLED",
+                        "status": "cancelled",  # lowercase per MongoDB schema
                         "cancelled_at": datetime.utcnow(),
                         "cancellation_reason": reason,
                         "updated_at": datetime.utcnow()
@@ -504,8 +505,12 @@ class SubscriptionRepository:
                 }
             )
             
-            logger.info(f"✅ Canceladas {result.modified_count} suscripciones de {user_email} - Razón: {reason}")
-            return True
+            if result.modified_count > 0:
+                logger.info(f"✅ Canceladas {result.modified_count} suscripciones de {user_email} - Razón: {reason}")
+                return True
+            else:
+                logger.info(f"ℹ️ No se encontraron suscripciones activas para cancelar de {user_email}")
+                return False
             
         except Exception as e:
             logger.error(f"Error cancelando suscripciones de {user_email}: {e}")
@@ -560,6 +565,7 @@ class SubscriptionRepository:
                 "is_trial_user": False,
                 # No actualizar trial_expires_at para evitar error de validación del schema
                 "ai_invoices_limit": plan_features.get("ai_invoices_limit", 50),
+                "ai_invoices_processed": 0,  # Reset AI usage on new plan
                 "last_updated": datetime.utcnow()
             }
             

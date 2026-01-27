@@ -194,6 +194,14 @@ async def delete_card(
     if not pagopar_id:
         raise HTTPException(status_code=400, detail="Usuario no registrado en Pagopar")
 
+    # Block deletion if user has active subscription
+    active_sub = await sub_repo.get_user_active_subscription(email)
+    if active_sub:
+        raise HTTPException(
+            status_code=400, 
+            detail="No puedes eliminar tu tarjeta mientras tienes una suscripción activa. Primero cancela tu suscripción."
+        )
+
     success = await pagopar_service.delete_card(pagopar_id, card_token)
     if not success:
         raise HTTPException(status_code=400, detail="Failed to delete card")
