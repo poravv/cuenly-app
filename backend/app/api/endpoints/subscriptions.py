@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 from app.api.deps import _get_current_user
 from app.repositories.subscription_repository import SubscriptionRepository
+from app.repositories.user_repository import UserRepository
 from app.services.pagopar_service import PagoparService
 from app.models.subscription_models import (
     PlanResponse,
@@ -173,10 +174,9 @@ async def subscribe(
         # Verificar si ya tiene suscripción activa
         existing_sub = await sub_repo.get_user_subscription(user_email)
         if existing_sub:
-            raise HTTPException(
-                status_code=400,
-                detail="Ya tienes una suscripción activa"
-            )
+            logger.info(f"🔄 Usuario {user_email} iniciando cambio de plan (Upgrade/Downgrade)")
+            # No bloqueamos, permitimos continuar para cambiar de plan
+            pass
         
         # Obtener plan
         plan = await sub_repo.get_plan_by_code(request.plan_code)
