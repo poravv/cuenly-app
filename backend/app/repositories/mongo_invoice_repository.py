@@ -195,11 +195,26 @@ class MongoInvoiceRepository(InvoiceRepository):
         res = items_coll.insert_many(to_insert)
         return len(res.inserted_ids)
 
+    # Priority Map definition
+    PRIORITY_MAP = {
+        "XML_NATIVO": 100,
+        "XML_SIFEN": 100,
+        "OPENAI_VISION": 50,
+        "OPENAI_VISION_IMAGE": 40,
+        "EMAIL": 10
+    }
+
+    def _get_priority(self, fuente: str) -> int:
+        return self.PRIORITY_MAP.get(fuente, 0)
+
     # Override: asegurar unicidad por usuario + factura
     def save_document(self, doc: InvoiceDocument) -> None:
         """
         Guarda una factura asegurando que el _id del header sea único por usuario.
         Evita que el mismo comprobante entre distintos usuarios se reemplace entre sí.
+        
+        Aplica lógica de prioridad basada en la fuente:
+        XML (100) > PDF (50) > IMAGEN (40) > EMAIL (10)
         """
         # Determinar owner
         owner = (getattr(doc.header, 'owner_email', '') or '').lower()
@@ -225,6 +240,23 @@ class MongoInvoiceRepository(InvoiceRepository):
             if owner:
                 it.owner_email = owner
             new_items.append(it)
+
+        # Lógica de prioridad
+        existing_header = self._headers().find_one({"_id": combined_id})
+        if existing_header:
+            existing_fuente = existing_header.get("fuente", "")
+            new_fuente = doc.header.fuente or ""
+            
+            existing_priority = self._get_priority(existing_fuente)
+            new_priority = self._get_priority(new_fuente)
+            
+            if new_priority < existing_priority:
+                logger.info(f"⚠️ Saltando actualización de factura {combined_id}: Prioridad nueva ({new_fuente}={new_priority}) < Existente ({existing_fuente}={existing_priority})")
+                return
+            
+            # Si actualizamos, preservamos ciertos campos si la nueva fuente es de menor calidad pero igual prioridad (edge case)
+            # Pero la regla es simple: si new >= old, sobreescribimos.
+            logger.info(f"🔄 Actualizando factura {combined_id}: Prioridad nueva ({new_fuente}={new_priority}) >= Existente ({existing_fuente}={existing_priority})")
 
         # Upsert de header e items
         self.upsert_header(doc.header)

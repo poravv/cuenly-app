@@ -114,7 +114,7 @@ data:
     - name: AlertManager
       type: alertmanager
       access: proxy
-      url: http://cuenly-alertmanager:9093
+      url: http://alertmanager-service.cuenly-backend.svc.cluster.local:9093
       isDefault: false
       editable: false
       jsonData:
@@ -156,6 +156,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: longhorn
   resources:
     requests:
       storage: 10Gi
@@ -239,11 +240,11 @@ spec:
           failureThreshold: 3
         resources:
           limits:
-            cpu: 1000m
-            memory: 2Gi
+            cpu: 300m       # CPU reducida según especificación
+            memory: 1Gi       # Memoria reducida
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: 100m       # CPU mínima reducida
+            memory: 256Mi     # Memoria mínima reducida
         volumeMounts:
         - mountPath: /etc/grafana/grafana.ini
           name: config

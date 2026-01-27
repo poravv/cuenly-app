@@ -57,6 +57,7 @@ jobs:
       backend-changed: ${{ steps.changes.outputs.backend }}
       frontend-changed: ${{ steps.changes.outputs.frontend }}
       config-changed: ${{ steps.changes.outputs.config }}
+      monitoring-changed: ${{ steps.changes.outputs.monitoring }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,12 +94,15 @@ jobs:
             # Detectar cambios en frontend (código o k8s)
             FRONTEND_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^frontend/' > /dev/null && echo "true" || echo "false")
             
-            # Detectar cambios en config global
-            CONFIG_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^config/|^nginx/|^k8s-monitoring/|^docker-compose.yml|\.github/workflows/' > /dev/null && echo "true" || echo "false")
-            
-            # Si hay cambios en config o workflow, rebuildeamos todo
+            # Detectar cambios de MONITOREO (Grafana/Prometheus/Loki/Alertmanager)
+            MONITORING_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^(k8s-monitoring/|backend/k8s/alertmanager-deployment.yaml|backend/k8s/observability-configmap.yaml|config/prometheus-alerts-cuenly.yml|config/alertmanager.yml|config/grafana-dashboard-.*\.json)' > /dev/null && echo "true" || echo "false")
+
+            # Detectar otros cambios de configuración global NO relacionados a monitoreo
+            CONFIG_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^(config/|nginx/|docker-compose\.yml|\.github/workflows/)' | grep -Ev '^(config/(prometheus-alerts-cuenly\.yml|alertmanager\.yml|grafana-dashboard-.*\.json))' > /dev/null && echo "true" || echo "false")
+
+            # Si hay cambios en config global (no-monitoring), forzar redeploy de backend y frontend
             if [ "$CONFIG_CHANGED" == "true" ]; then
-              echo "🔧 Cambios globales detectados, rebuildeando ambos componentes"
+              echo "🔧 Cambios globales (no-monitoring) detectados, marcando backend y frontend"
               BACKEND_CHANGED="true"
               FRONTEND_CHANGED="true"
             fi
@@ -106,12 +110,14 @@ jobs:
             echo "backend=$BACKEND_CHANGED" >> $GITHUB_OUTPUT
             echo "frontend=$FRONTEND_CHANGED" >> $GITHUB_OUTPUT
             echo "config=$CONFIG_CHANGED" >> $GITHUB_OUTPUT
+            echo "monitoring=$MONITORING_CHANGED" >> $GITHUB_OUTPUT
           fi
           
           echo "🔍 Changes detected:"
           echo "  Backend: $(grep 'backend=' $GITHUB_OUTPUT | cut -d'=' -f2)"
           echo "  Frontend: $(grep 'frontend=' $GITHUB_OUTPUT | cut -d'=' -f2)"
           echo "  Config: $(grep 'config=' $GITHUB_OUTPUT | cut -d'=' -f2)"
+          echo "  Monitoring: $(grep 'monitoring=' $GITHUB_OUTPUT | cut -d'=' -f2)"
 
   build-backend:
     needs: detect-changes
@@ -312,6 +318,130 @@ jobs:
           no-cache: true
           platforms: linux/amd64
 
+  deploy-monitoring:
+    needs: [detect-changes]
+    # Despliega el entorno de monitoreo si hubo cambios de monitoring (independiente de backend/frontend)
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && needs.detect-changes.outputs.monitoring-changed == 'true'
+    runs-on: self-hosted
+    environment: ${{ github.event.inputs.environment || 'development' }}
+    env:
+      BACKEND_NAMESPACE: cuenly-backend
+      MONITORING_NAMESPACE: cuenly-monitoring
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl context
+        run: |
+          kubectl config current-context
+
+      - name: Ensure namespaces exist
+        run: |
+          kubectl get ns ${{ env.BACKEND_NAMESPACE }} || kubectl create ns ${{ env.BACKEND_NAMESPACE }}
+          kubectl get ns ${{ env.MONITORING_NAMESPACE }} || kubectl create ns ${{ env.MONITORING_NAMESPACE }}
+
+      - name: Create/Update AlertManager secrets
+        if: ${{ false }}
+        run: |
+          set -euo pipefail
+          echo "🔐 Creando secrets de AlertManager desde GitHub Secrets..."
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_HOST }}" ]; then echo "❌ ERROR: ALERTMANAGER_SMTP_HOST no configurado"; exit 1; fi
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_PORT }}" ]; then echo "❌ ERROR: ALERTMANAGER_SMTP_PORT no configurado"; exit 1; fi
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_USER }}" ]; then echo "❌ ERROR: ALERTMANAGER_SMTP_USER no configurado"; exit 1; fi
+          if [ -z "${{ secrets.ALERTMANAGER_SMTP_PASSWORD }}" ]; then echo "❌ ERROR: ALERTMANAGER_SMTP_PASSWORD no configurado"; exit 1; fi
+          if [ -z "${{ secrets.ALERTMANAGER_EMAIL_TO }}" ]; then echo "❌ ERROR: ALERTMANAGER_EMAIL_TO no configurado"; exit 1; fi
+          kubectl delete secret alertmanager-secrets -n ${{ env.BACKEND_NAMESPACE }} --ignore-not-found=true
+          kubectl create secret generic alertmanager-secrets \
+            --namespace=${{ env.BACKEND_NAMESPACE }} \
+            --from-literal=ALERTMANAGER_SMTP_HOST="${{ secrets.ALERTMANAGER_SMTP_HOST }}" \
+            --from-literal=ALERTMANAGER_SMTP_PORT="${{ secrets.ALERTMANAGER_SMTP_PORT }}" \
+            --from-literal=ALERTMANAGER_SMTP_USER="${{ secrets.ALERTMANAGER_SMTP_USER }}" \
+            --from-literal=ALERTMANAGER_SMTP_PASSWORD="${{ secrets.ALERTMANAGER_SMTP_PASSWORD }}" \
+            --from-literal=ALERTMANAGER_EMAIL_TO="${{ secrets.ALERTMANAGER_EMAIL_TO }}"
+
+      - name: Create/Update AlertManager ConfigMap
+        if: ${{ false }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "config/alertmanager.yml" ]; then echo "❌ Error: config/alertmanager.yml no encontrado"; exit 1; fi
+          kubectl delete configmap alertmanager-config -n ${{ env.BACKEND_NAMESPACE }} --ignore-not-found=true
+          kubectl create configmap alertmanager-config \
+            --from-file=config.yml=config/alertmanager.yml \
+            --namespace=${{ env.BACKEND_NAMESPACE }}
+
+      - name: Deploy AlertManager
+        run: |
+          kubectl apply -f backend/k8s/alertmanager-deployment.yaml -n ${{ env.BACKEND_NAMESPACE }}
+          kubectl rollout status deployment/alertmanager -n ${{ env.BACKEND_NAMESPACE }} --timeout=180s || echo "⚠️  AlertManager timeout, continuando..."
+
+      - name: Configure Prometheus alert rules
+        run: |
+          if [ -f "config/prometheus-alerts-cuenly.yml" ]; then
+            kubectl delete configmap prometheus-rules -n ${{ env.MONITORING_NAMESPACE }} --ignore-not-found=true
+            kubectl create configmap prometheus-rules \
+              --from-file=cuenly-alerts.yml=config/prometheus-alerts-cuenly.yml \
+              --namespace=${{ env.MONITORING_NAMESPACE }}
+            echo "✅ Reglas de alertas configuradas desde config/prometheus-alerts-cuenly.yml"
+          else
+            echo "⚠️  Archivo config/prometheus-alerts-cuenly.yml no encontrado, aplicando placeholder"
+            kubectl apply -f k8s-monitoring/prometheus-rules-configmap.yaml
+          fi
+
+      - name: Provision Grafana dashboards from config
+        run: |
+          set -euo pipefail
+          echo "🖼️  Provisionando dashboards de Grafana desde config/*.json..."
+          DASHBOARD_FILES=$(ls config/grafana-dashboard-*.json 2>/dev/null || true)
+          if [ -n "$DASHBOARD_FILES" ]; then
+            kubectl delete configmap cuenly-dashboards -n ${{ env.MONITORING_NAMESPACE }} --ignore-not-found=true
+            CMD="kubectl create configmap cuenly-dashboards -n ${{ env.MONITORING_NAMESPACE }}"
+            for f in $DASHBOARD_FILES; do CMD="$CMD --from-file=$(basename $f)=$f"; done
+            eval $CMD
+            echo "✅ Dashboards actualizados:"
+            echo "$DASHBOARD_FILES"
+          else
+            echo "ℹ️  No se encontraron archivos config/grafana-dashboard-*.json"
+          fi
+
+      - name: Stop current monitoring services
+        run: |
+          echo "🛑 Deteniendo Grafana, Prometheus y Loki actuales..."
+          kubectl scale deployment/cuenly-grafana -n ${{ env.MONITORING_NAMESPACE }} --replicas=0 || true
+          kubectl scale deployment/cuenly-prometheus -n ${{ env.MONITORING_NAMESPACE }} --replicas=0 || true
+          kubectl scale deployment/cuenly-loki -n ${{ env.MONITORING_NAMESPACE }} --replicas=0 || true
+          kubectl wait --for=delete pod -l app=cuenly-grafana -n ${{ env.MONITORING_NAMESPACE }} --timeout=180s || true
+          kubectl wait --for=delete pod -l app=cuenly-prometheus -n ${{ env.MONITORING_NAMESPACE }} --timeout=180s || true
+          kubectl wait --for=delete pod -l app=cuenly-loki -n ${{ env.MONITORING_NAMESPACE }} --timeout=180s || true
+
+      - name: Deploy monitoring stack (Prometheus, Loki, Grafana)
+        run: |
+          set -euo pipefail
+          kubectl apply -f k8s-monitoring/simple-monitoring-stack.yaml
+          kubectl apply -f k8s-monitoring/grafana.yaml
+          if [ -f "k8s-monitoring/grafana-ingress.yaml" ]; then
+            kubectl apply -f k8s-monitoring/grafana-ingress.yaml
+          fi
+          echo "⏳ Esperando recursos..."
+          kubectl rollout status deployment/cuenly-prometheus -n ${{ env.MONITORING_NAMESPACE }} --timeout=300s || echo "⚠️  Prometheus timeout"
+          kubectl rollout status deployment/cuenly-loki -n ${{ env.MONITORING_NAMESPACE }} --timeout=300s || echo "⚠️  Loki timeout"
+          kubectl rollout status deployment/cuenly-grafana -n ${{ env.MONITORING_NAMESPACE }} --timeout=180s || echo "⚠️  Grafana timeout"
+
+      - name: Post-deploy checks
+        run: |
+          kubectl get pods -n ${{ env.MONITORING_NAMESPACE }} -o wide
+          kubectl get svc -n ${{ env.MONITORING_NAMESPACE }}
+          PROM_POD=$(kubectl get pods -n ${{ env.MONITORING_NAMESPACE }} -l app=cuenly-prometheus -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$PROM_POD" ]; then
+            kubectl exec $PROM_POD -n ${{ env.MONITORING_NAMESPACE }} -- wget -q --spider http://localhost:9090/-/healthy && echo "✅ Prometheus OK" || echo "❌ Prometheus no responde"
+          fi
+          LOKI_POD=$(kubectl get pods -n ${{ env.MONITORING_NAMESPACE }} -l app=cuenly-loki -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$LOKI_POD" ]; then
+            kubectl exec $LOKI_POD -n ${{ env.MONITORING_NAMESPACE }} -- wget -q --spider http://localhost:3100/ready && echo "✅ Loki OK" || echo "❌ Loki no responde"
+          fi
+          GRAFANA_POD=$(kubectl get pods -n ${{ env.MONITORING_NAMESPACE }} -l app=cuenly-grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$GRAFANA_POD" ]; then
+            kubectl exec $GRAFANA_POD -n ${{ env.MONITORING_NAMESPACE }} -- wget -q --spider http://localhost:3000/api/health && echo "✅ Grafana OK" || echo "❌ Grafana no responde"
+          fi
+
   deploy-backend:
     needs: [detect-changes, build-backend]
     # Backend se despliega si cambió backend O config Y el build fue exitoso Y estamos en rama principal
@@ -370,6 +500,12 @@ jobs:
             --from-literal=AUTH_REQUIRE="${{ secrets.AUTH_REQUIRE }}" \
             --from-literal=FIREBASE_PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID }}" \
             --from-literal=MULTI_TENANT_ENFORCE="${{ secrets.MULTI_TENANT_ENFORCE }}" \
+            --from-literal=MINIO_ENDPOINT="${{ secrets.MINIO_ENDPOINT }}" \
+            --from-literal=MINIO_ACCESS_KEY="${{ secrets.MINIO_ACCESS_KEY }}" \
+            --from-literal=MINIO_SECRET_KEY="${{ secrets.MINIO_SECRET_KEY }}" \
+            --from-literal=MINIO_BUCKET="${{ secrets.MINIO_BUCKET }}" \
+            --from-literal=MINIO_SECURE="${{ secrets.MINIO_SECURE }}" \
+            --from-literal=MINIO_REGION="${{ secrets.MINIO_REGION }}" \
             --from-literal=FRONTEND_API_KEY="${FRONTEND_API_KEY_VALUE}"
             
       - name: Create/Update MongoDB secrets
@@ -384,6 +520,7 @@ jobs:
           echo "✅ Secrets de MongoDB creados correctamente"
             
       - name: Create/Update AlertManager secrets
+        if: ${{ false }}
         run: |
           set -euo pipefail
           
@@ -459,6 +596,7 @@ jobs:
           echo "✅ Configuraciones de seguridad aplicadas"
           
       - name: Create/Update AlertManager ConfigMap
+        if: ${{ false }}
         run: |
           set -euo pipefail
           echo "🔧 Creando ConfigMap de AlertManager desde archivo de configuración..."
@@ -531,23 +669,8 @@ jobs:
           
           echo "✅ Limpieza completada"
           
-      - name: Deploy observability stack (AlertManager, etc.)
-        run: |
-          set -euo pipefail
-          echo "📊 Desplegando stack de observabilidad..."
-          
-          # Desplegar AlertManager
-          kubectl apply -f backend/k8s/alertmanager-deployment.yaml -n ${{ env.NAMESPACE }}
-          
-          # Esperar que AlertManager esté listo
-          kubectl rollout status deployment/alertmanager -n ${{ env.NAMESPACE }} --timeout=180s || echo "⚠️  AlertManager timeout, continuando..."
-          
-          # Aplicar ConfigMap de observabilidad (métricas, alertas, logs)
-          kubectl apply -f backend/k8s/observability-configmap.yaml -n ${{ env.NAMESPACE }}
-          
-          echo "✅ Stack de observabilidad desplegado"
-          
-      - name: Deploy centralized monitoring stack
+      - name: "Deprecated: monitoring deploy (use deploy-monitoring)"
+        if: ${{ false }}
         run: |
           set -euo pipefail
           echo "� Desplegando stack de monitoreo centralizado..."
@@ -560,6 +683,16 @@ jobs:
           # Limpiar ingress duplicado que causa conflicto
           kubectl delete ingress grafana-ingress -n monitoring --ignore-not-found=true
           kubectl delete ingress cuenly-grafana-ingress -n monitoring --ignore-not-found=true
+
+          # 1b. Detener servicios actuales de monitoreo antes de aplicar cambios
+          echo "🛑 Deteniendo Grafana, Prometheus y Loki actuales..."
+          kubectl scale deployment/cuenly-grafana -n cuenly-monitoring --replicas=0 || true
+          kubectl scale deployment/cuenly-prometheus -n cuenly-monitoring --replicas=0 || true
+          kubectl scale deployment/cuenly-loki -n cuenly-monitoring --replicas=0 || true
+          # Esperar a que se detengan los pods
+          kubectl wait --for=delete pod -l app=cuenly-grafana -n cuenly-monitoring --timeout=180s || true
+          kubectl wait --for=delete pod -l app=cuenly-prometheus -n cuenly-monitoring --timeout=180s || true
+          kubectl wait --for=delete pod -l app=cuenly-loki -n cuenly-monitoring --timeout=180s || true
           
           # 2. Crear ConfigMap con reglas de alertas de Prometheus
           echo "🚨 Configurando reglas de alertas de Prometheus..."
@@ -573,6 +706,21 @@ jobs:
             echo "⚠️  Archivo config/prometheus-alerts-cuenly.yml no encontrado"
             echo "⚠️  Aplicando ConfigMap placeholder..."
             kubectl apply -f k8s-monitoring/prometheus-rules-configmap.yaml
+          fi
+
+          # 2b. Crear/Actualizar ConfigMap de dashboards de Grafana desde config/*.json
+          echo "🖼️  Provisionando dashboards de Grafana..."
+          DASHBOARD_FILES=$(ls config/grafana-dashboard-*.json 2>/dev/null || true)
+          if [ -n "$DASHBOARD_FILES" ]; then
+            kubectl delete configmap cuenly-dashboards -n cuenly-monitoring --ignore-not-found=true
+            # Construir comando kubectl create configmap con todos los archivos
+            CMD="kubectl create configmap cuenly-dashboards -n cuenly-monitoring"
+            for f in $DASHBOARD_FILES; do CMD="$CMD --from-file=$(basename $f)=$f"; done
+            eval $CMD
+            echo "✅ Dashboards actualizados:"
+            echo "$DASHBOARD_FILES"
+          else
+            echo "ℹ️  No se encontraron archivos config/grafana-dashboard-*.json"
           fi
           
           # 3. Desplegar stack completo simplificado (Namespace + RBAC + Loki + Prometheus)
@@ -806,7 +954,7 @@ jobs:
           exit 1
 
   debug-conditions:
-    needs: [detect-changes, build-frontend, deploy-backend]
+    needs: [detect-changes, build-frontend, deploy-monitoring, deploy-backend]
     if: always()
     runs-on: self-hosted
     steps:
@@ -826,10 +974,12 @@ jobs:
           echo "🔄 Changes detected:"
           echo "  frontend-changed: '${{ needs.detect-changes.outputs.frontend-changed }}'"
           echo "  config-changed: '${{ needs.detect-changes.outputs.config-changed }}'"
+          echo "  monitoring-changed: '${{ needs.detect-changes.outputs.monitoring-changed }}'"
           echo ""
           echo "🎯 SHOULD DEPLOY:"
           echo "  Backend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') }}"
           echo "  Frontend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true')) }}"
+          echo "  Monitoring: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.monitoring-changed == 'true') }}"
 
   deploy-frontend:
     needs: [detect-changes, build-frontend, deploy-backend]
@@ -1084,7 +1234,7 @@ jobs:
           fi
 
   deployment-summary:
-    needs: [detect-changes, build-backend, build-frontend, deploy-backend, deploy-frontend]
+    needs: [detect-changes, build-backend, build-frontend, deploy-monitoring, deploy-backend, deploy-frontend]
     if: always()
     runs-on: self-hosted
     steps:
@@ -1097,12 +1247,14 @@ jobs:
           echo "  Backend changed: ${{ needs.detect-changes.outputs.backend-changed }}"
           echo "  Frontend changed: ${{ needs.detect-changes.outputs.frontend-changed }}"
           echo "  Config changed: ${{ needs.detect-changes.outputs.config-changed }}"
+          echo "  Monitoring changed: ${{ needs.detect-changes.outputs.monitoring-changed }}"
           echo ""
           echo "🏗️  Build results:"
           echo "  Backend build: ${{ needs.build-backend.result || 'skipped' }}"
           echo "  Frontend build: ${{ needs.build-frontend.result || 'skipped' }}"
           echo ""
           echo "🚀 Deploy results:"
+          echo "  Monitoring deployment: ${{ needs.deploy-monitoring.result || 'skipped' }}"
           echo "  Backend deployment: ${{ needs.deploy-backend.result || 'skipped' }}"
           echo "  Frontend deployment: ${{ needs.deploy-frontend.result || 'skipped' }}"
           echo "  Backend ready: ${{ needs.deploy-backend.outputs.backend-ready || 'false' }}"

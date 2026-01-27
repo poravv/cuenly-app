@@ -6,6 +6,8 @@ import { UserService, UserProfile } from '../../services/user.service';
 import { FirebaseService } from '../../services/firebase.service';
 import { User } from 'firebase/auth';
 import { Router } from '@angular/router';
+import { ToastrService } from 'ngx-toastr';
+import { FileTransferService } from '../../services/file-transfer.service';
 
 @Component({
   selector: 'app-navbar',
@@ -14,23 +16,31 @@ import { Router } from '@angular/router';
 })
 export class NavbarComponent implements OnInit, OnDestroy {
   status: SystemStatus | null = null;
+  // Estado del Modal de Carga
+  isUploading = false;
+  uploadState: 'processing' | 'success' | 'error' = 'processing';
+  uploadMessage = '';
+  uploadedInvoiceId?: string;
+
   private intervalId: any;
   user: User | null = null;
   userProfile: UserProfile | null = null;
   isProfileDropdownOpen = false;
 
   constructor(
-    private api: ApiService, 
-    private auth: AuthService, 
+    private api: ApiService,
+    private auth: AuthService,
     private userService: UserService,
     private router: Router,
-    private firebase: FirebaseService
-  ) {}
+    private firebase: FirebaseService,
+    private toastr: ToastrService,
+    private fileTransfer: FileTransferService
+  ) { }
 
   ngOnInit(): void {
     // Hacer el componente accesible globalmente para debugging
     (window as any).navbarComponent = this;
-    
+
     // Reaccionar a cambios de autenticación
     this.auth.user$.subscribe(u => {
       this.user = u;
@@ -65,23 +75,23 @@ export class NavbarComponent implements OnInit, OnDestroy {
   }
 
   signIn(): void { this.auth.signInWithGoogle(); }
-  
+
   async signOut(): Promise<void> {
     try {
       console.log('🔐 Cerrando sesión...');
-      
+
       // Track logout
       this.firebase.trackLogout();
-      
+
       await this.auth.signOut();
       console.log('✅ Sesión cerrada correctamente');
-      
+
       // Pequeña pausa para asegurar que la limpieza esté completa
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Opcional: Mostrar mensaje al usuario
       console.log('💡 La próxima vez que inicies sesión podrás seleccionar una cuenta diferente');
-      
+
     } catch (error) {
       console.error('❌ Error al cerrar sesión:', error);
     } finally {
@@ -132,5 +142,68 @@ export class NavbarComponent implements OnInit, OnDestroy {
   onImageError(location: string, event: any): void {
     console.error(`❌ Error cargando imagen en: ${location}`, event);
     console.error('URL de la imagen que falló:', event.target?.src);
+  }
+
+  async onFileSelected(event: any): Promise<void> {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    // Convertir FileList a Array
+    const fileList: File[] = Array.from(files);
+
+    // Validar extensiones
+    const validFiles: File[] = [];
+    let hasInvalid = false;
+
+    for (const file of fileList) {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isXml = file.type === 'text/xml' || file.type === 'application/xml' || file.name.toLowerCase().endsWith('.xml');
+      const isImage = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(file.name);
+
+      if (isPdf || isXml || isImage) {
+        if (file.size <= 10 * 1024 * 1024) {
+          validFiles.push(file);
+        } else {
+          this.toastr.warning(`El archivo ${file.name} es demasiado grande (max 10MB) y fue omitido.`);
+        }
+      } else {
+        hasInvalid = true;
+      }
+    }
+
+    if (hasInvalid) {
+      this.toastr.warning('Algunos archivos tienen formato no soportado (use PDF, XML o Imágenes) y fueron omitidos.');
+    }
+
+    if (validFiles.length === 0) {
+      event.target.value = '';
+      return;
+    }
+
+    // Redirigir a página de carga masiva
+    this.fileTransfer.setFiles(validFiles);
+
+    // Determinar a dónde redirigir basado en el tipo predominante
+    const xmlCount = validFiles.filter(f => f.name.toLowerCase().endsWith('.xml')).length;
+
+    // Si la mayoría son XML, ir a upload-xml, si no, ir a upload (PDF/Images)
+    if (xmlCount > validFiles.length / 2) {
+      this.router.navigate(['/upload-xml']);
+    } else {
+      this.router.navigate(['/upload']);
+    }
+
+    // Reset input
+    event.target.value = '';
+  }
+
+  closeUploadModal(): void {
+    if (this.uploadState === 'success' && this.uploadedInvoiceId) {
+      this.router.navigate(['/invoice-explorer']);
+    }
+    this.isUploading = false;
+    this.uploadState = 'processing';
+    this.uploadMessage = '';
+    this.uploadedInvoiceId = undefined;
   }
 }

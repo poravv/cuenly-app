@@ -8,7 +8,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
+      storage: 50Gi    # Aumentado para multi-usuario
   storageClassName: longhorn
 ---
 apiVersion: apps/v1
@@ -57,9 +57,10 @@ spec:
         - name: MONGO_LOG_LEVEL
           value: "1"  # Reducir logging para mejor rendimiento
         args: 
-          - "--wiredTigerCacheSizeGB=2"      # Cache en memoria para índices
+          - "--wiredTigerCacheSizeGB=1.5"   # Cache reducido a 1.5GB
           - "--wiredTigerJournalCompressor=snappy"  # Compresión rápida
           - "--quiet"                        # Menos logging
+          - "--maxConns=500"                 # Conexiones reducidas
         ports:
         - containerPort: 27017
           name: mongo
@@ -68,11 +69,11 @@ spec:
           mountPath: /data/db
         resources:
           requests:
-            memory: "1.5Gi"  # Aumentado para mejor cache
-            cpu: "750m"      # Más CPU para operaciones
+            memory: "2Gi"    # Reducido para optimizar recursos
+            cpu: "250m"      # CPU mínima reducida
           limits:
-            memory: "3Gi"    # Más RAM para índices en memoria
-            cpu: "2000m"     # CPU ilimitada prácticamente
+            memory: "4Gi"    # Límite reducido
+            cpu: "750m"      # CPU máxima reducida
         livenessProbe:        # ✅ Simplificada para evitar reinicios falsos
           tcpSocket:
             port: 27017

@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
-import { EmailConfig, EmailTestResult } from '../../models/invoice.model';
+import { EmailConfig, EmailTestResult, EmailConfigsResponse } from '../../models/invoice.model';
 
 @Component({
   selector: 'app-email-config',
@@ -16,6 +16,10 @@ export class EmailConfigComponent implements OnInit {
   testing: { [key: string]: boolean; [key: number]: boolean } = {} as any;
   loading = false;
   error: string | null = null;
+  
+  // Límites de cuentas de correo por plan
+  maxEmailAccounts: number = 1;
+  canAddMore: boolean = true;
   
   // Configuraciones predefinidas para proveedores comunes
   providers = [
@@ -58,9 +62,20 @@ export class EmailConfigComponent implements OnInit {
   loadConfigs(): void {
     this.loading = true; this.error = null;
     this.apiService.getEmailConfigs().subscribe({
-      next: (resp) => {
+      next: (resp: EmailConfigsResponse) => {
         this.emailConfigs = resp.configs || [];
+        this.maxEmailAccounts = resp.max_allowed || 1;
+        this.canAddMore = resp.can_add_more !== undefined ? resp.can_add_more : true;
         this.loading = false;
+        
+        // Mostrar información de límite si está cerca
+        if (!this.canAddMore) {
+          const limit = this.maxEmailAccounts === -1 ? 'ilimitadas' : this.maxEmailAccounts;
+          this.notificationService.info(
+            `Has alcanzado el límite de ${limit} cuentas de correo de tu plan`,
+            'Límite alcanzado'
+          );
+        }
       },
       error: (err) => {
         console.error('Error cargando configs', err);
@@ -149,6 +164,16 @@ export class EmailConfigComponent implements OnInit {
   }
 
   addEmailConfig(): void {
+    // Validar límite de cuentas ANTES de intentar crear
+    if (!this.canAddMore) {
+      const limit = this.maxEmailAccounts === -1 ? 'ilimitadas' : this.maxEmailAccounts;
+      this.notificationService.error(
+        `Has alcanzado el límite de ${limit} cuentas de correo. Actualiza tu plan para agregar más.`,
+        'Límite alcanzado'
+      );
+      return;
+    }
+    
     // Validación básica
     if (!this.newConfig.host || !this.newConfig.username || !this.newConfig.password) {
       this.notificationService.warning('Por favor completa todos los campos obligatorios', 'Validación');
@@ -166,8 +191,9 @@ export class EmailConfigComponent implements OnInit {
         this.loadConfigs();
         this.notificationService.success('Configuración de correo agregada exitosamente', 'Cuenta agregada');
       },
-      error: () => {
-        this.notificationService.error('No se pudo guardar la configuración', 'Error al guardar');
+      error: (err) => {
+        const errorMsg = err?.error?.detail || 'No se pudo guardar la configuración';
+        this.notificationService.error(errorMsg, 'Error al guardar');
       }
     });
   }

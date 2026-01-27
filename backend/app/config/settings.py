@@ -11,6 +11,11 @@ load_dotenv(encoding="utf-8")
 class Settings(BaseSettings):
     # App
     TEMP_PDF_DIR: str = os.getenv("TEMP_PDF_DIR", "./data/temp_pdfs")
+    PROCESSED_EMAILS_FILE: str = os.getenv("PROCESSED_EMAILS_FILE", "./data/processed_emails.json")
+    PROCESSED_EMAIL_TTL_DAYS: int = int(os.getenv("PROCESSED_EMAIL_TTL_DAYS", 30))
+    PROCESSED_EMAIL_MAX_ENTRIES: int = int(os.getenv("PROCESSED_EMAIL_MAX_ENTRIES", 20000))
+    # Zona horaria para todo el backend (afecta scheduler y timestamps)
+    TIMEZONE: str = os.getenv("TIMEZONE", "America/Asuncion")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     # OpenAI
@@ -19,7 +24,8 @@ class Settings(BaseSettings):
     # MongoDB
     MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "cuenlyapp_warehouse")
-    MONGODB_COLLECTION: str = os.getenv("MONGODB_COLLECTION", "facturas_completas")
+    # Forzar colección v2 (headers) como única fuente de verdad
+    MONGODB_COLLECTION: str = os.getenv("MONGODB_COLLECTION", "invoice_headers")
 
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
@@ -44,10 +50,22 @@ class Settings(BaseSettings):
     EMAIL_BATCH_DELAY: float = float(os.getenv("EMAIL_BATCH_DELAY", 3.0))  # Segundos entre lotes
     EMAIL_PROCESSING_DELAY: float = float(os.getenv("EMAIL_PROCESSING_DELAY", 0.5))  # Segundos entre correos
     
+    # Email Processing - Procesamiento paralelo
+    MAX_CONCURRENT_ACCOUNTS: int = int(os.getenv("MAX_CONCURRENT_ACCOUNTS", 10))  # Cuentas procesadas simultáneamente
+    ENABLE_PARALLEL_PROCESSING: bool = os.getenv("ENABLE_PARALLEL_PROCESSING", "true").lower() in ("1", "true", "yes")
+    
     # Job Processing Limits
     JOB_MAX_RUNTIME_HOURS: int = int(os.getenv("JOB_MAX_RUNTIME_HOURS", 24))  # Parar job después de 24 horas
     JOB_REST_PERIOD_HOURS: int = int(os.getenv("JOB_REST_PERIOD_HOURS", 2))  # Descansar 2 horas después de 24h
     MANUAL_PROCESS_LIMIT: int = int(os.getenv("MANUAL_PROCESS_LIMIT", 10))  # Límite de facturas por proceso manual
+
+    # MinIO / S3 Storage
+    MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "minpoint.mindtechpy.net")
+    MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "")
+    MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "")
+    MINIO_BUCKET: str = os.getenv("MINIO_BUCKET", "bk-invoice")
+    MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "true").lower() in ("1", "true", "yes")
+    MINIO_REGION: str = os.getenv("MINIO_REGION", "py-east-1")
     
     model_config = {
         "env_file": ".env",

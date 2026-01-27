@@ -24,6 +24,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   autoRefresh: boolean = false;
   refreshSubscription: Subscription | null = null;
   autoRefreshIntervalMs: number = 30000;
+  intervalOptions: number[] = [5, 10, 15, 20];
   jobIntervalInput: number | null = null;
   jobIntervalTouched = false;
   private storageHandler: any;
@@ -41,6 +42,8 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       const val = parseInt(savedInt, 10);
       if (!isNaN(val) && val >= 5000) this.autoRefreshIntervalMs = val;
     }
+
+    this.jobIntervalInput = this.intervalOptions[0];
   }
 
   ngOnInit(): void {
@@ -132,8 +135,8 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.jobStatus = data;
         this.jobLoading = false;
-        if (!this.jobIntervalTouched && this.jobStatus?.interval_minutes) {
-          this.jobIntervalInput = this.jobStatus.interval_minutes;
+        if (!this.jobIntervalTouched) {
+          this.jobIntervalInput = this.getValidInterval(this.jobStatus?.interval_minutes ?? this.jobIntervalInput);
         }
       },
       error: (err) => {
@@ -216,8 +219,8 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         
         // Trial válido, proceder con el inicio del job
         const targetInterval = (this.jobIntervalInput && this.jobIntervalInput >= 1)
-          ? this.jobIntervalInput!
-          : (this.jobStatus?.interval_minutes || 3);
+          ? this.getValidInterval(this.jobIntervalInput!)
+          : this.getValidInterval(this.jobStatus?.interval_minutes || this.intervalOptions[0]);
 
         this.apiService.setJobInterval(targetInterval).subscribe({
           next: () => {
@@ -226,7 +229,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
                 this.jobStatus = result;
                 this.jobLoading = false;
                 this.jobIntervalTouched = false;
-                this.jobIntervalInput = this.jobStatus?.interval_minutes ?? targetInterval;
+                this.jobIntervalInput = this.getValidInterval(this.jobStatus?.interval_minutes ?? targetInterval);
                 
                 // Log job started
                 this.observability.logUserAction('scheduled_job_started', 'InvoiceProcessingComponent', {
@@ -321,9 +324,10 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   }
 
   applyJobInterval(): void {
-    if (!this.jobIntervalInput || this.jobIntervalInput < 1) return;
+    const target = this.getValidInterval(this.jobIntervalInput);
+    this.jobIntervalInput = target;
     this.jobLoading = true;
-    this.apiService.setJobInterval(this.jobIntervalInput).subscribe({
+    this.apiService.setJobInterval(target).subscribe({
       next: (st) => { this.jobStatus = st; this.jobLoading = false; },
       error: (err) => { 
         this.jobError = 'No se pudo actualizar el intervalo'; 
@@ -337,12 +341,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
 
   onJobIntervalChange(val: any): void {
     this.jobIntervalTouched = true;
-    const n = Number(val);
-    this.jobIntervalInput = isNaN(n) ? null : n;
-  }
-
-  isJobIntervalInvalid(): boolean {
-    return !this.jobIntervalInput || this.jobIntervalInput < 1;
+    this.jobIntervalInput = this.getValidInterval(Number(val));
   }
 
   onAutoRefreshToggle(enabled: boolean): void {
@@ -395,6 +394,13 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     }
   }
 
+  nextRunDisplay(): string {
+    if (!this.jobStatus || !this.jobStatus.running || !this.jobStatus.next_run) {
+      return '--:--';
+    }
+    return this.formatParaguayTime(this.jobStatus.next_run);
+  }
+
   formatParaguayDateTime(dateTime: any): string {
     try {
       const date = (typeof dateTime === 'number')
@@ -432,5 +438,20 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       });
       return 'N/A';
     }
+  }
+
+  private getValidInterval(value: number | null | undefined): number {
+    const fallback = this.intervalOptions[0];
+    const parsed = Number(value);
+    if (!isNaN(parsed) && this.intervalOptions.includes(parsed)) {
+      return parsed;
+    }
+    if (isNaN(parsed)) {
+      return fallback;
+    }
+    // Elegir el intervalo permitido más cercano para evitar saturación
+    return this.intervalOptions.reduce((prev, curr) => {
+      return Math.abs(curr - parsed) < Math.abs(prev - parsed) ? curr : prev;
+    }, fallback);
   }
 }

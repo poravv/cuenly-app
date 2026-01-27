@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { ApiService } from '../../services/api.service';
+import { NotificationService } from '../../services/notification.service';
 
 interface MonthlyStats {
   year_month: string;
@@ -45,7 +46,7 @@ export class InvoiceExplorerComponent implements OnInit {
   monthStatistics: MonthStatistics | null = null;
   loading = false;
   error: string | null = null;
-  
+
   // v2 headers + items
   v2Headers: any[] = [];
   v2Total: number = 0;
@@ -53,10 +54,11 @@ export class InvoiceExplorerComponent implements OnInit {
   v2PageSize: number = 20;
   v2Header: any | null = null;
   v2Items: any[] = [];
-  
+  expandedInvoiceId: string | null = null;
+
   // Descargas de Excel eliminadas
 
-  constructor(private http: HttpClient, private api: ApiService) {}
+  constructor(private http: HttpClient, private api: ApiService, private notificationService: NotificationService) { }
 
   ngOnInit(): void {
     this.loadAvailableMonths();
@@ -66,10 +68,10 @@ export class InvoiceExplorerComponent implements OnInit {
     try {
       this.loading = true;
       this.error = null;
-      
-      const response = await this.http.get<{success: boolean, months: MonthlyStats[]}>
+
+      const response = await this.http.get<{ success: boolean, months: MonthlyStats[] }>
         (`${environment.apiUrl}/invoices/months`).toPromise();
-      
+
       if (response?.success) {
         this.availableMonths = response.months;
         console.log('📅 Meses disponibles cargados:', this.availableMonths.length);
@@ -86,19 +88,23 @@ export class InvoiceExplorerComponent implements OnInit {
 
   async selectMonth(yearMonth: string): Promise<void> {
     if (this.selectedMonth === yearMonth) return;
-    
+
     this.selectedMonth = yearMonth;
     this.monthStatistics = null;
-    
+    this.v2Headers = [];
+    this.v2Items = [];
+    this.v2Header = null;
+    this.expandedInvoiceId = null;
+
     if (!yearMonth) return;
-    
+
     try {
       this.loading = true;
       this.error = null;
-      
-      const response = await this.http.get<{success: boolean, statistics: MonthStatistics}>
+
+      const response = await this.http.get<{ success: boolean, statistics: MonthStatistics }>
         (`${environment.apiUrl}/invoices/month/${yearMonth}/stats`).toPromise();
-      
+
       if (response?.success) {
         this.monthStatistics = response.statistics;
         console.log('📊 Estadísticas del mes cargadas:', this.monthStatistics);
@@ -129,12 +135,25 @@ export class InvoiceExplorerComponent implements OnInit {
   }
 
   viewV2Invoice(headerId: string): void {
+    // Si ya está expandido, colapsar
+    if (this.expandedInvoiceId === headerId) {
+      this.expandedInvoiceId = null;
+      this.v2Header = null;
+      this.v2Items = [];
+      return;
+    }
+
+    // Expandir nuevo
+    this.expandedInvoiceId = headerId;
     this.v2Header = null;
     this.v2Items = [];
+
     this.api.getV2InvoiceById(headerId).subscribe({
       next: (res) => {
-        this.v2Header = res?.header || null;
-        this.v2Items = res?.items || [];
+        if (this.expandedInvoiceId === headerId) { // Verificar que siga siendo el seleccionado
+          this.v2Header = res?.header || null;
+          this.v2Items = res?.items || [];
+        }
       },
       error: (err) => {
         console.error('Error obteniendo invoice v2:', err);
@@ -154,7 +173,7 @@ export class InvoiceExplorerComponent implements OnInit {
 
   formatDate(dateString: string): string {
     if (!dateString) return '-';
-    
+
     try {
       const date = new Date(dateString);
       return date.toLocaleDateString('es-PY', {
@@ -192,11 +211,11 @@ export class InvoiceExplorerComponent implements OnInit {
 
   formatMonthName(yearMonth: string): string {
     if (!yearMonth) return '';
-    
+
     try {
       const [year, month] = yearMonth.split('-');
       const date = new Date(parseInt(year), parseInt(month) - 1, 1);
-      
+
       return date.toLocaleDateString('es-PY', {
         year: 'numeric',
         month: 'long'
@@ -204,5 +223,26 @@ export class InvoiceExplorerComponent implements OnInit {
     } catch {
       return yearMonth;
     }
+  }
+
+  downloadInvoice(headerId: string, event: Event): void {
+    event.stopPropagation();
+    if (!headerId) return;
+
+    this.notificationService.info('Generando enlace de descarga...', 'Procesando');
+
+    this.api.downloadInvoice(headerId).subscribe({
+      next: (res) => {
+        if (res.success && res.download_url) {
+          window.open(res.download_url, '_blank');
+        } else {
+          this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
+        }
+      },
+      error: (err) => {
+        console.error("Error descarga:", err);
+        this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
+      }
+    });
   }
 }

@@ -88,6 +88,26 @@ spec:
       labels:
         app: cuenly-loki
     spec:
+      securityContext:
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+      # Asegurar permisos del PVC para el usuario loki (10001)
+      initContainers:
+      - name: loki-permissions-fix
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        command: ['sh','-c']
+        args:
+          - |
+            mkdir -p /loki/chunks /loki/rules /loki/boltdb-shipper-active /loki/boltdb-shipper-cache;
+            chown -R 10001:10001 /loki;
+            chmod -R g+rwX /loki;
+            echo "Loki PVC ownership set to 10001:10001"
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: storage
+          mountPath: /loki
       serviceAccountName: cuenly-monitoring
       containers:
       - name: loki
@@ -97,6 +117,9 @@ spec:
         ports:
         - containerPort: 3100
           name: http-metrics
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
         volumeMounts:
         - name: config
           mountPath: /etc/loki
@@ -104,11 +127,11 @@ spec:
           mountPath: /loki
         resources:
           limits:
-            cpu: 500m
-            memory: 1Gi
+            cpu: 200m       # CPU reducida según especificación
+            memory: 512Mi     # Memoria reducida
           requests:
-            cpu: 100m
-            memory: 256Mi
+            cpu: 50m        # CPU mínima reducida
+            memory: 128Mi     # Memoria mínima reducida
       volumes:
       - name: config
         configMap:
@@ -169,6 +192,26 @@ spec:
       labels:
         app: cuenly-prometheus
     spec:
+      securityContext:
+        fsGroup: 65534
+        fsGroupChangePolicy: OnRootMismatch
+      # Asegurar permisos del PVC para el usuario de Prometheus (65534)
+      initContainers:
+      - name: prometheus-permissions-fix
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        command: ['sh','-c']
+        args:
+          - |
+            mkdir -p /prometheus;
+            chmod -R 777 /prometheus || true;
+            chown -R 65534:65534 /prometheus || true;
+            echo "Prometheus PVC ownership set to 65534:65534"
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: storage
+          mountPath: /prometheus
       serviceAccountName: cuenly-monitoring
       containers:
       - name: prometheus
@@ -183,6 +226,9 @@ spec:
         ports:
         - containerPort: 9090
           name: web
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
         volumeMounts:
         - name: config
           mountPath: /etc/prometheus
@@ -192,11 +238,11 @@ spec:
           mountPath: /prometheus
         resources:
           limits:
-            cpu: 500m
-            memory: 2Gi
+            cpu: 400m       # CPU reducida según especificación
+            memory: 1Gi       # Memoria reducida
           requests:
-            cpu: 100m
-            memory: 512Mi
+            cpu: 100m       # CPU mínima según especificación
+            memory: 256Mi     # Memoria mínima reducida
       volumes:
       - name: config
         configMap:

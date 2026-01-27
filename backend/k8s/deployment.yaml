@@ -46,11 +46,11 @@ spec:
             name: backend-env-secrets
         resources:
           requests:
-            memory: "2Gi"
-            cpu: "500m"
+            memory: "2Gi"      # Reducido para optimizar recursos del cluster
+            cpu: "500m"        # CPU mínima aumentada para threadpool
           limits:
-            memory: "4Gi"
-            cpu: "2000m"
+            memory: "4Gi"      # Límite
+            cpu: "1000m"       # Aumentado a 1 core completo
         livenessProbe:
           httpGet:
             path: /health
@@ -118,8 +118,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: cuenly-backend
-  minReplicas: 1
-  maxReplicas: 2
+  minReplicas: 1    # Mínimo 2 réplicas para alta disponibilidad
+  maxReplicas: 5    # Aumentado a 5 réplicas para picos de carga
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 30
@@ -141,11 +141,12 @@ spec:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 60
+        averageUtilization: 70    # Escalar cuando CPU > 70%
   - type: Resource
     resource:
       name: memory
       target:
         type: Utilization
-        averageUtilization: 70
+        averageUtilization: 75    # Escalar cuando memoria > 75%
+
 

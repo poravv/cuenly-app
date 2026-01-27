@@ -5,15 +5,20 @@ groups:
   
   # === ALERTAS DE DISPONIBILIDAD ===
   - alert: CuenlyBackendDown
-    expr: up{job="cuenly-backend"} == 0
-    for: 1m
+    expr: |
+      (
+        sum by (app, kubernetes_namespace) (up{app="cuenly-backend", kubernetes_namespace="cuenly-backend"}) == 0
+      )
+      OR
+      absent(up{app="cuenly-backend", kubernetes_namespace="cuenly-backend"})
+    for: 2m
     labels:
       severity: critical
       service: cuenly-backend
       category: availability
     annotations:
       summary: "Cuenly Backend está caído"
-      description: "El backend de Cuenly no responde en {{ $labels.instance }}"
+      description: "El backend de Cuenly no responde (namespace={{ $labels.kubernetes_namespace }}, app={{ $labels.app }})"
       runbook_url: "https://docs.cuenly.com/runbooks/backend-down"
       
   - alert: CuenlyBackendHighErrorRate

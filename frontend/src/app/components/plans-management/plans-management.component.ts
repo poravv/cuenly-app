@@ -11,6 +11,7 @@ interface Plan {
   billing_period: string;
   features: {
     ai_invoices_limit: number;
+    max_email_accounts: number;
     email_processing: boolean;
     export_formats: string[];
     api_access: boolean;
@@ -55,15 +56,15 @@ interface User {
 export class PlansManagementComponent implements OnInit {
   activeTab: string = 'plans';
   loading: boolean = false;
-  
+
   // Plans data
   plans: Plan[] = [];
   loadingPlans: boolean = false;
-  
+
   // Subscription stats
   subscriptionStats: SubscriptionStats | null = null;
   loadingStats: boolean = false;
-  
+
   // Plan form
   showPlanForm: boolean = false;
   editingPlan: Plan | null = null;
@@ -76,6 +77,7 @@ export class PlansManagementComponent implements OnInit {
     billing_period: 'monthly',
     features: {
       ai_invoices_limit: 50,
+      max_email_accounts: 2,
       email_processing: true,
       export_formats: ['excel', 'csv'],
       api_access: false,
@@ -86,14 +88,14 @@ export class PlansManagementComponent implements OnInit {
     is_popular: false,
     sort_order: 0
   };
-  
+
   // User assignment
   showUserAssignment: boolean = false;
   users: User[] = [];
   loadingUsers: boolean = false;
   selectedUser: string = '';
   selectedPlan: string = '';
-  
+
   // Available features for form
   availableExportFormats = [
     { value: 'excel', label: 'Excel' },
@@ -101,13 +103,13 @@ export class PlansManagementComponent implements OnInit {
     { value: 'json', label: 'JSON' },
     { value: 'pdf', label: 'PDF' }
   ];
-  
+
   billingPeriods = [
     { value: 'monthly', label: 'Mensual' },
     { value: 'yearly', label: 'Anual' },
     { value: 'one_time', label: 'Pago único' }
   ];
-  
+
   currencies = [
     { value: 'USD', label: 'USD' },
     { value: 'EUR', label: 'EUR' },
@@ -117,7 +119,7 @@ export class PlansManagementComponent implements OnInit {
   constructor(
     private apiService: ApiService,
     private notificationService: NotificationService
-  ) {}
+  ) { }
 
   ngOnInit(): void {
     this.loadPlans();
@@ -193,6 +195,7 @@ export class PlansManagementComponent implements OnInit {
       billing_period: 'monthly',
       features: {
         ai_invoices_limit: 50,
+        max_email_accounts: 2,
         email_processing: true,
         export_formats: ['excel', 'csv'],
         api_access: false,
@@ -352,5 +355,20 @@ export class PlansManagementComponent implements OnInit {
 
   isExportFormatSelected(format: string): boolean {
     return this.planForm.features.export_formats.includes(format);
+  }
+
+  isUnlimited(field: 'ai_invoices_limit' | 'max_email_accounts'): boolean {
+    return this.planForm.features[field] === -1;
+  }
+
+  toggleUnlimited(field: 'ai_invoices_limit' | 'max_email_accounts', event: any): void {
+    const isChecked = event.target.checked;
+    if (isChecked) {
+      this.planForm.features[field] = -1;
+    } else {
+      // Restore default values if unchecked
+      if (field === 'ai_invoices_limit') this.planForm.features[field] = 50;
+      if (field === 'max_email_accounts') this.planForm.features[field] = 2;
+    }
   }
 }

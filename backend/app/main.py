@@ -6,6 +6,7 @@ import threading
 from typing import List, Dict, Any, Optional
 import argparse
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from app.config.settings import settings
 from app.models.models import InvoiceData, ProcessResult, EmailConfig, JobStatus
@@ -25,11 +26,23 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+def _now():
+    """Fecha/hora actual en la zona configurada."""
+    try:
+        tz = ZoneInfo(getattr(settings, "TIMEZONE", "UTC"))
+    except Exception:
+        tz = ZoneInfo("UTC")
+    return datetime.now(tz)
+
 class CuenlyApp:
     def __init__(self):
         """Inicializa el sistema de sincronización de facturas usando OpenAI."""
         # Crear directorios necesarios
-        os.makedirs(settings.TEMP_PDF_DIR, exist_ok=True)
+        try:
+            from app.modules.email_processor.storage import ensure_dirs
+            ensure_dirs()
+        except Exception:
+            os.makedirs(settings.TEMP_PDF_DIR, exist_ok=True)
         # Directorio de Excel eliminado del flujo
         
         # Inicializar componentes
@@ -80,7 +93,7 @@ class CuenlyApp:
         logger.info("🚀 Iniciando procesamiento de correos con watchdog de seguridad")
         
         # Registrar inicio del procesamiento
-        self._job_status.last_run = datetime.now().isoformat()
+        self._job_status.last_run = _now().isoformat()
         
         # Usar watchdog para evitar cuelgues indefinidos
         import queue
@@ -204,20 +217,29 @@ class CuenlyApp:
         """
         # Preferir estado real reportado por el scheduler si está disponible
         try:
+            try:
+                tz = ZoneInfo(getattr(settings, "TIMEZONE", "UTC"))
+            except Exception:
+                tz = ZoneInfo("UTC")
+
             if hasattr(self.email_processor, 'scheduled_job_status'):
                 sched = self.email_processor.scheduled_job_status()
                 if isinstance(sched, dict) and sched:
                     self._job_status.running = bool(sched.get('running', False))
                     # Convertir next_run y last_run a ISO
                     def _to_iso(v):
-                        from datetime import datetime
                         try:
                             if v is None:
                                 return None
                             if isinstance(v, (int, float)):
-                                return datetime.fromtimestamp(v).isoformat()
+                                return datetime.fromtimestamp(v, tz).isoformat()
                             # ya es iso o datetime string
-                            return str(v)
+                            dt = datetime.fromisoformat(str(v))
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=tz)
+                            else:
+                                dt = dt.astimezone(tz)
+                            return dt.isoformat()
                         except Exception:
                             return None
                     next_iso = _to_iso(sched.get('next_run'))
@@ -225,13 +247,22 @@ class CuenlyApp:
                     self._job_status.next_run = next_iso
                     self._job_status.last_run = last_iso
                     # También timestamps en epoch
-                    from datetime import datetime
                     try:
-                        self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp()) if next_iso else None
+                        if isinstance(sched.get('next_run'), (int, float)):
+                            self._job_status.next_run_ts = int(sched.get('next_run'))
+                        elif next_iso:
+                            self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp())
+                        else:
+                            self._job_status.next_run_ts = None
                     except Exception:
                         self._job_status.next_run_ts = None
                     try:
-                        self._job_status.last_run_ts = int(datetime.fromisoformat(last_iso).timestamp()) if last_iso else None
+                        if isinstance(sched.get('last_run'), (int, float)):
+                            self._job_status.last_run_ts = int(sched.get('last_run'))
+                        elif last_iso:
+                            self._job_status.last_run_ts = int(datetime.fromisoformat(last_iso).timestamp())
+                        else:
+                            self._job_status.last_run_ts = None
                     except Exception:
                         self._job_status.last_run_ts = None
                     self._job_status.interval_minutes = int(sched.get('interval_minutes', self._job_status.interval_minutes))
@@ -247,7 +278,6 @@ class CuenlyApp:
                     next_iso = self._calculate_next_run()
                     self._job_status.next_run = next_iso
                     try:
-                        from datetime import datetime
                         self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp()) if next_iso else None
                     except Exception:
                         self._job_status.next_run_ts = None
@@ -257,10 +287,33 @@ class CuenlyApp:
                 next_iso = self._calculate_next_run()
                 self._job_status.next_run = next_iso
                 try:
-                    from datetime import datetime
                     self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp()) if next_iso else None
                 except Exception:
                     self._job_status.next_run_ts = None
+
+        # Watchdog: si está running pero el siguiente run está muy vencido, marcar como detenido
+        try:
+            now_ts = int(_now().timestamp())
+            interval_sec = max(60, int(self._job_status.interval_minutes) * 60)
+            if self._job_status.running and self._job_status.next_run_ts:
+                drift = now_ts - self._job_status.next_run_ts
+                if drift > interval_sec * 2:
+                    logger.warning(
+                        "Job scheduler parece estancado (next_run vencido). "
+                        f"last_run_ts={self._job_status.last_run_ts}, next_run_ts={self._job_status.next_run_ts}, "
+                        f"now_ts={now_ts}, interval_sec={interval_sec}, drift={drift}"
+                    )
+                    # Forzar stop del scheduler interno para evitar estado zombie
+                    try:
+                        if hasattr(self.email_processor, 'stop_scheduled_job'):
+                            self.email_processor.stop_scheduled_job()
+                    except Exception:
+                        pass
+                    self._job_status.running = False
+                    self._job_status.next_run = None
+                    self._job_status.next_run_ts = None
+        except Exception:
+            pass
         
         return self._job_status
 
@@ -285,7 +338,7 @@ class CuenlyApp:
             str: Tiempo de la próxima ejecución en formato ISO.
         """
         # Estimación simple basada en el intervalo actualmente reportado por el job
-        now = datetime.now()
+        now = _now()
         next_run = now.replace(second=0, microsecond=0)
         
         # Añadir los minutos del intervalo (preferir el estado interno si existe)

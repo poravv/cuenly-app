@@ -18,15 +18,20 @@ spec:
       labels:
         app: alertmanager
     spec:
-      containers:
-      - name: alertmanager
-        image: prom/alertmanager:v0.26.0
+      # Init container para procesar el template con sed
+      initContainers:
+      - name: config-init
+        image: busybox:1.36
+        command: ['sh', '-c']
         args:
-        - '--config.file=/etc/alertmanager/config.yml'
-        - '--storage.path=/alertmanager'
-        - '--web.external-url=http://alertmanager:9093'
-        ports:
-        - containerPort: 9093
+        - |
+          cp /tmp/config-template/config.yml /tmp/config-processed/config.yml
+          sed -i "s|\${ALERTMANAGER_SMTP_HOST}|$ALERTMANAGER_SMTP_HOST|g" /tmp/config-processed/config.yml
+          sed -i "s|\${ALERTMANAGER_SMTP_PORT}|$ALERTMANAGER_SMTP_PORT|g" /tmp/config-processed/config.yml
+          sed -i "s|\${ALERTMANAGER_SMTP_USER}|$ALERTMANAGER_SMTP_USER|g" /tmp/config-processed/config.yml
+          sed -i "s|\${ALERTMANAGER_SMTP_PASSWORD}|$ALERTMANAGER_SMTP_PASSWORD|g" /tmp/config-processed/config.yml
+          sed -i "s|\${ALERTMANAGER_EMAIL_TO}|$ALERTMANAGER_EMAIL_TO|g" /tmp/config-processed/config.yml
+          echo "✅ Configuración procesada correctamente"; cat /tmp/config-processed/config.yml
         env:
         - name: ALERTMANAGER_SMTP_HOST
           valueFrom:
@@ -54,14 +59,43 @@ spec:
               name: alertmanager-secrets
               key: ALERTMANAGER_EMAIL_TO
         volumeMounts:
-        - name: config-volume
+        - name: config-template
+          mountPath: /tmp/config-template
+        - name: config-processed
+          mountPath: /tmp/config-processed
+
+      containers:
+      - name: alertmanager
+        image: prom/alertmanager:v0.26.0
+        args:
+        - '--config.file=/etc/alertmanager/config.yml'
+        - '--storage.path=/alertmanager'
+        - '--web.external-url=http://alertmanager:9093'
+        ports:
+        - containerPort: 9093
+        volumeMounts:
+        - name: config-processed
           mountPath: /etc/alertmanager
         - name: storage-volume
           mountPath: /alertmanager
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9093
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9093
+          initialDelaySeconds: 5
+          periodSeconds: 5
       volumes:
-      - name: config-volume
+      - name: config-template
         configMap:
           name: alertmanager-config
+      - name: config-processed
+        emptyDir: {}
       - name: storage-volume
         emptyDir: {}
 
@@ -80,13 +114,97 @@ spec:
   type: ClusterIP
 
 ---
-# ConfigMap que monta la configuración desde el archivo config/alertmanager.yml
-# que ya usa variables de entorno para los secrets
+# ConfigMap con la configuración de AlertManager usando variables
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: alertmanager-config
   namespace: cuenly-backend
 data:
-  # Este contenido se actualizará desde el workflow usando el archivo config/alertmanager.yml
-  config.yml: "# Placeholder - Se actualiza automáticamente desde el workflow"
+  config.yml: |
+    global:
+      smtp_smarthost: '${ALERTMANAGER_SMTP_HOST}:${ALERTMANAGER_SMTP_PORT}'
+      smtp_from: '${ALERTMANAGER_SMTP_USER}'
+      smtp_auth_username: '${ALERTMANAGER_SMTP_USER}'
+      smtp_auth_password: '${ALERTMANAGER_SMTP_PASSWORD}'
+      smtp_require_tls: true
+
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
+
+    route:
+      group_by: ['alertname', 'severity']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'cuenly-team'
+      
+      routes:
+      - match:
+          severity: critical
+        receiver: 'critical-alerts'
+        group_wait: 5s
+        repeat_interval: 30m
+        
+      - match:
+          severity: warning
+        receiver: 'warning-alerts'
+        repeat_interval: 2h
+        
+      - match:
+          category: business
+        receiver: 'business-alerts'
+        repeat_interval: 4h
+
+    receivers:
+    - name: 'cuenly-team'
+      email_configs:
+      - to: '${ALERTMANAGER_EMAIL_TO}'
+        subject: '[Cuenly] Alerta: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alerta: {{ .Annotations.summary }}
+          Descripción: {{ .Annotations.description }}
+          Severidad: {{ .Labels.severity }}
+          Servicio: {{ .Labels.service }}
+          Tiempo: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+
+    - name: 'critical-alerts'
+      email_configs:
+      - to: '${ALERTMANAGER_EMAIL_TO}'
+        subject: '🚨 [CRÍTICO] {{ .GroupLabels.alertname }}'
+        body: |
+          ⚠️ ALERTA CRÍTICA EN CUENLY ⚠️
+          
+          {{ range .Alerts }}
+          Problema: {{ .Annotations.summary }}
+          Detalles: {{ .Annotations.description }}
+          Servicio: {{ .Labels.service }}
+          Hora: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          
+          🔗 Runbook: {{ .Annotations.runbook_url }}
+          {{ end }}
+
+    - name: 'warning-alerts'
+      email_configs:
+      - to: '${ALERTMANAGER_EMAIL_TO}'
+        subject: '⚠️ [WARNING] {{ .GroupLabels.alertname }}'
+
+    - name: 'business-alerts'
+      email_configs:
+      - to: '${ALERTMANAGER_EMAIL_TO}'
+        subject: '📊 [BUSINESS] {{ .GroupLabels.alertname }}'
+
+    inhibit_rules:
+    - source_match:
+        severity: 'critical'
+      target_match:
+        severity: 'warning'
+      equal: ['service', 'instance']
+      
+    - source_match:
+        alertname: 'CuenlyBackendDown'
+      target_match_re:
+        alertname: 'Cuenly.*'
+      equal: ['service']

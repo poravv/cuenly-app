@@ -1,25 +1,32 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { UserService } from '../../services/user.service';
-import { ProcessResult, TaskSubmitResponse, TaskStatusResponse } from '../../models/invoice.model';
-import { Subscription, interval } from 'rxjs';
+import { TaskSubmitResponse, TaskStatusResponse } from '../../models/invoice.model';
+import { Subscription, interval, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { NotificationService } from '../../services/notification.service';
+
+interface UploadFileItem {
+  file: File;
+  status: 'pending' | 'uploading' | 'success' | 'error';
+  message?: string;
+  jobId?: string;
+  progress?: number;
+  result?: any;
+}
 
 @Component({
   selector: 'app-upload-xml',
   templateUrl: './upload-xml.component.html',
   styleUrls: ['./upload-xml.component.scss']
 })
-export class UploadXmlComponent implements OnInit {
+export class UploadXmlComponent implements OnInit, OnDestroy {
   uploadForm: FormGroup;
-  selectedFile: File | null = null;
-  fileName: string = '';
+  files: UploadFileItem[] = [];
   loading = false;
-  result: ProcessResult | null = null;
-  error: string | null = null;
-  jobId: string | null = null;
+  destroy$ = new Subject<void>();
   pollingSub: Subscription | null = null;
 
   constructor(
@@ -35,84 +42,137 @@ export class UploadXmlComponent implements OnInit {
     });
   }
 
-  ngOnInit(): void {}
+  ngOnInit(): void { }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    if (this.pollingSub) {
+      this.pollingSub.unsubscribe();
+    }
+  }
 
   onFileSelected(event: Event): void {
     const element = event.target as HTMLInputElement;
     const fileList: FileList | null = element.files;
 
     if (fileList && fileList.length > 0) {
-      const file = fileList[0];
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
 
-      const isXml = file.name.toLowerCase().endsWith('.xml') || file.type === 'text/xml' || file.type === 'application/xml';
-      if (!isXml) {
-        this.error = 'Solo se permiten archivos XML';
-        this.selectedFile = null;
-        this.fileName = '';
-        return;
+        const isXml = file.name.toLowerCase().endsWith('.xml') || file.type === 'text/xml' || file.type === 'application/xml';
+        if (!isXml) {
+          this.notificationService.warning(`El archivo ${file.name} no es un XML y fue ignorado.`);
+          continue;
+        }
+
+        // Evitar duplicados por nombre
+        if (!this.files.some(f => f.file.name === file.name)) {
+          this.files.push({
+            file: file,
+            status: 'pending'
+          });
+        }
       }
-
-      this.selectedFile = file;
-      this.fileName = file.name;
-      this.error = null;
+      element.value = '';
     }
   }
 
+  removeFile(index: number): void {
+    if (this.files[index].status === 'uploading') {
+      return;
+    }
+    this.files.splice(index, 1);
+  }
+
   onSubmit(): void {
-    if (!this.selectedFile) {
-      this.error = 'Debe seleccionar un archivo XML';
+    if (this.files.length === 0) {
+      this.notificationService.warning('Debe seleccionar al menos un archivo XML');
+      return;
+    }
+
+    const pendingFiles = this.files.filter(f => f.status === 'pending' || f.status === 'error');
+    if (pendingFiles.length === 0) {
+      this.notificationService.info('No hay archivos pendientes para procesar');
       return;
     }
 
     this.loading = true;
-    this.error = null;
-    this.result = null;
-
     const formData = this.uploadForm.value;
 
-    this.apiService.enqueueUploadXml(this.selectedFile, formData).subscribe({
-      next: (res: TaskSubmitResponse) => {
-        this.jobId = res.job_id;
-        this.pollingSub = interval(2000).subscribe(() => this.pollJob());
-      },
-      error: (err) => {
-        // Mensaje claro para usuario suspendido
-        if (err?.status === 403) {
-          this.error = 'No se pudo encolar el archivo XML: tu cuenta está suspendida. Contacta al administrador.';
-          this.notificationService.error('Tu cuenta está suspendida. Contacta al administrador.', 'Cuenta suspendida');
-        } else if (err?.status === 402) {
-          // Aunque XML no consume IA, por coherencia mostramos el detalle del backend si llega 402
-          const detail = err.error?.detail || err.error?.message || err.message || 'Pago requerido o límite alcanzado';
-          this.error = 'No se pudo encolar el archivo XML: ' + detail;
-          this.notificationService.warning(detail, 'Límite alcanzado');
-        } else {
-          const detail = err.error?.detail || err.error?.message || err.message || 'Error desconocido';
-          this.error = 'Error al encolar el archivo XML: ' + detail;
-          this.notificationService.error('No se pudo encolar el archivo XML', 'Error');
+    pendingFiles.forEach(item => {
+      item.status = 'uploading';
+      item.message = 'Iniciando subida...';
+
+      this.apiService.enqueueUploadXml(item.file, formData).subscribe({
+        next: (res: TaskSubmitResponse) => {
+          item.jobId = res.job_id;
+          item.message = 'Procesando...';
+          this.startPolling();
+        },
+        error: (err) => {
+          item.status = 'error';
+          if (err?.status === 403) {
+            item.message = 'Cuenta suspendida';
+          } else if (err?.status === 402) {
+            item.message = 'Pago requerido o límite alcanzado';
+          } else {
+            item.message = err.error?.detail || err.message || 'Error al encolar';
+          }
+          this.checkAllFinished();
         }
-        this.loading = false;
-        console.error(err);
-      }
+      });
     });
   }
 
-  private pollJob(): void {
-    if (!this.jobId) return;
-    this.apiService.getTaskStatus(this.jobId).subscribe({
-      next: (st: TaskStatusResponse) => {
-        if (st.status === 'done' || st.status === 'error') {
-          if (this.pollingSub) { this.pollingSub.unsubscribe(); this.pollingSub = null; }
-          this.result = st.result || null;
-          this.loading = false;
-          
-          // Actualizar perfil después del procesamiento (aunque XML no consume límite de IA)
-          if (st.status === 'done' && st.result?.success) {
-            this.userService.updateProfileAfterProcessing();
+  startPolling(): void {
+    if (this.pollingSub && !this.pollingSub.closed) return;
+
+    this.pollingSub = interval(2000)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        const activeJobs = this.files.filter(f => f.status === 'uploading' && f.jobId);
+
+        if (activeJobs.length === 0) {
+          if (this.pollingSub) {
+            this.pollingSub.unsubscribe();
+            this.pollingSub = null;
           }
+          this.checkAllFinished();
+          return;
         }
-      },
-      error: (err) => console.error(err)
-    });
+
+        activeJobs.forEach(item => {
+          if (item.jobId) {
+            this.apiService.getTaskStatus(item.jobId).subscribe({
+              next: (st: TaskStatusResponse) => {
+                if (st.status === 'done') {
+                  item.status = st.result?.success ? 'success' : 'error';
+                  item.message = st.result?.success ? 'Procesado exitosamente' : (st.result?.message || 'Error en procesamiento');
+                  item.result = st.result;
+
+                  if (st.result?.success) {
+                    this.userService.updateProfileAfterProcessing();
+                  }
+                } else if (st.status === 'error') {
+                  item.status = 'error';
+                  item.message = st.message || 'Error en la tarea';
+                }
+              },
+              error: (err) => {
+                console.error('Error polling job', err);
+              }
+            });
+          }
+        });
+      });
+  }
+
+  checkAllFinished(): void {
+    const uploading = this.files.some(f => f.status === 'uploading');
+    if (!uploading) {
+      this.loading = false;
+    }
   }
 
   goToDashboard(): void {
@@ -121,11 +181,11 @@ export class UploadXmlComponent implements OnInit {
 
   resetForm(): void {
     this.uploadForm.reset();
-    this.selectedFile = null;
-    this.fileName = '';
-    this.error = null;
-    this.result = null;
-    this.jobId = null;
-    if (this.pollingSub) { this.pollingSub.unsubscribe(); this.pollingSub = null; }
+    this.files = [];
+    this.loading = false;
+    if (this.pollingSub) {
+      this.pollingSub.unsubscribe();
+      this.pollingSub = null;
+    }
   }
 }

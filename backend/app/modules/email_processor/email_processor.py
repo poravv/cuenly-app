@@ -8,6 +8,7 @@ import pickle
 import email.utils
 from typing import List, Tuple, Dict, Any, Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.config.settings import settings
 from app.models.models import EmailConfig, MultiEmailConfig, InvoiceData, ProcessResult
@@ -27,6 +28,7 @@ from .config_store import get_enabled_configs
 
 
 from .dedup import deduplicate_invoices
+from .processed_registry import build_key as build_processed_key, was_processed, mark_processed
 
 # NUEVO runner thread-safe (sincroniza con tu API /job/start)
 from app.modules.scheduler.job_runner import ScheduledJobRunner
@@ -90,6 +92,30 @@ class MultiEmailProcessor:
                 invoice_count=0,
                 invoices=[]
             )
+        
+        # ✅ FILTRAR USUARIOS QUE ALCANZARON LÍMITE DE IA
+        from app.repositories.user_repository import UserRepository
+        user_repo = UserRepository()
+        filtered_configs = []
+        
+        for cfg in self.email_configs:
+            if cfg.owner_email:
+                ai_check = user_repo.can_use_ai(cfg.owner_email)
+                if not ai_check['can_use']:
+                    logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} (owner: {cfg.owner_email}) - {ai_check['message']}")
+                    errors.append(f"Cuenta {cfg.username}: {ai_check['message']}")
+                    continue
+            filtered_configs.append(cfg)
+        
+        if not filtered_configs:
+            return ProcessResult(
+                success=False,
+                message="No hay cuentas con acceso a IA disponible. Todos los usuarios han alcanzado su límite.",
+                invoice_count=0,
+                invoices=[]
+            )
+        
+        self.email_configs = filtered_configs
 
         for idx, cfg in enumerate(self.email_configs):
             if total_processed >= limit:
@@ -172,73 +198,78 @@ class MultiEmailProcessor:
         except Exception as e:
             logger.warning(f"No se pudo refrescar configuraciones desde MongoDB: {e}")
         
+        # ✅ FILTRAR USUARIOS QUE ALCANZARON LÍMITE DE IA
+        from app.repositories.user_repository import UserRepository
+        user_repo = UserRepository()
+        filtered_configs = []
+        skipped_ai_limit = 0
+        
+        for cfg in self.email_configs:
+            if cfg.owner_email:
+                ai_check = user_repo.can_use_ai(cfg.owner_email)
+                if not ai_check['can_use']:
+                    logger.warning(f"⏭️ Omitiendo cuenta {cfg.username} (owner: {cfg.owner_email}) - {ai_check['message']}")
+                    skipped_ai_limit += 1
+                    continue
+            filtered_configs.append(cfg)
+        
+        self.email_configs = filtered_configs
+        
         all_invoices: List[InvoiceData] = []
         success_count = 0
         errors: List[str] = []
         
-        logger.info(f"Iniciando procesamiento de {len(self.email_configs)} cuentas de correo (filtradas por trial válido)")
+        logger.info(f"Iniciando procesamiento de {len(self.email_configs)} cuentas de correo (filtradas por trial válido y límite IA)")
+        if skipped_ai_limit > 0:
+            logger.info(f"⏭️ {skipped_ai_limit} cuentas omitidas por límite de IA alcanzado")
 
         if not self.email_configs:
             return ProcessResult(
                 success=False,
-                message="No hay cuentas de correo configuradas con acceso válido. Usuarios con trial expirado han sido omitidos.",
+                message="No hay cuentas de correo configuradas con acceso válido. Usuarios con trial expirado o límite de IA alcanzado han sido omitidos.",
                 invoice_count=0,
                 invoices=[]
             )
 
-        for idx, cfg in enumerate(self.email_configs):
-            logger.info(f"Procesando cuenta {idx + 1}/{len(self.email_configs)}: {cfg.username}")
+        # ✅ PROCESAMIENTO PARALELO OPTIMIZADO
+        use_parallel = getattr(settings, 'ENABLE_PARALLEL_PROCESSING', True)
+        max_workers = getattr(settings, 'MAX_CONCURRENT_ACCOUNTS', 10)
+        
+        if use_parallel and len(self.email_configs) > 1:
+            logger.info(f"🚀 Procesamiento paralelo habilitado: {max_workers} cuentas simultáneas")
             
-            # Pausa entre cuentas para reducir carga del sistema (multiusuario)
-            if idx > 0:
-                time.sleep(2)  # 2 segundos entre cuentas
-                logger.info(f"⏳ Pausa de 2s antes de procesar cuenta {cfg.username}")
-            
-            try:
-                # Usar threading con timeout para evitar bloqueos indefinidos
-                import threading
-                import queue
-                import signal
-                
-                result_queue = queue.Queue()
-                
-                def process_account():
-                    try:
-                        single = EmailProcessor(EmailConfig(
-                            host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                            search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
-                        ), owner_email=cfg.owner_email)  # Pasar owner_email
-                        r = single.process_emails()
-                        # Serializar con pickle para preservar objetos complejos
-                        result_queue.put(pickle.dumps(('success', r)))
-                    except Exception as e:
-                        result_queue.put(pickle.dumps(('error', str(e))))
-                
-                # Ejecutar en thread separado con timeout más largo
-                thread = threading.Thread(target=process_account, daemon=True)
-                thread.start()
-                
-                # Timeout de 300 segundos (5 minutos) por cuenta para permitir procesamiento suave
-                thread.join(timeout=300)
-                
-                if thread.is_alive():
-                    # Thread aún ejecutándose - timeout
-                    errors.append(f"Timeout en {cfg.username}: procesamiento tomó más de 300 segundos")
-                    logger.error(f"❌ Timeout al procesar cuenta {cfg.username}: procesamiento tomó más de 300 segundos")
-                    # Forzar terminación del thread (no es ideal pero evita cuelgues)
-                    continue
-                
-                # Obtener resultado
+            def process_single_account(cfg: MultiEmailConfig) -> Tuple[bool, ProcessResult, str]:
+                """Procesa una cuenta individual y retorna resultado"""
                 try:
-                    pickled_result = result_queue.get_nowait()
-                    result_type, result_data = pickle.loads(pickled_result)
-                    if result_type == 'success':
-                        r = result_data
-                        if r.success:
+                    single = EmailProcessor(EmailConfig(
+                        host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
+                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                    ), owner_email=cfg.owner_email)
+                    result = single.process_emails()
+                    return (True, result, cfg.username)
+                except Exception as e:
+                    error_msg = f"Error procesando {cfg.username}: {str(e)}"
+                    logger.error(f"❌ {error_msg}")
+                    return (False, ProcessResult(success=False, message=str(e), invoice_count=0, invoices=[]), cfg.username)
+            
+            # Ejecutar en paralelo con ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="EmailProc") as executor:
+                # Enviar todas las tareas
+                future_to_config = {executor.submit(process_single_account, cfg): cfg for cfg in self.email_configs}
+                
+                # Procesar resultados a medida que completan
+                for idx, future in enumerate(as_completed(future_to_config), 1):
+                    cfg = future_to_config[future]
+                    try:
+                        is_success, result, username = future.result(timeout=300)  # 5 min timeout por cuenta
+                        
+                        logger.info(f"✅ Completada cuenta {idx}/{len(self.email_configs)}: {username}")
+                        
+                        if is_success and result.success:
                             success_count += 1
-                            # Validar que las facturas sean objetos correctos
+                            # Validar facturas
                             valid_invoices = []
-                            for invoice in r.invoices:
+                            for invoice in result.invoices:
                                 if isinstance(invoice, str):
                                     logger.error(f"❌ Factura inválida (string): {invoice[:100]}...")
                                     continue
@@ -249,20 +280,47 @@ class MultiEmailProcessor:
                                     continue
                             
                             all_invoices.extend(valid_invoices)
-                            logger.info(f"Cuenta {cfg.username}: {len(valid_invoices)} facturas válidas procesadas")
+                            logger.info(f"✅ Cuenta {username}: {len(valid_invoices)} facturas válidas procesadas")
                         else:
-                            errors.append(f"Error en {cfg.username}: {r.message}")
-                            logger.error(f"Error en cuenta {cfg.username}: {r.message}")
-                    else:
-                        errors.append(f"Error en {cfg.username}: {result_data}")
-                        logger.error(f"Error al procesar cuenta {cfg.username}: {result_data}")
-                except queue.Empty:
-                    errors.append(f"Error en {cfg.username}: no se pudo obtener resultado")
-                    logger.error(f"Error al procesar cuenta {cfg.username}: no se pudo obtener resultado")
+                            errors.append(f"Error en {username}: {result.message}")
+                            logger.error(f"❌ Error en cuenta {username}: {result.message}")
+                            
+                    except TimeoutError:
+                        errors.append(f"Timeout en {cfg.username}: procesamiento tomó más de 300 segundos")
+                        logger.error(f"❌ Timeout al procesar cuenta {cfg.username}")
+                    except Exception as e:
+                        errors.append(f"Error en {cfg.username}: {str(e)}")
+                        logger.error(f"❌ Error al procesar cuenta {cfg.username}: {str(e)}")
+        else:
+            # Procesamiento secuencial (fallback o configuración deshabilitada)
+            logger.info(f"📋 Procesamiento secuencial: {len(self.email_configs)} cuentas")
+            
+            for idx, cfg in enumerate(self.email_configs):
+                logger.info(f"Procesando cuenta {idx + 1}/{len(self.email_configs)}: {cfg.username}")
+                
+                if idx > 0:
+                    time.sleep(2)  # Pausa entre cuentas
+                
+                try:
+                    single = EmailProcessor(EmailConfig(
+                        host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
+                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                    ), owner_email=cfg.owner_email)
                     
-            except Exception as e:
-                errors.append(f"Error en {cfg.username}: {str(e)}")
-                logger.error(f"Error al procesar cuenta {cfg.username}: {str(e)}")
+                    r = single.process_emails()
+                    
+                    if r.success:
+                        success_count += 1
+                        valid_invoices = [inv for inv in r.invoices if hasattr(inv, '__dict__')]
+                        all_invoices.extend(valid_invoices)
+                        logger.info(f"✅ Cuenta {cfg.username}: {len(valid_invoices)} facturas")
+                    else:
+                        errors.append(f"Error en {cfg.username}: {r.message}")
+                        logger.error(f"❌ {cfg.username}: {r.message}")
+                        
+                except Exception as e:
+                    errors.append(f"Error en {cfg.username}: {str(e)}")
+                    logger.error(f"❌ Error en {cfg.username}: {str(e)}")
 
         if all_invoices:
             unique = self._remove_duplicate_invoices(all_invoices)
@@ -334,6 +392,14 @@ class MultiEmailProcessor:
         """
         Snapshot simple del runner moderno (opcional para /job/status).
         """
+        # Si el hilo murió inesperadamente, reflejarlo como detenido
+        if self._scheduler and not self._scheduler.is_alive():
+            logger.warning("Scheduler thread no está vivo; marcando como detenido.")
+            try:
+                self._scheduler.stop()
+            except Exception:
+                pass
+
         if not self._scheduler or not self._scheduler.is_running:
             return {
                 "running": False,
@@ -446,6 +512,24 @@ class EmailProcessor:
             logger.warning(f"⚠️ No se pudo marcar correo {email_uid} como leído: {e}")
             return False
 
+    def _email_key(self, email_id: str) -> str:
+        return build_processed_key(email_id, getattr(self.config, "username", ""), self.owner_email)
+
+    def _mark_email_processed(self, email_id: str, status: str = "success") -> None:
+        try:
+            # Pass explicit arguments to the new Mongo repository method
+            # status can be: success, skipped_ai_limit, error, xml, pdf
+            # reason is inferred from status usually, or passed if we change signature
+            from app.modules.email_processor.processed_registry import _repo
+            _repo.mark_processed(
+                key=self._email_key(email_id),
+                status=status,
+                owner_email=self.owner_email,
+                account_email=self.config.username
+            )
+        except Exception as e:
+            logger.debug(f"Registro de correo procesado falló ({email_id}): {e}")
+
     def _get_imap_connection(self):
         """Obtiene la conexión IMAP actual."""
         if self.current_connection:
@@ -453,11 +537,11 @@ class EmailProcessor:
         return None
 
     # --------- Search logic ---------
-    def search_emails(self) -> List[str]:
+    def search_emails(self, ignore_date_filter: bool = False) -> List[str]:
         """
         Usa IMAPClient.search(subject_terms) que devuelve UIDs (str).
         NOTA: los términos en .env deben venir SIN acentos (como acordamos).
-        Filtra correos por fecha de registro del usuario.
+        Filtra correos por fecha de registro del usuario, a menos que ignore_date_filter=True.
         """
         if not self.client.conn:
             if not self.connect():
@@ -474,7 +558,7 @@ class EmailProcessor:
         
         # Verificar si debe aplicar filtro de fecha (configurable)
         from app.config.settings import settings
-        if not settings.EMAIL_PROCESS_ALL_DATES and self.owner_email:
+        if not ignore_date_filter and not settings.EMAIL_PROCESS_ALL_DATES and self.owner_email:
             try:
                 from app.repositories.user_repository import UserRepository
                 user_repo = UserRepository()
@@ -548,7 +632,7 @@ class EmailProcessor:
         return meta, attachments
 
     # --------- Core processing ---------
-    def process_emails(self) -> ProcessResult:
+    def process_emails(self, ignore_date_filter: bool = False) -> ProcessResult:
         """
         Procesamiento optimizado por lotes para evitar problemas de memoria.
         Procesa correos en lotes pequeños, almacenando y liberando memoria inmediatamente.
@@ -561,7 +645,7 @@ class EmailProcessor:
             if not self.connect():
                 return ProcessResult(success=False, message="Error al conectar al servidor de correo")
 
-            email_ids = self.search_emails()
+            email_ids = self.search_emails(ignore_date_filter=ignore_date_filter)
             if not email_ids:
                 self.disconnect()
                 return ProcessResult(success=True, message="No se encontraron correos con facturas", invoice_count=0)
@@ -600,12 +684,12 @@ class EmailProcessor:
                 for i, eid in enumerate(batch_ids):
                     if abort_run:
                         break
-                        
+                    invoice = None
                     try:
                         processed_emails += 1
                         logger.debug(f"🔍 Procesando correo {i+1}/{len(batch_ids)} del lote {batch_num}")
                         
-                        # Procesar un correo
+                        # Procesar un correo (ya incluye validación de límite IA)
                         invoice = self._process_single_email(eid)
                         
                         if invoice:
@@ -614,25 +698,25 @@ class EmailProcessor:
                             batch_invoices.append(invoice)
                             result.invoice_count += 1
                             logger.debug(f"✅ Factura procesada: {invoice.numero_factura}")
-                        
-                        # Marcar como leído inmediatamente después de procesar
+                    except OpenAIFatalError as e:
+                        logger.error(f"❌ Error FATAL de OpenAI en correo {eid}: {e}. Se omite y se continúa con el siguiente.")
+                    except OpenAIRetryableError as e:
+                        logger.warning(f"⚠️ Error transitorio de OpenAI en correo {eid}: {e}. Se omitirá este correo en esta corrida.")
+                    except Exception as e:
+                        logger.error(f"❌ Error procesando correo {eid}: {e}")
+                    finally:
+                        # Marcar como leído inmediatamente después de procesar (o fallar) para evitar reprocesos infinitos
                         try:
                             self.mark_as_read(eid)
                             logger.debug(f"📧 Correo {eid} marcado como leído")
                         except Exception as mark_err:
                             logger.warning(f"⚠️ No se pudo marcar correo {eid} como leído: {mark_err}")
-                        
+
                         # Pausa suave entre correos para procesamiento multiusuario
-                        if i < len(batch_ids) - 1:  # No pausar después del último correo del lote
+                        if i < len(batch_ids) - 1 and not abort_run:  # No pausar después del último correo del lote
                             time.sleep(email_delay)
-                        
-                        # Liberar memoria del invoice procesado
-                        if 'invoice' in locals():
-                            del invoice
-                        
-                    except Exception as e:
-                        logger.error(f"❌ Error procesando correo {eid}: {e}")
-                        continue
+
+                        invoice = None
                 
                 # Agregar facturas del lote al resultado
                 result.invoices.extend(batch_invoices)
@@ -658,9 +742,35 @@ class EmailProcessor:
         Procesa un solo correo y retorna la factura extraída.
         Versión optimizada para uso en lotes.
         """
+        key = self._email_key(email_id)
+
+        if was_processed(key):
+            logger.info(f"⏭️ Correo {email_id} ya estaba procesado; se omite para evitar duplicados.")
+            return None
+
         try:
+            # ✅ VALIDAR LÍMITE DE IA ANTES DE PROCESAR
+            if self.owner_email:
+                from app.repositories.user_repository import UserRepository
+                user_repo = UserRepository()
+                ai_check = user_repo.can_use_ai(self.owner_email)
+                
+                if not ai_check['can_use']:
+                    logger.warning(f"⚠️ Límite de IA alcanzado para {self.owner_email}: {ai_check['message']}")
+                    logger.info(f"⏭️ Omitiendo correo {email_id} - usuario sin acceso a IA (se guardará como skipped_ai_limit)")
+                    # Marcar como leído para no reprocesarlo inmediatamente
+                    try:
+                        self.mark_as_read(email_id)
+                    except:
+                        pass
+                    # IMPORTANTE: Marcar como 'skipped_ai_limit' para que was_processed() devuelva False (permitiendo reintento)
+                    # pero quede constancia en BD.
+                    self._mark_email_processed(email_id, "skipped_ai_limit")
+                    return None
+            
             metadata, attachments = self.get_email_content(email_id)
             if not metadata:
+                self._mark_email_processed(email_id, "missing_metadata")
                 return None
 
             email_meta_for_ai = {
@@ -681,49 +791,91 @@ class EmailProcessor:
                 is_xml = fname.endswith(".xml") or ctype in (
                     "text/xml", "application/xml", "application/x-iso20022+xml", "application/x-invoice+xml"
                 )
+                
+                # Usar owner_email y date para MinIO structure
                 if is_xml:
-                    xml_path = save_binary(content, fname)
+                    xml_storage = save_binary(
+                        content, fname, 
+                        owner_email=self.owner_email, 
+                        date_obj=metadata.get("date")
+                    )
+                    xml_path = xml_storage.local_path
+                    # Guardamos referencia para asignar después
+                    xml_minio_key = xml_storage.minio_key
+                    
                 elif is_pdf:
-                    pdf_path = save_binary(content, fname, force_pdf=True)
+                    pdf_storage = save_binary(
+                        content, fname, force_pdf=True,
+                        owner_email=self.owner_email,
+                        date_obj=metadata.get("date")
+                    )
+                    pdf_path = pdf_storage.local_path
+                    pdf_minio_key = pdf_storage.minio_key
             
             # Procesar con prioridad: XML > PDF > Enlaces
-            try:
-                # XML primero
-                if xml_path:
-                    inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
-                    if inv:
-                        return inv
+            # XML primero
+            if xml_path:
+                inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
+                if inv:
+                    if 'xml_minio_key' in locals() and xml_minio_key:
+                        inv.minio_key = xml_minio_key
+                    self._mark_email_processed(email_id, "xml")
+                    return inv
 
-                # PDF si no hay XML o falló
-                if pdf_path:
-                    inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
-                    if inv:
-                        return inv
+            # PDF si no hay XML o falló
+            if pdf_path:
+                inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
+                if inv:
+                    if 'pdf_minio_key' in locals() and pdf_minio_key:
+                         inv.minio_key = pdf_minio_key
+                    self._mark_email_processed(email_id, "pdf")
+                    return inv
 
-                # Enlaces como último recurso
-                if metadata.get("links"):
-                    for link in metadata["links"]:
-                        try:
-                            downloaded_path = download_pdf_from_url(link)
-                            if downloaded_path:
-                                if downloaded_path.lower().endswith(".xml"):
-                                    inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
-                                elif downloaded_path.lower().endswith(".pdf"):
-                                    inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
-                                else:
-                                    continue
-                                if inv:
-                                    return inv
-                        except Exception:
+            # Enlaces como último recurso
+            if metadata.get("links"):
+                for link in metadata["links"]:
+                    try:
+                        # download_pdf_from_url ahora retorna StoragePath (porque save_binary lo hace)
+                        storage_result = download_pdf_from_url(link)
+                        
+                        # Manejar si devuelve objeto o string vacío (fallo)
+                        if not storage_result or not hasattr(storage_result, "local_path"):
+                             continue
+                             
+                        downloaded_path = storage_result.local_path
+                        if not downloaded_path:
+                             continue
+
+                        if downloaded_path.lower().endswith(".xml"):
+                            inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                        elif downloaded_path.lower().endswith(".pdf"):
+                            inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                        else:
                             continue
+                            
+                        if inv:
+                            if storage_result.minio_key:
+                                inv.minio_key = storage_result.minio_key
+                            self._mark_email_processed(email_id, "link")
+                            return inv
+                    except Exception as e:
+                        logger.error(f"Error procesando enlace {link}: {e}")
+                        continue
 
-            except Exception as e:
-                logger.warning(f"⚠️ Error procesando archivos del correo {email_id}: {e}")
-
+            # Si llegamos aquí, no se pudo extraer la factura
+            self._mark_email_processed(email_id, "no_invoice")
             return None
-            
+
+        except OpenAIFatalError as e:
+            self._mark_email_processed(email_id, "openai_fatal")
+            logger.error(f"❌ Error fatal al procesar correo {email_id}: {e}")
+            raise
+        except OpenAIRetryableError as e:
+            logger.warning(f"⚠️ Error transitorio al procesar correo {email_id}: {e}")
+            raise
         except Exception as e:
             logger.error(f"❌ Error en _process_single_email para {email_id}: {e}")
+            self._mark_email_processed(email_id, "error")
             return None
 
     def _store_invoice_v2(self, invoice):
@@ -752,166 +904,7 @@ class EmailProcessor:
             logger.error(f"❌ Error almacenando factura v2: {e}")
             # No re-lanzar la excepción para no detener el procesamiento del lote
     
-    def process_emails_legacy(self) -> ProcessResult:
-        result = ProcessResult(success=True, message="Procesamiento completado", invoice_count=0, invoices=[])
-        try:
-            if not self.connect():
-                return ProcessResult(success=False, message="Error al conectar al servidor de correo")
 
-            email_ids = self.search_emails()
-            if not email_ids:
-                self.disconnect()
-                return ProcessResult(success=True, message="No se encontraron correos con facturas", invoice_count=0)
-
-            logger.info(f"Procesando {len(email_ids)} correos")
-
-            abort_run = False
-
-            for eid in email_ids:
-
-                if abort_run:           
-                    break
-
-                try:
-                    metadata, attachments = self.get_email_content(eid)
-                    if not metadata:
-                        logger.warning(f"⚠️ No se pudo obtener metadatos del correo {eid}")
-                        continue
-
-                    email_meta_for_ai = {
-                        "sender": metadata.get("sender", ""),
-                        "subject": metadata.get("subject", ""),
-                        "date": metadata.get("date")
-                    }
-
-                    xml_path = None
-                    pdf_path = None
-                    processed = False
-
-                    # Adjuntos: XML prioridad, luego PDF
-                    for att in attachments:
-                        fname = (att.get("filename") or "").lower()
-                        ctype = (att.get("content_type") or "").lower()
-                        content = att.get("content") or b""
-                        is_pdf = fname.endswith(".pdf") or ctype == "application/pdf"
-                        is_xml = fname.endswith(".xml") or ctype in (
-                            "text/xml", "application/xml", "application/x-iso20022+xml", "application/x-invoice+xml"
-                        )
-                        if is_xml:
-                            xml_path = save_binary(content, fname)  # no forzamos .pdf
-                            logger.info(f"📄 XML adjunto detectado: {fname}")
-                        elif is_pdf:
-                            pdf_path = save_binary(content, fname, force_pdf=True)
-                            logger.info(f"📄 PDF adjunto detectado: {fname}")
-                    try:
-                        # XML primero
-                        if xml_path:
-                            logger.info("📄 Procesando XML adjunto como fuente principal")
-                            inv = self.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta_for_ai, owner_email=self.owner_email)
-                            if inv:
-                                result.invoices.append(inv)
-                                result.invoice_count += 1
-                                processed = True
-
-                        # Si el XML falló o no existe, intentar PDF
-                        if not processed and pdf_path:
-                            logger.info("📄 Procesando PDF como imagen (fallback o sin XML)")
-                            inv = self.openai_processor.extract_invoice_data(pdf_path, email_meta_for_ai, owner_email=self.owner_email)
-                            if inv:
-                                result.invoices.append(inv)
-                                result.invoice_count += 1
-                                processed = True
-
-                        # Enlaces si nada funcionó
-                        if not processed and metadata.get("links"):
-                            logger.info(f"🔗 Procesando {len(metadata['links'])} enlaces encontrados")
-                            for link in metadata["links"]:
-                                logger.info(f"🔗 Intentando procesar enlace: {link}")
-                                downloaded_path = download_pdf_from_url(link)
-                                if not downloaded_path:
-                                    logger.warning(f"❌ No se pudo descargar desde el enlace: {link}")
-                                    continue
-
-                                low = downloaded_path.lower()
-                                inv = None
-                                if low.endswith(".xml"):
-                                    logger.info("📄 XML detectado desde enlace, procesando como factura electrónica (SIFEN si aplica)")
-                                    inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, owner_email=self.owner_email)
-                                elif low.endswith(".pdf"):
-                                    logger.info("📄 PDF detectado desde enlace, procesando con OpenAI")
-                                    inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
-                                else:
-                                    logger.warning(f"⚠️ Tipo de archivo no reconocido: {downloaded_path}")
-                                    continue
-
-                                if inv:
-                                    result.invoices.append(inv)
-                                    result.invoice_count += 1
-                                    processed = True
-                    except OpenAIFatalError as e:         # ⬅️ NUEVO
-                        logger.error(f"❌ Error FATAL de OpenAI en correo {eid}: {e}. Abortando lote.")
-                        abort_run = True                   # ⬅️ NUEVO
-                        processed = False                  # ⬅️ aseguramos que NO se marque leído
-                        break                              # ⬅️ cortamos el loop completo
-
-                    except OpenAIRetryableError as e:      # ⬅️ NUEVO
-                        logger.warning(f"⚠️ Error transitorio de OpenAI en correo {eid}: {e}. Se omite este correo.")
-                        processed = False                  # no marcar leído
-                        continue
-                        # Marcar leído si hubo procesamiento OK
-                    if processed:
-                        self.client.mark_seen(eid)
-                        # Limpieza de temporales asociados a este correo
-                        try:
-                            import os
-                            if xml_path and os.path.exists(xml_path):
-                                os.remove(xml_path)
-                            if pdf_path and os.path.exists(pdf_path):
-                                os.remove(pdf_path)
-                        except Exception:
-                            pass
-                    else:
-                        logger.warning(f"⚠️ Ninguna factura procesada del correo {eid}, no se marcará como leído.")
-
-                except Exception as e:
-                    logger.error(f"❌ Error al procesar el correo {eid}: {str(e)}")
-                    continue
-            
-            # Si abortamos por fatal, devolvemos estado de error
-            if abort_run:
-                self.disconnect()
-                return ProcessResult(
-                    success=False,
-                    message="Procesamiento abortado por error fatal de OpenAI (API key/cuota).",
-                    invoice_count=len(result.invoices),
-                    invoices=result.invoices
-            )
-
-            # Persistir en MongoDB (automatizado y manual comparten esta ruta)
-            if result.invoices:
-                try:
-                    repo = MongoInvoiceRepository()
-                    docs = [map_invoice(inv, fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION") for inv in result.invoices]
-                    for d in docs:
-                        repo.save_document(d)
-                    logger.info(f"💾 MongoDB (repo): {len(docs)} facturas almacenadas")
-                    result.message = f"Se procesaron {result.invoice_count} facturas. Persistidas en MongoDB (cabecera + detalle)"
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo en MongoDB (repo): {e}")
-                    result.message = f"Se procesaron {result.invoice_count} facturas, pero falló la persistencia en MongoDB"
-                finally:
-                    try:
-                        repo.close()
-                    except Exception:
-                        pass
-
-            self.disconnect()
-            return result
-
-        except Exception as e:
-            logger.error(f"Error general en el procesamiento: {str(e)}")
-            self.disconnect()
-            return ProcessResult(success=False, message=f"Error en el procesamiento: {str(e)}")
 
     # ------------- EmailProcessor solo para single processing -------------
     # Los jobs programados ahora se manejan por MultiEmailProcessor.start_scheduled_job()
