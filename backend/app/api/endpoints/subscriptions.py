@@ -208,13 +208,59 @@ async def subscribe(
             logger.warning(f"Cliente ya existe o error: {e}")
             # Continuar de todos modos, puede que ya exista
         
-        # 2. Iniciar catastro de tarjeta
+        # 2. Verificar Tarjetas Existentes (Si aplica)
+        existing_cards = []
+        if request.use_existing_card:
+            # Intentar obtener ID de Pagopar
+            pagopar_id_lookup = user_repo.get_pagopar_user_id(user_email)
+            if not pagopar_id_lookup:
+                 pm = sub_repo.get_user_payment_method(user_email)
+                 if pm: pagopar_id_lookup = pm.get("pagopar_user_id")
+            
+            if pagopar_id_lookup:
+                existing_cards = await pagopar_service.list_cards(pagopar_id_lookup)
+                
+            if existing_cards and len(existing_cards) > 0:
+                logger.info(f"💳 Usando tarjeta existente para {user_email}")
+                
+                 # Activar suscripción directamente
+                subscription_data = {
+                    "user_email": user_email,
+                    "pagopar_user_id": pagopar_id_lookup,
+                    "plan_code": plan["code"],
+                    "plan_name": plan["name"],
+                    "plan_price": plan.get("price", plan.get("amount", 0)),
+                    "currency": plan.get("currency", "PYG"),
+                    "billing_period": plan.get("billing_period", "monthly"),
+                    "plan_features": plan.get("features", {}),
+                    "status": "ACTIVE",
+                    "next_billing_date": datetime.utcnow() + timedelta(days=30), # Primer cobro en 30 días o ahora? 
+                    # TODO: Idealmente cobrar el primer mes ahora. Por MVP asumimos cobro diferido o cron job
+                    "payment_method": "pagopar_recurring"  
+                }
+                
+                success = await sub_repo.create_subscription(subscription_data)
+                
+                if success:
+                    return SubscribeResponse(
+                        form_id=None,
+                        pagopar_user_id=pagopar_id_lookup,
+                        message="Suscripción activada con tu tarjeta existente",
+                        subscription_active=True
+                    )
+
+
+        # 3. Iniciar catastro de tarjeta (Si no hay existentes o no se solicitó usar)
         redirect_url = "https://app.cuenly.com/subscription/confirm"  # TODO: Obtener de config
+        
+        provider_to_use = request.provider if request.provider else "Bancard"
+        
+        logger.info(f"🆕 Iniciando add_card para {user_email} con proveedor {provider_to_use}")
         
         form_id = await pagopar_service.init_add_card(
             identifier=pagopar_user_id,
             redirect_url=redirect_url,
-            provider="Bancard"
+            provider=provider_to_use
         )
         
         if not form_id:
@@ -231,7 +277,7 @@ async def subscribe(
                 "$set": {
                     "user_email": user_email,
                     "pagopar_user_id": pagopar_user_id,
-                    "provider": "Bancard",
+                    "provider": provider_to_use,
                     "pending_plan_code": request.plan_code,
                     "created_at": datetime.utcnow()
                 }
@@ -242,7 +288,8 @@ async def subscribe(
         return SubscribeResponse(
             form_id=form_id,
             pagopar_user_id=pagopar_user_id,
-            message="Completa el formulario de tarjeta para activar tu suscripción"
+            message="Completa el formulario de tarjeta para activar tu suscripción",
+            subscription_active=False
         )
         
     except HTTPException:

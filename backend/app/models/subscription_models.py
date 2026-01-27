@@ -144,6 +144,8 @@ class PlanResponse(BaseModel):
 class SubscribeRequest(BaseModel):
     """Request para iniciar suscripción."""
     plan_code: PlanCode
+    provider: str = Field(default="Bancard", description="Proveedor de pago (Bancard o uPay)")
+    use_existing_card: bool = Field(default=False, description="Intentar usar tarjeta existente")
 
     class Config:
         use_enum_values = True
@@ -151,9 +153,10 @@ class SubscribeRequest(BaseModel):
 
 class SubscribeResponse(BaseModel):
     """Response después de iniciar suscripción."""
-    form_id: str
+    form_id: Optional[str] = None
     pagopar_user_id: str
     message: str
+    subscription_active: bool = False # Flag para indicar si se activó directamente
 
 
 class ConfirmCardRequest(BaseModel):
