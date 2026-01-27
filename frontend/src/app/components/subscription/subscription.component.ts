@@ -252,8 +252,20 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response) => {
+          // NUEVO: Verificar si la suscripción se activó directamente (tarjeta existente)
+          if (response.subscription_active) {
+            console.log('✅ Suscripción activada directamente con tarjeta existente');
+            this.notificationService.success('¡Suscripción activada exitosamente!');
+            this.loadingIframe = false;
+            this.loadSubscriptionData(); // Recargar datos
+            this.setActiveTab('current'); // Ir a la pestaña de suscripción actual
+            this.userService.refreshUserProfile().subscribe(); // Refrescar perfil
+            return;
+          }
+
+          // Si no se activó directamente, mostrar formulario de tarjeta
           console.log('✅ Form ID recibido:', response.form_id);
-          this.bancardFormId = response.form_id;
+          this.bancardFormId = response.form_id ?? '';
           this.showBancardIframeModal = true; // Mostrar modal con iframe
           this.loadingIframe = false;
         },

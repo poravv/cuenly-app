@@ -499,9 +499,21 @@ export class ApiService {
     );
   }
 
-  // PASO 3: Iniciar suscripción (obtener form_id para iframe)
-  subscribeToSelectedPlan(planCode: string): Observable<{ success: boolean, form_id: string, pagopar_user_id: string }> {
-    return this.http.post<{ success: boolean, form_id: string, pagopar_user_id: string }>(
+  // PASO 3: Iniciar suscripción (obtener form_id para iframe o activar directamente si tiene tarjeta)
+  subscribeToSelectedPlan(planCode: string): Observable<{
+    success: boolean,
+    form_id: string | null,
+    pagopar_user_id: string,
+    message?: string,
+    subscription_active?: boolean
+  }> {
+    return this.http.post<{
+      success: boolean,
+      form_id: string | null,
+      pagopar_user_id: string,
+      message?: string,
+      subscription_active?: boolean
+    }>(
       `/api/subscriptions/subscribe`,
       { plan_code: planCode }
     );

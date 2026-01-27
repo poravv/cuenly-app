@@ -888,9 +888,12 @@ jobs:
           
           if [ -n "$WORKER_POD" ]; then
              echo "✅ Worker Pod encontrado: $WORKER_POD"
-             # Verificar logs básicos
+             # Esperar un poco para que el contenedor esté listo
+             echo "⏳ Esperando que el contenedor esté listo..."
+             sleep 15
+             # Verificar logs básicos (no fatal si falla)
              echo "📜 Logs iniciales del worker:"
-             kubectl logs $WORKER_POD -n ${{ env.NAMESPACE }} --tail=20
+             kubectl logs $WORKER_POD -n ${{ env.NAMESPACE }} --tail=20 || echo "⚠️ Logs no disponibles aún, verificar manualmente"
           else
              echo "⚠️  No se encontró pod de worker corriendo inmediatamente, verificar manualmente."
           fi
