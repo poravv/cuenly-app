@@ -253,9 +253,9 @@ async def subscribe(
                 "currency": plan.get("currency", "PYG"),
                 "billing_period": plan.get("billing_period", "monthly"),
                 "plan_features": plan.get("features", {}),
-                "status": "ACTIVE",
+                "status": "active",  # lowercase per MongoDB schema
                 "next_billing_date": datetime.utcnow() + timedelta(days=30),
-                "payment_method": "pagopar_recurring"  
+                "payment_method": "credit_card"  # valid enum value per MongoDB schema
             }
             
             success = await sub_repo.create_subscription(subscription_data)
