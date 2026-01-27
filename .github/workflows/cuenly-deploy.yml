@@ -514,7 +514,10 @@ jobs:
             --from-literal=MAX_CONCURRENT_ACCOUNTS="${{ secrets.MAX_CONCURRENT_ACCOUNTS || '30' }}" \
             --from-literal=PAGOPAR_PUBLIC_KEY="${{ secrets.PAGOPAR_PUBLIC_KEY }}" \
             --from-literal=PAGOPAR_PRIVATE_KEY="${{ secrets.PAGOPAR_PRIVATE_KEY }}" \
-            --from-literal=PAGOPAR_BASE_URL="${{ secrets.PAGOPAR_BASE_URL }}"
+            --from-literal=PAGOPAR_BASE_URL="${{ secrets.PAGOPAR_BASE_URL }}" \
+            --from-literal=GOOGLE_OAUTH_CLIENT_ID="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
+            --from-literal=GOOGLE_OAUTH_CLIENT_SECRET="${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}" \
+            --from-literal=GOOGLE_OAUTH_REDIRECT_URI="${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}"
             
       - name: Create/Update MongoDB secrets
         run: |
