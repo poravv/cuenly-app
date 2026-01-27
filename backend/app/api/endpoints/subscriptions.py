@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 sub_repo = SubscriptionRepository()
 pagopar_service = PagoparService()
+user_repo = UserRepository()
 
 
 @router.get("/plans", response_model=List[PlanResponse])
@@ -416,7 +417,16 @@ async def cancel_subscription(
             reason="user_request"
         )
         
-        if not success:
+        if success:
+            # SEGURIDAD: Revertir límites del usuario al plan gratuito inmediatamente
+            # Asumimos Plan Free = 0 facturas IA (solo XML)
+            # También quitamos status de trial si lo tuviera (ya consumió un plan)
+            await sub_repo.update_user_plan_status(
+                user_email, 
+                {"ai_invoices_limit": 0} 
+            )
+            logger.info(f"⬇️ Usuario {user_email} revertido a límites gratuitos tras cancelación")
+        else:
             raise HTTPException(
                 status_code=404,
                 detail="No se encontró suscripción activa para cancelar"
@@ -488,6 +498,19 @@ async def delete_payment_method(
             raise HTTPException(status_code=404, detail="Método de pago no encontrado")
         
         pagopar_user_id = payment_method.get("pagopar_user_id")
+
+        # SEGURIDAD: Verificar si tiene suscripción activa antes de eliminar
+        # Si tiene suscripción activa, NO permitir eliminar la tarjeta si es la única
+        active_sub = await sub_repo.get_user_active_subscription(user_email)
+        
+        if active_sub and active_sub.get("status") == "ACTIVE":
+             # Listar tarjetas para ver cuántas tiene
+            cards = await pagopar_service.list_cards(pagopar_user_id)
+            if cards and len(cards) <= 1:
+                 raise HTTPException(
+                    status_code=400,
+                    detail="No puedes eliminar tu única tarjeta con una suscripción activa. Agrega otra tarjeta primero o cancela tu suscripción."
+                )
         
         # Eliminar en Pagopar
         success = await pagopar_service.delete_card(pagopar_user_id, card_token)
