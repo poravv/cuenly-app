@@ -24,7 +24,7 @@ spec:
         - name: cuenly-worker
           image: ghcr.io/averach/cuenly-backend:latest
           imagePullPolicy: Always
-          command: ["python", "-m", "app.worker"]
+          command: ["python", "worker.py"]
           resources:
             requests:
               memory: "1Gi"
