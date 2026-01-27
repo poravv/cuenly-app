@@ -511,7 +511,10 @@ jobs:
             --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
             --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
             --from-literal=REDIS_SSL="${{ secrets.REDIS_SSL }}" \
-            --from-literal=MAX_CONCURRENT_ACCOUNTS="${{ secrets.MAX_CONCURRENT_ACCOUNTS || '30' }}"
+            --from-literal=MAX_CONCURRENT_ACCOUNTS="${{ secrets.MAX_CONCURRENT_ACCOUNTS || '30' }}" \
+            --from-literal=PAGOPAR_PUBLIC_KEY="${{ secrets.PAGOPAR_PUBLIC_KEY }}" \
+            --from-literal=PAGOPAR_PRIVATE_KEY="${{ secrets.PAGOPAR_PRIVATE_KEY }}" \
+            --from-literal=PAGOPAR_BASE_URL="${{ secrets.PAGOPAR_BASE_URL }}"
             
       - name: Create/Update MongoDB secrets
         run: |
