@@ -90,7 +90,7 @@ app.add_middleware(
 # =========================================
 app.include_router(pagopar.router, prefix="/pagopar", tags=["Pagopar"])
 app.include_router(admin_subscriptions.router, prefix="/admin/subscriptions", tags=["Admin Subscriptions"])
-app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
+app.include_router(subscriptions.router, prefix="/api/subscriptions", tags=["Subscriptions"])
 app.include_router(admin_users.router, prefix="/admin/users", tags=["Admin Users"])
 app.include_router(admin_plans.router, prefix="/admin/plans", tags=["Admin Plans"])
 app.include_router(user_profile.router, prefix="/user", tags=["User Profile"])
