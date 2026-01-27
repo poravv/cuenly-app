@@ -210,9 +210,28 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // NUEVO FLUJO: Iniciar catastro de tarjeta directamente
+    // NUEVO: Verificar si tiene tarjetas antes de continuar
     this.selectedPlanId = planId;
-    this.startCardRegistration(planId);
+    this.loadingIframe = true;
+
+    this.apiService.getCards().subscribe({
+      next: (cards) => {
+        this.hasCards = cards && cards.length > 0;
+        if (!this.hasCards) {
+          // No tiene tarjetas - mostrar modal explicativo
+          this.loadingIframe = false;
+          this.showNoCardModal = true;
+        } else {
+          // Tiene tarjetas - continuar con el flujo normal
+          this.startCardRegistration(planId);
+        }
+      },
+      error: () => {
+        // Error verificando tarjetas - asumir que no tiene
+        this.loadingIframe = false;
+        this.showNoCardModal = true;
+      }
+    });
   }
 
   /**
