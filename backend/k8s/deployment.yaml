@@ -14,9 +14,12 @@ metadata:
     prometheus.io/port: "8000"
     prometheus.io/path: "/metrics"
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   revisionHistoryLimit: 3
   selector:
     matchLabels:
@@ -118,7 +121,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: cuenly-backend
-  minReplicas: 1    # Mínimo 2 réplicas para alta disponibilidad
+  minReplicas: 2    # Mínimo 2 réplicas para alta disponibilidad
   maxReplicas: 5    # Aumentado a 5 réplicas para picos de carga
   behavior:
     scaleUp:
