@@ -13,6 +13,7 @@ from app.models.models import InvoiceData, ProcessResult, EmailConfig, JobStatus
 from app.modules.email_processor.email_processor import MultiEmailProcessor, EmailProcessor
 from app.modules.openai_processor.openai_processor import OpenAIProcessor
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
+from app.core.redis_client import get_redis_client
 
 # Configurar logging
 logging.basicConfig(
@@ -80,6 +81,17 @@ class CuenlyApp:
             last_run=None,
             last_result=None
         )
+        
+        
+        # Intentar restaurar estado del job desde Redis
+        try:
+            redis_client = get_redis_client()
+            job_enabled = redis_client.get("cuenly:job:enabled")
+            if job_enabled and job_enabled == "true":
+                logger.info("🔄 Restaurando job programado desde estado persistente...")
+                self.start_scheduled_job(restore=True)
+        except Exception as e:
+            logger.warning(f"No se pudo restaurar estado de job desde Redis: {e}")
         
         logger.info("Sistema CuenlyApp inicializado correctamente")
     
@@ -178,7 +190,7 @@ class CuenlyApp:
             
             return invoice_data
     
-    def start_scheduled_job(self) -> JobStatus:
+    def start_scheduled_job(self, restore: bool = False) -> JobStatus:
         """
         Inicia el trabajo programado para procesar correos periódicamente.
         
@@ -189,6 +201,15 @@ class CuenlyApp:
             self.email_processor.start_scheduled_job()
             self._job_status.running = True
             self._job_status.next_run = self._calculate_next_run()
+            
+            # Persistir estado si no es una restauración
+            if not restore:
+                try:
+                    redis_client = get_redis_client()
+                    redis_client.set("cuenly:job:enabled", "true")
+                except Exception as e:
+                    logger.warning(f"No se pudo persistir estado start de job en Redis: {e}")
+                    
             logger.info(f"Job programado iniciado. Próxima ejecución: {self._job_status.next_run}")
         
         return self._job_status
@@ -204,6 +225,14 @@ class CuenlyApp:
             self.email_processor.stop_scheduled_job()
             self._job_status.running = False
             self._job_status.next_run = None
+            
+            # Persistir estado
+            try:
+                redis_client = get_redis_client()
+                redis_client.set("cuenly:job:enabled", "false")
+            except Exception as e:
+                logger.warning(f"No se pudo persistir estado stop de job en Redis: {e}")
+                
             logger.info("Job programado detenido")
         
         return self._job_status
