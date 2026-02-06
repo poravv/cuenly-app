@@ -28,7 +28,20 @@ services:
       retries: 5
       start_period: 60s
 
-  # Redis eliminado: no utilizado actualmente
+  # Redis - Cache y colas de trabajo (Modo Producción Local/Proxy)
+  redis:
+    image: redis:7-alpine
+    container_name: cuenlyapp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - cuenlyapp-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   # Backend API - Modo proxy por defecto (sin puerto expuesto)
   backend:
@@ -41,6 +54,10 @@ services:
       - ./backend/.env
     environment:
       - MONGODB_URL=mongodb://cuenlyapp:${MONGODB_ROOT_PASSWORD:-changeme}@mongodb:27017/cuenlyapp_warehouse?authSource=admin
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_SSL=false
       - DEBUG=true
       - LOG_LEVEL=INFO
       - TZ=America/Asuncion
@@ -53,6 +70,8 @@ services:
       - cuenlyapp-network
     depends_on:
       mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
@@ -97,6 +116,10 @@ services:
       - ./backend/.env
     environment:
       - MONGODB_URL=mongodb://cuenlyapp:${MONGODB_ROOT_PASSWORD:-changeme}@mongodb:27017/cuenlyapp_warehouse?authSource=admin
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_SSL=false
       - LOG_LEVEL=INFO
       - TZ=America/Asuncion
     volumes:
@@ -108,6 +131,8 @@ services:
       - cuenlyapp-network
     depends_on:
       mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 
@@ -136,7 +161,22 @@ services:
     profiles:
       - dev
 
-  # Redis-dev eliminado: no utilizado
+  # Redis Dev - Para modo desarrollo
+  redis-dev:
+    image: redis:7-alpine
+    container_name: cuenlyapp-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - cuenlyapp-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    profiles:
+      - dev
 
   backend-dev:
     build:
@@ -148,6 +188,10 @@ services:
       - ./backend/.env
     environment:
       - MONGODB_URL=mongodb://cuenlyapp:${MONGODB_ROOT_PASSWORD:-changeme}@mongodb-dev:27017/cuenlyapp_warehouse?authSource=admin
+      - REDIS_HOST=redis-dev
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_SSL=false
       - DEBUG=true
       - LOG_LEVEL=INFO
       - TZ=America/Asuncion
@@ -160,6 +204,8 @@ services:
       - cuenlyapp-network
     depends_on:
       mongodb-dev:
+        condition: service_healthy
+      redis-dev:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
