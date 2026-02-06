@@ -507,10 +507,10 @@ jobs:
             --from-literal=MINIO_SECURE="${{ secrets.MINIO_SECURE }}" \
             --from-literal=MINIO_REGION="${{ secrets.MINIO_REGION }}" \
             --from-literal=FRONTEND_API_KEY="${FRONTEND_API_KEY_VALUE}" \
-            --from-literal=REDIS_HOST="${{ secrets.REDIS_HOST }}" \
-            --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
-            --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
-            --from-literal=REDIS_SSL="${{ secrets.REDIS_SSL }}" \
+            --from-literal=REDIS_HOST="cuenly-redis-service" \
+            --from-literal=REDIS_PORT="6379" \
+            --from-literal=REDIS_PASSWORD="" \
+            --from-literal=REDIS_SSL="false" \
             --from-literal=MAX_CONCURRENT_ACCOUNTS="${{ secrets.MAX_CONCURRENT_ACCOUNTS || '30' }}" \
             --from-literal=PAGOPAR_PUBLIC_KEY="${{ secrets.PAGOPAR_PUBLIC_KEY }}" \
             --from-literal=PAGOPAR_PRIVATE_KEY="${{ secrets.PAGOPAR_PRIVATE_KEY }}" \
@@ -830,6 +830,9 @@ jobs:
           fi
           
           # Aplicar configuración de Kubernetes
+          echo "📋 Aplicando configuración de Redis..."
+          kubectl apply -f backend/k8s/redis-deployment.yaml -n ${{ env.NAMESPACE }}
+
           echo "📋 Aplicando configuración de backend..."
           kubectl apply -f backend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
           

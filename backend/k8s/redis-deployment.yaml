@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cuenly-redis
+  namespace: cuenly-backend
+  labels:
+    app: cuenly-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cuenly-redis
+  template:
+    metadata:
+      labels:
+        app: cuenly-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          ports:
+            - containerPort: 6379
+          # Comando para desactivar configuración protegida (necesario si no hay pass)
+          # Aunque por defecto bind 127.0.0.1 es desactivado en imagenes docker, aseguramos
+          # command: ["redis-server", "--protected-mode", "no"] 
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cuenly-redis-service
+  namespace: cuenly-backend
+spec:
+  selector:
+    app: cuenly-redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+  type: ClusterIP
