@@ -49,8 +49,8 @@ spec:
             name: backend-env-secrets
         resources:
           requests:
-            memory: "2Gi"      # Reducido para optimizar recursos del cluster
-            cpu: "500m"        # CPU mínima aumentada para threadpool
+            memory: "1Gi"      # Reducido para permitir scheduling en nodos pequeños
+            cpu: "250m"        # CPU request bajada a 0.25 para que quepan 2 replicas
           limits:
             memory: "4Gi"      # Límite
             cpu: "1000m"       # Aumentado a 1 core completo
