@@ -28,7 +28,7 @@ spec:
     # Scale based on Redis list length (job queue)
     - type: redis
       metadata:
-        address: cuenly-redis-service:6379
+        address: cuenly-redis-service.cuenly-backend.svc.cluster.local:6379
         listName: rq:queue:default  # RQ default queue name
         listLength: "5"             # Scale up when >5 pending jobs
       authenticationRef:
