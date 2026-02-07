@@ -29,7 +29,7 @@ spec:
             - containerPort: 6379
           # Comando para desactivar configuración protegida (necesario si no hay pass)
           # Aunque por defecto bind 127.0.0.1 es desactivado en imagenes docker, aseguramos
-          # command: ["redis-server", "--protected-mode", "no"] 
+          command: ["redis-server", "--protected-mode", "no"] 
 ---
 apiVersion: v1
 kind: Service

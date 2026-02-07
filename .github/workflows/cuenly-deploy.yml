@@ -848,7 +848,7 @@ jobs:
           
           # Esperar que el rollout complete
           echo "⏳ Esperando rollout del backend..."
-          kubectl rollout status deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=300s
+          kubectl rollout status deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=600s
           
           # Verificar que los pods estén usando la imagen correcta
           echo "🔍 Verificando imagen desplegada:"
