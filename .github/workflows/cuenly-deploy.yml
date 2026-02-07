@@ -873,6 +873,10 @@ jobs:
           echo "📋 Aplicando configuración de worker..."
           kubectl apply -f backend/k8s/worker-deployment.yaml -n ${{ env.NAMESPACE }}
           
+          # Aplicar KEDA ScaledObject para autoscaling
+          echo "📋 Aplicando KEDA ScaledObject para worker..."
+          kubectl apply -f backend/k8s/worker-scaledobject.yaml -n ${{ env.NAMESPACE }} || echo "⚠️ KEDA ScaledObject no aplicado (KEDA puede no estar instalado)"
+          
           # Actualizar imagen del deployment de worker (usa la misma imagen de backend)
           echo "🔄 Actualizando imagen del worker deployment..."
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
