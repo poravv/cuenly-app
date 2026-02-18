@@ -63,7 +63,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - "ps aux | grep 'worker.py' | grep -v grep"
+                - "tr '\000' ' ' </proc/1/cmdline | grep -q 'worker.py'"
             initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 10
@@ -74,7 +74,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - "ps aux | grep 'worker.py' | grep -v grep"
+                - "tr '\000' ' ' </proc/1/cmdline | grep -q 'worker.py'"
             initialDelaySeconds: 60
             periodSeconds: 60
             timeoutSeconds: 10
@@ -84,7 +84,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - "ps aux | grep 'worker.py' | grep -v grep"
+                - "tr '\000' ' ' </proc/1/cmdline | grep -q 'worker.py'"
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 10
