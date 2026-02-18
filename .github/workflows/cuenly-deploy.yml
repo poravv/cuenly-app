@@ -60,6 +60,13 @@ jobs:
       monitoring-changed: ${{ steps.changes.outputs.monitoring }}
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
         with:
           fetch-depth: 0
       
@@ -807,7 +814,14 @@ jobs:
           
           # Obtener SHA corto para tag único
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
-          echo "📦 Preparando imagen: ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}"
+          EXPECTED_BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
+          echo "📦 Preparando imagen: ${EXPECTED_BACKEND_IMAGE}"
+          
+          # Verificar que la imagen backend existe antes de desplegar
+          if ! docker manifest inspect "${EXPECTED_BACKEND_IMAGE}" > /dev/null 2>&1; then
+            echo "❌ Error: imagen backend no encontrada en GHCR: ${EXPECTED_BACKEND_IMAGE}"
+            exit 1
+          fi
           
           # Verificar si existe deployment con selector diferente y eliminarlo
           echo "🔍 Verificando deployment existente..."
@@ -853,7 +867,7 @@ jobs:
           # Actualizar imagen del deployment
           echo "🔄 Actualizando imagen del deployment..."
           kubectl set image deployment/cuenly-backend \
-            cuenly-backend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA} \
+            cuenly-backend=${EXPECTED_BACKEND_IMAGE} \
             -n ${{ env.NAMESPACE }}
           
           # Forzar actualización con anotaciones únicas para garantizar pull de imagen
@@ -866,7 +880,6 @@ jobs:
           
           # Verificar que los pods estén usando la imagen correcta
           echo "🔍 Verificando imagen desplegada:"
-          EXPECTED_BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
           BACKEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,tier=backend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-backend")].image}{"\n"}{end}')
           echo "$BACKEND_IMAGES_BY_POD"
           
@@ -892,6 +905,12 @@ jobs:
           echo "🚀 Desplegando Worker Service..."
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
           EXPECTED_WORKER_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
+          
+          # Verificar que la imagen worker (backend) existe antes de desplegar
+          if ! docker manifest inspect "${EXPECTED_WORKER_IMAGE}" > /dev/null 2>&1; then
+            echo "❌ Error: imagen worker no encontrada en GHCR: ${EXPECTED_WORKER_IMAGE}"
+            exit 1
+          fi
           
           # Aplicar configuración de worker
           echo "📋 Aplicando configuración de worker..."
