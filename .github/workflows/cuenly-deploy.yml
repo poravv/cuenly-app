@@ -899,6 +899,37 @@ jobs:
           
           echo "✅ Backend desplegado correctamente con SHA: ${SHORT_SHA}"
 
+      - name: Clean orphan worker resources
+        run: |
+          set -euo pipefail
+          echo "🧹 Limpiando recursos huérfanos del worker..."
+          
+          # Limpiar ReplicaSets huérfanos (sin owner references)
+          ORPHAN_RS=$(kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o go-template='{{range .items}}{{if not .metadata.ownerReferences}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' 2>/dev/null || echo "")
+          if [ -n "$ORPHAN_RS" ]; then
+            echo "⚠️  ReplicaSets huérfanos detectados:"
+            echo "$ORPHAN_RS"
+            while IFS= read -r rs; do
+              [ -z "$rs" ] && continue
+              echo "🗑️  Eliminando RS huérfano: $rs"
+              kubectl delete rs "$rs" -n ${{ env.NAMESPACE }} --ignore-not-found=true
+            done <<< "$ORPHAN_RS"
+          else
+            echo "✅ Sin ReplicaSets huérfanos"
+          fi
+          
+          # Escalar a 0 ReplicaSets con 0 pods ready que estén bloqueando
+          for rs in $(kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o jsonpath='{.items[*].metadata.name}'); do
+            DESIRED=$(kubectl get rs "$rs" -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.replicas}')
+            READY=$(kubectl get rs "$rs" -n ${{ env.NAMESPACE }} -o jsonpath='{.status.readyReplicas}')
+            if [ "$DESIRED" != "0" ] && [ "${READY:-0}" = "0" ]; then
+              echo "⚠️  RS $rs tiene desired=$DESIRED pero ready=0, escalando a 0..."
+              kubectl scale rs "$rs" -n ${{ env.NAMESPACE }} --replicas=0 || true
+            fi
+          done
+          
+          echo "✅ Limpieza de recursos worker completada"
+
       - name: Deploy Worker Service
         run: |
           set -euo pipefail
@@ -950,9 +981,9 @@ jobs:
             exit 1
           fi
           
-          # Verificar imagen del worker en todos los pods
+          # Verificar imagen del worker en todos los pods (solo tier=worker)
           echo "🔍 Verificando imagen del worker en todos los pods..."
-          WORKER_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-worker")].image}{"\n"}{end}')
+          WORKER_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker,tier=worker --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-worker")].image}{"\n"}{end}')
           echo "$WORKER_IMAGES_BY_POD"
           
           if [ -z "$WORKER_IMAGES_BY_POD" ]; then
@@ -1220,6 +1251,40 @@ jobs:
             exit 1
           fi
           
+      - name: Clean orphan frontend resources
+        run: |
+          set -euo pipefail
+          echo "🧹 Limpiando recursos huérfanos del frontend..."
+          
+          # Limpiar ReplicaSets huérfanos (sin owner references)
+          ORPHAN_RS=$(kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-frontend -o go-template='{{range .items}}{{if not .metadata.ownerReferences}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}' 2>/dev/null || echo "")
+          if [ -n "$ORPHAN_RS" ]; then
+            echo "⚠️  ReplicaSets huérfanos detectados:"
+            echo "$ORPHAN_RS"
+            while IFS= read -r rs; do
+              [ -z "$rs" ] && continue
+              echo "🗑️  Eliminando RS huérfano: $rs"
+              kubectl delete rs "$rs" -n ${{ env.NAMESPACE }} --ignore-not-found=true
+            done <<< "$ORPHAN_RS"
+          else
+            echo "✅ Sin ReplicaSets huérfanos"
+          fi
+          
+          # Limpiar pods legacy que no tienen tier=frontend
+          kubectl delete pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend,!tier --ignore-not-found=true 2>/dev/null || true
+          
+          # Escalar a 0 ReplicaSets antiguos no controlados por el deployment actual
+          for rs in $(kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-frontend -o jsonpath='{.items[*].metadata.name}'); do
+            DESIRED=$(kubectl get rs "$rs" -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.replicas}')
+            READY=$(kubectl get rs "$rs" -n ${{ env.NAMESPACE }} -o jsonpath='{.status.readyReplicas}')
+            if [ "$DESIRED" != "0" ] && [ "${READY:-0}" = "0" ]; then
+              echo "⚠️  RS $rs tiene desired=$DESIRED pero ready=0, escalando a 0..."
+              kubectl scale rs "$rs" -n ${{ env.NAMESPACE }} --replicas=0 || true
+            fi
+          done
+          
+          echo "✅ Limpieza de recursos completada"
+          
       - name: Deploy frontend application
         run: |
           set -euo pipefail
@@ -1276,9 +1341,9 @@ jobs:
             exit 1
           fi
           
-          # Verificar que los pods estén usando la imagen correcta
+          # Verificar que los pods estén usando la imagen correcta (solo tier=frontend)
           echo "🔍 Verificando imagen desplegada:"
-          FRONTEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-frontend")].image}{"\n"}{end}')
+          FRONTEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend,tier=frontend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-frontend")].image}{"\n"}{end}')
           echo "$FRONTEND_IMAGES_BY_POD"
           
           if [ -z "$FRONTEND_IMAGES_BY_POD" ]; then

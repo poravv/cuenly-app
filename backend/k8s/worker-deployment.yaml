@@ -61,9 +61,9 @@ spec:
           readinessProbe:
             exec:
               command:
-                - /bin/sh
+                - sh
                 - -c
-                - "tr '\000' ' ' </proc/1/cmdline | grep -q 'worker.py'"
+                - grep -qa worker.py /proc/1/cmdline
             initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 10
@@ -72,9 +72,9 @@ spec:
           livenessProbe:
             exec:
               command:
-                - /bin/sh
+                - sh
                 - -c
-                - "tr '\000' ' ' </proc/1/cmdline | grep -q 'worker.py'"
+                - grep -qa worker.py /proc/1/cmdline
             initialDelaySeconds: 60
             periodSeconds: 60
             timeoutSeconds: 10
@@ -82,9 +82,9 @@ spec:
           startupProbe:
             exec:
               command:
-                - /bin/sh
+                - sh
                 - -c
-                - "tr '\000' ' ' </proc/1/cmdline | grep -q 'worker.py'"
+                - grep -qa worker.py /proc/1/cmdline
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 10
