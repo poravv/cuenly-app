@@ -820,14 +820,28 @@ jobs:
             
             # Si el selector no incluye 'tier: backend', eliminar el deployment
             if ! echo "$CURRENT_SELECTOR" | grep -q '"tier":"backend"'; then
-              echo "�️  Selector incompatible detectado, eliminando deployment..."
-              kubectl delete deployment cuenly-backend -n ${{ env.NAMESPACE }} --cascade=orphan
-              
-              # Esperar a que se elimine
-              echo "⏳ Esperando eliminación del deployment..."
-              sleep 10
+              echo "⚠️  Selector incompatible detectado, eliminando deployment (sin orphan)..."
+              kubectl delete deployment cuenly-backend -n ${{ env.NAMESPACE }} --ignore-not-found=true
+              kubectl wait --for=delete deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=180s || true
             fi
           fi
+
+          # Limpiar ReplicaSets huérfanos legacy que pueden dejar pods viejos activos
+          echo "🧹 Verificando ReplicaSets huérfanos de backend..."
+          ORPHAN_RS=$(kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-backend -o go-template='{{range .items}}{{if not .metadata.ownerReferences}}{{.metadata.name}}{{"\n"}}{{end}}{{end}}')
+          if [ -n "$ORPHAN_RS" ]; then
+            echo "⚠️ ReplicaSets huérfanos detectados:"
+            echo "$ORPHAN_RS"
+            while IFS= read -r rs; do
+              [ -z "$rs" ] && continue
+              kubectl delete rs "$rs" -n ${{ env.NAMESPACE }} --ignore-not-found=true
+            done <<< "$ORPHAN_RS"
+          else
+            echo "✅ Sin ReplicaSets huérfanos"
+          fi
+
+          # Limpiar pods legacy que no tengan tier=backend
+          kubectl delete pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,!tier --ignore-not-found=true || true
           
           # Aplicar configuración de Kubernetes
           echo "📋 Aplicando configuración de Redis..."
@@ -853,7 +867,7 @@ jobs:
           # Verificar que los pods estén usando la imagen correcta
           echo "🔍 Verificando imagen desplegada:"
           EXPECTED_BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
-          BACKEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-backend")].image}{"\n"}{end}')
+          BACKEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,tier=backend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-backend")].image}{"\n"}{end}')
           echo "$BACKEND_IMAGES_BY_POD"
           
           if [ -z "$BACKEND_IMAGES_BY_POD" ]; then
@@ -955,14 +969,14 @@ jobs:
           
           # Esperar a que los pods estén listos usando kubectl wait
           echo "🔍 Esperando pods backend ready..."
-          kubectl wait --for=condition=ready pod -l app=cuenly-backend -n ${{ env.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=ready pod -l app=cuenly-backend,tier=backend -n ${{ env.NAMESPACE }} --timeout=300s
           
           # Health check usando kubectl exec desde dentro del cluster
-          BACKEND_POD=$(kubectl get pods -l app=cuenly-backend -n ${{ env.NAMESPACE }} --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+          BACKEND_POD=$(kubectl get pods -l app=cuenly-backend,tier=backend -n ${{ env.NAMESPACE }} --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
           
           if [ -z "$BACKEND_POD" ]; then
             echo "❌ No se encontró pod backend corriendo"
-            kubectl get pods -l app=cuenly-backend -n ${{ env.NAMESPACE }}
+            kubectl get pods -l app=cuenly-backend,tier=backend -n ${{ env.NAMESPACE }}
             exit 1
           fi
           
@@ -1161,7 +1175,7 @@ jobs:
           kubectl get svc cuenly-backend-service -n cuenly-backend
           
           # Verificar que hay pods backend corriendo
-          BACKEND_PODS=$(kubectl get pods -l app=cuenly-backend -n cuenly-backend --field-selector=status.phase=Running -o name | wc -l)
+          BACKEND_PODS=$(kubectl get pods -l app=cuenly-backend,tier=backend -n cuenly-backend --field-selector=status.phase=Running -o name | wc -l)
           if [ "$BACKEND_PODS" -eq 0 ]; then
             echo "❌ No hay pods backend corriendo"
             exit 1
@@ -1170,7 +1184,7 @@ jobs:
           echo "✅ $BACKEND_PODS pods backend están corriendo"
           
           # Verificar que el backend está funcionando usando readiness probe de Kubernetes
-          BACKEND_POD=$(kubectl get pods -l app=cuenly-backend -n cuenly-backend --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+          BACKEND_POD=$(kubectl get pods -l app=cuenly-backend,tier=backend -n cuenly-backend --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
           if [ -n "$BACKEND_POD" ]; then
             echo "🔍 Verificando estado del pod backend: $BACKEND_POD"
             POD_READY=$(kubectl get pod $BACKEND_POD -n cuenly-backend -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
@@ -1183,7 +1197,7 @@ jobs:
             fi
           else
             echo "❌ No se encontró pod backend corriendo"
-            kubectl get pods -l app=cuenly-backend -n cuenly-backend
+            kubectl get pods -l app=cuenly-backend,tier=backend -n cuenly-backend
             exit 1
           fi
           

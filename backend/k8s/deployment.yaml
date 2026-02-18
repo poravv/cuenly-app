@@ -24,6 +24,7 @@ spec:
   selector:
     matchLabels:
       app: cuenly-backend
+      tier: backend
   template:
     metadata:
       labels:
@@ -106,6 +107,7 @@ spec:
   type: ClusterIP
   selector:
     app: cuenly-backend
+    tier: backend
   ports:
   - port: 8000
     targetPort: http
@@ -151,5 +153,4 @@ spec:
       target:
         type: Utilization
         averageUtilization: 75    # Escalar cuando memoria > 75%
-
 
