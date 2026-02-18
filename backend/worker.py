@@ -19,6 +19,7 @@ El worker escucha tres colas en orden de prioridad:
 import os
 import sys
 import logging
+from uuid import uuid4
 from datetime import datetime
 
 # Asegurar que el directorio raíz está en el path
@@ -31,6 +32,18 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 logger = logging.getLogger("cuenly.worker")
+
+
+def _build_worker_name() -> str:
+    """
+    Genera un nombre de worker único por instancia para evitar
+    colisiones durante rollouts (dos pods vivos al mismo tiempo).
+    """
+    pod_name = os.getenv("POD_NAME", "").strip()
+    host_name = os.getenv("HOSTNAME", "").strip()
+    node = pod_name or host_name or f"pid{os.getpid()}"
+    suffix = uuid4().hex[:8]
+    return f"cuenly-worker-{node}-{suffix}"
 
 
 def main():
@@ -61,7 +74,7 @@ def main():
         worker = Worker(
             queues=queues,
             connection=redis_conn,
-            name=f"cuenly-worker-{os.getpid()}"
+            name=_build_worker_name()
         )
         
         logger.info(f"👷 Worker '{worker.name}' listo para procesar jobs")

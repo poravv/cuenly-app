@@ -41,6 +41,10 @@ spec:
               memory: "1Gi"
               cpu: "500m"
           env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: REDIS_HOST
               value: cuenly-redis-service.cuenly-backend.svc.cluster.local
             - name: REDIS_PORT
