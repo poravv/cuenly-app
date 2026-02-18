@@ -38,7 +38,7 @@ spec:
     spec:
       containers:
       - name: cuenly-frontend
-        image: ghcr.io/poravv/cuenly-app-frontend:latest
+        image: ghcr.io/poravv/cuenly-app-frontend:placeholder
         imagePullPolicy: Always
         ports:
         - containerPort: 80

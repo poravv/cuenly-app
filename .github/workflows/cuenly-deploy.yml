@@ -864,15 +864,10 @@ jobs:
           echo "📋 Aplicando configuración de backend..."
           kubectl apply -f backend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
           
-          # Actualizar imagen del deployment
-          echo "🔄 Actualizando imagen del deployment..."
-          kubectl set image deployment/cuenly-backend \
-            cuenly-backend=${EXPECTED_BACKEND_IMAGE} \
-            -n ${{ env.NAMESPACE }}
-          
-          # Forzar actualización con anotaciones únicas para garantizar pull de imagen
+          # Actualizar imagen + forzar rollout en un solo patch atómico
+          echo "🔄 Actualizando imagen del deployment (patch atómico)..."
           kubectl patch deployment cuenly-backend -n ${{ env.NAMESPACE }} -p \
-            "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
+            "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"cuenly-backend\",\"image\":\"${EXPECTED_BACKEND_IMAGE}\"}]},\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
           
           # Esperar que el rollout complete
           echo "⏳ Esperando rollout del backend..."
@@ -951,15 +946,10 @@ jobs:
           echo "📋 Aplicando KEDA ScaledObject para worker..."
           kubectl apply -f backend/k8s/worker-scaledobject.yaml -n ${{ env.NAMESPACE }} || echo "⚠️ KEDA ScaledObject no aplicado (KEDA puede no estar instalado)"
           
-          # Actualizar imagen del deployment de worker (usa la misma imagen de backend)
-          echo "🔄 Actualizando imagen del worker deployment..."
-          kubectl set image deployment/cuenly-worker \
-            cuenly-worker=${EXPECTED_WORKER_IMAGE} \
-            -n ${{ env.NAMESPACE }}
-          
-          # Forzar actualización con anotaciones
+          # Actualizar imagen + forzar rollout en un solo patch atómico
+          echo "🔄 Actualizando imagen del worker deployment (patch atómico)..."
           kubectl patch deployment cuenly-worker -n ${{ env.NAMESPACE }} -p \
-            "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
+            "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"cuenly-worker\",\"image\":\"${EXPECTED_WORKER_IMAGE}\"}]},\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
           
           # Esperar que el rollout complete con diagnóstico automático si falla
           echo "⏳ Esperando rollout del worker..."
@@ -980,6 +970,36 @@ jobs:
             done
             exit 1
           fi
+          
+          # Limpiar pods con imagen incorrecta después del rollout
+          echo "🧹 Limpiando pods worker con imagen incorrecta..."
+          for pod in $(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker,tier=worker --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'); do
+            POD_IMAGE=$(kubectl get pod "$pod" -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.containers[?(@.name=="cuenly-worker")].image}')
+            if [ "$POD_IMAGE" != "$EXPECTED_WORKER_IMAGE" ]; then
+              echo "🗑️  Eliminando pod con imagen incorrecta: $pod (tiene: $POD_IMAGE)"
+              kubectl delete pod "$pod" -n ${{ env.NAMESPACE }} --force --grace-period=0 || true
+            fi
+          done
+          
+          # Escalar a 0 ReplicaSets antiguos del worker
+          echo "🧹 Escalando a 0 ReplicaSets antiguos..."
+          CURRENT_RS=$(kubectl get deployment cuenly-worker -n ${{ env.NAMESPACE }} -o jsonpath='{.status.conditions[?(@.type=="Progressing")].message}' | grep -oP 'ReplicaSet "[^"]*' | grep -oP '"[^"]*"' | tr -d '"' || echo "")
+          for rs in $(kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o jsonpath='{.items[*].metadata.name}'); do
+            RS_REPLICAS=$(kubectl get rs "$rs" -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.replicas}')
+            if [ "$RS_REPLICAS" != "0" ] && [ "$rs" != "$CURRENT_RS" ]; then
+              RS_IMAGE=$(kubectl get rs "$rs" -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.template.spec.containers[0].image}')
+              if [ "$RS_IMAGE" != "$EXPECTED_WORKER_IMAGE" ]; then
+                echo "🗑️  Escalando RS antiguo a 0: $rs (imagen: $RS_IMAGE)"
+                kubectl scale rs "$rs" -n ${{ env.NAMESPACE }} --replicas=0 || true
+              fi
+            fi
+          done
+          
+          # Esperar que los pods viejos terminen completamente
+          echo "⏳ Esperando terminación de pods viejos..."
+          sleep 15
+          kubectl wait --for=delete pod -n ${{ env.NAMESPACE }} -l app=cuenly-worker --field-selector=status.phase!=Running --timeout=60s 2>/dev/null || true
+          sleep 15
           
           # Verificar imagen del worker en todos los pods (solo tier=worker)
           echo "🔍 Verificando imagen del worker en todos los pods..."
@@ -1309,14 +1329,10 @@ jobs:
           # Aplicar configuración de Kubernetes
           kubectl apply -f frontend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
           
-          # Actualizar imagen del deployment
-          kubectl set image deployment/cuenly-frontend \
-            cuenly-frontend=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:${IMAGE_TAG} \
-            -n ${{ env.NAMESPACE }}
-          
-          # Forzar actualización con anotaciones únicas para garantizar pull de imagen
+          # Actualizar imagen + forzar rollout en un solo patch atómico
+          echo "🔄 Actualizando imagen del frontend deployment (patch atómico)..."
           kubectl patch deployment cuenly-frontend -n ${{ env.NAMESPACE }} -p \
-            "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\",\"imageTag\":\"${IMAGE_TAG}\"}}}}}"
+            "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"cuenly-frontend\",\"image\":\"${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:${IMAGE_TAG}\"}]},\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\",\"imageTag\":\"${IMAGE_TAG}\"}}}}}"
           
           # Esperar que el rollout complete con timeout más largo
           echo "⏳ Esperando rollout (puede tomar varios minutos)..."
@@ -1340,6 +1356,35 @@ jobs:
             
             exit 1
           fi
+          
+          # Limpiar pods con imagen incorrecta después del rollout
+          echo "🧹 Limpiando pods frontend con imagen incorrecta..."
+          for pod in $(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend,tier=frontend --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'); do
+            POD_IMAGE=$(kubectl get pod "$pod" -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.containers[?(@.name=="cuenly-frontend")].image}')
+            if [ "$POD_IMAGE" != "$EXPECTED_FRONTEND_IMAGE" ]; then
+              echo "🗑️  Eliminando pod con imagen incorrecta: $pod (tiene: $POD_IMAGE)"
+              kubectl delete pod "$pod" -n ${{ env.NAMESPACE }} --force --grace-period=0 || true
+            fi
+          done
+          
+          # Escalar a 0 ReplicaSets antiguos del frontend
+          echo "🧹 Escalando a 0 ReplicaSets antiguos..."
+          for rs in $(kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-frontend -o jsonpath='{.items[*].metadata.name}'); do
+            RS_REPLICAS=$(kubectl get rs "$rs" -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.replicas}')
+            if [ "$RS_REPLICAS" != "0" ]; then
+              RS_IMAGE=$(kubectl get rs "$rs" -n ${{ env.NAMESPACE }} -o jsonpath='{.spec.template.spec.containers[0].image}')
+              if [ "$RS_IMAGE" != "$EXPECTED_FRONTEND_IMAGE" ]; then
+                echo "🗑️  Escalando RS antiguo a 0: $rs (imagen: $RS_IMAGE)"
+                kubectl scale rs "$rs" -n ${{ env.NAMESPACE }} --replicas=0 || true
+              fi
+            fi
+          done
+          
+          # Esperar que los pods viejos terminen completamente
+          echo "⏳ Esperando terminación de pods viejos..."
+          sleep 15
+          kubectl wait --for=delete pod -n ${{ env.NAMESPACE }} -l app=cuenly-frontend --field-selector=status.phase!=Running --timeout=60s 2>/dev/null || true
+          sleep 15
           
           # Verificar que los pods estén usando la imagen correcta (solo tier=frontend)
           echo "🔍 Verificando imagen desplegada:"
