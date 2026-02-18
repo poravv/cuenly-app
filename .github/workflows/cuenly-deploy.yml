@@ -852,22 +852,32 @@ jobs:
           
           # Verificar que los pods estén usando la imagen correcta
           echo "🔍 Verificando imagen desplegada:"
-          CURRENT_IMAGES=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend -o jsonpath='{.items[*].spec.containers[*].image}')
-          echo "Imágenes en pods: $CURRENT_IMAGES"
+          EXPECTED_BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
+          BACKEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-backend")].image}{"\n"}{end}')
+          echo "$BACKEND_IMAGES_BY_POD"
           
-          if echo "$CURRENT_IMAGES" | grep -q "sha-${SHORT_SHA}"; then
-            echo "✅ Backend desplegado correctamente con SHA: ${SHORT_SHA}"
-          else
-            echo "❌ Error: Backend no está usando la imagen esperada"
-            echo "Imagen esperada: ${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}"
-            echo "Imágenes actuales: $CURRENT_IMAGES"
+          if [ -z "$BACKEND_IMAGES_BY_POD" ]; then
+            echo "❌ Error: No se encontraron pods backend para validar imagen"
             exit 1
           fi
+          
+          MISMATCHED_BACKEND=$(echo "$BACKEND_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_BACKEND_IMAGE" 'NF==2 && $2!=expected {print}')
+          if [ -n "$MISMATCHED_BACKEND" ]; then
+            echo "❌ Error: Algunos pods backend no tienen la imagen esperada"
+            echo "Imagen esperada: $EXPECTED_BACKEND_IMAGE"
+            echo "Pods con imagen incorrecta:"
+            echo "$MISMATCHED_BACKEND"
+            exit 1
+          fi
+          
+          echo "✅ Backend desplegado correctamente con SHA: ${SHORT_SHA}"
 
       - name: Deploy Worker Service
         run: |
           set -euo pipefail
           echo "🚀 Desplegando Worker Service..."
+          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+          EXPECTED_WORKER_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
           
           # Aplicar configuración de worker
           echo "📋 Aplicando configuración de worker..."
@@ -879,34 +889,54 @@ jobs:
           
           # Actualizar imagen del deployment de worker (usa la misma imagen de backend)
           echo "🔄 Actualizando imagen del worker deployment..."
-          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
           kubectl set image deployment/cuenly-worker \
-            cuenly-worker=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA} \
+            cuenly-worker=${EXPECTED_WORKER_IMAGE} \
             -n ${{ env.NAMESPACE }}
           
           # Forzar actualización con anotaciones
           kubectl patch deployment cuenly-worker -n ${{ env.NAMESPACE }} -p \
             "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
           
-          # Esperar que el rollout complete
+          # Esperar que el rollout complete con diagnóstico automático si falla
           echo "⏳ Esperando rollout del worker..."
-          kubectl rollout status deployment/cuenly-worker -n ${{ env.NAMESPACE }} --timeout=300s
-          
-          # Verificar estado del worker
-          echo "🔍 Verificando worker pod..."
-          WORKER_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-          
-          if [ -n "$WORKER_POD" ]; then
-             echo "✅ Worker Pod encontrado: $WORKER_POD"
-             # Esperar un poco para que el contenedor esté listo
-             echo "⏳ Esperando que el contenedor esté listo..."
-             sleep 15
-             # Verificar logs básicos (no fatal si falla)
-             echo "📜 Logs iniciales del worker:"
-             kubectl logs $WORKER_POD -n ${{ env.NAMESPACE }} --tail=20 || echo "⚠️ Logs no disponibles aún, verificar manualmente"
-          else
-             echo "⚠️  No se encontró pod de worker corriendo inmediatamente, verificar manualmente."
+          if ! kubectl rollout status deployment/cuenly-worker -n ${{ env.NAMESPACE }} --timeout=1200s; then
+            echo "❌ Rollout del worker falló o expiró. Diagnóstico:"
+            kubectl describe deployment cuenly-worker -n ${{ env.NAMESPACE }} || true
+            kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o wide || true
+            kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o wide || true
+            kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.metadata.creationTimestamp' | tail -n 40 || true
+            
+            for pod in $(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o jsonpath='{.items[*].metadata.name}'); do
+              echo "=== Describe $pod ==="
+              kubectl describe pod "$pod" -n ${{ env.NAMESPACE }} || true
+              echo "=== Logs actuales de $pod ==="
+              kubectl logs "$pod" -n ${{ env.NAMESPACE }} --tail=120 || true
+              echo "=== Logs previos de $pod ==="
+              kubectl logs "$pod" -n ${{ env.NAMESPACE }} --previous --tail=120 || true
+            done
+            exit 1
           fi
+          
+          # Verificar imagen del worker en todos los pods
+          echo "🔍 Verificando imagen del worker en todos los pods..."
+          WORKER_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-worker")].image}{"\n"}{end}')
+          echo "$WORKER_IMAGES_BY_POD"
+          
+          if [ -z "$WORKER_IMAGES_BY_POD" ]; then
+            echo "❌ No se encontraron pods worker para validar"
+            exit 1
+          fi
+          
+          MISMATCHED_WORKER=$(echo "$WORKER_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_WORKER_IMAGE" 'NF==2 && $2!=expected {print}')
+          if [ -n "$MISMATCHED_WORKER" ]; then
+            echo "❌ Algunos pods worker no tienen la imagen esperada"
+            echo "Imagen esperada: $EXPECTED_WORKER_IMAGE"
+            echo "Pods con imagen incorrecta:"
+            echo "$MISMATCHED_WORKER"
+            exit 1
+          fi
+          
+          echo "✅ Worker desplegado correctamente con imagen: $EXPECTED_WORKER_IMAGE"
           
       - name: Remove old backend ingress (now handled by frontend)
         run: |
@@ -1159,6 +1189,7 @@ jobs:
           
       - name: Deploy frontend application
         run: |
+          set -euo pipefail
           echo "🚀 Desplegando frontend..."
           
           # Obtener SHA corto para tag único
@@ -1175,11 +1206,7 @@ jobs:
             echo "✅ Imagen encontrada en registry"
             IMAGE_TAG="sha-${SHORT_SHA}"
           fi
-          
-          # Limpiar deployment anterior si hay problemas
-          echo "🧹 Limpiando deployment anterior..."
-          kubectl delete pods -l app=cuenly-frontend -n ${{ env.NAMESPACE }} --force --grace-period=0 --ignore-not-found=true || true
-          sleep 10
+          EXPECTED_FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-frontend:${IMAGE_TAG}
           
           # Aplicar configuración de Kubernetes
           kubectl apply -f frontend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
@@ -1218,17 +1245,24 @@ jobs:
           
           # Verificar que los pods estén usando la imagen correcta
           echo "🔍 Verificando imagen desplegada:"
-          CURRENT_IMAGES=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend -o jsonpath='{.items[*].spec.containers[*].image}')
-          echo "Imágenes en pods: $CURRENT_IMAGES"
+          FRONTEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-frontend")].image}{"\n"}{end}')
+          echo "$FRONTEND_IMAGES_BY_POD"
           
-          if echo "$CURRENT_IMAGES" | grep -q "${IMAGE_TAG}"; then
-            echo "✅ Frontend desplegado correctamente con imagen: ${IMAGE_TAG}"
-          else
-            echo "❌ Error: Frontend no está usando la imagen esperada"
-            echo "Imagen esperada: ${IMAGE_TAG}"
-            echo "Imágenes actuales: $CURRENT_IMAGES"
+          if [ -z "$FRONTEND_IMAGES_BY_POD" ]; then
+            echo "❌ No se encontraron pods frontend para validar imagen"
             exit 1
           fi
+          
+          MISMATCHED_FRONTEND=$(echo "$FRONTEND_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_FRONTEND_IMAGE" 'NF==2 && $2!=expected {print}')
+          if [ -n "$MISMATCHED_FRONTEND" ]; then
+            echo "❌ Error: Algunos pods frontend no están usando la imagen esperada"
+            echo "Imagen esperada: $EXPECTED_FRONTEND_IMAGE"
+            echo "Pods con imagen incorrecta:"
+            echo "$MISMATCHED_FRONTEND"
+            exit 1
+          fi
+          
+          echo "✅ Frontend desplegado correctamente con imagen: ${IMAGE_TAG}"
           
       - name: Frontend health check
         run: |

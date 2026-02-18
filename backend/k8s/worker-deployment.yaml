@@ -8,6 +8,13 @@ metadata:
     tier: worker
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 1200
   selector:
     matchLabels:
       app: cuenly-worker
@@ -18,13 +25,14 @@ spec:
         app: cuenly-worker
         tier: worker
     spec:
+      terminationGracePeriodSeconds: 120
       imagePullSecrets:
         - name: ghcr-secret
       containers:
         - name: cuenly-worker
-          image: ghcr.io/averach/cuenly-backend:latest
+          image: ghcr.io/poravv/cuenly-app-backend:latest
           imagePullPolicy: Always
-          command: ["python", "worker.py"]
+          command: ["python", "/app/worker.py"]
           resources:
             requests:
               memory: "512Mi"
@@ -32,11 +40,30 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "500m"
+          env:
+            - name: REDIS_HOST
+              value: cuenly-redis-service.cuenly-backend.svc.cluster.local
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_DB
+              value: "0"
+            - name: REDIS_SSL
+              value: "0"
           envFrom:
             - secretRef:
                 name: backend-env-secrets
             - secretRef:
                 name: cuenly-backend-secrets
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "ps aux | grep 'worker.py' | grep -v grep"
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 3
           # Liveness probe: checks if the worker process is running
           livenessProbe:
             exec:
@@ -48,3 +75,20 @@ spec:
             periodSeconds: 60
             timeoutSeconds: 10
             failureThreshold: 5
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "ps aux | grep 'worker.py' | grep -v grep"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 30
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 10"
