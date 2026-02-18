@@ -4,7 +4,7 @@ Esta documentación detalla la arquitectura técnica, los flujos de datos y los 
 
 ## 1. Arquitectura General del Sistema
 
-El sistema utiliza una arquitectura de microservicios contenerizada con Docker.
+El sistema utiliza una arquitectura de microservicios contenerizada con Kubernetes en produccion y Docker en desarrollo.
 
 ```mermaid
 graph TD
@@ -22,7 +22,8 @@ graph TD
     end
     
     subgraph "External Workers"
-        Worker["RQ Worker"] -.->|Consume - Inactivo/Bajo uso| Redis
+        Worker["RQ Worker"] -->|Consume colas high/default/low| Redis
+        KEDA["KEDA ScaledObject"] -->|Autoscaling| Worker
     end
     
     Backend -->|IMAP| EmailServers["Servidores de Correo (Gmail/Outlook)"]
@@ -34,9 +35,9 @@ graph TD
     *   **State Management**: Implementación inicial con **Akita** para gestión centralizada de sesión de usuario (`SessionStore`).
 *   **Backend**: API RESTful construida con FastAPI (Python 3.11).
 *   **MongoDB**: Base de datos principal (NoSQL) para usuarios, facturas y configuraciones.
-*   **Redis**: Sistema de caché para respuestas de OpenAI y broker de mensajería para colas opcionales (RQ).
+*   **Redis**: Sistema de cache para respuestas de OpenAI y broker de mensajeria de colas RQ.
 *   **MinIO**: Almacenamiento de objetos compatible con S3 para guardar copias de seguridad de facturas procesadas (Originales PDF/XML). Su acceso está restringido según el plan de suscripción.
-*   **Worker**: Servicio separado para procesamiento de tareas en cola (RQ), aunque parte de la carga actual se maneja vía hilos internos en el backend.
+*   **Worker**: Servicio separado para procesamiento de tareas en cola (RQ) desplegado como `Deployment` en Kubernetes.
 
 ---
 
@@ -135,7 +136,6 @@ Es el motor principal para la descarga periódica de correos. Corre en **hilos d
 *   **Función**: Ejecuta `process_all_emails` cada X minutos.
 *   **Estado**: Controlado por `MultiEmailProcessor`.
 *   **Persistencia**: En memoria (si se reinicia el backend, se reinicia el intervalo).
-*   **Problema Conocido**: Requiere campo `ai_remaining` en `MultiEmailConfig` (Corregido en commit reciente).
 
 ### 3.2 AsyncJobManager (Tareas Pesadas / Históricas)
 Maneja tareas largas solicitadas por el usuario (ej: "Sincronizar todo el año"). Usa MongoDB como cola de persistencia.
@@ -148,11 +148,12 @@ Maneja tareas largas solicitadas por el usuario (ej: "Sincronizar todo el año")
 *   **Tipos de Jobs**: `full_sync`, `retry_skipped`.
 
 ### 3.3 RQ Worker (Redis Queue)
-Infraestructura tradicional de workers separada. Actualmente disponible pero con uso secundario frente a los managers internos.
+Infraestructura de workers separada y activa en Kubernetes para procesamiento asincrono desacoplado.
 
 *   **Ubicación**: Contenedor `cuenly-worker`
 *   **Colas**: `high`, `default`, `low`.
-*   **Uso**: Diseñado para tareas desacopladas que pueden sobrevivir a reinicios del backend.
+*   **Autoscaling**: Gestionado por KEDA (`ScaledObject`) segun CPU y longitud de cola Redis.
+*   **Uso**: Tareas desacopladas que deben continuar aunque el backend rote pods durante deploy.
 
 ### 3.4 DataRetentionJob (Purga de Originales)
 Job diario para cumplir con políticas de privacidad y ahorro de costes.
@@ -200,9 +201,33 @@ sequenceDiagram
 | :--- | :--- |
 | `OPENAI_API_KEY` | Acceso a modelos GPT-4o. |
 | `MONGODB_URL` | Conexión a base de datos. |
-| `REDIS_URL` | Conexión a Redis (Cache/Colas). |
+| `REDIS_HOST` | Host de Redis. |
+| `REDIS_PORT` | Puerto de Redis. |
+| `REDIS_PASSWORD` | Password de Redis (si aplica). |
+| `REDIS_DB` | Indice de base Redis. |
+| `REDIS_SSL` | Activa conexion TLS a Redis. |
 | `ENCRYPTION_KEY` | Cifrado de contraseñas de correos almacenadas. |
 | `MINIO_ENDPOINT` | URL del servicio MinIO (S3). |
 | `MINIO_ACCESS_KEY` | Access Key para S3/MinIO. |
 | `MINIO_SECRET_KEY` | Secret Key para S3/MinIO. |
 | `MINIO_BUCKET` | Bucket donde se almacenan las facturas procesadas. |
+
+## 7. Rollout en Kubernetes
+
+El pipeline de despliegue actualiza backend, worker y frontend con tags SHA, aplica anotaciones de reinicio y valida que los pods en estado `Running` tengan la imagen esperada.
+
+```mermaid
+sequenceDiagram
+    participant CI as GitHub Actions
+    participant K8S as Kubernetes
+    participant BE as Deployment backend
+    participant WK as Deployment worker
+    participant FE as Deployment frontend
+
+    CI->>BE: set image :sha-<short_sha>
+    CI->>WK: set image :sha-<short_sha>
+    CI->>FE: set image :sha-<short_sha>
+    CI->>K8S: patch annotations restartedAt/forceUpdate/gitSha
+    CI->>K8S: rollout status (backend/worker/frontend)
+    CI->>K8S: verificar imagen esperada por pod
+```

@@ -35,27 +35,26 @@ CuenlyApp es una herramienta automatizada para extraer información de facturas 
 
 ## 🧱 Arquitectura
 
-### Backend (FastAPI + Python)
-- **FastAPI** - Framework web moderno y rápido
-- **Python 3.11+** - Lenguaje principal
-- **PyMuPDF / Tesseract OCR** - Procesamiento de PDFs
-- **Pandas** - Manipulación de datos y exportación Excel
-- **OpenAI GPT** - Inteligencia artificial para extracción de datos
-- **Prometheus** - Métricas y observabilidad
-- **Structured Logging** - Logs JSON para análisis
+```mermaid
+graph TD
+    U[Usuario] --> F[Frontend Angular]
+    F -->|API REST| B[Backend FastAPI]
+    B --> M[(MongoDB)]
+    B --> R[(Redis)]
+    B --> S3[(MinIO S3)]
+    B --> OA[OpenAI]
+    B --> EM[IMAP/SMTP]
+    W[RQ Worker] -->|consume colas| R
+    K[KEDA ScaledObject] -->|autoscaling| W
+    P[Prometheus/Grafana/AlertManager] --> B
+    P --> W
+```
 
-### Frontend (Angular + Firebase)
-- **Angular 17** - Framework web moderno
-- **Firebase Auth** - Autenticación segura
-- **Firebase Analytics** - Tracking de uso automático
-- **Bootstrap 5** - UI/UX responsivo
-- **Sistema de Notificaciones** - Feedback elegante al usuario
-
-### Observabilidad Stack
-- **Prometheus** - Recolección de métricas
-- **Grafana** - Dashboards y visualización
-- **AlertManager** - Alertas por email para eventos críticos
-- **Firebase Analytics** - Métricas de comportamiento de usuario
+- **Backend (FastAPI + Python 3.11+)**: API principal, lógica de negocio, scheduler y procesamiento de documentos.
+- **Worker (RQ)**: ejecución de jobs en colas `high/default/low`, con autoscaling vía KEDA.
+- **Frontend (Angular 17 + Firebase)**: interfaz web, auth y analytics.
+- **Datos y servicios**: MongoDB, Redis, MinIO, OpenAI y servidores de correo.
+- **Observabilidad**: Prometheus, Grafana y AlertManager.
 
 ## 📋 Requisitos Previos
 
@@ -79,23 +78,42 @@ CuenlyApp es una herramienta automatizada para extraer información de facturas 
 ## 🚀 Deployment
 
 ### Automático (GitHub Actions)
-Los deployments se ejecutan automáticamente al hacer push a `main`. El sistema usa tags únicos basados en SHA para garantizar actualizaciones.
+Los deployments se ejecutan automáticamente al hacer push a `main`, usando imágenes etiquetadas por SHA y validación de imagen en pods.
 
 ### Manual (Comandos directos)
-Para deployments manuales, usa comandos transparentes de kubectl:
+Para deployments manuales recomendados (backend, worker y frontend):
 
 ```bash
-# Actualizar frontend
-kubectl set image deployment/cuenly-frontend cuenly-frontend=ghcr.io/poravv/cuenly-app-frontend:latest -n cuenly-frontend
-kubectl patch deployment cuenly-frontend -n cuenly-frontend -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}}}}"
+SHORT_SHA=<sha_corto>
 
-# Actualizar backend  
-kubectl set image deployment/cuenly-backend cuenly-backend=ghcr.io/poravv/cuenly-app-backend:latest -n cuenly-backend
-kubectl patch deployment cuenly-backend -n cuenly-backend -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}}}}"
+# Backend
+kubectl set image deployment/cuenly-backend \
+  cuenly-backend=ghcr.io/poravv/cuenly-app-backend:sha-${SHORT_SHA} \
+  -n cuenly-backend
+kubectl patch deployment cuenly-backend -n cuenly-backend -p \
+  "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
+kubectl rollout status deployment/cuenly-backend -n cuenly-backend --timeout=600s
+
+# Worker
+kubectl apply -f backend/k8s/worker-deployment.yaml -n cuenly-backend
+kubectl apply -f backend/k8s/worker-scaledobject.yaml -n cuenly-backend
+kubectl set image deployment/cuenly-worker \
+  cuenly-worker=ghcr.io/poravv/cuenly-app-backend:sha-${SHORT_SHA} \
+  -n cuenly-backend
+kubectl patch deployment cuenly-worker -n cuenly-backend -p \
+  "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
+kubectl rollout status deployment/cuenly-worker -n cuenly-backend --timeout=1200s
+
+# Frontend
+kubectl set image deployment/cuenly-frontend \
+  cuenly-frontend=ghcr.io/poravv/cuenly-app-frontend:sha-${SHORT_SHA} \
+  -n cuenly-frontend
+kubectl patch deployment cuenly-frontend -n cuenly-frontend -p \
+  "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
+kubectl rollout status deployment/cuenly-frontend -n cuenly-frontend --timeout=900s
 ```
 
-Ver [comandos de deployment manual](MANUAL_DEPLOYMENT_COMMANDS.md) para más opciones.
-- Docker y Docker Compose (opcional, para despliegue)
+Más detalle técnico en `technical_docs.md` y `docs/ARQUITCTURA.md`.
 
 ## 🛠️ Instalación
 

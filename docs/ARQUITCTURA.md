@@ -1,53 +1,72 @@
-graph TB
-    subgraph "🌐 Cliente (Navegador)"
-        USER[👤 Usuario]
-        BROWSER[🌍 Navegador Web]
+# Arquitectura de Cuenly
+
+## Vista general
+
+```mermaid
+graph TD
+    U[Usuario] --> FE[Frontend Angular]
+    FE -->|REST| BE[Backend FastAPI]
+
+    subgraph Datos
+        MDB[(MongoDB)]
+        REDIS[(Redis)]
+        MINIO[(MinIO S3)]
     end
-    
-    subgraph "🔄 Capa de Proxy"
-        NGINX_PROXY[📡 Nginx Proxy<br/>Puerto 4200]
+
+    BE --> MDB
+    BE --> REDIS
+    BE --> MINIO
+
+    subgraph Procesamiento Asincrono
+        W[RQ Worker]
+        KEDA[KEDA ScaledObject]
     end
-    
-    subgraph "🎨 Frontend Angular"
-        ANGULAR[🅰️ Angular App<br/>SPA]
-        COMPONENTS[📦 Componentes]
-        SERVICES[⚙️ Servicios]
+
+    W --> REDIS
+    KEDA --> W
+
+    subgraph Externos
+        OA[OpenAI]
+        FB[Firebase Auth/Analytics]
+        MAIL[Servidores IMAP/SMTP]
     end
-    
-    subgraph "🔧 Backend FastAPI"
-        FASTAPI[🚀 FastAPI Server<br/>Puerto 8000]
-        ENDPOINTS[📡 API Endpoints]
-        BUSINESS[🧠 Lógica de Negocio]
-        SCHEDULER[⏲️ Scheduler Tasks]
-    end
-    
-    subgraph "🗄️ Base de Datos"
-        MONGODB[🍃 MongoDB<br/>Puerto 27017]
-        COLLECTIONS[📚 8 Colecciones]
-    end
-    
-    subgraph "🌍 Servicios Externos"
-        FIREBASE[🔥 Firebase Auth]
-        OPENAI[🤖 OpenAI API]
-        EMAIL_SERV[📧 Email Servers]
-    end
-    
-    USER --> BROWSER
-    BROWSER --> NGINX_PROXY
-    NGINX_PROXY --> ANGULAR
-    NGINX_PROXY --> FASTAPI
-    
-    ANGULAR --> COMPONENTS
-    ANGULAR --> SERVICES
-    SERVICES --> FASTAPI
-    
-    FASTAPI --> ENDPOINTS
-    FASTAPI --> BUSINESS
-    FASTAPI --> SCHEDULER
-    FASTAPI --> MONGODB
-    
-    FASTAPI --> FIREBASE
-    FASTAPI --> OPENAI
-    FASTAPI --> EMAIL_SERV
-    
-    MONGODB --> COLLECTIONS
+
+    BE --> OA
+    FE --> FB
+    BE --> MAIL
+```
+
+## Componentes principales
+
+- Frontend: Angular 17, autenticacion Firebase, consumo de API backend.
+- Backend: FastAPI, procesamiento de facturas, scheduler interno y APIs administrativas.
+- Worker: proceso `cuenly-worker` con RQ para colas `high`, `default` y `low`.
+- Redis: cache y broker de colas de jobs.
+- MongoDB: persistencia principal de usuarios, facturas, configuraciones y jobs.
+- MinIO: respaldo de documentos originales.
+- KEDA: autoscaling del worker por CPU y longitud de cola Redis.
+
+## Namespaces Kubernetes
+
+- `cuenly-backend`: backend, worker, redis y recursos asociados.
+- `cuenly-frontend`: frontend y recursos web.
+- `cuenly-monitoring`: Prometheus, Grafana, Loki y AlertManager.
+
+## Flujo de despliegue
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub Actions
+    participant K8S as Kubernetes API
+    participant BE as Deployment backend
+    participant WK as Deployment worker
+    participant FE as Deployment frontend
+
+    GH->>K8S: kubectl apply manifests
+    GH->>BE: set image sha-<commit>
+    GH->>WK: set image sha-<commit>
+    GH->>FE: set image sha-<commit>
+    GH->>K8S: patch annotations restartedAt/forceUpdate/gitSha
+    GH->>K8S: rollout status backend/worker/frontend
+    GH->>K8S: validar imagen esperada en pods running
+```
