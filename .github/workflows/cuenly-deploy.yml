@@ -60,13 +60,6 @@ jobs:
       monitoring-changed: ${{ steps.changes.outputs.monitoring }}
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
         with:
           fetch-depth: 0
       
@@ -461,6 +454,13 @@ jobs:
       backend-ready: ${{ steps.health-check.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
       
       - name: Setup kubectl context
         run: |
