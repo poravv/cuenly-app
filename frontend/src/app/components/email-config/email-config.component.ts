@@ -33,12 +33,20 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   // Configuraciones predefinidas para proveedores comunes
   providers = [
     {
+      name: 'Personalizado (IMAP)',
+      id: 'other',
+      host: '',
+      port: 993,
+      use_ssl: true,
+      supportsOAuth: false
+    },
+    {
       name: 'Gmail',
       id: 'gmail',
       host: 'imap.gmail.com',
       port: 993,
       use_ssl: true,
-      supportsOAuth: false,
+      supportsOAuth: false, // Ahora se usa Custom IMAP primordialmente
       comingSoon: true
     },
     {
@@ -47,16 +55,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       host: 'imap-mail.outlook.com',
       port: 993,
       use_ssl: true,
-      supportsOAuth: false,  // Próximamente
+      supportsOAuth: false,
       comingSoon: true
-    },
-    {
-      name: 'Personalizado',
-      id: 'other',
-      host: '',
-      port: 993,
-      use_ssl: true,
-      supportsOAuth: false
     }
   ];
 

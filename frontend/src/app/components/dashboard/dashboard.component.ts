@@ -270,6 +270,21 @@ export class DashboardComponent implements OnInit {
 
     this.monthlyData = dataToDisplay;
 
+    // Recalcular stats para los top cards basado en el filtro
+    if (this.monthlyData.length > 0) {
+      const total_invoices = this.monthlyData.reduce((sum, d) => sum + d.invoice_count, 0);
+      const total_amount = this.monthlyData.reduce((sum, d) => sum + d.total_amount, 0);
+      const average_amount = total_invoices > 0 ? total_amount / total_invoices : 0;
+
+      this.stats = {
+        total_invoices,
+        total_amount,
+        average_amount
+      };
+    } else {
+      this.stats = { total_invoices: 0, total_amount: 0, average_amount: 0 };
+    }
+
     this.lineChartData = {
       labels: this.monthlyData.map(d => this.formatYearMonthShort(d.year_month)),
       datasets: [
@@ -335,18 +350,7 @@ export class DashboardComponent implements OnInit {
     // Formatear para Paraguay - sin decimales, con separadores de miles
     if (amount === undefined || amount === null) return '0 ₲';
 
-    if (amount >= 1000000000) {
-      // Más de mil millones
-      return (amount / 1000000000).toFixed(1) + 'B ₲';
-    } else if (amount >= 1000000) {
-      // Más de un millón
-      return (amount / 1000000).toFixed(1) + 'M ₲';
-    } else if (amount >= 1000) {
-      // Más de mil
-      return (amount / 1000).toFixed(0) + 'K ₲';
-    }
-
-    // Formato estándar paraguayo con separadores de miles
+    // Formato estándar paraguayo con separadores de miles SIEMPRE (sin 'M' ni 'K')
     return new Intl.NumberFormat('es-PY', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
