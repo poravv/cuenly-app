@@ -243,13 +243,52 @@ async def subscribe(
         if existing_cards and len(existing_cards) > 0:
             logger.info(f"💳 Usando tarjeta existente para {user_email}")
             
+            amount = plan.get("price", plan.get("amount", 0))
+            
+            # --- NUEVO: COBRO INICIAL SINCRONO ---
+            # 1. Obtener alias_token
+            card_token = await pagopar_service.get_card_alias_token(pagopar_id_lookup)
+            if not card_token:
+                logger.error(f"❌ No se pudo obtener alias_token para cobro inicial de {user_email}")
+                raise HTTPException(status_code=400, detail="Tarjeta no disponible para el cobro. Por favor, ingresa una nueva.")
+                
+            # 2. Crear pedido inicial
+            import re
+            safe_email = re.sub(r'[^a-zA-Z0-9]', '', user_email)[:10] if user_email else "USER"
+            
+            order_hash = await pagopar_service.create_order(
+                identifier=pagopar_id_lookup,
+                amount=amount,
+                description=f"Suscripción {plan.get('name', 'Plan')} - Primer Mes",
+                ref_id=f"INIT-{safe_email}"
+            )
+            
+            if not order_hash:
+                logger.error(f"❌ Error creando pedido de cobro inicial para {user_email}")
+                raise HTTPException(status_code=500, detail="Error de comunicación con la pasarela de pagos.")
+                
+            # 3. Procesar pago
+            logger.info("💰 Procesando cobro inicial...")
+            payment_success = await pagopar_service.process_payment(
+                identifier=pagopar_id_lookup,
+                order_hash=order_hash,
+                card_token=card_token
+            )
+            
+            if not payment_success:
+                logger.error(f"❌ Pago inicial rechazado para {user_email}")
+                raise HTTPException(status_code=400, detail="El pago inicial fue rechazado por la tarjeta.")
+                
+            logger.info(f"✅ Pago inicial exitoso para {user_email}")
+            # --- FIN COBRO INICIAL ---
+            
             # Activar suscripción directamente
             subscription_data = {
                 "user_email": user_email,
                 "pagopar_user_id": pagopar_id_lookup,
                 "plan_code": plan["code"],
                 "plan_name": plan["name"],
-                "plan_price": plan.get("price", plan.get("amount", 0)),
+                "plan_price": amount,
                 "currency": plan.get("currency", "PYG"),
                 "billing_period": plan.get("billing_period", "monthly"),
                 "plan_features": plan.get("features", {}),
@@ -258,13 +297,21 @@ async def subscribe(
                 "payment_method": "credit_card"  # valid enum value per MongoDB schema
             }
             
-            success = await sub_repo.create_subscription(subscription_data)
+            sub_id = await sub_repo.create_subscription(subscription_data)
             
-            if success:
+            if sub_id:
+                # Registrar el pago exitoso en la BD
+                sub_repo.record_subscription_payment(
+                    sub_id=sub_id,
+                    amount=amount,
+                    transaction_id=order_hash,
+                    status="success"
+                )
+                
                 return SubscribeResponse(
                     form_id=None,
                     pagopar_user_id=pagopar_id_lookup,
-                    message="Suscripción activada con tu tarjeta existente",
+                    message="Suscripción activada y cobrada con tu tarjeta existente",
                     subscription_active=True
                 )
 
@@ -374,17 +421,56 @@ async def confirm_card(
             provider="Bancard"
         )
         
-        # Crear suscripción
+        # Obtener plan
         plan = await sub_repo.get_plan_by_code(pending_plan_code)
         if not plan:
             raise HTTPException(status_code=404, detail="Plan no encontrado")
+        
+        amount = plan.get("price", plan.get("amount", 0))
+
+        # --- NUEVO: COBRO INICIAL SINCRONO ---
+        # 1. Obtener alias_token
+        card_token = await pagopar_service.get_card_alias_token(pagopar_user_id)
+        if not card_token:
+            logger.error(f"❌ No se pudo obtener alias_token para cobro inicial de {user_email}")
+            raise HTTPException(status_code=400, detail="Tarjeta confirmada pero no disponible para el cobro. Contacte soporte.")
+            
+        # 2. Crear pedido
+        import re
+        safe_email = re.sub(r'[^a-zA-Z0-9]', '', user_email)[:10] if user_email else "USER"
+        
+        order_hash = await pagopar_service.create_order(
+            identifier=pagopar_user_id,
+            amount=amount,
+            description=f"Suscripción {plan.get('name', 'Plan')} - Primer Mes",
+            ref_id=f"INIT-{safe_email}"
+        )
+        
+        if not order_hash:
+            logger.error(f"❌ Error creando pedido de cobro inicial para {user_email}")
+            raise HTTPException(status_code=500, detail="Error de comunicación con la pasarela de pagos al intentar cobrar el plan.")
+            
+        # 3. Procesar pago
+        logger.info("💰 Procesando cobro inicial a nueva tarjeta...")
+        payment_success = await pagopar_service.process_payment(
+            identifier=pagopar_user_id,
+            order_hash=order_hash,
+            card_token=card_token
+        )
+        
+        if not payment_success:
+            logger.error(f"❌ Pago inicial rechazado para nueva tarjeta de {user_email}")
+            raise HTTPException(status_code=400, detail="El pago inicial fue rechazado por la tarjeta suministrada.")
+            
+        logger.info(f"✅ Pago inicial exitoso para nueva tarjeta de {user_email}")
+        # --- FIN COBRO INICIAL ---
         
         subscription_data = {
             "user_email": user_email,
             "pagopar_user_id": pagopar_user_id,
             "plan_code": plan["code"],
             "plan_name": plan["name"],
-            "plan_price": plan.get("price", plan.get("amount", 0)),
+            "plan_price": amount,
             "currency": plan.get("currency", "PYG"),
             "billing_period": plan.get("billing_period", "monthly"),
             "plan_features": plan.get("features", {}),
@@ -393,15 +479,23 @@ async def confirm_card(
             "payment_method": "pagopar_recurring"
         }
         
-        success = await sub_repo.create_subscription(subscription_data)
+        sub_id = await sub_repo.create_subscription(subscription_data)
         
-        if not success:
+        if not sub_id:
             raise HTTPException(
                 status_code=500,
                 detail="Error creando suscripción"
             )
+            
+        # Registrar el pago exitoso
+        sub_repo.record_subscription_payment(
+            sub_id=sub_id,
+            amount=amount,
+            transaction_id=order_hash,
+            status="success"
+        )
         
-        logger.info(f"✅ Suscripción activada para {user_email}")
+        logger.info(f"✅ Suscripción activada y primer mes cobrado para {user_email}")
         
         return {
             "success": True,

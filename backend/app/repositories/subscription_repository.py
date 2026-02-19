@@ -438,10 +438,11 @@ class SubscriptionRepository:
             logger.error(f"Error verificando suscripción activa de {user_email}: {e}")
             return False
     
-    async def create_subscription(self, subscription_data: Dict[str, Any]) -> bool:
+    async def create_subscription(self, subscription_data: Dict[str, Any]) -> Optional[str]:
         """
         Crear una nueva suscripción INDEFINIDA (mes a mes).
         No tiene fecha de expiración, solo se cobra mensualmente.
+        Retorna el ID de la suscripción creada, o None si falló.
         """
         try:
             # Normalizar email
@@ -476,11 +477,11 @@ class SubscriptionRepository:
             )
             
             logger.info(f"✅ Suscripción INDEFINIDA creada para {subscription_data['user_email']}")
-            return bool(result.inserted_id)
+            return str(result.inserted_id) if result.inserted_id else None
             
         except Exception as e:
             logger.error(f"Error creando suscripción: {e}")
-            return False
+            return None
     
     async def cancel_user_subscriptions(self, user_email: str, reason: str = "user_request") -> bool:
         """
