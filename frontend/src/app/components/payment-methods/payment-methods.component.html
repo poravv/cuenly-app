@@ -48,14 +48,9 @@
       </div>
 
       <!-- Action Buttons below the card -->
-      <div class="card-actions d-flex justify-content-between px-2">
+      <div class="card-actions d-flex justify-content-end px-2">
         <button class="btn btn-outline-danger shadow-sm rounded-pill px-3" (click)="deleteCard(card)">
           <i class="bi bi-trash me-1"></i> Eliminar
-        </button>
-        <!-- The Test button should ideally be hidden in production, but left here as requested before -->
-        <button class="btn btn-outline-secondary shadow-sm rounded-pill px-3" (click)="testPayment(card)"
-          title="Test Pagar (Solo Sandbox)">
-          <i class="bi bi-currency-dollar"></i> Probar
         </button>
       </div>
 
