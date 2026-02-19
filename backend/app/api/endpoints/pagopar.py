@@ -361,13 +361,13 @@ async def pagopar_webhook(payload: Dict[str, Any] = Body(...)):
             else:
                 logger.warning(f"⚠️ No se encontró orden pendiente para hash: {hash_pedido}")
         
-        # Pagopar espera que devolvamos el mismo JSON
-        return payload
+        # Pagopar espera que devolvamos exactamente el array de resultados que nos envió
+        return payload.get("resultado", [])
         
     except Exception as e:
         logger.error(f"💥 Error en webhook: {str(e)}")
         # Importante: siempre retornar 200 para que Pagopar no reintente
-        return {"respuesta": True}
+        return []
 
 @router.get("/validation/orders/{order_hash}")
 async def check_validation_order(order_hash: str):
