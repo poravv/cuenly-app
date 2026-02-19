@@ -37,7 +37,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       host: 'imap.gmail.com',
       port: 993,
       use_ssl: true,
-      supportsOAuth: true
+      supportsOAuth: false,
+      comingSoon: true
     },
     {
       name: 'Outlook/Hotmail',

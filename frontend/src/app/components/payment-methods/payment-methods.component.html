@@ -5,7 +5,7 @@
       <p class="text-muted">Gestiona tus tarjetas para pagos recurrentes.</p>
     </div>
     <button class="btn btn-primary" (click)="openAddCardModal()" [disabled]="processingAdd">
-      <i class="bi bi-plus-lg me-2"></i> 
+      <i class="bi bi-plus-lg me-2"></i>
       {{ processingAdd ? 'Iniciando...' : 'Nueva Tarjeta' }}
     </button>
   </div>
@@ -24,7 +24,7 @@
 
   <div *ngIf="!loading && cards.length > 0" class="row">
     <div class="col-md-6 col-lg-4 mb-3" *ngFor="let card of cards">
-      <div class="card h-100 shadow-sm border-0">
+      <div class="card h-100 shadow-sm border-0 rounded-card">
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-start mb-3">
             <div>
@@ -33,7 +33,7 @@
             </div>
             <img [src]="card.url_logo" alt="Logo" style="height: 30px;">
           </div>
-          
+
           <p class="h4 text-monospace mb-3">{{ card.tarjeta_numero }}</p>
           <p class="text-muted small mb-0">{{ card.emisor }}</p>
         </div>
@@ -41,7 +41,7 @@
           <button class="btn btn-sm btn-outline-danger" (click)="deleteCard(card)">
             <i class="bi bi-trash"></i> Eliminar
           </button>
-           <button class="btn btn-sm btn-outline-success" (click)="testPayment(card)">
+          <button class="btn btn-sm btn-outline-success" (click)="testPayment(card)">
             <i class="bi bi-currency-dollar"></i> Test Pagar
           </button>
         </div>
