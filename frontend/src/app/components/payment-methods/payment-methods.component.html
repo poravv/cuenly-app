@@ -23,29 +23,42 @@
   </div>
 
   <div *ngIf="!loading && cards.length > 0" class="row">
-    <div class="col-md-6 col-lg-4 mb-3" *ngFor="let card of cards">
-      <div class="card h-100 shadow-sm border-0 rounded-card">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-start mb-3">
-            <div>
-              <h5 class="card-title mb-0">{{ card.marca }}</h5>
-              <span class="badge bg-secondary">{{ card.tipo_tarjeta }}</span>
-            </div>
-            <img [src]="card.url_logo" alt="Logo" style="height: 30px;">
-          </div>
+    <div class="col-md-6 col-lg-4 mb-4" *ngFor="let card of cards">
 
-          <p class="h4 text-monospace mb-3">{{ card.tarjeta_numero }}</p>
-          <p class="text-muted small mb-0">{{ card.emisor }}</p>
+      <!-- Realistic Credit Card -->
+      <div class="credit-card mb-3">
+        <div class="card-top">
+          <div class="chip-icon"></div>
+          <img *ngIf="card.url_logo" [src]="card.url_logo" alt="Logo" style="height: 35px; object-fit: contain;">
         </div>
-        <div class="card-footer bg-transparent border-top-0 d-flex justify-content-between">
-          <button class="btn btn-sm btn-outline-danger" (click)="deleteCard(card)">
-            <i class="bi bi-trash"></i> Eliminar
-          </button>
-          <button class="btn btn-sm btn-outline-success" (click)="testPayment(card)">
-            <i class="bi bi-currency-dollar"></i> Test Pagar
-          </button>
+
+        <div>
+          <p class="text-monospace card-number">{{ card.tarjeta_numero }}</p>
+          <div class="card-bottom">
+            <div>
+              <p class="text-white-50 small mb-0" style="font-size: 0.7rem;">Titular / Banco</p>
+              <p class="card-holder">{{ card.emisor || 'Cliente' }}</p>
+            </div>
+            <div class="text-end">
+              <p class="text-white-50 small mb-0" style="font-size: 0.7rem;">Tipo</p>
+              <p class="card-brand">{{ card.tipo_tarjeta }}</p>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- Action Buttons below the card -->
+      <div class="card-actions d-flex justify-content-between px-2">
+        <button class="btn btn-outline-danger shadow-sm rounded-pill px-3" (click)="deleteCard(card)">
+          <i class="bi bi-trash me-1"></i> Eliminar
+        </button>
+        <!-- The Test button should ideally be hidden in production, but left here as requested before -->
+        <button class="btn btn-outline-secondary shadow-sm rounded-pill px-3" (click)="testPayment(card)"
+          title="Test Pagar (Solo Sandbox)">
+          <i class="bi bi-currency-dollar"></i> Probar
+        </button>
+      </div>
+
     </div>
   </div>
 </div>
