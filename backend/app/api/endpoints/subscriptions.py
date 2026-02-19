@@ -568,7 +568,7 @@ async def delete_payment_method(
         # Si tiene suscripción activa, NO permitir eliminar la tarjeta si es la única
         active_sub = await sub_repo.get_user_active_subscription(user_email)
         
-        if active_sub and active_sub.get("status") == "ACTIVE":
+        if active_sub and active_sub.get("status", "").lower() == "active":
              # Listar tarjetas para ver cuántas tiene
             cards = await pagopar_service.list_cards(pagopar_user_id)
             if cards and len(cards) <= 1:

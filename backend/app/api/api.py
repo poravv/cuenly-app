@@ -1344,7 +1344,8 @@ async def list_email_configs(user: Dict[str, Any] = Depends(_get_current_user)):
             "configs": cfgs, 
             "total": current_count,
             "max_allowed": max_accounts,
-            "can_add_more": max_accounts == -1 or current_count < max_accounts
+            "can_add_more": max_accounts == -1 or current_count < max_accounts,
+            "has_active_plan": bool(subscription)
         }
     except Exception as e:
         logger.error(f"Error listando configuraciones de correo: {e}")

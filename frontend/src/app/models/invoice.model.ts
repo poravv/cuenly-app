@@ -112,6 +112,7 @@ export interface EmailConfigsResponse {
   total: number;
   max_allowed?: number;
   can_add_more?: boolean;
+  has_active_plan?: boolean;
 }
 
 export interface EmailTestResult {

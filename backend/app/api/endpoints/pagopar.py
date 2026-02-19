@@ -196,11 +196,14 @@ async def delete_card(
 
     # Block deletion if user has active subscription
     active_sub = await sub_repo.get_user_active_subscription(email)
-    if active_sub:
-        raise HTTPException(
-            status_code=400, 
-            detail="No puedes eliminar tu tarjeta mientras tienes una suscripción activa. Primero cancela tu suscripción."
-        )
+    if active_sub and active_sub.get("status", "").lower() == "active":
+         # Listar tarjetas para ver cuántas tiene
+        cards = await pagopar_service.list_cards(pagopar_id)
+        if cards and len(cards) <= 1:
+            raise HTTPException(
+                status_code=400, 
+                detail="No puedes eliminar tu única tarjeta con una suscripción activa. Agrega otra tarjeta primero o cancela tu suscripción."
+            )
 
     success = await pagopar_service.delete_card(pagopar_id, card_token)
     if not success:

@@ -20,6 +20,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   // Límites de cuentas de correo por plan
   maxEmailAccounts: number = 1;
   canAddMore: boolean = true;
+  hasActivePlan: boolean = false;
 
   // OAuth state
   googleOAuthConfigured: boolean = false;
@@ -132,13 +133,15 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         this.emailConfigs = resp.configs || [];
         this.maxEmailAccounts = resp.max_allowed || 1;
         this.canAddMore = resp.can_add_more !== undefined ? resp.can_add_more : true;
+        this.hasActivePlan = resp.has_active_plan !== undefined ? resp.has_active_plan : false;
         this.loading = false;
 
         // Mostrar información de límite si está cerca
         if (!this.canAddMore) {
           const limit = this.maxEmailAccounts === -1 ? 'ilimitadas' : this.maxEmailAccounts;
+          const planName = this.hasActivePlan ? 'tu plan' : 'tu Plan Gratuito';
           this.notificationService.info(
-            `Has alcanzado el límite de ${limit} cuentas de correo de tu plan`,
+            `Has alcanzado el límite de ${limit} cuentas de correo de ${planName}`,
             'Límite alcanzado'
           );
         }
