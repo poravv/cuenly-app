@@ -27,7 +27,8 @@ interface MonthSummary {
 
 interface MonthlyData {
   year_month: string;
-  invoice_count: number;
+  invoice_count?: number;
+  count?: number;
   total_amount: number;
   average_amount: number;
 }
@@ -272,7 +273,7 @@ export class DashboardComponent implements OnInit {
 
     // Recalcular stats para los top cards basado en el filtro
     if (this.monthlyData.length > 0) {
-      const total_invoices = this.monthlyData.reduce((sum, d) => sum + d.invoice_count, 0);
+      const total_invoices = this.monthlyData.reduce((sum, d) => sum + (d.count || d.invoice_count || 0), 0);
       const total_amount = this.monthlyData.reduce((sum, d) => sum + d.total_amount, 0);
       const average_amount = total_invoices > 0 ? total_amount / total_invoices : 0;
 

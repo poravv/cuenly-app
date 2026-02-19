@@ -318,6 +318,14 @@ async def pagopar_webhook(payload: Dict[str, Any] = Body(...)):
         
         logger.info(f"📋 Pedido: {numero_pedido} | Hash: {hash_pedido} | Pagado: {pagado} | Monto: {monto}")
         
+        # PASO 3 AUTOMÁTICO PARA SIMULADORES: Llamar a /1.1/traer
+        # Pagopar espera que validemos el pedido consultando "Paso 3", así que lo hacemos aquí mismo.
+        try:
+            await pagopar_service.check_order_status(hash_pedido)
+            logger.info(f"🔍 PASO 3 AUTOMÁTICO: Estado validado exitosamente para hash {hash_pedido}")
+        except Exception as e:
+            logger.error(f"❌ Error en Paso 3 automático para hash {hash_pedido}: {str(e)}")
+        
         # Si el pago fue exitoso, activar suscripción
         if pagado:
             from app.repositories.subscription_repository import SubscriptionRepository
