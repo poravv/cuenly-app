@@ -591,6 +591,11 @@ export class ApiService {
     });
   }
 
+  // Validar pedido de Pagopar por hash
+  validatePagoparOrder(orderHash: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/pagopar/validation/orders/${orderHash}`);
+  }
+
   // Admin Subscriptions
   getAdminSubscriptions(page: number = 1, pageSize: number = 20, status: string = 'active'): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/admin/subscriptions`, {

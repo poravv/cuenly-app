@@ -1,0 +1,69 @@
+<div class="result-container animate-fade-in">
+    <div class="card glass-card shadow-xl rounded-2xl p-8 max-w-md w-full mx-auto text-center">
+
+        <!-- Loading State -->
+        <div *ngIf="loading" class="py-12">
+            <div class="loading-spinner mb-4"></div>
+            <h2 class="text-xl font-semibold text-gray-700">Verificando pedido...</h2>
+            <p class="text-gray-500">Estamos validando la transacción con Pagopar</p>
+        </div>
+
+        <!-- Error State -->
+        <div *ngIf="!loading && error" class="py-8">
+            <div class="error-icon mb-6">
+                <i class="fas fa-exclamation-circle text-red-500 text-6xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Ups! Algo salió mal</h2>
+            <p class="text-gray-600 mb-8">{{ error }}</p>
+            <button (click)="goToDashboard()" class="btn-primary w-full">
+                Volver al Dashboard
+            </button>
+        </div>
+
+        <!-- Success/Result State -->
+        <div *ngIf="!loading && !error && orderStatus" class="py-6">
+            <div *ngIf="orderStatus.resultado?.[0]?.pagado" class="success-flow animate-pop-in">
+                <div class="success-icon mb-6">
+                    <div class="checkmark-circle">
+                        <div class="background"></div>
+                        <div class="checkmark draw"></div>
+                    </div>
+                </div>
+                <h2 class="text-3xl font-bold text-gray-800 mb-2">¡Pago Exitoso!</h2>
+                <p class="text-gray-600 mb-6">Tu suscripción ha sido actualizada correctamente.</p>
+
+                <div class="info-grid bg-gray-50 rounded-xl p-4 mb-8 text-left">
+                    <div class="flex justify-between py-2 border-b border-gray-100">
+                        <span class="text-gray-500">Hash de Pedido:</span>
+                        <span class="font-mono text-sm text-gray-800">{{ hash | slice:0:12 }}...</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-100">
+                        <span class="text-gray-500">Método:</span>
+                        <span class="text-gray-800">{{ orderStatus.resultado[0].forma_pago }}</span>
+                    </div>
+                    <div class="flex justify-between py-2">
+                        <span class="text-gray-500">Monto:</span>
+                        <span class="font-bold text-primary">{{ orderStatus.resultado[0].monto |
+                            currency:'PYG':'symbol':'1.0-0' }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div *ngIf="!orderStatus.resultado?.[0]?.pagado" class="pending-flow">
+                <div class="warning-icon mb-6">
+                    <i class="fas fa-clock text-yellow-500 text-6xl animate-pulse"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Pedido Pendiente</h2>
+                <p class="text-gray-600 mb-8">
+                    Aún no hemos recibido la confirmación de pago.
+                    Si ya realizaste el pago, puede tardar unos minutos en procesarse.
+                </p>
+            </div>
+
+            <button (click)="goToDashboard()"
+                class="btn-primary w-full py-3 rounded-xl font-bold shadow-lg transform transition active:scale-95">
+                Ir a mi Dashboard
+            </button>
+        </div>
+    </div>
+</div>

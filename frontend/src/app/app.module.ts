@@ -22,6 +22,7 @@ import { ExportTemplatesComponent } from './components/export-templates/export-t
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { NotificationContainerComponent } from './components/shared/notification-container/notification-container.component';
+import { PagoparResultComponent } from './components/pagopar-result/pagopar-result.component';
 
 import { SuspendedComponent } from './components/suspended/suspended.component';
 import { AppComponent } from './app.component';
@@ -64,7 +65,8 @@ import { DataRetentionComponent } from './components/legal/data-retention.compon
     ProfileComponent,
     TermsConditionsComponent,
     PrivacyPolicyComponent,
-    DataRetentionComponent
+    DataRetentionComponent,
+    PagoparResultComponent
   ],
   imports: [
     BrowserModule,

@@ -287,23 +287,25 @@ async def init_validation_order(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/webhook")
-async def pagopar_webhook(payload: List[Dict[str, Any]] = Body(...)):
+async def pagopar_webhook(payload: Dict[str, Any] = Body(...)):
     """
     PASO 2: Webhook de Respuesta (URL de Respuesta).
     Pagopar envía aquí el resultado del pago.
     CRÍTICO: Este endpoint activa suscripciones cuando el pago es exitoso.
     """
     import logging
+    from datetime import datetime
     logger = logging.getLogger(__name__)
     logger.info(f"💰 WEBHOOK RECEIVED: {payload}")
     
     try:
-        # Pagopar envía un array de pedidos
-        if not payload or len(payload) == 0:
-            logger.warning("Webhook vacío recibido")
+        # Pagopar envía un objeto con "resultado" que es un array
+        resultado = payload.get("resultado")
+        if not resultado or not isinstance(resultado, list) or len(resultado) == 0:
+            logger.warning("Respuesta de Pagopar no contiene resultados válidos")
             return {"respuesta": True}
         
-        payment_data = payload[0]  # Primer elemento del array
+        payment_data = resultado[0]  # Primer elemento del array
         
         # Extraer datos críticos
         hash_pedido = payment_data.get("hash_pedido")

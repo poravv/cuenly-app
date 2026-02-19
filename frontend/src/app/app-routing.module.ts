@@ -18,6 +18,7 @@ import { ProfileGuard } from './guards/profile.guard';
 import { LoginGuard } from './guards/login.guard';
 import { SuspendedComponent } from './components/suspended/suspended.component';
 import { AdminGuard } from './guards/admin.guard';
+import { PagoparResultComponent } from './components/pagopar-result/pagopar-result.component';
 
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { ProfileComponent } from './components/profile/profile.component';
@@ -53,6 +54,7 @@ const routes: Routes = [
   { path: 'terms', component: TermsConditionsComponent },
   { path: 'privacy', component: PrivacyPolicyComponent },
   { path: 'retention', component: DataRetentionComponent },
+  { path: 'pagopar/resultado/:hash', component: PagoparResultComponent, canActivate: [AuthGuard] },
   { path: '**', redirectTo: '', pathMatch: 'full' }
 ];
 
