@@ -1,7 +1,7 @@
 # app/models/models.py
 
 from __future__ import annotations
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -118,11 +118,12 @@ class InvoiceData(BaseModel):
     descripcion_factura: Optional[str] = ""
     detalle_articulos: Optional[str] = ""
     email_origen: Optional[str] = ""
+    message_id: Optional[str] = ""
 
     procesado_en: Optional[datetime] = Field(default_factory=datetime.now)
     mes_proceso: Optional[str] = ""
 
-    # campos “legacy” que siguen llegando desde el parser OpenAI
+    # campos "legacy" que siguen llegando desde el parser OpenAI
     ruc_emisor: Optional[str] = ""
     nombre_emisor: Optional[str] = ""
     numero_factura: Optional[str] = ""
@@ -152,6 +153,46 @@ class InvoiceData(BaseModel):
     total_iva: Optional[float] = 0.0        # dTotIVA del XML
     total_base_gravada: Optional[float] = 0.0  # Total bases gravadas
     anticipo: Optional[float] = 0.0         # dAnticipo del XML
+
+    # === CAMPOS NUEVOS XSD SIFEN v150 ===
+    # Verificación documento (gCamFuFD)
+    qr_url: Optional[str] = ""              # dCarQR — URL para consultar en SET Paraguay
+    info_adicional: Optional[str] = ""      # dInfAdic — info adicional del emisor
+
+    # Tipo de documento electrónico (gTimb)
+    tipo_documento_electronico: Optional[str] = ""   # dDesTiDE (ej: "Factura electrónica")
+    tipo_de_codigo: Optional[str] = ""               # iTiDE (1=Factura, 4=Autofactura, 5=NC, 6=ND)
+
+    # Indicador de presencia (gCamFE)
+    ind_presencia: Optional[str] = ""       # dDesIndPres (ej: "Operación presencial")
+    ind_presencia_codigo: Optional[str] = ""# iIndPres
+
+    # Condición de crédito (gCamCond.gPagCred)
+    cond_credito: Optional[str] = ""        # dDCondCred (ej: "Plazo")
+    cond_credito_codigo: Optional[str] = "" # iCondCred
+    plazo_credito_dias: Optional[int] = 0   # dPlazoCre
+
+    # Ciclo de facturación — servicios (gCamEsp.gGrupAdi)
+    ciclo_facturacion: Optional[str] = ""   # dCiclo (ej: "DICIEMBRE")
+    ciclo_fecha_inicio: Optional[str] = ""  # dFecIniC
+    ciclo_fecha_fin: Optional[str] = ""     # dFecFinC
+
+    # Transporte (gTransp)
+    transporte_modalidad: Optional[str] = ""          # dDesModTrans (ej: "Terrestre")
+    transporte_modalidad_codigo: Optional[str] = ""   # iModTrans
+    transporte_resp_flete_codigo: Optional[str] = ""  # iRespFlete
+    transporte_nro_despacho: Optional[str] = ""       # dNuDespImp
+
+    # ISC — Impuesto Selectivo al Consumo (gTotSub)
+    isc_total: Optional[float] = 0.0           # dLtotIsc
+    isc_base_imponible: Optional[float] = 0.0  # dBaseImpISC
+    isc_subtotal_gravado: Optional[float] = 0.0# dSubVISC
+
+    # === Estado de procesamiento (ciclo de vida) ===
+    # PROCESSING → DONE | PENDING_AI | FAILED
+    status: Optional[str] = "DONE"         # Estado de procesamiento de la factura
+    processing_error: Optional[str] = None # Mensaje de error si status=FAILED
+    fuente: Optional[str] = ""             # XML | PDF | LINK | AI
 
     actividad_economica: Optional[str] = ""
     empresa: Optional[EmpresaData] = None
@@ -256,6 +297,32 @@ class InvoiceData(BaseModel):
             total_base_gravada=safe_float(data.get("total_base_gravada")),
             anticipo=safe_float(data.get("anticipo")),
 
+            # === CAMPOS NUEVOS XSD SIFEN v150 ===
+            qr_url=data.get("qr_url", ""),
+            info_adicional=data.get("info_adicional", ""),
+            tipo_documento_electronico=data.get("tipo_documento_electronico", ""),
+            tipo_de_codigo=data.get("tipo_de_codigo", ""),
+            ind_presencia=data.get("ind_presencia", ""),
+            ind_presencia_codigo=data.get("ind_presencia_codigo", ""),
+            cond_credito=data.get("cond_credito", ""),
+            cond_credito_codigo=data.get("cond_credito_codigo", ""),
+            plazo_credito_dias=int(data.get("plazo_credito_dias") or 0),
+            ciclo_facturacion=data.get("ciclo_facturacion", ""),
+            ciclo_fecha_inicio=data.get("ciclo_fecha_inicio", ""),
+            ciclo_fecha_fin=data.get("ciclo_fecha_fin", ""),
+            transporte_modalidad=data.get("transporte_modalidad", ""),
+            transporte_modalidad_codigo=data.get("transporte_modalidad_codigo", ""),
+            transporte_resp_flete_codigo=data.get("transporte_resp_flete_codigo", ""),
+            transporte_nro_despacho=data.get("transporte_nro_despacho", ""),
+            isc_total=safe_float(data.get("isc_total")),
+            isc_base_imponible=safe_float(data.get("isc_base_imponible")),
+            isc_subtotal_gravado=safe_float(data.get("isc_subtotal_gravado")),
+
+            # Estado de procesamiento
+            status=data.get("status", "DONE"),
+            processing_error=data.get("processing_error"),
+            fuente=data.get("fuente", ""),
+
             actividad_economica=data.get("actividad_economica"),
             empresa=EmpresaData(**data["empresa"]) if data.get("empresa") else None,
             timbrado_data=TimbradoData(**data["timbrado_data"]) if data.get("timbrado_data") else None,
@@ -293,6 +360,9 @@ class MultiEmailConfig(BaseModel):
     use_ssl: bool = True
     search_criteria: str = "UNSEEN"
     search_terms: Optional[List[str]] = None
+    search_synonyms: Optional[Dict[str, List[str]] | List[str]] = None
+    fallback_sender_match: bool = False
+    fallback_attachment_match: bool = False
     provider: str = "other"  # "gmail", "outlook", "yahoo", "other"
     enabled: bool = True
     owner_email: Optional[str] = None  # Campo agregado para multiusuario
@@ -320,6 +390,9 @@ class EmailConfigUpdate(BaseModel):
     use_ssl: Optional[bool] = None
     search_criteria: Optional[str] = None
     search_terms: Optional[List[str]] = None
+    search_synonyms: Optional[Dict[str, List[str]] | List[str]] = None
+    fallback_sender_match: Optional[bool] = None
+    fallback_attachment_match: Optional[bool] = None
     provider: Optional[str] = None
     enabled: Optional[bool] = None
 
@@ -336,6 +409,9 @@ class EmailConfig(BaseModel):
         "documento electrónico", "documento electronico",
         "DOCUMENTO ELECTRONICO", "DOCUMENTO ELECTRÓNICO"
     ])
+    search_synonyms: Optional[Dict[str, List[str]] | List[str]] = None
+    fallback_sender_match: bool = False
+    fallback_attachment_match: bool = False
     # OAuth 2.0 fields
     auth_type: str = "password"  # 'password' or 'oauth2'
     access_token: Optional[str] = None
@@ -353,6 +429,7 @@ class ProcessResult(BaseModel):
 class JobStatus(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     running: bool
+    is_processing: bool = False  # Indica si hay cualquier carga activa (manual, rango, etc)
     next_run: Optional[str] = None
     interval_minutes: int
     last_run: Optional[str] = None

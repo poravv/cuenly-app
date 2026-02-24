@@ -41,23 +41,31 @@ class Settings(BaseSettings):
     
     # Security - Frontend API Key
     FRONTEND_API_KEY: str = os.getenv("FRONTEND_API_KEY", "cuenly-frontend-dev-key-2025")
+    # Seguridad de credenciales de correo (cifrado en reposo)
+    # Recomendado: clave Fernet urlsafe base64 de 32 bytes.
+    EMAIL_CONFIG_ENCRYPTION_KEY: str = os.getenv("EMAIL_CONFIG_ENCRYPTION_KEY", "")
     
     # Email Processing
     EMAIL_PROCESS_ALL_DATES: bool = os.getenv("EMAIL_PROCESS_ALL_DATES", "true").lower() in ("1", "true", "yes")
     
     # Email Processing - Multiusuario optimizado
-    EMAIL_BATCH_SIZE: int = int(os.getenv("EMAIL_BATCH_SIZE", 5))  # Correos por lote (reducido para multiusuario)
+    EMAIL_BATCH_SIZE: int = int(os.getenv("EMAIL_BATCH_SIZE", 50))  # Fallback local si fan-out no está disponible
     EMAIL_BATCH_DELAY: float = float(os.getenv("EMAIL_BATCH_DELAY", 3.0))  # Segundos entre lotes
     EMAIL_PROCESSING_DELAY: float = float(os.getenv("EMAIL_PROCESSING_DELAY", 0.5))  # Segundos entre correos
     
     # Email Processing - Procesamiento paralelo
-    MAX_CONCURRENT_ACCOUNTS: int = int(os.getenv("MAX_CONCURRENT_ACCOUNTS", 30))  # Cuentas procesadas simultáneamente
+    MAX_CONCURRENT_ACCOUNTS: int = int(os.getenv("MAX_CONCURRENT_ACCOUNTS", 10))  # Cuentas procesadas simultáneamente (reducido para prod)
     ENABLE_PARALLEL_PROCESSING: bool = os.getenv("ENABLE_PARALLEL_PROCESSING", "true").lower() in ("1", "true", "yes")
+    ENABLE_EMAIL_FANOUT: bool = os.getenv("ENABLE_EMAIL_FANOUT", "true").lower() in ("1", "true", "yes")
+    FANOUT_DISCOVERY_BATCH_SIZE: int = int(os.getenv("FANOUT_DISCOVERY_BATCH_SIZE", 250))  # Descubrimiento IMAP por tandas
+    FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN: int = int(os.getenv("FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN", 200))  # Cap por cuenta/corrida
     
     # Job Processing Limits
     JOB_MAX_RUNTIME_HOURS: int = int(os.getenv("JOB_MAX_RUNTIME_HOURS", 24))  # Parar job después de 24 horas
     JOB_REST_PERIOD_HOURS: int = int(os.getenv("JOB_REST_PERIOD_HOURS", 2))  # Descansar 2 horas después de 24h
-    MANUAL_PROCESS_LIMIT: int = int(os.getenv("MANUAL_PROCESS_LIMIT", 10))  # Límite de facturas por proceso manual
+    MANUAL_PROCESS_LIMIT: int = int(os.getenv("MANUAL_PROCESS_LIMIT", 50))  # Compat legacy
+    PROCESS_DIRECT_DEFAULT_LIMIT: int = int(os.getenv("PROCESS_DIRECT_DEFAULT_LIMIT", 50))
+    PROCESS_DIRECT_MAX_LIMIT: int = int(os.getenv("PROCESS_DIRECT_MAX_LIMIT", 200))
 
     # MinIO / S3 Storage
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "minpoint.mindtechpy.net")

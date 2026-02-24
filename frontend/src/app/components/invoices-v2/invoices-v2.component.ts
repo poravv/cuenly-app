@@ -194,6 +194,32 @@ export class InvoicesV2Component implements OnInit {
     return c.includes('CRED') ? 'badge bg-warning text-dark' : 'badge bg-success';
   }
 
+  hasExtendedSifenFields(header: any): boolean {
+    if (!header) return false;
+    const keys = [
+      'tipo_documento_electronico',
+      'tipo_de_codigo',
+      'ind_presencia',
+      'ind_presencia_codigo',
+      'cond_credito',
+      'cond_credito_codigo',
+      'plazo_credito_dias',
+      'ciclo_facturacion',
+      'ciclo_fecha_inicio',
+      'ciclo_fecha_fin',
+      'transporte_modalidad',
+      'transporte_modalidad_codigo',
+      'transporte_resp_flete_codigo',
+      'transporte_nro_despacho',
+      'qr_url',
+      'info_adicional'
+    ];
+    return keys.some((key) => {
+      const value = header[key];
+      return value !== null && value !== undefined && String(value).trim() !== '';
+    });
+  }
+
   updateChips(): void {
     const chips: { key: string; label: string; value: string }[] = [];
     if (this.month) chips.push({ key: 'month', label: 'Mes', value: this.month });

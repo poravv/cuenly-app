@@ -15,9 +15,14 @@ class ProcessedEmail(BaseModel):
     owner_email: str
     account_email: str
     email_uid: str
+    message_id: Optional[str] = None
+
     
     status: str = "success"  # success, xml, pdf, skipped_ai_limit, error, missing_metadata
     reason: Optional[str] = None
+    subject: Optional[str] = None
+    sender: Optional[str] = None
+    email_date: Optional[datetime] = None
     
     processed_at: datetime = Field(default_factory=datetime.utcnow)
     

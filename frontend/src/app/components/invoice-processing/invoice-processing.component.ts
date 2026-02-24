@@ -1,6 +1,14 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { ApiService } from '../../services/api.service';
-import { ProcessResult, SystemStatus, JobStatus, TaskSubmitResponse, TaskStatusResponse } from '../../models/invoice.model';
+import {
+  ProcessResult,
+  SystemStatus,
+  JobStatus,
+  TaskSubmitResponse,
+  TaskStatusResponse,
+  EmailConfig,
+  EmailTestResult,
+} from '../../models/invoice.model';
 import { interval, Subscription } from 'rxjs';
 import { ObservabilityService } from '../../services/observability.service';
 
@@ -35,6 +43,22 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   dateRangeResult: any = null;
   dateRangeError: string | null = null;
 
+  // Setup rápido en la misma pantalla (Fase 5 UX)
+  showQuickSetup = false;
+  quickSetupDismissed = false;
+  quickSaving = false;
+  quickTesting = false;
+  quickError: string | null = null;
+  quickTestResult: EmailTestResult | null = null;
+  quickAdvancedOpen = false;
+  quickSynonymsText = '';
+  quickConfig: EmailConfig = this.createQuickConfig();
+  quickProviders = [
+    { id: 'gmail', label: 'Gmail', host: 'imap.gmail.com', port: 993, use_ssl: true },
+    { id: 'outlook', label: 'Outlook/Hotmail', host: 'imap-mail.outlook.com', port: 993, use_ssl: true },
+    { id: 'custom', label: 'Personalizado', host: '', port: 993, use_ssl: true },
+  ];
+
   private storageHandler: any;
   private savePrefTimer: any = null;
 
@@ -51,11 +75,20 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       if (!isNaN(val) && val >= 5000) this.autoRefreshIntervalMs = val;
     }
 
-    // Cargar rango de fechas guardado
+    // Cargar rango de fechas y resultado guardado
     const savedStartDate = localStorage.getItem('cuenlyapp:dateRangeStart');
     const savedEndDate = localStorage.getItem('cuenlyapp:dateRangeEnd');
     if (savedStartDate) this.dateRangeStart = savedStartDate;
     if (savedEndDate) this.dateRangeEnd = savedEndDate;
+
+    const savedResult = localStorage.getItem('cuenlyapp:dateRangeResult');
+    if (savedResult) {
+      try {
+        this.dateRangeResult = JSON.parse(savedResult);
+      } catch (e) {
+        localStorage.removeItem('cuenlyapp:dateRangeResult');
+      }
+    }
 
     this.jobIntervalInput = this.intervalOptions[0];
   }
@@ -130,6 +163,13 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     this.apiService.getStatus().subscribe({
       next: (data) => {
         this.status = data;
+        const hasAccounts = (data.email_configs_count || 0) > 0;
+        if (!hasAccounts && !this.quickSetupDismissed) {
+          this.showQuickSetup = true;
+        }
+        if (hasAccounts) {
+          this.showQuickSetup = false;
+        }
         this.loading = false;
       },
       error: (err) => {
@@ -160,6 +200,12 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
           endpoint: '/job/status',
           action: 'loadJobStatus'
         });
+      },
+      complete: () => {
+        // Si ya no se está procesando nada, limpiar el resultado guardado de rango
+        if (this.jobStatus && !this.jobStatus.is_processing && this.dateRangeResult?.job_id) {
+          this.clearDateRangeResult();
+        }
       }
     });
   }
@@ -205,6 +251,171 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         });
       }
     });
+  }
+
+  createQuickConfig(): EmailConfig {
+    return {
+      name: 'Cuenta principal',
+      host: '',
+      port: 993,
+      username: '',
+      password: '',
+      use_ssl: true,
+      search_terms: ['factura', 'invoice', 'comprobante'],
+      search_criteria: 'UNSEEN',
+      provider: 'other',
+      enabled: true,
+      auth_type: 'password',
+      search_synonyms: {},
+      fallback_sender_match: true,
+      fallback_attachment_match: true,
+    };
+  }
+
+  openQuickSetup(): void {
+    this.showQuickSetup = true;
+    this.quickSetupDismissed = false;
+    this.quickError = null;
+  }
+
+  dismissQuickSetup(): void {
+    this.showQuickSetup = false;
+    this.quickSetupDismissed = true;
+  }
+
+  selectQuickProvider(providerId: string): void {
+    const selected = this.quickProviders.find((p) => p.id === providerId);
+    if (!selected) return;
+
+    if (providerId === 'custom') {
+      this.quickConfig.provider = 'other';
+      this.quickConfig.host = '';
+      this.quickConfig.port = 993;
+      this.quickConfig.use_ssl = true;
+      return;
+    }
+
+    this.quickConfig.provider = providerId;
+    this.quickConfig.host = selected.host;
+    this.quickConfig.port = selected.port;
+    this.quickConfig.use_ssl = selected.use_ssl;
+  }
+
+  private parseQuickSearchTerms(rawTerms: string[]): string[] {
+    return (rawTerms || [])
+      .map((term) => (term || '').trim())
+      .filter((term) => !!term);
+  }
+
+  private parseQuickSynonyms(text: string): { [key: string]: string[] } {
+    const result: { [key: string]: string[] } = {};
+    const lines = (text || '').split('\n').map((line) => line.trim()).filter((line) => !!line);
+
+    lines.forEach((line) => {
+      const parts = line.split(':');
+      if (parts.length < 2) return;
+      const base = (parts[0] || '').trim();
+      const synonymsRaw = parts.slice(1).join(':');
+      const synonyms = synonymsRaw
+        .split(',')
+        .map((v) => (v || '').trim())
+        .filter((v) => !!v);
+      if (!base || !synonyms.length) return;
+      result[base] = Array.from(new Set(synonyms));
+    });
+
+    return result;
+  }
+
+  private buildQuickPayload(): EmailConfig {
+    const payload: EmailConfig = {
+      ...this.quickConfig,
+      search_terms: this.parseQuickSearchTerms(this.quickConfig.search_terms || []),
+      search_synonyms: this.parseQuickSynonyms(this.quickSynonymsText),
+      fallback_sender_match: !!this.quickConfig.fallback_sender_match,
+      fallback_attachment_match: !!this.quickConfig.fallback_attachment_match,
+      search_criteria: 'UNSEEN',
+      enabled: true,
+      auth_type: 'password',
+      provider: this.quickConfig.provider || 'other',
+    };
+    return payload;
+  }
+
+  testQuickSetup(): void {
+    this.quickError = null;
+    this.quickTestResult = null;
+
+    const payload = this.buildQuickPayload();
+    if (!payload.host || !payload.username || !payload.password) {
+      this.quickError = 'Completa host, usuario y contraseña para probar la conexión.';
+      return;
+    }
+
+    this.quickTesting = true;
+    this.apiService.testEmailConfig(payload).subscribe({
+      next: (result) => {
+        this.quickTestResult = result;
+        this.quickTesting = false;
+      },
+      error: (err) => {
+        this.quickTesting = false;
+        this.quickTestResult = {
+          success: false,
+          message: err?.error?.detail || 'No se pudo probar la conexión',
+          connection_test: false,
+          login_test: false,
+        };
+      }
+    });
+  }
+
+  saveQuickSetup(processNow: boolean): void {
+    this.quickError = null;
+    this.quickTestResult = null;
+
+    const payload = this.buildQuickPayload();
+    if (!payload.host || !payload.username || !payload.password) {
+      this.quickError = 'Completa host, usuario y contraseña para guardar.';
+      return;
+    }
+
+    if (!payload.search_terms || !payload.search_terms.length) {
+      this.quickError = 'Agrega al menos un término de búsqueda.';
+      return;
+    }
+
+    this.quickSaving = true;
+    this.apiService.createEmailConfig(payload).subscribe({
+      next: () => {
+        this.quickSaving = false;
+        this.quickConfig = this.createQuickConfig();
+        this.quickSynonymsText = '';
+        this.quickAdvancedOpen = false;
+        this.showQuickSetup = false;
+        this.quickSetupDismissed = false;
+        this.getSystemStatus();
+        this.getJobStatus();
+
+        if (processNow) {
+          setTimeout(() => this.processEmails(true), 250);
+        }
+      },
+      error: (err) => {
+        this.quickSaving = false;
+        this.quickError = err?.error?.detail || 'No se pudo guardar la configuración rápida';
+      }
+    });
+  }
+
+  addQuickSearchTerm(): void {
+    if (!this.quickConfig.search_terms) this.quickConfig.search_terms = [];
+    this.quickConfig.search_terms.push('');
+  }
+
+  removeQuickSearchTerm(index: number): void {
+    if (!this.quickConfig.search_terms || this.quickConfig.search_terms.length <= 1) return;
+    this.quickConfig.search_terms.splice(index, 1);
   }
 
   // Mostrar notificación elegante para trial expirado
@@ -379,15 +590,24 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
         this.dateRangeResult = result;
         this.dateRangeLoading = false;
 
-        // Refrescar estadísticas
-        setTimeout(() => {
-          this.getSystemStatus();
-          this.getJobStatus();
-        }, 1000);
+        // Persistir resultado
+        if (result && result.job_id) {
+          localStorage.setItem('cuenlyapp:dateRangeResult', JSON.stringify(result));
+        }
+
+        // Refrescar estado inmediatamente para capturar el flag is_processing
+        this.getJobStatus();
+
+        // Si no hay auto-refresh, hacer un par de refrescos extra manuales
+        if (!this.autoRefresh) {
+          setTimeout(() => this.getJobStatus(), 3000);
+          setTimeout(() => this.getJobStatus(), 8000);
+        }
       },
       error: (err) => {
         this.dateRangeError = err.error?.detail || err.error?.message || 'Error al procesar rango de fechas';
         this.dateRangeLoading = false;
+        this.getJobStatus();
         this.observability.error('Error processing date range', err, 'InvoiceProcessingComponent', {
           action: 'processDateRange',
           start_date: this.dateRangeStart,
@@ -400,6 +620,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   clearDateRangeResult(): void {
     this.dateRangeResult = null;
     this.dateRangeError = null;
+    localStorage.removeItem('cuenlyapp:dateRangeResult');
   }
 
   // Guardar fechas cuando cambien

@@ -352,7 +352,7 @@ class MongoQueryService:
             logger.error("Error obteniendo estadísticas del mes %s: %s", year_month, e)
             return {"error": str(e), "year_month": year_month}
 
-    def search_invoices(self, 
+    def search_invoices(self,
                        query: str = "",
                        start_date: Optional[str] = None,
                        end_date: Optional[str] = None,
@@ -360,7 +360,8 @@ class MongoQueryService:
                        client_ruc: Optional[str] = None,
                        min_amount: Optional[float] = None,
                        max_amount: Optional[float] = None,
-                       limit: int = 100) -> List[Dict[str, Any]]:
+                       limit: int = 100,
+                       owner_email: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Búsqueda avanzada de facturas con múltiples filtros
         
@@ -373,6 +374,7 @@ class MongoQueryService:
             min_amount: Monto mínimo
             max_amount: Monto máximo
             limit: Límite de resultados
+            owner_email: Email del propietario para aislamiento multi-tenant
             
         Returns:
             Lista de facturas que coinciden con los criterios
@@ -382,8 +384,12 @@ class MongoQueryService:
             db = client[self.database_name]
             collection = db[self.collection_name]
             
-            # Construir filtros 
+            # Construir filtros
             filters: Dict[str, Any] = {}
+
+            # Aislamiento multi-tenant
+            if owner_email:
+                filters["owner_email"] = owner_email.lower()
             
             # Texto libre: usar OR en campos relevantes
             if query:
@@ -456,12 +462,13 @@ class MongoQueryService:
             logger.error("Error en búsqueda de facturas: %s", e)
             return []
 
-    def get_recent_activity(self, days: int = 7) -> Dict[str, Any]:
+    def get_recent_activity(self, days: int = 7, owner_email: Optional[str] = None) -> Dict[str, Any]:
         """
         Obtiene actividad reciente del sistema
         
         Args:
             days: Número de días hacia atrás para consultar
+            owner_email: Email del propietario para aislamiento multi-tenant
             
         Returns:
             Diccionario con actividad reciente
@@ -474,8 +481,12 @@ class MongoQueryService:
             # Fecha límite
             cutoff_date = datetime.now(timezone.utc) - relativedelta(days=days)
             
+            match: Dict[str, Any] = {"created_at": {"$gte": cutoff_date}}
+            if owner_email:
+                match["owner_email"] = owner_email.lower()
+
             pipeline = [
-                {"$match": {"created_at": {"$gte": cutoff_date}}},
+                {"$match": match},
                 {"$group": {
                     "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
                     "count": {"$sum": 1},
@@ -488,7 +499,7 @@ class MongoQueryService:
             
             # Estadísticas totales del período
             total_stats = collection.aggregate([
-                {"$match": {"created_at": {"$gte": cutoff_date}}},
+                {"$match": match},
                 {"$group": {
                     "_id": None,
                     "total_facturas": {"$sum": 1},
@@ -509,8 +520,132 @@ class MongoQueryService:
             logger.error("Error obteniendo actividad reciente: %s", e)
             return {"error": str(e)}
 
+    def get_invoices_by_status(self, owner_email: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Retorna conteo de facturas agrupadas por campo 'status'.
+        DONE | FAILED | PENDING_AI | PROCESSING
+        Equivalente al MetricsController de la arquitectura Enterprise.
+        """
+        try:
+            client = self._get_client()
+            db = client[self.database_name]
+            collection = db[self.collection_name]
+
+            match: Dict[str, Any] = {}
+            if owner_email:
+                match["owner_email"] = owner_email.lower()
+
+            pipeline = [
+                {"$match": match},
+                {"$group": {
+                    "_id": {"$ifNull": ["$status", "DONE"]},
+                    "count": {"$sum": 1}
+                }},
+                {"$sort": {"count": -1}}
+            ]
+
+            results = list(collection.aggregate(pipeline))
+            status_map = {r["_id"]: r["count"] for r in results}
+
+            logger.info("📊 Status breakdown: %s", status_map)
+            return {
+                "DONE": status_map.get("DONE", 0),
+                "FAILED": status_map.get("FAILED", 0),
+                "PENDING_AI": status_map.get("PENDING_AI", 0),
+                "PROCESSING": status_map.get("PROCESSING", 0),
+                "total": sum(status_map.values()),
+            }
+        except Exception as e:
+            logger.error("Error obteniendo status breakdown: %s", e)
+            return {"error": str(e)}
+
+    def get_failed_invoices(self, owner_email: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Retorna facturas con status=FAILED para revisión y reintento.
+        Incluye processing_error para diagnóstico.
+        """
+        try:
+            client = self._get_client()
+            db = client[self.database_name]
+            collection = db[self.collection_name]
+
+            query: Dict[str, Any] = {"status": {"$in": ["FAILED", "PENDING_AI"]}}
+            if owner_email:
+                query["owner_email"] = owner_email.lower()
+
+            projection = {
+                "_id": 1,
+                "numero_documento": 1,
+                "fecha_emision": 1,
+                "emisor": 1,
+                "status": 1,
+                "processing_error": 1,
+                "fuente": 1,
+                "created_at": 1,
+                "owner_email": 1,
+            }
+
+            results = list(
+                collection.find(query, projection)
+                .sort("created_at", -1)
+                .limit(limit)
+            )
+
+            logger.info("⚠️ Facturas FAILED/PENDING_AI encontradas: %d", len(results))
+            return results
+        except Exception as e:
+            logger.error("Error obteniendo facturas fallidas: %s", e)
+            return []
+
+    def get_processing_stats(self, owner_email: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Estadísticas de procesamiento: breakdown por fuente, tipo de documento y presencia.
+        Útil para el dashboard Enterprise.
+        """
+        try:
+            client = self._get_client()
+            db = client[self.database_name]
+            collection = db[self.collection_name]
+
+            match: Dict[str, Any] = {}
+            if owner_email:
+                match["owner_email"] = owner_email.lower()
+
+            pipeline = [
+                {"$match": match},
+                {"$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "xml_nativo": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$fuente", ""]}, "regex": "XML"}}, 1, 0]}},
+                    "openai": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$fuente", ""]}, "regex": "OPENAI"}}, 1, 0]}},
+                    "con_qr": {"$sum": {"$cond": [{"$and": [{"$ne": ["$qr_url", None]}, {"$ne": ["$qr_url", ""]}]}, 1, 0]}},
+                    "con_transporte": {"$sum": {"$cond": [{"$and": [{"$ne": ["$transporte_modalidad", None]}, {"$ne": ["$transporte_modalidad", ""]}]}, 1, 0]}},
+                    "con_ciclo": {"$sum": {"$cond": [{"$and": [{"$ne": ["$ciclo_facturacion", None]}, {"$ne": ["$ciclo_facturacion", ""]}]}, 1, 0]}},
+                    "con_isc": {"$sum": {"$cond": [{"$gt": [{"$ifNull": ["$totales.isc_total", 0]}, 0]}, 1, 0]}},
+                }},
+                {"$project": {
+                    "_id": 0,
+                    "total": 1,
+                    "xml_nativo": 1,
+                    "openai": 1,
+                    "con_qr_url": "$con_qr",
+                    "con_transporte": 1,
+                    "con_ciclo_facturacion": "$con_ciclo",
+                    "con_isc": 1,
+                    "cobertura_qr_pct": {"$round": [{"$multiply": [{"$divide": ["$con_qr", {"$max": ["$total", 1]}]}, 100]}, 1]},
+                }}
+            ]
+
+            result = list(collection.aggregate(pipeline))
+            if result:
+                logger.info("📈 Processing stats: %s", result[0])
+                return result[0]
+            return {"total": 0, "message": "Sin datos disponibles"}
+        except Exception as e:
+            logger.error("Error obteniendo processing stats: %s", e)
+            return {"error": str(e)}
+
     def close_connection(self):
-        """Cierra la conexión a MongoDB"""
         if self._client:
             self._client.close()
             self._client = None

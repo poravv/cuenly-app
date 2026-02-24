@@ -19,6 +19,7 @@ interface Plan {
     custom_templates: boolean;
     minio_storage: boolean;
     retention_days: number;
+    retention_years?: number; // UI only
   };
   status: string;
   is_popular: boolean;
@@ -86,7 +87,8 @@ export class PlansManagementComponent implements OnInit {
       priority_support: false,
       custom_templates: false,
       minio_storage: false,
-      retention_days: 365
+      retention_days: 365,
+      retention_years: 1
     },
     status: 'active',
     is_popular: false,
@@ -187,7 +189,10 @@ export class PlansManagementComponent implements OnInit {
     this.editingPlan = plan;
     this.planForm = {
       ...plan,
-      features: { ...plan.features }
+      features: {
+        ...plan.features,
+        retention_years: plan.features.retention_days ? Math.max(1, Math.floor(plan.features.retention_days / 365)) : 1
+      }
     };
     this.showPlanForm = true;
   }
@@ -209,7 +214,8 @@ export class PlansManagementComponent implements OnInit {
         priority_support: false,
         custom_templates: false,
         minio_storage: false,
-        retention_days: 365
+        retention_days: 365,
+        retention_years: 1
       },
       status: 'active',
       is_popular: false,
@@ -225,10 +231,18 @@ export class PlansManagementComponent implements OnInit {
 
     try {
       let response;
+
+      // Preparar payload enviando retention_days en base a los retention_years
+      const payload = JSON.parse(JSON.stringify(this.planForm));
+      if (payload.features.retention_years) {
+        payload.features.retention_days = payload.features.retention_years * 365;
+        delete payload.features.retention_years;
+      }
+
       if (this.editingPlan) {
-        response = await this.apiService.put(`/admin/plans/${this.editingPlan.code}`, this.planForm);
+        response = await this.apiService.put(`/admin/plans/${this.editingPlan.code}`, payload);
       } else {
-        response = await this.apiService.post('/admin/plans', this.planForm);
+        response = await this.apiService.post('/admin/plans', payload);
       }
 
       if (response.success) {
@@ -277,7 +291,10 @@ export class PlansManagementComponent implements OnInit {
     this.editingPlan = null; // New plan mode
     this.planForm = {
       ...plan,
-      features: { ...plan.features }
+      features: {
+        ...plan.features,
+        retention_years: plan.features.retention_days ? Math.max(1, Math.floor(plan.features.retention_days / 365)) : 1
+      }
     };
     // Modify unique fields to avoid collision/confusion
     this.planForm.name = `${plan.name} (Copia)`;

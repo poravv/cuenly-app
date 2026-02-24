@@ -27,7 +27,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
   user: User | null = null;
   userProfile: UserProfile | null = null;
   isProfileDropdownOpen = false;
-  
+
   // Control de imagen de perfil
   profileImageFailed = false;
   cachedAvatarUrl: string | null = null;
@@ -46,7 +46,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     // Hacer el componente accesible globalmente para debugging
     (window as any).navbarComponent = this;
-    
+
     // Cargar avatar cacheado si existe
     this.cachedAvatarUrl = this.avatarCache.getCachedAvatar();
 
@@ -141,6 +141,13 @@ export class NavbarComponent implements OnInit, OnDestroy {
     this.isProfileDropdownOpen = !this.isProfileDropdownOpen;
   }
 
+  closeNavbar(): void {
+    const navbarCollapse = document.getElementById('navbarNav');
+    if (navbarCollapse && navbarCollapse.classList.contains('show')) {
+      navbarCollapse.classList.remove('show');
+    }
+  }
+
   // Método para debugging - puede ser llamado desde la consola del navegador
   public debugUserProfile(): void {
     console.log('🔍 DEBUG: Estado actual del navbar');
@@ -153,13 +160,13 @@ export class NavbarComponent implements OnInit, OnDestroy {
   // Métodos para debugging de imágenes
   onImageLoad(location: string, event?: any): void {
     console.log(`✅ Imagen cargada correctamente en: ${location}`);
-    
+
     // Intentar cachear la imagen cuando carga exitosamente
     if (event?.target && !this.avatarCache.hasCachedAvatar()) {
       this.avatarCache.cacheFromImageElement(event.target);
       this.cachedAvatarUrl = this.avatarCache.getCachedAvatar();
     }
-    
+
     // Asegurar que no está marcada como fallida
     this.profileImageFailed = false;
   }
@@ -167,22 +174,22 @@ export class NavbarComponent implements OnInit, OnDestroy {
   onImageError(location: string, event: any): void {
     console.error(`❌ Error cargando imagen en: ${location}`, event);
     console.error('URL de la imagen que falló:', event.target?.src);
-    
+
     // Marcar la URL como fallida y ocultar la imagen rota
     const failedUrl = event.target?.src;
     if (failedUrl) {
       this.avatarCache.markAsFailed(failedUrl);
     }
-    
+
     // Ocultar la imagen rota
     if (event.target) {
       event.target.style.display = 'none';
     }
-    
+
     // Mostrar placeholder
     this.profileImageFailed = true;
   }
-  
+
   /**
    * Obtiene la URL del avatar a mostrar (cacheada o original)
    */
@@ -193,7 +200,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
     }
     return this.userProfile?.picture || this.user?.photoURL || null;
   }
-  
+
   /**
    * Determina si se debe mostrar el placeholder en lugar de la imagen
    */

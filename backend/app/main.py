@@ -244,105 +244,106 @@ class CuenlyApp:
         Returns:
             JobStatus: Estado actual del trabajo.
         """
-        # Preferir estado real reportado por el scheduler si está disponible
+        # 1. Verificar fuente de verdad en Redis para entornos multi-worker
         try:
-            try:
-                tz = ZoneInfo(getattr(settings, "TIMEZONE", "UTC"))
-            except Exception:
-                tz = ZoneInfo("UTC")
+            redis_client = get_redis_client()
+            redis_val = redis_client.get("cuenly:job:enabled")
+            if redis_val in (b"false", "false", False):
+                if getattr(self._job_status, 'running', False) or (hasattr(self.email_processor, 'scheduled_job_status') and self.email_processor.scheduled_job_status().get('running', False)):
+                    try:
+                        if hasattr(self.email_processor, 'stop_scheduled_job'):
+                            self.email_processor.stop_scheduled_job()
+                    except Exception: pass
+                self._job_status.running = False
+                self._job_status.next_run = None
+                self._job_status.next_run_ts = None
+            elif redis_val in (b"true", "true", True):
+                if not getattr(self._job_status, 'running', False):
+                    try:
+                        if hasattr(self.email_processor, 'start_scheduled_job'):
+                            self.email_processor.start_scheduled_job()
+                    except Exception: pass
+        except Exception as e:
+            logger.warning(f"No se pudo verificar estado de Redis en get_job_status: {e}")
+            
+        # 2. VERIFICAR SI HAY CUALQUIER PROCESAMIENTO ACTIVO (Global flag)
+        try:
+            from app.modules.scheduler.task_queue import task_queue
+            active_tasks = 0
+            with task_queue._lock:
+                for job in task_queue._jobs.values():
+                    if job.get('status') in ('running', 'queued', 'pending'): active_tasks += 1
+            self._job_status.is_processing = (active_tasks > 0)
+        except Exception as e:
+            logger.warning(f"No se pudo verificar task_queue en get_job_status: {e}")
 
-            if hasattr(self.email_processor, 'scheduled_job_status'):
-                sched = self.email_processor.scheduled_job_status()
-                if isinstance(sched, dict) and sched:
-                    self._job_status.running = bool(sched.get('running', False))
-                    # Convertir next_run y last_run a ISO
-                    def _to_iso(v):
-                        try:
-                            if v is None:
-                                return None
-                            if isinstance(v, (int, float)):
-                                return datetime.fromtimestamp(v, tz).isoformat()
-                            # ya es iso o datetime string
-                            dt = datetime.fromisoformat(str(v))
-                            if dt.tzinfo is None:
-                                dt = dt.replace(tzinfo=tz)
-                            else:
-                                dt = dt.astimezone(tz)
-                            return dt.isoformat()
-                        except Exception:
-                            return None
-                    next_iso = _to_iso(sched.get('next_run'))
-                    last_iso = _to_iso(sched.get('last_run'))
-                    self._job_status.next_run = next_iso
-                    self._job_status.last_run = last_iso
-                    # También timestamps en epoch
+        # 3. Preferir estado real reportado por el scheduler si está disponible
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(getattr(settings, "TIMEZONE", "UTC"))
+        except Exception:
+            from datetime import timezone
+            tz = timezone.utc
+
+        if hasattr(self.email_processor, 'scheduled_job_status'):
+            sched = self.email_processor.scheduled_job_status()
+            if isinstance(sched, dict) and sched:
+                self._job_status.running = bool(sched.get('running', False))
+                
+                def _to_iso(v):
                     try:
-                        if isinstance(sched.get('next_run'), (int, float)):
-                            self._job_status.next_run_ts = int(sched.get('next_run'))
-                        elif next_iso:
-                            self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp())
-                        else:
-                            self._job_status.next_run_ts = None
-                    except Exception:
-                        self._job_status.next_run_ts = None
-                    try:
-                        if isinstance(sched.get('last_run'), (int, float)):
-                            self._job_status.last_run_ts = int(sched.get('last_run'))
-                        elif last_iso:
-                            self._job_status.last_run_ts = int(datetime.fromisoformat(last_iso).timestamp())
-                        else:
-                            self._job_status.last_run_ts = None
-                    except Exception:
-                        self._job_status.last_run_ts = None
-                    self._job_status.interval_minutes = int(sched.get('interval_minutes', self._job_status.interval_minutes))
-                    # last_result si viene como ProcessResult compatible
-                    lr = sched.get('last_result')
-                    try:
-                        self._job_status.last_result = lr if lr is None else lr
-                    except Exception:
-                        pass
+                        if v is None: return None
+                        if isinstance(v, (int, float)):
+                            return datetime.fromtimestamp(v, tz).isoformat()
+                        dt = datetime.fromisoformat(str(v))
+                        if dt.tzinfo is None: dt = dt.replace(tzinfo=tz)
+                        else: dt = dt.astimezone(tz)
+                        return dt.isoformat()
+                    except Exception: return None
+
+                next_iso = _to_iso(sched.get('next_run'))
+                last_iso = _to_iso(sched.get('last_run'))
+                self._job_status.next_run = next_iso
+                self._job_status.last_run = last_iso
+
+                try:
+                    nr = sched.get('next_run')
+                    if isinstance(nr, (int, float)): self._job_status.next_run_ts = int(nr)
+                    elif next_iso: self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp())
+                except Exception: pass
+
+                try:
+                    lr = sched.get('last_run')
+                    if isinstance(lr, (int, float)): self._job_status.last_run_ts = int(lr)
+                    elif last_iso: self._job_status.last_run_ts = int(datetime.fromisoformat(last_iso).timestamp())
+                except Exception: pass
+
+                self._job_status.interval_minutes = int(sched.get('interval_minutes', self._job_status.interval_minutes))
+                self._job_status.last_result = sched.get('last_result')
             else:
-                # Estimación si no hay estado del scheduler
                 if self._job_status.running:
                     next_iso = self._calculate_next_run()
                     self._job_status.next_run = next_iso
                     try:
                         self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp()) if next_iso else None
-                    except Exception:
-                        self._job_status.next_run_ts = None
-        except Exception:
-            # Respaldo: estimación simple
-            if self._job_status.running:
-                next_iso = self._calculate_next_run()
-                self._job_status.next_run = next_iso
-                try:
-                    self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp()) if next_iso else None
-                except Exception:
-                    self._job_status.next_run_ts = None
+                    except Exception: pass
 
-        # Watchdog: si está running pero el siguiente run está muy vencido, marcar como detenido
+        # 4. Watchdog: si está running pero el siguiente run está muy vencido, marcar como detenido
         try:
             now_ts = int(_now().timestamp())
             interval_sec = max(60, int(self._job_status.interval_minutes) * 60)
             if self._job_status.running and self._job_status.next_run_ts:
                 drift = now_ts - self._job_status.next_run_ts
                 if drift > interval_sec * 2:
-                    logger.warning(
-                        "Job scheduler parece estancado (next_run vencido). "
-                        f"last_run_ts={self._job_status.last_run_ts}, next_run_ts={self._job_status.next_run_ts}, "
-                        f"now_ts={now_ts}, interval_sec={interval_sec}, drift={drift}"
-                    )
-                    # Forzar stop del scheduler interno para evitar estado zombie
+                    logger.warning(f"Job scheduler zombie detectado. Drift: {drift}s")
                     try:
                         if hasattr(self.email_processor, 'stop_scheduled_job'):
                             self.email_processor.stop_scheduled_job()
-                    except Exception:
-                        pass
+                    except Exception: pass
                     self._job_status.running = False
                     self._job_status.next_run = None
                     self._job_status.next_run_ts = None
-        except Exception:
-            pass
+        except Exception: pass
         
         return self._job_status
 

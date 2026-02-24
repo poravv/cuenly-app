@@ -26,17 +26,27 @@ def handle_full_sync_job(payload: dict):
         logger.warning("No se encontraron configuraciones de correo para el job.")
         return
 
-    # Procesar cada cuenta con ignore_date_filter=True
+    fanout_per_account_cap = int(getattr(settings, "FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN", 200) or 0)
+
+    # Procesar cada cuenta con ignore_date_filter=True y prioridad fan-out
     for cfg in target_configs:
         try:
             logger.info(f"Syncing account {cfg.username}...")
             single = EmailProcessor(EmailConfig(
                 host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                search_criteria=cfg.search_criteria,
+                search_terms=cfg.search_terms or [],
+                search_synonyms=cfg.search_synonyms or {},
+                fallback_sender_match=bool(getattr(cfg, "fallback_sender_match", False)),
+                fallback_attachment_match=bool(getattr(cfg, "fallback_attachment_match", False)),
             ), owner_email=cfg.owner_email)
             
-            # Ejecutar con flag de histórico
-            result = single.process_emails(ignore_date_filter=True)
+            # Ejecutar con flag de histórico + fan-out para encolado rápido
+            result = single.process_emails(
+                ignore_date_filter=True,
+                fan_out=True,
+                max_discovery_emails=fanout_per_account_cap if fanout_per_account_cap > 0 else None
+            )
             
             logger.info(f"Sync result for {cfg.username}: {result.message}")
             single.disconnect()
@@ -109,7 +119,11 @@ def handle_retry_skipped_job(payload: dict):
                     # Procesar items
                     single = EmailProcessor(EmailConfig(
                         host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or []
+                        search_criteria=cfg.search_criteria,
+                        search_terms=cfg.search_terms or [],
+                        search_synonyms=cfg.search_synonyms or {},
+                        fallback_sender_match=bool(getattr(cfg, "fallback_sender_match", False)),
+                        fallback_attachment_match=bool(getattr(cfg, "fallback_attachment_match", False)),
                     ), owner_email=user_email)
                     
                     if single.connect():

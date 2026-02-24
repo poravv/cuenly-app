@@ -142,7 +142,7 @@ export class ExportTemplateService {
   /**
    * Validar template antes de guardar
    */
-  validateTemplate(template: Partial<ExportTemplate>): string[] {
+  validateTemplate(template: Partial<ExportTemplate>, allowedFieldKeys?: Set<string>): string[] {
     const errors: string[] = [];
 
     if (!template.name || template.name.trim() === '') {
@@ -158,6 +158,17 @@ export class ExportTemplateService {
       const duplicates = fieldKeys.filter((key, index) => fieldKeys.indexOf(key) !== index);
       if (duplicates.length > 0) {
         errors.push('No se pueden tener campos duplicados');
+      }
+
+      if (allowedFieldKeys && allowedFieldKeys.size > 0) {
+        const invalid = Array.from(new Set(
+          template.fields
+            .map(f => f.field_key)
+            .filter(key => !allowedFieldKeys.has(key))
+        ));
+        if (invalid.length > 0) {
+          errors.push(`Campos no soportados en el template: ${invalid.join(', ')}`);
+        }
       }
     }
 

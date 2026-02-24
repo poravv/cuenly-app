@@ -56,16 +56,38 @@ class MultiEmailProcessor:
     def _remove_duplicate_invoices(self, invoices: List[InvoiceData]) -> List[InvoiceData]:
         return deduplicate_invoices(invoices)
 
-    def process_limited_emails(self, limit: int = 10, ignore_date_filter: bool = False, 
-                                start_date: Optional[str] = None, end_date: Optional[str] = None) -> ProcessResult:
-        """Procesa un número limitado de correos para procesamiento manual"""
-        logger.info(f"🔄 Iniciando procesamiento manual limitado a {limit} facturas")
-        
+    def process_limited_emails(self, limit: Optional[int] = None, ignore_date_filter: bool = False, 
+                                start_date: Optional[str] = None, end_date: Optional[str] = None,
+                                fan_out: bool = True) -> ProcessResult:
+        """Procesa un número limitado de correos (Discovery + Fan-out por defecto)"""
+        default_limit = max(1, int(getattr(settings, "PROCESS_DIRECT_DEFAULT_LIMIT", 50) or 50))
+        max_limit = max(default_limit, int(getattr(settings, "PROCESS_DIRECT_MAX_LIMIT", 200) or 200))
+        if limit is None or limit <= 0:
+            limit = default_limit
+        if limit > max_limit:
+            limit = max_limit
+
+        fanout_per_account_cap = int(getattr(settings, "FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN", 200) or 0)
+
+        # ✅ CONVERSIÓN DE FECHAS (Strings a Datetime)
+        from datetime import datetime
+        dt_start = None
+        dt_end = None
+        if start_date:
+            try:
+                dt_start = datetime.strptime(start_date, "%Y-%m-%d") if isinstance(start_date, str) else start_date
+            except: dt_start = None
+        if end_date:
+            try:
+                dt_end = datetime.strptime(end_date, "%Y-%m-%d") if isinstance(end_date, str) else end_date
+            except: dt_end = None
+
         all_invoices: List[InvoiceData] = []
         success_count = 0
         errors: List[str] = []
-        total_processed = 0
+        total_processed = 0  # Global cap real de encolado/procesamiento manual
         remaining_emails = 0
+        queued_accounts: Dict[str, int] = {}
         
         if not self.email_configs:
             return ProcessResult(
@@ -124,6 +146,9 @@ class MultiEmailProcessor:
                 single = EmailProcessor(EmailConfig(
                     host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
                     search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or [],
+                    search_synonyms=cfg.search_synonyms or {},
+                    fallback_sender_match=bool(getattr(cfg, "fallback_sender_match", False)),
+                    fallback_attachment_match=bool(getattr(cfg, "fallback_attachment_match", False)),
                     auth_type=cfg.auth_type, access_token=cfg.access_token,
                     refresh_token=cfg.refresh_token, token_expiry=cfg.token_expiry
                 ), owner_email=cfg.owner_email)
@@ -133,18 +158,36 @@ class MultiEmailProcessor:
                     errors.append(f"Error conectando a {cfg.username}")
                     continue
                 
-                # Buscar correos disponibles
-                # Aplicar límite de IA estricto en la selección de correos a procesar
-                current_limit = limit
-                if hasattr(self, 'max_ai_process') and self.max_ai_process is not None:
-                     current_limit = min(limit, self.max_ai_process)
-                     logger.info(f"🔒 Aplicando límite estricto de IA para cuenta {cfg.username}: máx {self.max_ai_process} correos")
+                # Si fan_out está activo, usamos el nuevo método de SingleProcessor
+                if fan_out:
+                    remaining_slots = max(0, limit - total_processed)
+                    if remaining_slots == 0:
+                        single.disconnect()
+                        break
 
-                # Si el límite es 0, no procesar nada (salvo que sea XML puro, pero por seguridad paramos)
-                if current_limit <= 0:
-                    logger.warning(f"🛑 Cuenta {cfg.username} omitida: Límite de IA alcanzado o 0 restante.")
+                    if fanout_per_account_cap > 0:
+                        account_slots = min(remaining_slots, fanout_per_account_cap)
+                    else:
+                        account_slots = remaining_slots
+
+                    logger.info(f"🚀 Usando Discovery + Fan-out (Async) para {cfg.username}")
+                    result_single = single.process_emails(
+                        fan_out=True,
+                        start_date=dt_start,
+                        end_date=dt_end,
+                        max_discovery_emails=account_slots
+                    )
+                    if result_single.success:
+                        enqueued_count = int(getattr(result_single, "invoice_count", 0) or 0)
+                        total_processed += enqueued_count
+                        queued_accounts[cfg.username] = enqueued_count
+                        success_count += 1
+                    else:
+                        errors.append(f"Error en {cfg.username}: {result_single.message}")
                     continue
 
+                # Fallback: Procesamiento secuencial (Legacy)
+                # Buscar correos disponibles
                 email_ids = single.search_emails(ignore_date_filter=ignore_date_filter, start_date=start_date, end_date=end_date)
                 if not email_ids:
                     single.disconnect()
@@ -181,11 +224,27 @@ class MultiEmailProcessor:
                 success_count += 1
                 
             except Exception as e:
-                errors.append(f"Error en cuenta {cfg.username}: {str(e)}")
-                logger.error(f"❌ Error procesando cuenta {cfg.username}: {e}")
+                err_str = str(e)
+                if "AUTHENTICATIONFAILED" in err_str or "Invalid credentials" in err_str:
+                    msg = f"Credenciales IMAP inválidas para {cfg.username}. Verifica tu App Password en Gmail."
+                else:
+                    msg = f"Error en cuenta {cfg.username}: {err_str}"
+                errors.append(msg)
+                logger.error(f"❌ Error procesando cuenta {cfg.username}: {err_str}")
 
         # Preparar mensaje de resultado
-        message_parts = [f"Procesamiento manual completado: {total_processed} facturas procesadas"]
+        if fan_out:
+            account_count = len([v for v in queued_accounts.values() if v > 0])
+            message_parts = [
+                (
+                    f"Fan-out manual completado: {total_processed}/{limit} correos encolados "
+                    f"en {account_count} cuenta(s)"
+                )
+            ]
+            if fanout_per_account_cap > 0:
+                message_parts.append(f"Cap por cuenta aplicado: {fanout_per_account_cap}")
+        else:
+            message_parts = [f"Procesamiento manual completado: {total_processed} facturas procesadas"]
         if remaining_emails > 0:
             message_parts.append(f"Quedan {remaining_emails} correos más por procesar")
         if errors:
@@ -199,6 +258,19 @@ class MultiEmailProcessor:
         )
 
     def process_all_emails(self, start_date=None, end_date=None) -> ProcessResult:
+        # ✅ CONVERSIÓN DE FECHAS (Strings a Datetime)
+        from datetime import datetime
+        dt_start = None
+        dt_end = None
+        if start_date:
+            try:
+                dt_start = datetime.strptime(start_date, "%Y-%m-%d") if isinstance(start_date, str) else start_date
+            except: dt_start = None
+        if end_date:
+            try:
+                dt_end = datetime.strptime(end_date, "%Y-%m-%d") if isinstance(end_date, str) else end_date
+            except: dt_end = None
+
         # Refrescar configuración en cada corrida para reflejar cambios dinámicos desde el frontend
         # Usar check_trial=True para que automáticamente filtre usuarios con trial expirado
         try:
@@ -257,6 +329,7 @@ class MultiEmailProcessor:
         # ✅ PROCESAMIENTO PARALELO OPTIMIZADO
         use_parallel = getattr(settings, 'ENABLE_PARALLEL_PROCESSING', True)
         max_workers = getattr(settings, 'MAX_CONCURRENT_ACCOUNTS', 10)
+        fanout_per_account_cap = int(getattr(settings, "FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN", 200) or 0)
         
         if use_parallel and len(self.email_configs) > 1:
             logger.info(f"🚀 Procesamiento paralelo habilitado: {max_workers} cuentas simultáneas")
@@ -267,12 +340,21 @@ class MultiEmailProcessor:
                     single = EmailProcessor(EmailConfig(
                         host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
                         search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or [],
+                        search_synonyms=cfg.search_synonyms or {},
+                        fallback_sender_match=bool(getattr(cfg, "fallback_sender_match", False)),
+                        fallback_attachment_match=bool(getattr(cfg, "fallback_attachment_match", False)),
                         auth_type=cfg.auth_type, access_token=cfg.access_token,
                         refresh_token=cfg.refresh_token, token_expiry=cfg.token_expiry
                     ), owner_email=cfg.owner_email)
                     
-                    # Pasar límite estricto y fechas si existen
-                    result = single.process_emails(max_ai_process=limit_override, start_date=start_date, end_date=end_date)
+                    # Ejecutar procesamiento para esta cuenta priorizando fan-out a cola
+                    result = single.process_emails(
+                        max_ai_process=getattr(cfg, 'ai_remaining', None),
+                        start_date=dt_start,
+                        end_date=dt_end,
+                        fan_out=True,
+                        max_discovery_emails=fanout_per_account_cap if fanout_per_account_cap > 0 else None
+                    )
                     return (True, result, cfg.username)
                 except Exception as e:
                     error_msg = f"Error procesando {cfg.username}: {str(e)}"
@@ -313,8 +395,13 @@ class MultiEmailProcessor:
                             all_invoices.extend(valid_invoices)
                             logger.info(f"✅ Cuenta {username}: {len(valid_invoices)} facturas válidas procesadas")
                         else:
-                            errors.append(f"Error en {username}: {result.message}")
-                            logger.error(f"❌ Error en cuenta {username}: {result.message}")
+                            err_str = str(result.message)
+                            if "AUTHENTICATIONFAILED" in err_str or "Invalid credentials" in err_str:
+                                msg = f"Credenciales IMAP inválidas para {username}. Verifica tu App Password."
+                            else:
+                                msg = f"Error en {username}: {err_str}"
+                            errors.append(msg)
+                            logger.error(f"❌ Error en cuenta {username}: {err_str}")
                             
                     except TimeoutError:
                         errors.append(f"Timeout en {cfg.username}: procesamiento tomó más de 300 segundos")
@@ -336,11 +423,19 @@ class MultiEmailProcessor:
                     single = EmailProcessor(EmailConfig(
                         host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
                         search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or [],
+                        search_synonyms=cfg.search_synonyms or {},
+                        fallback_sender_match=bool(getattr(cfg, "fallback_sender_match", False)),
+                        fallback_attachment_match=bool(getattr(cfg, "fallback_attachment_match", False)),
                         auth_type=cfg.auth_type, access_token=cfg.access_token,
                         refresh_token=cfg.refresh_token, token_expiry=cfg.token_expiry
                     ), owner_email=cfg.owner_email)
                     
-                    r = single.process_emails()
+                    r = single.process_emails(
+                        start_date=dt_start,
+                        end_date=dt_end,
+                        fan_out=True,
+                        max_discovery_emails=fanout_per_account_cap if fanout_per_account_cap > 0 else None
+                    )
                     
                     if r.success:
                         success_count += 1

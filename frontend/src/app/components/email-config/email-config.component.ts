@@ -3,6 +3,11 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { EmailConfig, EmailTestResult, EmailConfigsResponse } from '../../models/invoice.model';
 
+interface SynonymEntry {
+  base: string;
+  synonymsText: string;
+}
+
 @Component({
   selector: 'app-email-config',
   templateUrl: './email-config.component.html',
@@ -10,6 +15,7 @@ import { EmailConfig, EmailTestResult, EmailConfigsResponse } from '../../models
 })
 export class EmailConfigComponent implements OnInit, OnDestroy {
   emailConfigs: EmailConfig[] = [];
+  newSynonymEntries: SynonymEntry[] = [];
   newConfig: EmailConfig = this.createEmptyConfig();
   showAddForm = false;
   testResults: { [key: string]: EmailTestResult;[key: number]: EmailTestResult } = {} as any;
@@ -130,7 +136,12 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.loading = true; this.error = null;
     this.apiService.getEmailConfigs().subscribe({
       next: (resp: EmailConfigsResponse) => {
-        this.emailConfigs = resp.configs || [];
+        this.emailConfigs = (resp.configs || []).map((cfg: EmailConfig) => ({
+          ...cfg,
+          search_synonyms: cfg.search_synonyms || {},
+          fallback_sender_match: !!cfg.fallback_sender_match,
+          fallback_attachment_match: !!cfg.fallback_attachment_match
+        }));
         this.maxEmailAccounts = resp.max_allowed || 1;
         this.canAddMore = resp.can_add_more !== undefined ? resp.can_add_more : true;
         this.hasActivePlan = resp.has_active_plan !== undefined ? resp.has_active_plan : false;
@@ -156,7 +167,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   }
 
   createEmptyConfig(): EmailConfig {
-    return {
+    const cfg: EmailConfig = {
       id: undefined,
       name: '',
       host: '',
@@ -165,11 +176,16 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       password: '',
       use_ssl: true,
       search_terms: ['factura', 'invoice', 'comprobante'],
+      search_synonyms: {},
+      fallback_sender_match: false,
+      fallback_attachment_match: false,
       search_criteria: 'UNSEEN',
       provider: 'other',
       enabled: true,
       auth_type: 'password'
     };
+    this.newSynonymEntries = this.synonymsToEntries(cfg.search_synonyms);
+    return cfg;
   }
 
   selectProvider(provider: any): void {
@@ -308,6 +324,14 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.newConfig.search_terms.splice(index, 1);
   }
 
+  addNewSynonymEntry(): void {
+    this.newSynonymEntries.push({ base: '', synonymsText: '' });
+  }
+
+  removeNewSynonymEntry(index: number): void {
+    this.newSynonymEntries.splice(index, 1);
+  }
+
   trackByIndex(index: number): number {
     return index;
   }
@@ -319,7 +343,14 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const isExisting = testIndex >= 0 && !!config?.id;
     const obs = isExisting
       ? this.apiService.testEmailConfigById(config.id!)
-      : this.apiService.testEmailConfig(config);
+      : (() => {
+        const temp = this.cloneConfig(config);
+        temp.search_terms = (temp.search_terms || []).filter((t: string) => (t || '').trim() !== '');
+        temp.search_synonyms = this.entriesToSynonyms(this.newSynonymEntries || []);
+        temp.fallback_sender_match = !!temp.fallback_sender_match;
+        temp.fallback_attachment_match = !!temp.fallback_attachment_match;
+        return this.apiService.testEmailConfig(temp);
+      })();
 
     obs.subscribe({
       next: (result: EmailTestResult) => {
@@ -374,6 +405,9 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
     // Filtrar términos de búsqueda vacíos
     this.newConfig.search_terms = this.newConfig.search_terms.filter(term => term.trim() !== '');
+    this.newConfig.search_synonyms = this.entriesToSynonyms(this.newSynonymEntries);
+    this.newConfig.fallback_sender_match = !!this.newConfig.fallback_sender_match;
+    this.newConfig.fallback_attachment_match = !!this.newConfig.fallback_attachment_match;
 
     // Guardar en backend
     this.apiService.createEmailConfig(this.newConfig).subscribe({
@@ -425,6 +459,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
   cancelAdd(): void {
     this.newConfig = this.createEmptyConfig();
+    this.newSynonymEntries = [];
     this.showAddForm = false;
     this.selectedProvider = '';
     this.pendingOAuthData = null;
@@ -461,6 +496,62 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     return JSON.parse(JSON.stringify(cfg));
   }
 
+  private parseSynonymsText(raw: string): string[] {
+    return (raw || '')
+      .split(/[\n,;]+/)
+      .map((v: string) => (v || '').trim())
+      .filter((v: string) => !!v);
+  }
+
+  private synonymsToEntries(
+    value: EmailConfig['search_synonyms']
+  ): SynonymEntry[] {
+    if (!value) return [];
+
+    if (Array.isArray(value)) {
+      const synonyms = value
+        .map((v: string) => (v || '').trim())
+        .filter((v: string) => !!v);
+      if (!synonyms.length) return [];
+      return [{ base: '', synonymsText: synonyms.join(', ') }];
+    }
+
+    const entries: SynonymEntry[] = [];
+    Object.keys(value).forEach((base) => {
+      const cleanBase = (base || '').trim();
+      const variants = (value as { [key: string]: string[] })[base] || [];
+      const cleanVariants = variants
+        .map((v: string) => (v || '').trim())
+        .filter((v: string) => !!v);
+      entries.push({
+        base: cleanBase,
+        synonymsText: cleanVariants.join(', ')
+      });
+    });
+    return entries;
+  }
+
+  private entriesToSynonyms(entries: SynonymEntry[]): { [key: string]: string[] } {
+    const result: { [key: string]: string[] } = {};
+    (entries || []).forEach((entry: SynonymEntry) => {
+      const base = (entry?.base || '').trim();
+      const variants = this.parseSynonymsText(entry?.synonymsText || '');
+      if (!base || !variants.length) return;
+      result[base] = Array.from(new Set(variants));
+    });
+    return result;
+  }
+
+  getSynonymSummary(config: EmailConfig): string {
+    const entries = this.synonymsToEntries(config.search_synonyms);
+    if (!entries.length) return 'Sin sinónimos';
+    return `${entries.length} grupo(s) de sinónimos`;
+  }
+
+  getSynonymEntriesForEdit(key: string): SynonymEntry[] {
+    return this.editSynonymEntries[key] || [];
+  }
+
   startEdit(i: number): void {
     const cfg = this.emailConfigs[i];
     if (!cfg || !cfg.id) return;
@@ -468,7 +559,11 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.editing[key] = true;
     const copy = this.cloneConfig(cfg);
     copy.password = '';
+    copy.search_synonyms = copy.search_synonyms || {};
+    copy.fallback_sender_match = !!copy.fallback_sender_match;
+    copy.fallback_attachment_match = !!copy.fallback_attachment_match;
     this.editData[key] = copy;
+    this.editSynonymEntries[key] = this.synonymsToEntries(copy.search_synonyms);
     delete this.testResults[key];
     delete this.testing[key];
   }
@@ -479,6 +574,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const key = this.keyFor(i, cfg);
     delete this.editing[key];
     delete this.editData[key];
+    delete this.editSynonymEntries[key];
     delete this.testing[key];
     delete this.testResults[key];
   }
@@ -489,13 +585,17 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const id = cfg.id;
     const key = this.keyFor(i, cfg);
     const editedData = this.editData[key];
+    const normalizedSynonyms = this.entriesToSynonyms(this.editSynonymEntries[key] || []);
 
     this.saving[key] = true;
 
     if (this.isOAuthConfig(cfg)) {
-      // OAuth2: usar PATCH para actualización parcial (solo search_terms)
+      // OAuth2: usar PATCH para actualización parcial sin tocar credenciales
       const partialPayload = {
-        search_terms: (editedData.search_terms || []).filter((t: string) => (t || '').trim() !== '')
+        search_terms: (editedData.search_terms || []).filter((t: string) => (t || '').trim() !== ''),
+        search_synonyms: normalizedSynonyms,
+        fallback_sender_match: !!editedData.fallback_sender_match,
+        fallback_attachment_match: !!editedData.fallback_attachment_match
       };
 
       this.apiService.patchEmailConfig(id, partialPayload).subscribe({
@@ -513,6 +613,10 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     } else {
       // Password auth: usar PUT con payload completo
       const payload = this.cloneConfig(editedData);
+      payload.search_terms = (payload.search_terms || []).filter((t: string) => (t || '').trim() !== '');
+      payload.search_synonyms = normalizedSynonyms;
+      payload.fallback_sender_match = !!payload.fallback_sender_match;
+      payload.fallback_attachment_match = !!payload.fallback_attachment_match;
       if (!payload.password) delete (payload as any).password;
 
       this.apiService.updateEmailConfig(id, payload as EmailConfig).subscribe({
@@ -539,11 +643,26 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.editData[key].search_terms.splice(idx, 1);
   }
 
+  editSynonymEntries: { [key: string]: SynonymEntry[] } = {};
+
+  addEditSynonymEntry(key: string): void {
+    if (!this.editSynonymEntries[key]) this.editSynonymEntries[key] = [];
+    this.editSynonymEntries[key].push({ base: '', synonymsText: '' });
+  }
+
+  removeEditSynonymEntry(key: string, idx: number): void {
+    if (!this.editSynonymEntries[key]) return;
+    this.editSynonymEntries[key].splice(idx, 1);
+  }
+
   testEditedConfiguration(key: string): void {
     const cfg = this.editData[key];
     if (!cfg) return;
     this.testing[key] = true;
     cfg.search_terms = (cfg.search_terms || []).filter(t => (t || '').trim() !== '');
+    cfg.search_synonyms = this.entriesToSynonyms(this.editSynonymEntries[key] || []);
+    cfg.fallback_sender_match = !!cfg.fallback_sender_match;
+    cfg.fallback_attachment_match = !!cfg.fallback_attachment_match;
     this.apiService.testEmailConfig(cfg).subscribe({
       next: (res) => { this.testResults[key] = res; this.testing[key] = false; },
       error: (err) => {

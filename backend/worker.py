@@ -57,9 +57,9 @@ def main():
         from rq import Worker, Queue
         from app.core.redis_client import get_redis_client
         
-        # Obtener conexión Redis
-        redis_conn = get_redis_client()
-        logger.info("✅ Conexión Redis establecida")
+        # Obtener conexión Redis RAW (RQ necesita bytes, no strings decodificados)
+        redis_conn = get_redis_client(decode_responses=False)
+        logger.info("✅ Conexión Redis (RAW) establecida")
         
         # Crear colas en orden de prioridad
         queues = [

@@ -183,6 +183,45 @@
                 </button>
               </div>
 
+              <div class="mb-3">
+                <label class="form-label">Fallback de coincidencia</label>
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" id="fallback_sender_new"
+                    [(ngModel)]="newConfig.fallback_sender_match" name="fallback_sender_new">
+                  <label class="form-check-label" for="fallback_sender_new">
+                    Usar remitente si el asunto no coincide
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="fallback_attachment_new"
+                    [(ngModel)]="newConfig.fallback_attachment_match" name="fallback_attachment_new">
+                  <label class="form-check-label" for="fallback_attachment_new">
+                    Usar nombre de adjunto si el asunto no coincide
+                  </label>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label">Sinónimos por tenant (opcional)</label>
+                <div class="mb-2 border rounded p-2" *ngFor="let entry of newSynonymEntries; let si = index">
+                  <div class="mb-2">
+                    <label class="form-label small mb-1">Término base</label>
+                    <input type="text" class="form-control" [(ngModel)]="entry.base" [name]="'new_syn_base_' + si"
+                      placeholder="ej: factura electronica">
+                  </div>
+                  <div class="input-group">
+                    <input type="text" class="form-control" [(ngModel)]="entry.synonymsText"
+                      [name]="'new_syn_vals_' + si" placeholder="sinónimos separados por coma">
+                    <button class="btn btn-outline-danger" type="button" (click)="removeNewSynonymEntry(si)">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm" (click)="addNewSynonymEntry()">
+                  <i class="bi bi-plus"></i> Agregar grupo de sinónimos
+                </button>
+              </div>
+
               <!-- Botones de acción -->
               <div class="d-flex justify-content-between">
                 <div>
@@ -310,6 +349,22 @@
                     *ngFor="let term of config.search_terms">{{ term }}</span>
                 </div>
               </div>
+              <div class="mb-2" *ngIf="!editing[keyFor(i, config)]">
+                <div class="text-muted mb-1">Matcher Fase 4</div>
+                <div class="d-flex flex-wrap gap-1">
+                  <span class="badge rounded-pill border"
+                    [ngClass]="config.fallback_sender_match ? 'bg-success-subtle text-success border-success-subtle' : 'bg-light text-muted'">
+                    fallback remitente: {{ config.fallback_sender_match ? 'on' : 'off' }}
+                  </span>
+                  <span class="badge rounded-pill border"
+                    [ngClass]="config.fallback_attachment_match ? 'bg-success-subtle text-success border-success-subtle' : 'bg-light text-muted'">
+                    fallback adjunto: {{ config.fallback_attachment_match ? 'on' : 'off' }}
+                  </span>
+                  <span class="badge rounded-pill bg-light border text-muted">
+                    {{ getSynonymSummary(config) }}
+                  </span>
+                </div>
+              </div>
               <div *ngIf="testResults[i] && !editing[keyFor(i, config)]" class="mt-3">
                 <div class="alert alert-sm" [ngClass]="testResults[i].success ? 'alert-success' : 'alert-danger'">
                   <small>{{ testResults[i].message }}</small>
@@ -354,8 +409,8 @@
                   <div class="col-12" *ngIf="isOAuthConfig(config)">
                     <div class="alert alert-info py-2 mb-2">
                       <i class="bi bi-info-circle me-1"></i>
-                      <small>Cuenta OAuth2 - La autenticación es gestionada por Google. Solo puedes editar los términos
-                        de búsqueda.</small>
+                      <small>Cuenta OAuth2 - La autenticación es gestionada por Google. Puedes editar nomenclaturas y
+                        fallback sin tocar credenciales.</small>
                     </div>
                   </div>
 
@@ -372,6 +427,49 @@
                     </div>
                     <button type="button" class="btn btn-outline-primary btn-sm"
                       (click)="addEditSearchTerm(keyFor(i, config))"><i class="bi bi-plus"></i> Agregar término</button>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label small">Fallback de coincidencia</label>
+                    <div class="form-check mb-1">
+                      <input class="form-check-input" type="checkbox"
+                        [(ngModel)]="editData[keyFor(i, config)].fallback_sender_match"
+                        [name]="'fallback_sender_' + i" [id]="'fallback_sender_' + i">
+                      <label class="form-check-label small" [for]="'fallback_sender_' + i">
+                        Remitente cuando no coincide asunto
+                      </label>
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox"
+                        [(ngModel)]="editData[keyFor(i, config)].fallback_attachment_match"
+                        [name]="'fallback_attachment_' + i" [id]="'fallback_attachment_' + i">
+                      <label class="form-check-label small" [for]="'fallback_attachment_' + i">
+                        Nombre de adjunto cuando no coincide asunto
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label small">Sinónimos por tenant</label>
+                    <div class="mb-2 border rounded p-2"
+                      *ngFor="let entry of getSynonymEntriesForEdit(keyFor(i, config)); let si = index">
+                      <div class="mb-1">
+                        <input class="form-control form-control-sm" type="text" [(ngModel)]="entry.base"
+                          [name]="'edit_syn_base_' + i + '_' + si" placeholder="término base">
+                      </div>
+                      <div class="input-group input-group-sm">
+                        <input class="form-control" type="text" [(ngModel)]="entry.synonymsText"
+                          [name]="'edit_syn_values_' + i + '_' + si" placeholder="sinónimos separados por coma">
+                        <button type="button" class="btn btn-outline-danger"
+                          (click)="removeEditSynonymEntry(keyFor(i, config), si)">
+                          <i class="bi bi-x"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm"
+                      (click)="addEditSynonymEntry(keyFor(i, config))">
+                      <i class="bi bi-plus"></i> Agregar grupo de sinónimos
+                    </button>
                   </div>
                 </div>
                 <div class="d-flex justify-content-between mt-3">

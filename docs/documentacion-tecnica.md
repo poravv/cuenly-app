@@ -59,7 +59,10 @@ graph TB
 ```mermaid
 graph TB
     API[FastAPI Main App] --> ENDPOINTS[Endpoints: /user, /process, /invoices, /admin]
-    ENDPOINTS --> SERVICES[Services: OpenAI, Email, Scheduler, Billing]
+    ENDPOINTS --> DISCOVERY[Discovery Engine: Fast Metadata Scan]
+    DISCOVERY --> FANOUT[Fan-out: RQ Tasks Queue]
+    FANOUT --> WORKER[RQ Worker: Content Fetch & AI]
+    WORKER --> SERVICES[Services: OpenAI, Email, Scheduler, Billing]
     SERVICES --> REPOS[Repositories: users, invoices, subscriptions]
     REPOS --> MONGODB[(MongoDB cuenlyapp_warehouse)]
 ```
@@ -107,9 +110,18 @@ erDiagram
 
 ## 🚀 3. Procesamiento y Extracción de Datos
 
-1. **Prioridad XML**: El sistema intenta leer archivos XML primero usando un parser nativo SIFEN (para Facturación Electrónica en Paraguay). Si falla o falta data, usa GPT-4o como respaldo.
-2. **Imágenes / PDF**: Se extraen los adjuntos (o se descargan desde enlaces), se almacenan los originales en MinIO (bucket privado) y se usa GPT-4o Vision para pasarlos a estructura JSON.
-3. **Seguridad de Archivos**: Uso de `python-magic` (Magic Numbers) para validar que no sean ejecutables o scripts maliciosos ocultos bajo extensiones `.pdf`.
+### 3.1 Arquitectura de Alto Rendimiento (Fan-out)
+Para evitar bloqueos en el backend, el procesamiento se divide en dos fases:
+- **Fase de Descubrimiento (Discovery)**: El API busca UIDs de correos, descarga metadatos básicos (Asunto, Remitente, Fecha) en bloque y registra el correo como `pending` en MongoDB. Esta fase toma segundos.
+- **Fase de Fan-out**: Cada correo descubierto se encola como una tarea independiente en **BullMQ/RQ**.
+- **Fase de Procesamiento**: Los Workers procesan cada tarea: descargan el contenido completo (FETCH), extraen adjuntos y ejecutan la lógica de IA.
+
+### 3.2 Optimización IMAP y Conexiones
+- **Connection Pooling**: Se mantiene un pool de conexiones IMAP persistentes para evitar el overhead del handshake SSL en cada request (reducción del 70% en tiempo de conexión).
+- **Gestión de Estados**: El sistema garantiza que las conexiones reutilizadas se encuentren en estado `SELECTED` (vía `SELECT "INBOX"`) antes de cualquier operación de lectura.
+- **Prioridad XML**: El sistema intenta leer archivos XML primero usando un parser nativo SIFEN (para Facturación Electrónica en Paraguay). Si falla o falta data, usa GPT-4o como respaldo.
+- **Imágenes / PDF**: Se extraen los adjuntos (o se descargan desde enlaces), se almacenan los originales en MinIO (bucket privado) y se usa GPT-4o Vision para pasarlos a estructura JSON.
+- **Seguridad de Archivos**: Uso de `python-magic` (Magic Numbers) para validar que no sean ejecutables o scripts maliciosos ocultos bajo extensiones `.pdf`.
 
 ---
 

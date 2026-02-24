@@ -228,8 +228,8 @@ export class ApiService {
     return this.http.post<JobStatus>(`${this.apiUrl}/job/interval`, { minutes });
   }
 
-  // Procesamiento directo sin cola de tareas (máximo 10 facturas)
-  processEmailsDirect(limit: number = 10): Observable<any> {
+  // Procesamiento directo con fan-out a cola (default 50; cap backend configurable)
+  processEmailsDirect(limit: number = 50): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/process-direct`, {}, {
       params: { limit: limit.toString() },
       headers: this.getSecureHeaders()

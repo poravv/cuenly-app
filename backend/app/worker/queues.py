@@ -36,7 +36,8 @@ def _init_queues():
         from rq import Queue
         from app.core.redis_client import get_redis_client
         
-        redis_conn = get_redis_client()
+        # RQ necesita conexión RAW para manejar datos binarios (pickle) exitosamente
+        redis_conn = get_redis_client(decode_responses=False)
         
         _high_queue = Queue('high', connection=redis_conn, default_timeout='30m')
         _default_queue = Queue('default', connection=redis_conn, default_timeout='2h')
@@ -132,7 +133,8 @@ def get_job_status(job_id: str) -> dict:
         from rq.job import Job
         from app.core.redis_client import get_redis_client
         
-        job = Job.fetch(job_id, connection=get_redis_client())
+        # Usar RAW para fetch de jobs (datos binarios)
+        job = Job.fetch(job_id, connection=get_redis_client(decode_responses=False))
         
         return {
             "id": job.id,

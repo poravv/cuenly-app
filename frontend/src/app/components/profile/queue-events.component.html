@@ -1,0 +1,155 @@
+<div class="container-fluid py-4 min-vh-100">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0 fw-bold">Cola de procesamiento</h2>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary" (click)="refresh()" [disabled]="loading">
+                <i class="bi bi-arrow-clockwise me-2" [class.spinner-border-sm]="loading"></i>Actualizar
+            </button>
+            <button class="btn btn-outline-secondary" routerLink="/profile">
+                <i class="bi bi-arrow-left me-2"></i>Volver al Perfil
+            </button>
+        </div>
+    </div>
+
+    <!-- Filtros y Resumen -->
+    <div class="row mb-3 align-items-center">
+        <div class="col-md-6">
+            <div class="d-flex align-items-center gap-3">
+                <label class="text-muted small fw-bold text-nowrap">Filtrar por:</label>
+                <select class="form-select form-select-sm w-auto rounded-pill px-3" [(ngModel)]="selectedStatus"
+                    (change)="onStatusChange(selectedStatus)">
+                    <option *ngFor="let opt of statusOptions" [value]="opt.value">{{ opt.label }}</option>
+                </select>
+                <span class="text-muted small" *ngIf="totalItems > 0">
+                    Total: <strong>{{ totalItems }}</strong> items
+                </span>
+            </div>
+        </div>
+        <div class="col-md-6 text-md-end">
+            <!-- Paginación superior -->
+            <div class="btn-group btn-group-sm" *ngIf="totalPages > 1">
+                <button class="btn btn-outline-secondary" (click)="onPageChange(currentPage - 1)"
+                    [disabled]="currentPage === 1">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <button class="btn btn-light disabled text-dark px-3">
+                    Página {{ currentPage }} de {{ totalPages }}
+                </button>
+                <button class="btn btn-outline-secondary" (click)="onPageChange(currentPage + 1)"
+                    [disabled]="currentPage === totalPages">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+
+            <div *ngIf="loading" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+                <p class="text-muted mt-2">Obteniendo eventos de la cola...</p>
+            </div>
+
+            <div *ngIf="error" class="alert alert-danger m-3">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error }}
+            </div>
+
+            <div *ngIf="!loading && !error && events.length === 0" class="text-center py-5 text-muted">
+                <i class="bi bi-inboxes display-4 mb-3 d-block opacity-50"></i>
+                <h5>Tu lista está vacía</h5>
+                <p>No se encontraron eventos con los filtros seleccionados.</p>
+            </div>
+
+            <div class="table-responsive" *ngIf="!loading && !error && events.length > 0">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>Correo / Asunto</th>
+                            <th>Remitente</th>
+                            <th>Estado</th>
+                            <th>Motivo / Razón</th>
+                            <th>Fecha</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let event of events">
+                            <td class="text-truncate" style="max-width: 250px;">
+                                <div class="fw-bold text-truncate" title="{{ event.subject || 'Sin asunto' }}">
+                                    <i class="bi bi-envelope me-2 text-primary"></i>{{ event.subject || '(Sin asunto)'
+                                    }}
+                                </div>
+                                <div class="small text-muted text-truncate" title="{{ event.email_uid }}">
+                                    UID: {{ event.email_uid }}
+                                </div>
+                            </td>
+                            <td class="text-truncate" style="max-width: 200px;">
+                                <div class="small fw-bold text-truncate" title="{{ event.sender }}">
+                                    {{ event.sender || 'Desconocido' }}
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge rounded-pill {{ getStatusBadgeClass(event.status) }}">
+                                    {{ getStatusText(event.status) }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="text-muted small text-wrap" style="max-width: 200px;">{{ event.reason ||
+                                    'Sin detalles' }}</div>
+                            </td>
+                            <td class="text-muted small">
+                                <div title="Fecha del correo" *ngIf="event.email_date">
+                                    <i class="bi bi-envelope-at me-1 text-info"></i>{{ event.email_date | date:'dd/MM/yy
+                                    HH:mm' }}
+                                </div>
+                                <div title="Fecha de procesamiento" class="mt-1 opacity-75">
+                                    <i class="bi bi-cpu me-1"></i>{{ event.processed_at | date:'dd/MM/yy HH:mm' }}
+                                </div>
+                            </td>
+                            <td>
+                                <button *ngIf="event.status !== 'pending' && event.status !== 'success'"
+                                    class="btn btn-sm btn-outline-primary rounded-pill py-1 px-3 d-flex align-items-center"
+                                    (click)="retryEvent(event)" [disabled]="retryingId === event._id">
+                                    <span *ngIf="retryingId !== event._id"><i
+                                            class="bi bi-arrow-clockwise me-1"></i>Reintentar</span>
+                                    <span *ngIf="retryingId === event._id" class="d-flex align-items-center">
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"
+                                            aria-hidden="true"></span>
+                                        ...
+                                    </span>
+                                </button>
+                                <span *ngIf="event.status === 'pending'"
+                                    class="badge bg-light text-muted border py-2 px-3">
+                                    <i class="bi bi-hourglass-split me-1"></i>En cola
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Paginación inferior -->
+            <div class="card-footer bg-white border-top-0 py-3" *ngIf="totalPages > 1">
+                <nav class="d-flex justify-content-center">
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item" [class.disabled]="currentPage === 1">
+                            <a class="page-link" (click)="onPageChange(currentPage - 1)"
+                                style="cursor: pointer;">Anterior</a>
+                        </li>
+                        <li class="page-item" *ngFor="let p of [].constructor(totalPages); let i = index"
+                            [class.active]="currentPage === (i + 1)">
+                            <a class="page-link" (click)="onPageChange(i + 1)" style="cursor: pointer;">{{ i + 1 }}</a>
+                        </li>
+                        <li class="page-item" [class.disabled]="currentPage === totalPages">
+                            <a class="page-link" (click)="onPageChange(currentPage + 1)"
+                                style="cursor: pointer;">Siguiente</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>

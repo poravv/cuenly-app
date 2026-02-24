@@ -1,15 +1,100 @@
 import logging
 import uuid
+import base64
+import hashlib
 from typing import List, Dict, Any, Optional
 
 from pymongo import MongoClient
 from pymongo.collection import Collection
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "email_configs"
+SENSITIVE_FIELDS = ("password", "access_token", "refresh_token")
+ENCRYPTION_PREFIX = "enc:v1:"
+_FERNET: Optional[Fernet] = None
+_WARNED_FALLBACK_KEY = False
+
+
+def _build_fernet() -> Fernet:
+    """
+    Construye el cifrador para secretos de configuraciones de correo.
+    Prioriza EMAIL_CONFIG_ENCRYPTION_KEY; usa fallback derivado con warning.
+    """
+    global _WARNED_FALLBACK_KEY
+
+    raw_key = (getattr(settings, "EMAIL_CONFIG_ENCRYPTION_KEY", "") or "").strip()
+    if raw_key:
+        # Si ya es una Fernet key válida, usarla directamente.
+        try:
+            return Fernet(raw_key.encode("utf-8"))
+        except Exception:
+            # Permitir también una frase secreta y derivarla.
+            derived = base64.urlsafe_b64encode(hashlib.sha256(raw_key.encode("utf-8")).digest())
+            return Fernet(derived)
+
+    # Fallback de compatibilidad: no ideal para producción.
+    # Permite cifrar en reposo aunque aún no se haya configurado clave dedicada.
+    fallback_material = (
+        f"{getattr(settings, 'FRONTEND_API_KEY', '')}|"
+        f"{getattr(settings, 'FIREBASE_PROJECT_ID', '')}|"
+        f"{getattr(settings, 'MONGODB_DATABASE', '')}"
+    )
+    if not _WARNED_FALLBACK_KEY:
+        logger.warning(
+            "⚠️ EMAIL_CONFIG_ENCRYPTION_KEY no configurada; usando clave derivada de fallback. "
+            "Configure EMAIL_CONFIG_ENCRYPTION_KEY para seguridad fuerte en producción."
+        )
+        _WARNED_FALLBACK_KEY = True
+    derived = base64.urlsafe_b64encode(hashlib.sha256(fallback_material.encode("utf-8")).digest())
+    return Fernet(derived)
+
+
+def _get_fernet() -> Fernet:
+    global _FERNET
+    if _FERNET is None:
+        _FERNET = _build_fernet()
+    return _FERNET
+
+
+def _is_encrypted(value: Any) -> bool:
+    return isinstance(value, str) and value.startswith(ENCRYPTION_PREFIX)
+
+
+def _encrypt_secret(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    plain = str(value)
+    if _is_encrypted(plain):
+        return plain
+    token = _get_fernet().encrypt(plain.encode("utf-8")).decode("utf-8")
+    return f"{ENCRYPTION_PREFIX}{token}"
+
+
+def _decrypt_secret(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    if not isinstance(value, str):
+        return str(value)
+    if not _is_encrypted(value):
+        # Compatibilidad con registros legacy sin cifrar.
+        return value
+    token = value[len(ENCRYPTION_PREFIX):]
+    try:
+        return _get_fernet().decrypt(token.encode("utf-8")).decode("utf-8")
+    except InvalidToken:
+        logger.error("No se pudo descifrar secreto de email config (token inválido).")
+        return ""
+
+
+def _encrypt_payload_secrets(payload: Dict[str, Any]) -> Dict[str, Any]:
+    for field in SENSITIVE_FIELDS:
+        if field in payload:
+            payload[field] = _encrypt_secret(payload.get(field))
+    return payload
 
 
 def _get_client() -> MongoClient:
@@ -34,10 +119,16 @@ def _get_collection() -> Collection:
     coll = db[COLLECTION_NAME]
     try:
         coll.create_index("username")
+        coll.create_index("owner_email")
         coll.create_index([("enabled", 1)])
         coll.create_index([("provider", 1)])
     except Exception:
         pass
+    try:
+        # Unicidad por tenant; puede fallar si ya existen datos duplicados legacy.
+        coll.create_index([("owner_email", 1), ("username", 1)], unique=True)
+    except Exception as e:
+        logger.warning(f"No se pudo crear índice único owner_email+username: {e}")
     return coll
 
 
@@ -59,16 +150,20 @@ def list_configs(include_password: bool = False, owner_email: Optional[str] = No
             "use_ssl": bool(d.get("use_ssl", True)),
             "search_criteria": d.get("search_criteria") or "UNSEEN",
             "search_terms": d.get("search_terms") or [],
+            "search_synonyms": d.get("search_synonyms") or {},
+            "fallback_sender_match": bool(d.get("fallback_sender_match", False)),
+            "fallback_attachment_match": bool(d.get("fallback_attachment_match", False)),
             "provider": d.get("provider") or "other",
             "enabled": bool(d.get("enabled", True)),
             # OAuth fields
             "auth_type": d.get("auth_type") or "password",
-            "access_token": d.get("access_token") or "",
-            "refresh_token": d.get("refresh_token") or "",
+            # Nunca exponer tokens al frontend cuando include_password=False
+            "access_token": _decrypt_secret(d.get("access_token")) if include_password else "",
+            "refresh_token": _decrypt_secret(d.get("refresh_token")) if include_password else "",
             "token_expiry": d.get("token_expiry") or "",
         }
         if include_password:
-            item["password"] = d.get("password") or ""
+            item["password"] = _decrypt_secret(d.get("password"))
         results.append(item)
     return results
 
@@ -107,9 +202,10 @@ def get_enabled_configs(include_password: bool = True, owner_email: Optional[str
         
         # Obtener tokens OAuth actuales
         auth_type = d.get("auth_type") or "password"
-        access_token = d.get("access_token") or ""
+        access_token = _decrypt_secret(d.get("access_token"))
         token_expiry_str = d.get("token_expiry") or ""
-        refresh_token = d.get("refresh_token") or ""
+        refresh_token = _decrypt_secret(d.get("refresh_token"))
+        password = _decrypt_secret(d.get("password"))
         config_id = str(d.get("_id"))
         username = d.get("username") or ""
         
@@ -150,7 +246,7 @@ def get_enabled_configs(include_password: bool = True, owner_email: Optional[str
                         coll.update_one(
                             {"_id": config_id},
                             {"$set": {
-                                "access_token": new_access_token,
+                                "access_token": _encrypt_secret(new_access_token),
                                 "token_expiry": new_expiry.isoformat()
                             }}
                         )
@@ -176,17 +272,20 @@ def get_enabled_configs(include_password: bool = True, owner_email: Optional[str
             "use_ssl": bool(d.get("use_ssl", True)),
             "search_criteria": d.get("search_criteria") or "UNSEEN",
             "search_terms": d.get("search_terms") or [],
+            "search_synonyms": d.get("search_synonyms") or {},
+            "fallback_sender_match": bool(d.get("fallback_sender_match", False)),
+            "fallback_attachment_match": bool(d.get("fallback_attachment_match", False)),
             "provider": d.get("provider") or "other",
             "enabled": True,
             "owner_email": d.get("owner_email", ""),
             # OAuth fields (posiblemente actualizados)
             "auth_type": auth_type,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            "access_token": access_token if include_password else "",
+            "refresh_token": refresh_token if include_password else "",
             "token_expiry": token_expiry_str,
         }
         if include_password:
-            cfg["password"] = d.get("password") or ""
+            cfg["password"] = password
         configs.append(cfg)
     return configs
 
@@ -203,6 +302,9 @@ def create_config(data: Dict[str, Any], owner_email: Optional[str] = None) -> st
         "use_ssl": bool(data.get("use_ssl", True)),
         "search_criteria": data.get("search_criteria") or "UNSEEN",
         "search_terms": data.get("search_terms") or [],
+        "search_synonyms": data.get("search_synonyms") or {},
+        "fallback_sender_match": bool(data.get("fallback_sender_match", False)),
+        "fallback_attachment_match": bool(data.get("fallback_attachment_match", False)),
         "provider": data.get("provider") or "other",
         "enabled": bool(data.get("enabled", True)),
         "owner_email": (owner_email or data.get("owner_email") or "").lower(),
@@ -214,6 +316,7 @@ def create_config(data: Dict[str, Any], owner_email: Optional[str] = None) -> st
         "refresh_token": data.get("refresh_token") or "",
         "token_expiry": data.get("token_expiry") or "",
     }
+    payload = _encrypt_payload_secrets(payload)
     coll.insert_one(payload)
     return str(payload["_id"]) 
 
@@ -230,6 +333,9 @@ def update_config(config_id: str, data: Dict[str, Any], owner_email: Optional[st
         "use_ssl",
         "search_criteria",
         "search_terms",
+        "search_synonyms",
+        "fallback_sender_match",
+        "fallback_attachment_match",
         "provider",
         "enabled",
         "updated_at",
@@ -241,6 +347,9 @@ def update_config(config_id: str, data: Dict[str, Any], owner_email: Optional[st
     ]:
         if key in data:
             updates[key] = data[key]
+    for secret_field in SENSITIVE_FIELDS:
+        if secret_field in updates:
+            updates[secret_field] = _encrypt_secret(updates.get(secret_field))
     if not updates:
         return False
     q = {"_id": config_id}
@@ -296,16 +405,19 @@ def get_by_id(config_id: str, include_password: bool = True, owner_email: Option
         "host": d.get("host"),
         "port": int(d.get("port", 993)),
         "username": d.get("username"),
-        "password": d.get("password") if include_password else None,
+        "password": _decrypt_secret(d.get("password")) if include_password else None,
         "use_ssl": bool(d.get("use_ssl", True)),
         "search_criteria": d.get("search_criteria") or "UNSEEN",
         "search_terms": d.get("search_terms") or [],
+        "search_synonyms": d.get("search_synonyms") or {},
+        "fallback_sender_match": bool(d.get("fallback_sender_match", False)),
+        "fallback_attachment_match": bool(d.get("fallback_attachment_match", False)),
         "provider": d.get("provider") or "other",
         "enabled": bool(d.get("enabled", True)),
         # OAuth fields
         "auth_type": d.get("auth_type") or "password",
-        "access_token": d.get("access_token") or "",
-        "refresh_token": d.get("refresh_token") or "",
+        "access_token": _decrypt_secret(d.get("access_token")) if include_password else "",
+        "refresh_token": _decrypt_secret(d.get("refresh_token")) if include_password else "",
         "token_expiry": d.get("token_expiry") or "",
     }
 
@@ -325,16 +437,19 @@ def get_by_username(username: str, include_password: bool = True, owner_email: O
         "host": d.get("host"),
         "port": int(d.get("port", 993)),
         "username": d.get("username"),
-        "password": d.get("password") if include_password else None,
+        "password": _decrypt_secret(d.get("password")) if include_password else None,
         "use_ssl": bool(d.get("use_ssl", True)),
         "search_criteria": d.get("search_criteria") or "UNSEEN",
         "search_terms": d.get("search_terms") or [],
+        "search_synonyms": d.get("search_synonyms") or {},
+        "fallback_sender_match": bool(d.get("fallback_sender_match", False)),
+        "fallback_attachment_match": bool(d.get("fallback_attachment_match", False)),
         "provider": d.get("provider") or "other",
         "enabled": bool(d.get("enabled", True)),
         # OAuth fields
         "auth_type": d.get("auth_type") or "password",
-        "access_token": d.get("access_token") or "",
-        "refresh_token": d.get("refresh_token") or "",
+        "access_token": _decrypt_secret(d.get("access_token")) if include_password else "",
+        "refresh_token": _decrypt_secret(d.get("refresh_token")) if include_password else "",
         "token_expiry": d.get("token_expiry") or "",
     }
 
@@ -346,3 +461,7 @@ def count_configs_by_owner(owner_email: str) -> int:
     """
     coll = _get_collection()
     return coll.count_documents({"owner_email": owner_email.lower()})
+
+def get_email_config(username: str, include_password: bool = True, owner_email: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Alias for get_by_username to avoid breaking existing code."""
+    return get_by_username(username, include_password, owner_email)

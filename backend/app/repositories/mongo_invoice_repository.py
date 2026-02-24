@@ -41,6 +41,7 @@ class MongoInvoiceRepository(InvoiceRepository):
             coll.create_index("receptor.nombre")
             coll.create_index("mes_proceso")
             coll.create_index("owner_email")
+            coll.create_index("message_id")
         except Exception:
             pass
         return coll
@@ -81,14 +82,14 @@ class MongoInvoiceRepository(InvoiceRepository):
                     query["receptor.ruc"] = filters["ruc_cliente"]
                     
                 if filters.get("monto_minimo"):
-                    if "total_monto" not in query:
-                        query["total_monto"] = {}
-                    query["total_monto"]["$gte"] = float(filters["monto_minimo"])
+                    if "totales.total" not in query:
+                        query["totales.total"] = {}
+                    query["totales.total"]["$gte"] = float(filters["monto_minimo"])
                     
                 if filters.get("monto_maximo"):
-                    if "total_monto" not in query:
-                        query["total_monto"] = {}
-                    query["total_monto"]["$lte"] = float(filters["monto_maximo"])
+                    if "totales.total" not in query:
+                        query["totales.total"] = {}
+                    query["totales.total"]["$lte"] = float(filters["monto_maximo"])
             
             # Obtener headers
             headers = list(self._headers().find(query).sort("fecha_emision", -1))
@@ -100,12 +101,34 @@ class MongoInvoiceRepository(InvoiceRepository):
                 items = list(self._items().find({"header_id": header["_id"]}))
                 
                 # Combinar header e items en estructura de factura compatible
+                totales = header.get("totales", {}) or {}
+                total_iva = totales.get("total_iva", None)
+                if total_iva is None:
+                    total_iva = (totales.get("iva_5", 0) or 0) + (totales.get("iva_10", 0) or 0)
+
                 invoice = {
                     "_id": str(header["_id"]),
                     "numero_factura": header.get("numero_documento", ""),
                     "fecha": header.get("fecha_emision"),
                     "cdc": header.get("cdc", ""),
                     "timbrado": header.get("timbrado", ""),
+                    "tipo_documento": header.get("tipo_documento", ""),
+                    "tipo_documento_electronico": header.get("tipo_documento_electronico", ""),
+                    "tipo_de_codigo": header.get("tipo_de_codigo", ""),
+                    "ind_presencia": header.get("ind_presencia", ""),
+                    "ind_presencia_codigo": header.get("ind_presencia_codigo", ""),
+                    "cond_credito": header.get("cond_credito", ""),
+                    "cond_credito_codigo": header.get("cond_credito_codigo", ""),
+                    "plazo_credito_dias": header.get("plazo_credito_dias", 0),
+                    "ciclo_facturacion": header.get("ciclo_facturacion", ""),
+                    "ciclo_fecha_inicio": header.get("ciclo_fecha_inicio", ""),
+                    "ciclo_fecha_fin": header.get("ciclo_fecha_fin", ""),
+                    "transporte_modalidad": header.get("transporte_modalidad", ""),
+                    "transporte_modalidad_codigo": header.get("transporte_modalidad_codigo", ""),
+                    "transporte_resp_flete_codigo": header.get("transporte_resp_flete_codigo", ""),
+                    "transporte_nro_despacho": header.get("transporte_nro_despacho", ""),
+                    "qr_url": header.get("qr_url", ""),
+                    "info_adicional": header.get("info_adicional", ""),
                     "ruc_emisor": header.get("emisor", {}).get("ruc", ""),
                     "nombre_emisor": header.get("emisor", {}).get("nombre", ""),
                     "direccion_emisor": header.get("emisor", {}).get("direccion", ""),
@@ -118,32 +141,37 @@ class MongoInvoiceRepository(InvoiceRepository):
                     "telefono_cliente": header.get("receptor", {}).get("telefono", ""),
                     "email_cliente": header.get("receptor", {}).get("email", ""),
                     # Mapeo correcto desde modelo v2
-                    "totales": header.get("totales", {}),
-                    "subtotal_exentas": header.get("totales", {}).get("exentas", 0),
-                    "exento": header.get("totales", {}).get("exentas", 0),
-                    "subtotal_5": header.get("totales", {}).get("gravado_5", 0),
-                    "gravado_5": header.get("totales", {}).get("gravado_5", 0),
-                    "iva_5": header.get("totales", {}).get("iva_5", 0),
-                    "subtotal_10": header.get("totales", {}).get("gravado_10", 0),
-                    "gravado_10": header.get("totales", {}).get("gravado_10", 0),
-                    "iva_10": header.get("totales", {}).get("iva_10", 0),
-                    "monto_total": header.get("totales", {}).get("total", 0),
+                    "totales": totales,
+                    "subtotal_exentas": totales.get("exentas", 0),
+                    "exento": totales.get("monto_exento", 0) or totales.get("exentas", 0),
+                    "subtotal_5": totales.get("gravado_5", 0),
+                    "gravado_5": totales.get("gravado_5", 0),
+                    "iva_5": totales.get("iva_5", 0),
+                    "subtotal_10": totales.get("gravado_10", 0),
+                    "gravado_10": totales.get("gravado_10", 0),
+                    "iva_10": totales.get("iva_10", 0),
+                    "monto_total": totales.get("total", 0),
                     # CRÍTICO: Campos faltantes para template export
-                    "total_operacion": header.get("totales", {}).get("total_operacion", 0),
-                    "monto_exento": header.get("totales", {}).get("exentas", 0),  # Usar exentas como fuente principal
-                    "exonerado": header.get("totales", {}).get("exonerado", 0),
-                    "total_iva": header.get("totales", {}).get("total_iva", 0),
-                    "total_descuento": header.get("totales", {}).get("total_descuento", 0),
-                    "anticipo": header.get("totales", {}).get("anticipo", 0),
-                    "base_gravada_5": header.get("totales", {}).get("gravado_5", 0),
-                    "base_gravada_10": header.get("totales", {}).get("gravado_10", 0),
-                    # Calcular total_base_gravada siempre como suma
-                    "total_base_gravada": header.get("totales", {}).get("gravado_5", 0) + header.get("totales", {}).get("gravado_10", 0),
+                    "total_operacion": totales.get("total_operacion", 0) or totales.get("total", 0),
+                    "monto_exento": totales.get("monto_exento", 0) or totales.get("exentas", 0),
+                    "exonerado": totales.get("exonerado", 0),
+                    "total_iva": total_iva,
+                    "total_descuento": totales.get("total_descuento", 0),
+                    "anticipo": totales.get("anticipo", 0),
+                    "base_gravada_5": totales.get("gravado_5", 0),
+                    "base_gravada_10": totales.get("gravado_10", 0),
+                    "total_base_gravada": totales.get(
+                        "total_base_gravada",
+                        (totales.get("gravado_5", 0) or 0) + (totales.get("gravado_10", 0) or 0),
+                    ),
+                    "isc_total": totales.get("isc_total", 0),
+                    "isc_base_imponible": totales.get("isc_base_imponible", 0),
+                    "isc_subtotal_gravado": totales.get("isc_subtotal_gravado", 0),
                     "condicion_venta": header.get("condicion_venta", ""),
                     "moneda": header.get("moneda", "PYG"),
                     "tipo_cambio": header.get("tipo_cambio", 0.0),
                     "fuente": header.get("fuente", ""),
-                    "processing_quality": header.get("processing_quality", ""),
+                    "email_origen": header.get("email_origen", ""),
                     "created_at": header.get("created_at"),
                     "mes_proceso": header.get("mes_proceso", ""),
                     "productos": [],

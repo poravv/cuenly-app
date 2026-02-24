@@ -134,12 +134,12 @@ def process_single_account_job(
     logger.info(f"🚀 Procesando cuenta individual: {email_address} para {owner_email}")
     
     try:
-        from app.modules.email_processor.config_store import get_email_config
+        from app.modules.email_processor.config_store import get_by_username
         from app.modules.email_processor.email_processor import EmailProcessor
         from app.models.models import EmailConfig
         
         # Obtener configuración específica
-        cfg = get_email_config(email_address, include_password=True)
+        cfg = get_by_username(email_address, include_password=True, owner_email=owner_email)
         
         if not cfg:
             return {
@@ -168,6 +168,79 @@ def process_single_account_job(
             "message": str(e),
             "email": email_address
         }
+
+
+def process_single_email_from_uid_job(
+    email_address: Optional[str] = None,
+    owner_email: Optional[str] = None,
+    email_uid: Optional[str] = None,
+    account_email: Optional[str] = None,
+    message_id: Optional[str] = None,
+    **kwargs: Any
+) -> Dict[str, Any]:
+    """
+    Job de procesamiento asíncrono para un solo correo (Fan-out).
+    Permite escalar el procesamiento de UIDs en múltiples workers.
+    """
+    # Compatibilidad con payloads antiguos encolados con kwargs distintos.
+    if not email_address and account_email:
+        email_address = account_email
+    if not email_uid and "uid" in kwargs:
+        email_uid = str(kwargs.get("uid"))
+
+    logger.info(
+        f"🚀 Procesando correo individual UID {email_uid} de la cuenta {email_address} "
+        f"(owner={owner_email}, message_id={message_id})"
+    )
+    
+    try:
+        from app.modules.email_processor.config_store import get_by_username
+        from app.modules.email_processor.email_processor import EmailProcessor
+        from app.models.models import EmailConfig
+        from app.modules.email_processor.errors import SkipEmailKeepUnread
+        
+        if not email_address or not owner_email or not email_uid:
+            return {
+                "success": False,
+                "message": "Parámetros incompletos para procesar correo individual",
+                "email_address": email_address,
+                "owner_email": owner_email,
+                "email_uid": email_uid,
+            }
+
+        cfg = get_by_username(email_address, include_password=True, owner_email=owner_email)
+        if not cfg:
+            return {"success": False, "message": f"Cuenta no encontrada: {email_address}"}
+            
+        email_cfg = EmailConfig(**cfg)
+        processor = EmailProcessor(email_cfg, owner_email=owner_email)
+        
+        if not processor.connect():
+            return {"success": False, "message": "No se pudo conectar a la cuenta IMAP"}
+            
+        invoice = processor._process_single_email(email_uid)
+        
+        if invoice:
+            # _store_invoice_v2 is usually called inside process_emails, but we must call it here since we bypassed the loop
+            processor._store_invoice_v2(invoice)
+            try:
+                processor.mark_as_read(email_uid)
+            except Exception as e:
+                logger.warning(f"No se pudo marcar como leído UID {email_uid}: {e}")
+                
+            processor.disconnect()
+            return {"success": True, "message": f"Factura {getattr(invoice, 'numero_factura', 'N/A')} procesada"}
+            
+        processor.disconnect()
+        return {"success": False, "message": "No se extrajo ninguna factura"}
+        
+    except SkipEmailKeepUnread as e:
+        logger.info(f"🛑 Omitido por límite de IA (UID {email_uid}). Manteniendo en cola de fallidos de RQ para posible reintento.")
+        # Re-raise para que RQ mueva el job a FailedQueue y el usuario pueda verlo/reencolarlo
+        raise e
+    except Exception as e:
+        logger.error(f"❌ Error procesando UID {email_uid}: {e}", exc_info=True)
+        return {"success": False, "message": str(e)}
 
 
 def cleanup_old_processed_emails_job(days: int = 30) -> Dict[str, Any]:

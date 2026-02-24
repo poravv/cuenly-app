@@ -40,23 +40,6 @@ class PlanCode(str, Enum):
 # Modelos de Base de Datos
 # ============================================================================
 
-class PlanFeatures(BaseModel):
-    """Características de un plan de suscripción."""
-    max_invoices: Optional[int] = Field(None, description="Máximo de facturas por mes")
-    max_users: Optional[int] = Field(None, description="Máximo de usuarios")
-    ai_extraction: Optional[bool] = Field(None, description="Extracción con IA habilitada")
-    excel_export: bool = Field(True, description="Exportación a Excel")
-    advanced_reports: bool = Field(False, description="Reportes avanzados")
-    api_access: bool = Field(False, description="Acceso a API")
-    priority_support: bool = Field(False, description="Soporte prioritario")
-    minio_storage: bool = Field(True, description="Permite descarga de originales desde MinIO")
-    allowed_export_formats: List[str] = Field(default=["excel"], description="Formatos de exportación permitidos")
-    retention_days: int = Field(default=365, description="Días de retención de archivos físicos")
-    # Campos legacy/alternativos
-    ai_invoices_limit: Optional[int] = Field(None, description="Límite de facturas con IA")
-    custom_templates: Optional[bool] = Field(None, description="Plantillas personalizadas")
-
-
 class Plan(BaseModel):
     """Modelo de plan de suscripción."""
     code: PlanCode
@@ -65,7 +48,7 @@ class Plan(BaseModel):
     amount: float = Field(..., ge=0, description="Monto en PYG")
     currency: str = Field(default="PYG")
     billing_period: BillingPeriod = Field(default=BillingPeriod.MONTHLY)
-    features: PlanFeatures
+    features: Dict[str, Any] = Field(default_factory=dict)
     active: bool = Field(default=True)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -137,7 +120,7 @@ class PlanResponse(BaseModel):
     amount: float
     currency: str
     billing_period: str
-    features: PlanFeatures
+    features: Dict[str, Any]
     active: bool
 
 

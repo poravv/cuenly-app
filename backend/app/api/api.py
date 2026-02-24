@@ -1,4 +1,4 @@
-from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -94,6 +94,7 @@ app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscri
 app.include_router(admin_users.router, prefix="/admin/users", tags=["Admin Users"])
 app.include_router(admin_plans.router, prefix="/admin/plans", tags=["Admin Plans"])
 app.include_router(user_profile.router, prefix="/user", tags=["User Profile"])
+app.include_router(queues.router, prefix="/admin/queues", tags=["Admin Queues"])
 
 
 # Startup event para inicializar servicios
@@ -147,6 +148,8 @@ class UserProfileUpdate(BaseModel):
     address: Optional[str] = None
     city: Optional[str] = None
     document_type: Optional[str] = "CI" # CI, RUC, PASSPORT
+    webhook_url: Optional[str] = None
+    webhook_secret: Optional[str] = None
 
 class ProfileStatusResponse(BaseModel):
     is_complete: bool
@@ -181,11 +184,12 @@ def process_emails_range_task(user_email: str, start_date=None, end_date=None):
     try:
         from app.modules.email_processor.config_store import get_enabled_configs
         from app.modules.email_processor.email_processor import MultiEmailProcessor
+        from app.models.models import ProcessResult
         
         configs = get_enabled_configs(include_password=True, owner_email=user_email) if user_email else []
         if not configs:
             logger.warning(f"ProcessRange: Sin configs para {user_email}")
-            return
+            return ProcessResult(success=False, message="No hay cuentas de correo configuradas", invoice_count=0, invoices=[])
 
         email_configs = []
         for c in configs:
@@ -195,10 +199,12 @@ def process_emails_range_task(user_email: str, start_date=None, end_date=None):
             
         mp = MultiEmailProcessor(email_configs=email_configs, owner_email=user_email)
         logger.info(f"🚀 Iniciando job por rango para {user_email}: {start_date} - {end_date}")
-        mp.process_all_emails(start_date=start_date, end_date=end_date)
+        return mp.process_all_emails(start_date=start_date, end_date=end_date)
         
     except Exception as e:
         logger.error(f"❌ Error en process_emails_range_task para {user_email}: {e}")
+        from app.models.models import ProcessResult
+        return ProcessResult(success=False, message=str(e), invoice_count=0, invoices=[])
 
 @app.get("/")
 async def root():
@@ -263,7 +269,9 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
         "ruc": db_user.get('ruc', ''),
         "address": db_user.get('address', ''),
         "city": db_user.get('city', ''),
-        "document_type": db_user.get('document_type', 'CI')
+        "document_type": db_user.get('document_type', 'CI'),
+        "webhook_url": db_user.get('webhook_url', ''),
+        "has_webhook_secret": bool(db_user.get('webhook_secret', ''))
     }
 
 @app.put("/user/profile")
@@ -514,20 +522,23 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
 
 @app.post("/process-direct")
 async def process_emails_direct(
-    limit: Optional[int] = 10,
+    limit: Optional[int] = None,
     # USA _get_current_user_with_trial_check para permitir que llegue al procesador
     # y allí se aplique la lógica "XML allowed"
     user: Dict[str, Any] = Depends(_get_current_user_with_trial_check),
     request: Request = None,
     _frontend_key: bool = Depends(validate_frontend_key)
 ):
-    """Procesa correos directamente con límite (máximo 10 para procesamiento manual)."""
+    """Procesa correos directamente con fan-out a cola y límite configurable."""
     try:
+        default_limit = max(1, int(getattr(settings, "PROCESS_DIRECT_DEFAULT_LIMIT", 50) or 50))
+        max_limit = max(default_limit, int(getattr(settings, "PROCESS_DIRECT_MAX_LIMIT", 200) or 200))
+
         # Validar límite
         if limit is None or limit <= 0:
-            limit = 10
-        if limit > 50:  # Límite máximo de seguridad
-            limit = 50
+            limit = default_limit
+        if limit > max_limit:
+            limit = max_limit
             
         # Ejecutar procesamiento limitado
         from app.modules.email_processor.config_store import get_enabled_configs
@@ -545,14 +556,17 @@ async def process_emails_direct(
             email_configs.append(MultiEmailConfig(**config_data))
             
         mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
-        result = mp.process_limited_emails(limit=limit)
+        # 🚀 ACTIVAR FAN-OUT POR DEFECTO PARA NO BLOQUEAR BACKEND
+        result = mp.process_limited_emails(limit=limit, fan_out=True)
         
         if result and hasattr(result, 'success') and result.success:
             return {
                 "success": True,
                 "message": result.message,
                 "invoice_count": getattr(result, 'invoice_count', 0),
-                "limit_used": limit
+                "limit_used": limit,
+                "default_limit": default_limit,
+                "max_limit": max_limit,
             }
         else:
             return {
@@ -755,8 +769,35 @@ async def process_range_job(
             raise HTTPException(status_code=400, detail="Formato end_date inválido (Use YYYY-MM-DD)")
 
     if payload.run_async:
-        background_tasks.add_task(process_emails_range_task, owner_email, s_date, e_date)
-        return {"success": True, "message": "Procesamiento por rango iniciado en segundo plano"}
+        # Verificar si el job automático está ejecutándose para omitir si es necesario
+        job_status = invoice_sync.get_job_status()
+        if job_status.running:
+            from app.models.models import ProcessResult
+            import uuid, time
+            job_id = str(uuid.uuid4().hex)
+            task_queue._jobs[job_id] = {
+                'job_id': job_id,
+                'action': 'process_emails_range',
+                'status': 'error',
+                'created_at': time.time(),
+                'started_at': time.time(),
+                'finished_at': time.time(),
+                'message': 'No se puede procesar el historial mientras la automatización esté activa. Detenga la automatización primero.',
+                'result': ProcessResult(
+                    success=False,
+                    message='No se puede procesar el historial mientras la automatización esté activa. Detenga la automatización primero.',
+                    invoice_count=0,
+                    invoices=[]
+                ),
+                '_func': None,
+            }
+            return {"success": False, "message": "Automatización activa. Deténgala primero.", "job_id": job_id}
+            
+        def _runner():
+            return process_emails_range_task(owner_email, s_date, e_date)
+            
+        job_id = task_queue.enqueue("process_emails_range", _runner)
+        return {"success": True, "message": "Procesamiento por rango encolado exitosamente", "job_id": job_id}
     else:
         # Ejecución síncrona (con precaución)
         try:
@@ -1230,7 +1271,10 @@ async def test_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Dep
             username=config.username,
             password=pwd or "",
             search_criteria=config.search_criteria,
-            search_terms=config.search_terms or []
+            search_terms=config.search_terms or [],
+            search_synonyms=config.search_synonyms or {},
+            fallback_sender_match=bool(config.fallback_sender_match),
+            fallback_attachment_match=bool(config.fallback_attachment_match),
         )
         
         # Crear procesador temporal
@@ -1964,6 +2008,7 @@ async def get_status(user: Dict[str, Any] = Depends(_get_current_user)):
             "openai_configured": bool(settings.OPENAI_API_KEY),
             "job": {
                 "running": job_status.running,
+                "is_processing": job_status.is_processing,
                 "interval_minutes": job_status.interval_minutes,
                 "next_run": job_status.next_run,
                 "last_run": job_status.last_run
@@ -4210,13 +4255,18 @@ async def search_invoices(
     client_ruc: Optional[str] = Query(default=None, description="RUC del cliente"),
     min_amount: Optional[float] = Query(default=None, description="Monto mínimo"),
     max_amount: Optional[float] = Query(default=None, description="Monto máximo"),
-    limit: int = Query(default=100, description="Límite de resultados")
+    limit: int = Query(default=100, description="Límite de resultados"),
+    user: Dict[str, Any] = Depends(_get_current_user)
 ):
     """
     Búsqueda avanzada de facturas en MongoDB con múltiples filtros.
     """
     try:
         query_service = get_mongo_query_service()
+        owner = (user.get('email') or '').lower()
+        if settings.MULTI_TENANT_ENFORCE and not owner:
+            raise HTTPException(status_code=401, detail="Usuario no autenticado")
+        owner_filter = owner if settings.MULTI_TENANT_ENFORCE else None
         results = query_service.search_invoices(
             query=query,
             start_date=start_date,
@@ -4225,7 +4275,8 @@ async def search_invoices(
             client_ruc=client_ruc,
             min_amount=min_amount,
             max_amount=max_amount,
-            limit=limit
+            limit=limit,
+            owner_email=owner_filter
         )
         
         return {
@@ -4239,13 +4290,20 @@ async def search_invoices(
         raise HTTPException(status_code=500, detail=f"Error en búsqueda: {str(e)}")
 
 @app.get("/invoices/recent-activity")
-async def get_recent_activity(days: int = Query(default=7, description="Días hacia atrás")):
+async def get_recent_activity(
+    days: int = Query(default=7, description="Días hacia atrás"),
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
     """
     Obtiene actividad reciente del sistema desde MongoDB.
     """
     try:
         query_service = get_mongo_query_service()
-        activity = query_service.get_recent_activity(days)
+        owner = (user.get('email') or '').lower()
+        if settings.MULTI_TENANT_ENFORCE and not owner:
+            raise HTTPException(status_code=401, detail="Usuario no autenticado")
+        owner_filter = owner if settings.MULTI_TENANT_ENFORCE else None
+        activity = query_service.get_recent_activity(days, owner_email=owner_filter)
         
         return {
             "success": True,
@@ -4301,29 +4359,43 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
         
         # Obtener totales desde el modelo v2 estructura
         totales_data = doc.get("totales", {})
+        emisor_data = doc.get("emisor", {})
+        receptor_data = doc.get("receptor", {})
+
+        total_iva_v2 = totales_data.get("total_iva", None)
+        if total_iva_v2 is None:
+            total_iva_v2 = (totales_data.get("iva_5", 0) or 0) + (totales_data.get("iva_10", 0) or 0)
         
         invoice = InvoiceData(
             numero_factura=doc.get("numero_factura", "") or doc.get("numero_documento", ""),
             fecha=fecha,
-            ruc_emisor=doc.get("ruc_emisor", ""),
-            nombre_emisor=doc.get("nombre_emisor", ""),
-            ruc_cliente=doc.get("ruc_cliente", ""),
-            nombre_cliente=doc.get("nombre_cliente", ""),
-            email_cliente=doc.get("email_cliente", ""),
+            ruc_emisor=doc.get("ruc_emisor", "") or emisor_data.get("ruc", ""),
+            nombre_emisor=doc.get("nombre_emisor", "") or emisor_data.get("nombre", ""),
+            ruc_cliente=doc.get("ruc_cliente", "") or receptor_data.get("ruc", ""),
+            nombre_cliente=doc.get("nombre_cliente", "") or receptor_data.get("nombre", ""),
+            email_cliente=doc.get("email_cliente", "") or receptor_data.get("email", ""),
             monto_total=doc.get("monto_total", 0) or totales_data.get("total", 0),
             
             # Mapeo correcto desde modelo v2 - NOMBRES CORRECTOS DEL XML
-            monto_exento=totales_data.get("exentas", 0),  # monto_exento en lugar de subtotal_exentas
+            monto_exento=totales_data.get("monto_exento", 0) or totales_data.get("exentas", 0),
             base_gravada_5=totales_data.get("gravado_5", 0),  # base_gravada_5 del XML
             base_gravada_10=totales_data.get("gravado_10", 0),  # base_gravada_10 del XML
             iva_5=totales_data.get("iva_5", 0),
             iva_10=totales_data.get("iva_10", 0),
             
             # Campos adicionales del XML que faltaban
-            total_operacion=doc.get("total_operacion", 0),
-            total_descuento=doc.get("total_descuento", 0),
-            total_iva=totales_data.get("iva_5", 0) + totales_data.get("iva_10", 0),
-            anticipo=doc.get("anticipo", 0),
+            total_operacion=totales_data.get("total_operacion", 0) or doc.get("total_operacion", 0),
+            total_descuento=totales_data.get("total_descuento", 0) or doc.get("total_descuento", 0),
+            total_iva=total_iva_v2 or 0,
+            anticipo=totales_data.get("anticipo", 0) or doc.get("anticipo", 0),
+            exonerado=totales_data.get("exonerado", 0) or doc.get("exonerado", 0),
+            total_base_gravada=totales_data.get(
+                "total_base_gravada",
+                (totales_data.get("gravado_5", 0) or 0) + (totales_data.get("gravado_10", 0) or 0)
+            ),
+            isc_total=totales_data.get("isc_total", 0) or doc.get("isc_total", 0),
+            isc_base_imponible=totales_data.get("isc_base_imponible", 0) or doc.get("isc_base_imponible", 0),
+            isc_subtotal_gravado=totales_data.get("isc_subtotal_gravado", 0) or doc.get("isc_subtotal_gravado", 0),
             
             # Compatibilidad (campos legacy)
             subtotal_exentas=totales_data.get("exentas", 0),
@@ -4335,10 +4407,29 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
             
             productos=[clean_product(p) for p in productos]
         )
-        
+
         # Agregar campos adicionales directamente del documento
         invoice.cdc = doc.get("cdc", "")
         invoice.timbrado = doc.get("timbrado", "")
+        invoice.tipo_documento = doc.get("tipo_documento", "") or invoice.tipo_documento
+        invoice.tipo_documento_electronico = doc.get("tipo_documento_electronico", "")
+        invoice.tipo_de_codigo = doc.get("tipo_de_codigo", "")
+        invoice.ind_presencia = doc.get("ind_presencia", "")
+        invoice.ind_presencia_codigo = doc.get("ind_presencia_codigo", "")
+        invoice.cond_credito = doc.get("cond_credito", "")
+        invoice.cond_credito_codigo = doc.get("cond_credito_codigo", "")
+        invoice.plazo_credito_dias = int(doc.get("plazo_credito_dias", 0) or 0)
+        invoice.ciclo_facturacion = doc.get("ciclo_facturacion", "")
+        invoice.ciclo_fecha_inicio = doc.get("ciclo_fecha_inicio", "")
+        invoice.ciclo_fecha_fin = doc.get("ciclo_fecha_fin", "")
+        invoice.transporte_modalidad = doc.get("transporte_modalidad", "")
+        invoice.transporte_modalidad_codigo = doc.get("transporte_modalidad_codigo", "")
+        invoice.transporte_resp_flete_codigo = doc.get("transporte_resp_flete_codigo", "")
+        invoice.transporte_nro_despacho = doc.get("transporte_nro_despacho", "")
+        invoice.qr_url = doc.get("qr_url", "")
+        invoice.info_adicional = doc.get("info_adicional", "")
+        invoice.fuente = doc.get("fuente", "")
+        invoice.email_origen = doc.get("email_origen", "")
 
         # Normalizar y mapear campos críticos faltantes para exportación
         # Moneda: mapear PYG/GS → GS, USD/DOLAR → USD, default GS
@@ -4373,29 +4464,29 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
 
         # Datos del emisor adicionales
         try:
-            invoice.direccion_emisor = doc.get("direccion_emisor", "")
+            invoice.direccion_emisor = doc.get("direccion_emisor", "") or emisor_data.get("direccion", "")
         except Exception:
             pass
         try:
-            invoice.telefono_emisor = doc.get("telefono_emisor", "")
+            invoice.telefono_emisor = doc.get("telefono_emisor", "") or emisor_data.get("telefono", "")
         except Exception:
             pass
         try:
-            invoice.actividad_economica = doc.get("actividad_economica", "")
+            invoice.actividad_economica = doc.get("actividad_economica", "") or emisor_data.get("actividad_economica", "")
         except Exception:
             pass
         try:
-            invoice.email_emisor = doc.get("email_emisor", "")
+            invoice.email_emisor = doc.get("email_emisor", "") or emisor_data.get("email", "")
         except Exception:
             pass
 
         # Datos del receptor adicionales
         try:
-            invoice.direccion_cliente = doc.get("direccion_cliente", "")
+            invoice.direccion_cliente = doc.get("direccion_cliente", "") or receptor_data.get("direccion", "")
         except Exception:
             pass
         try:
-            invoice.telefono_cliente = doc.get("telefono_cliente", "")
+            invoice.telefono_cliente = doc.get("telefono_cliente", "") or receptor_data.get("telefono", "")
         except Exception:
             pass
 
@@ -4473,37 +4564,11 @@ async def get_export_templates(user: Dict[str, Any] = Depends(_get_current_user)
 async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)):
     """Obtener lista de campos disponibles para templates - SOLO CAMPOS REALES"""
     try:
-        from app.models.export_template import AVAILABLE_FIELDS
+        from app.models.export_template import AVAILABLE_FIELDS, get_available_field_categories
         
-        # Solo devolver campos reales de la base de datos - sin campos calculados
         return {
             "fields": AVAILABLE_FIELDS,
-            "categories": {
-                "basic": [
-                    "numero_factura", "fecha", "cdc", "timbrado", "tipo_documento", 
-                    "condicion_venta", "moneda", "tipo_cambio"
-                ],
-                "emisor": [
-                    "ruc_emisor", "nombre_emisor", "direccion_emisor", "telefono_emisor", 
-                    "email_emisor", "actividad_economica"
-                ],
-                "cliente": [
-                    "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente", "telefono_cliente"
-                ],
-                "montos": [
-                    "gravado_5", "gravado_10", "iva_5", "iva_10", "total_iva",
-                    "monto_exento", "exonerado", "monto_total", 
-                    "total_base_gravada", "total_descuento", "anticipo"
-                ],
-                "productos": [
-                    "productos", "productos.codigo", "productos.nombre", 
-                    "productos.cantidad", "productos.unidad", "productos.precio_unitario", 
-                    "productos.total", "productos.iva", "productos.base_gravada", "productos.monto_iva"
-                ],
-                "metadata": [
-                    "mes_proceso", "created_at"
-                ]
-            }
+            "categories": get_available_field_categories(),
         }
         
     except Exception as e:
@@ -4537,13 +4602,23 @@ async def create_export_template(
     """Crear un nuevo template de exportación"""
     try:
         from app.repositories.export_template_repository import ExportTemplateRepository
-        from app.models.export_template import ExportTemplate
+        from app.models.export_template import ExportTemplate, get_invalid_template_field_keys
         
         # Agregar owner_email
         template_data["owner_email"] = user["email"]
         
         # Crear template
         template = ExportTemplate(**template_data)
+        invalid_fields = get_invalid_template_field_keys(template.fields)
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Template contiene campos no soportados",
+                    "invalid_fields": invalid_fields,
+                },
+            )
+
         repo = ExportTemplateRepository()
         template_id = repo.create_template(template)
         
@@ -4591,13 +4666,23 @@ async def update_export_template(
     """Actualizar un template existente"""
     try:
         from app.repositories.export_template_repository import ExportTemplateRepository
-        from app.models.export_template import ExportTemplate
+        from app.models.export_template import ExportTemplate, get_invalid_template_field_keys
         
         # Agregar owner_email
         template_data["owner_email"] = user["email"]
         
         # Actualizar template
         template = ExportTemplate(**template_data)
+        invalid_fields = get_invalid_template_field_keys(template.fields)
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Template contiene campos no soportados",
+                    "invalid_fields": invalid_fields,
+                },
+            )
+
         repo = ExportTemplateRepository()
         
         if repo.update_template(template_id, template):

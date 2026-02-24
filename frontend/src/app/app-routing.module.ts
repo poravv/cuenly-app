@@ -22,6 +22,7 @@ import { PagoparResultComponent } from './components/pagopar-result/pagopar-resu
 
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { ProfileComponent } from './components/profile/profile.component';
+import { QueueEventsComponent } from './components/profile/queue-events.component';
 import { TermsConditionsComponent } from './components/legal/terms-conditions.component';
 import { PrivacyPolicyComponent } from './components/legal/privacy-policy.component';
 import { DataRetentionComponent } from './components/legal/data-retention.component';
@@ -45,6 +46,7 @@ const routes: Routes = [
   { path: 'subscription', component: SubscriptionComponent, canActivate: [AuthGuard, ProfileGuard] },
   { path: 'payment-methods', component: PaymentMethodsComponent, canActivate: [AuthGuard, ProfileGuard] },
   { path: 'profile', component: ProfileComponent, canActivate: [AuthGuard] },
+  { path: 'profile/queue', component: QueueEventsComponent, canActivate: [AuthGuard] },
   {
     path: 'admin',
     loadChildren: () => import('./modules/admin/admin.module').then(m => m.AdminModule),

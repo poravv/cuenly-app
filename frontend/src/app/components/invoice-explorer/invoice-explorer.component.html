@@ -293,7 +293,10 @@
                   <!-- Main Row -->
                   <tr [class.table-active]="expandedInvoiceId === h.id">
                     <td>{{ formatDate(h.fecha_emision) }}</td>
-                    <td>{{ h.numero_documento }}</td>
+                    <td>
+                      <div>{{ h.numero_documento }}</div>
+                      <div class="small text-muted" *ngIf="h.tipo_documento_electronico">{{ h.tipo_documento_electronico }}</div>
+                    </td>
                     <td>{{ h.emisor?.nombre }}</td>
                     <td>{{ h.receptor?.nombre }}</td>
                     <td>{{ formatCurrency(h.totales?.total || 0) }}</td>
@@ -318,6 +321,90 @@
                             <i class="bi bi-list-check me-2"></i>
                             Detalle de Factura ({{ h.numero_documento }})
                           </h6>
+                          <div class="row g-2 mb-3 small">
+                            <div class="col-12 col-md-6">
+                              <div class="d-flex flex-wrap gap-2">
+                                <span class="badge bg-light text-dark border">Emisor RUC: {{ h.emisor?.ruc || '-' }}</span>
+                                <span class="badge bg-light text-dark border">Receptor RUC: {{ h.receptor?.ruc || '-' }}</span>
+                                <span class="badge bg-secondary" *ngIf="h.timbrado">Timbrado: {{ h.timbrado }}</span>
+                              </div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                              <div class="d-flex flex-wrap gap-2 justify-content-md-end">
+                                <span class="badge bg-info text-dark" *ngIf="h.cdc">CDC: {{ (h.cdc || '').slice(0, 8) }}…</span>
+                                <span class="badge bg-light text-dark border" *ngIf="h.tipo_de_codigo">TiDE: {{ h.tipo_de_codigo }}</span>
+                                <span class="badge bg-light text-dark border" *ngIf="h.ind_presencia_codigo">Presencia: {{ h.ind_presencia_codigo }}</span>
+                                <span class="badge bg-light text-dark border" *ngIf="h.fuente">Fuente: {{ h.fuente }}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="row g-2 mb-3 small">
+                            <div class="col-6 col-md-3">
+                              <div class="bg-white rounded-2 p-2 border">
+                                <div class="text-muted">Exentas</div>
+                                <div class="fw-semibold">{{ formatCurrency(h.totales?.exentas || 0) }}</div>
+                              </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                              <div class="bg-white rounded-2 p-2 border">
+                                <div class="text-muted">Grav. 5%</div>
+                                <div class="fw-semibold">{{ formatCurrency(h.totales?.gravado_5 || 0) }}</div>
+                              </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                              <div class="bg-white rounded-2 p-2 border">
+                                <div class="text-muted">Grav. 10%</div>
+                                <div class="fw-semibold">{{ formatCurrency(h.totales?.gravado_10 || 0) }}</div>
+                              </div>
+                            </div>
+                            <div class="col-6 col-md-3">
+                              <div class="bg-white rounded-2 p-2 border">
+                                <div class="text-muted">Total IVA</div>
+                                <div class="fw-semibold">{{ formatCurrency(h.totales?.total_iva || 0) }}</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="bg-white rounded-3 border p-2 mb-3 small" *ngIf="hasExtendedSifenFields(h)">
+                            <div class="fw-semibold mb-2 text-primary">Campos SIFEN mapeados</div>
+                            <div class="row g-2">
+                              <div class="col-12 col-lg-4" *ngIf="h.ind_presencia">
+                                <span class="text-muted">Indicador de presencia:</span>
+                                <span class="fw-semibold ms-1">{{ h.ind_presencia }}</span>
+                              </div>
+                              <div class="col-12 col-lg-4" *ngIf="h.cond_credito">
+                                <span class="text-muted">Condición de crédito:</span>
+                                <span class="fw-semibold ms-1">{{ h.cond_credito }}</span>
+                              </div>
+                              <div class="col-12 col-lg-4" *ngIf="h.plazo_credito_dias">
+                                <span class="text-muted">Plazo:</span>
+                                <span class="fw-semibold ms-1">{{ h.plazo_credito_dias }} días</span>
+                              </div>
+                              <div class="col-12 col-lg-4" *ngIf="h.ciclo_facturacion">
+                                <span class="text-muted">Ciclo:</span>
+                                <span class="fw-semibold ms-1">{{ h.ciclo_facturacion }}</span>
+                              </div>
+                              <div class="col-12 col-lg-4" *ngIf="h.ciclo_fecha_inicio || h.ciclo_fecha_fin">
+                                <span class="text-muted">Rango ciclo:</span>
+                                <span class="fw-semibold ms-1">{{ h.ciclo_fecha_inicio || '-' }} → {{ h.ciclo_fecha_fin || '-' }}</span>
+                              </div>
+                              <div class="col-12 col-lg-4" *ngIf="h.transporte_modalidad">
+                                <span class="text-muted">Transporte:</span>
+                                <span class="fw-semibold ms-1">{{ h.transporte_modalidad }}</span>
+                              </div>
+                              <div class="col-12 col-lg-4" *ngIf="h.transporte_nro_despacho">
+                                <span class="text-muted">Nro despacho:</span>
+                                <span class="fw-semibold ms-1">{{ h.transporte_nro_despacho }}</span>
+                              </div>
+                              <div class="col-12 col-lg-8" *ngIf="h.qr_url">
+                                <span class="text-muted">QR URL:</span>
+                                <a class="ms-1 small" [href]="h.qr_url" target="_blank" rel="noopener noreferrer">Abrir enlace</a>
+                              </div>
+                              <div class="col-12" *ngIf="h.info_adicional">
+                                <span class="text-muted">Info adicional:</span>
+                                <span class="fw-semibold ms-1">{{ h.info_adicional }}</span>
+                              </div>
+                            </div>
+                          </div>
 
                           <div *ngIf="!v2Items.length && !v2Header" class="text-center py-3">
                             <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
