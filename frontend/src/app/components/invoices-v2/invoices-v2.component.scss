@@ -1,8 +1,7 @@
 .table td, .table th { vertical-align: middle; }
-.breadcrumb { font-size: .9rem; }
 .btn-outline-primary { border-radius: .5rem; }
-.card { border-radius: .75rem; }
 .rounded-3 { border-radius: .75rem !important; }
+.facturas-list-actions { min-height: 40px; }
 
 /* Chips: usar estilos globales y solo ajustar internos */
 .chip-label { color: var(--color-muted); font-size: .85rem; }
@@ -36,4 +35,62 @@
 
 .form-check-input {
   cursor: pointer;
+}
+
+.advanced-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-style: dashed;
+}
+
+.advanced-active-count {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+@media (max-width: 767.98px) {
+  .filters-grid.mobile-advanced-collapsed .advanced-filter {
+    display: none;
+  }
+
+  .facturas-list-actions {
+    min-height: auto;
+    margin-bottom: 0.75rem !important;
+  }
+
+  .facturas-list-actions .small {
+    font-size: 0.76rem;
+  }
+
+  .facturas-list-actions .d-flex.gap-2 {
+    width: 100%;
+  }
+
+  .facturas-list-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .skeleton-row {
+    gap: 8px;
+    grid-template-columns: 30px 30px repeat(4, minmax(90px, 1fr)) 80px;
+  }
+
+  .chip {
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .facturas-list-actions .d-flex.gap-2 {
+    flex-wrap: wrap;
+  }
+
+  .facturas-list-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }

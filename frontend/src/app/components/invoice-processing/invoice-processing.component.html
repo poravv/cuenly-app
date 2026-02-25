@@ -22,25 +22,6 @@
             <i class="bi bi-arrow-clockwise me-1"></i>
             Actualizar
           </button>
-          <button class="btn btn-outline-secondary" routerLink="/profile/queue">
-            <i class="bi bi-list-task me-1"></i>
-            Cola de Procesos
-          </button>
-          <button class="btn btn-primary" (click)="openQuickSetup()">
-            <i class="bi bi-envelope-plus me-1"></i>
-            Conectar Correo Ahora
-          </button>
-          <div class="dropdown">
-            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-              <i class="bi bi-gear me-1"></i>
-              Configuración
-            </button>
-            <ul class="dropdown-menu">
-              <li><a class="dropdown-item" routerLink="/email-settings"><i class="bi bi-envelope me-2"></i>Correos</a>
-              </li>
-              <li><a class="dropdown-item" routerLink="/ayuda"><i class="bi bi-question-circle me-2"></i>Ayuda</a></li>
-            </ul>
-          </div>
         </div>
       </div>
     </div>
@@ -275,7 +256,7 @@
 
             <div class="col-md-4">
               <div class="d-grid">
-                <a class="btn btn-outline-primary py-3" routerLink="/upload">
+                <a class="btn btn-outline-primary py-3" routerLink="/facturas/subir">
                   <i class="bi bi-file-earmark-text me-2"></i>
                   <div>Subir PDF / Imagen</div>
                 </a>
@@ -283,7 +264,7 @@
             </div>
             <div class="col-md-4">
               <div class="d-grid">
-                <a class="btn btn-outline-primary py-3" routerLink="/upload-xml">
+                <a class="btn btn-outline-primary py-3" routerLink="/facturas/subir-xml">
                   <i class="bi bi-file-code me-2"></i>
                   <div>Subir XML</div>
                 </a>
@@ -346,7 +327,7 @@
                 <h6 class="alert-heading mb-2">Período de Prueba Expirado</h6>
                 <p class="mb-2">{{ (error || '').replace('🚫 ', '') }}</p>
                 <div class="d-flex gap-2">
-                  <button class="btn btn-sm btn-warning" routerLink="/subscription">
+                  <button class="btn btn-sm btn-warning" routerLink="/cuenta/suscripcion">
                     <i class="bi bi-credit-card me-1"></i>Ver Planes
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" (click)="error = null">
@@ -444,7 +425,7 @@
                 <div class="row g-3 mb-3">
                   <div class="col-6">
                     <div class="bg-white rounded-3 p-3 text-center">
-                      <div class="text-primary fw-bold">{{ jobStatus.interval_minutes }}</div>
+                      <div class="text-primary fw-bold">{{ getDisplayIntervalMinutes() }}</div>
                       <small class="text-muted">Intervalo (min)</small>
                     </div>
                   </div>
@@ -496,7 +477,7 @@
                       <i class="bi bi-check"></i>
                     </button>
                   </div>
-                  <div class="form-text">Usa intervalos de 10, 15 o 20 minutos para evitar saturación.</div>
+                  <div class="form-text">Opciones permitidas: 5, 10, 15 y 20 minutos.</div>
                 </div>
 
                 <!-- Frecuencia de actualización del panel -->
@@ -578,7 +559,7 @@
                       <i class="bi bi-check-circle-fill text-success me-2"></i>
                       <strong *ngIf="dateRangeResult.job_id">Tarea encolada:</strong>
                       <span *ngIf="dateRangeResult.job_id">El proceso histórico ha iniciado. Puedes ver el progreso en
-                        <a routerLink="/profile/queue" class="alert-link">Cola de Eventos</a>.</span>
+                        <a routerLink="/automatizacion/cola" class="alert-link">Cola de Eventos</a>.</span>
                       <strong *ngIf="!dateRangeResult.job_id">Procesamiento completado:</strong>
                       <span *ngIf="!dateRangeResult.job_id">{{ dateRangeResult.invoice_count || 0 }} facturas
                         procesadas</span>
@@ -614,7 +595,7 @@
                 <h6 class="alert-heading mb-2">Automatización No Disponible</h6>
                 <p class="mb-2">{{ jobError }}</p>
                 <div class="d-flex gap-2">
-                  <button class="btn btn-sm btn-warning" routerLink="/subscription">
+                  <button class="btn btn-sm btn-warning" routerLink="/cuenta/suscripcion">
                     <i class="bi bi-credit-card me-1"></i>Ver Planes
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" (click)="jobError = null">

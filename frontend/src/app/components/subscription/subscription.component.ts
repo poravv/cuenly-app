@@ -339,7 +339,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   // DEPRECATED: Ya no se usa - mantenido para compatibilidad
   goToAddCard(): void {
-    this.router.navigate(['/payment-methods'], { queryParams: { return: '/subscription' } });
+    this.router.navigate(['/cuenta/pagos'], { queryParams: { return: '/cuenta/suscripcion' } });
   }
 
   closeNoCardModal(): void {
@@ -352,7 +352,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   goToProfileAndComplete(): void {
     this.showIncompleteProfileModal = false;
-    this.router.navigate(['/profile'], {
+    this.router.navigate(['/cuenta/perfil'], {
       queryParams: {
         returnUrl: this.router.url,
         missingFields: this.missingProfileFields.join(',')

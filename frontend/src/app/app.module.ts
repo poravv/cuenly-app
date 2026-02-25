@@ -22,6 +22,7 @@ import { ExportTemplatesComponent } from './components/export-templates/export-t
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { NotificationContainerComponent } from './components/shared/notification-container/notification-container.component';
+import { QuickEmailModalComponent } from './components/shared/quick-email-modal/quick-email-modal.component';
 import { PagoparResultComponent } from './components/pagopar-result/pagopar-result.component';
 
 import { SuspendedComponent } from './components/suspended/suspended.component';
@@ -37,6 +38,8 @@ import { QueueEventsComponent } from './components/profile/queue-events.componen
 import { TermsConditionsComponent } from './components/legal/terms-conditions.component';
 import { PrivacyPolicyComponent } from './components/legal/privacy-policy.component';
 import { DataRetentionComponent } from './components/legal/data-retention.component';
+import { InvoicesShellComponent } from './components/invoices-shell/invoices-shell.component';
+import { InvoicesStatsComponent } from './components/invoices-stats/invoices-stats.component';
 
 @NgModule({
   declarations: [
@@ -48,6 +51,8 @@ import { DataRetentionComponent } from './components/legal/data-retention.compon
     NavbarComponent,
     FooterComponent,
     HelpComponent,
+    InvoicesShellComponent,
+    InvoicesStatsComponent,
     InvoiceExplorerComponent,
     InvoicesV2Component,
     LoginComponent,
@@ -57,6 +62,7 @@ import { DataRetentionComponent } from './components/legal/data-retention.compon
     TemplateEditorComponent,
     TemplateExportComponent,
     NotificationContainerComponent,
+    QuickEmailModalComponent,
 
     SuspendedComponent,
     SuspendedComponent,

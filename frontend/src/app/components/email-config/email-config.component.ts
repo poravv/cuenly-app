@@ -8,6 +8,12 @@ interface SynonymEntry {
   synonymsText: string;
 }
 
+interface SearchTermPreset {
+  id: string;
+  label: string;
+  terms: string[];
+}
+
 @Component({
   selector: 'app-email-config',
   templateUrl: './email-config.component.html',
@@ -64,6 +70,13 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       supportsOAuth: false,
       comingSoon: true
     }
+  ];
+
+  searchTermPresets: SearchTermPreset[] = [
+    { id: 'facturas', label: 'Facturas', terms: ['factura', 'comprobante', 'factura electronica'] },
+    { id: 'pagos', label: 'Pagos', terms: ['pago', 'recibo', 'cobro'] },
+    { id: 'compras', label: 'Compras', terms: ['orden de compra', 'pedido', 'adquisicion'] },
+    { id: 'servicios', label: 'Servicios', terms: ['servicio', 'suscripcion', 'plan'] }
   ];
 
   constructor(
@@ -196,6 +209,23 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.newConfig.provider = provider.id;
   }
 
+  startQuickAdd(providerId: 'other' | 'gmail' | 'outlook'): void {
+    if (!this.canAddMore) {
+      const planName = this.hasActivePlan ? 'tu plan actual' : 'el Plan Gratuito';
+      this.notificationService.warning(
+        `Ya alcanzaste el límite de cuentas para ${planName}.`,
+        'Límite de cuentas'
+      );
+      return;
+    }
+
+    this.showAddForm = true;
+    const provider = this.providers.find((p) => p.id === providerId) || this.providers.find((p) => p.id === 'other');
+    if (provider) {
+      this.selectProvider(provider);
+    }
+  }
+
   // -----------------------------
   // Google OAuth Flow
   // -----------------------------
@@ -322,6 +352,12 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
   removeSearchTerm(index: number): void {
     this.newConfig.search_terms.splice(index, 1);
+  }
+
+  applySearchPresetToNew(presetId: string): void {
+    const preset = this.searchTermPresets.find((p) => p.id === presetId);
+    if (!preset) return;
+    this.newConfig.search_terms = this.mergeSearchTerms(this.newConfig.search_terms || [], preset.terms);
   }
 
   addNewSynonymEntry(): void {
@@ -544,8 +580,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
   getSynonymSummary(config: EmailConfig): string {
     const entries = this.synonymsToEntries(config.search_synonyms);
-    if (!entries.length) return 'Sin sinónimos';
-    return `${entries.length} grupo(s) de sinónimos`;
+    if (!entries.length) return 'Sin grupos configurados';
+    return `${entries.length} grupo(s)`;
   }
 
   getSynonymEntriesForEdit(key: string): SynonymEntry[] {
@@ -643,6 +679,13 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.editData[key].search_terms.splice(idx, 1);
   }
 
+  applySearchPresetToEdit(key: string, presetId: string): void {
+    if (!this.editData[key]) return;
+    const preset = this.searchTermPresets.find((p) => p.id === presetId);
+    if (!preset) return;
+    this.editData[key].search_terms = this.mergeSearchTerms(this.editData[key].search_terms || [], preset.terms);
+  }
+
   editSynonymEntries: { [key: string]: SynonymEntry[] } = {};
 
   addEditSynonymEntry(key: string): void {
@@ -671,5 +714,23 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         this.testing[key] = false;
       }
     });
+  }
+
+  private mergeSearchTerms(existing: string[], additions: string[]): string[] {
+    const normalized = (existing || [])
+      .map((t) => (t || '').trim())
+      .filter((t) => !!t);
+
+    const seen = new Set(normalized.map((t) => t.toLowerCase()));
+    (additions || []).forEach((term) => {
+      const clean = (term || '').trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      normalized.push(clean);
+    });
+
+    return normalized;
   }
 }

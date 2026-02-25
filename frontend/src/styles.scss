@@ -1,3 +1,11 @@
+/* ==========================================================================
+   CUENLY APP - GLOBAL STYLES
+   ========================================================================== */
+
+/* Sistema de diseño personalizado */
+@import 'styles/variables';
+@import 'styles/utilities';
+
 /* You can add global styles to this file, and also import other style files */
 @import "~bootstrap/dist/css/bootstrap.min.css";
 
@@ -300,6 +308,103 @@ p, .text-base {
 .chip.danger  .dot { background: var(--danger); }
 .chip.warning .dot { background: var(--warning); }
 .chip.primary .dot { background: var(--primary); }
+
+/* Workspace Facturas: lenguaje visual unificado */
+.facturas-tab-content .card,
+.invoices-stats .card {
+  border-radius: 14px !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06) !important;
+  margin-bottom: 1rem;
+  background: #fff;
+}
+
+.facturas-tab-content .card:hover,
+.invoices-stats .card:hover {
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.09) !important;
+}
+
+.facturas-tab-content .card-header,
+.invoices-stats .card-header {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.05) 0%, rgba(37, 99, 235, 0) 100%);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.facturas-tab-content .table,
+.invoices-stats .table {
+  font-size: 0.84rem;
+}
+
+.facturas-tab-content .table > :not(caption) > * > *,
+.invoices-stats .table > :not(caption) > * > * {
+  padding: 0.58rem 0.68rem;
+}
+
+.facturas-tab-content .table thead th,
+.invoices-stats .table thead th {
+  font-size: 0.75rem;
+  color: #475569;
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 767.98px) {
+  .facturas-tab-content,
+  .invoices-stats {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-bottom: 1rem !important;
+  }
+
+  .facturas-tab-content .card,
+  .invoices-stats .card {
+    margin-bottom: 0.75rem;
+  }
+
+  .facturas-tab-content .card-body,
+  .invoices-stats .card-body {
+    padding: 0.85rem;
+  }
+
+  .facturas-tab-content .card-header,
+  .invoices-stats .card-header {
+    padding: 0.65rem 0.85rem;
+  }
+
+  .facturas-tab-content .form-label,
+  .invoices-stats .form-label {
+    margin-bottom: 0.22rem;
+    font-size: 0.75rem;
+  }
+
+  .facturas-tab-content .form-control,
+  .facturas-tab-content .form-select,
+  .invoices-stats .form-control,
+  .invoices-stats .form-select {
+    padding: 0.4rem 0.55rem;
+    font-size: 0.82rem;
+  }
+
+  .facturas-tab-content .btn,
+  .invoices-stats .btn {
+    padding: 0.42rem 0.75rem;
+    font-size: 0.82rem;
+  }
+
+  .facturas-tab-content .table,
+  .invoices-stats .table {
+    font-size: 0.8rem;
+  }
+
+  .facturas-tab-content .table > :not(caption) > * > *,
+  .invoices-stats .table > :not(caption) > * > * {
+    padding: 0.48rem 0.52rem;
+  }
+
+  .facturas-tab-content .table thead th,
+  .invoices-stats .table thead th {
+    font-size: 0.7rem;
+  }
+}
 
 /* Tarjetas de KPIs */
 .stat-card { 

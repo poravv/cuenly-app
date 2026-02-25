@@ -1,0 +1,169 @@
+<div class="container-fluid px-4 px-lg-5 pb-4 invoices-stats">
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-sm-6 col-xl-3">
+      <div class="metric-card">
+        <div class="metric-label">Meses con datos</div>
+        <div class="metric-value">{{ totalMesesConDatos }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <div class="metric-card">
+        <div class="metric-label">Facturas totales</div>
+        <div class="metric-value">{{ totalFacturasGlobal }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <div class="metric-card">
+        <div class="metric-label">Monto acumulado</div>
+        <div class="metric-value">{{ formatCurrency(totalMontoGlobal) }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <div class="metric-card">
+        <div class="metric-label">Ticket promedio global</div>
+        <div class="metric-value">{{ formatCurrency(promedioGlobal) }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label small fw-semibold">Mes para detalle</label>
+          <select class="form-select" [ngModel]="selectedMonth" (ngModelChange)="onMonthChange($event)"
+            [disabled]="loadingMonths || !availableMonths.length">
+            <option *ngFor="let month of availableMonths; trackBy: trackByMonth" [ngValue]="month.year_month">
+              {{ formatMonthLabel(month.year_month) }}
+            </option>
+          </select>
+        </div>
+        <div class="col-12 col-md-8 text-md-end">
+          <button class="btn btn-outline-primary" (click)="loadMonths()" [disabled]="loadingMonths || loadingStats">
+            <i class="bi bi-arrow-repeat me-1"></i>
+            <span *ngIf="!loadingMonths">Actualizar</span>
+            <span *ngIf="loadingMonths" class="spinner-border spinner-border-sm" role="status"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="error" class="alert alert-danger border-0 shadow-sm">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    {{ error }}
+  </div>
+
+  <div *ngIf="loadingStats" class="card border-0 shadow-sm">
+    <div class="card-body py-5 text-center">
+      <div class="spinner-border text-primary" role="status"></div>
+      <p class="text-muted mt-3 mb-0">Cargando estadisticas del mes...</p>
+    </div>
+  </div>
+
+  <ng-container *ngIf="!loadingStats && selectedMonthStats">
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body">
+            <div class="small text-muted">Facturas del mes</div>
+            <div class="h4 fw-bold mb-0">{{ selectedMonthStats.total_facturas }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body">
+            <div class="small text-muted">Monto del mes</div>
+            <div class="h4 fw-bold mb-0">{{ formatCurrency(selectedMonthStats.total_monto) }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body">
+            <div class="small text-muted">Proveedores unicos</div>
+            <div class="h4 fw-bold mb-0">{{ selectedMonthStats.total_proveedores }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body">
+            <div class="small text-muted">Promedio por factura</div>
+            <div class="h4 fw-bold mb-0">{{ formatCurrency(selectedMonthStats.promedio_factura) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-4">
+          <div class="col-12 col-lg-6">
+            <h6 class="fw-semibold mb-3">Desglose tributario</h6>
+            <table class="table table-sm align-middle mb-0">
+              <tbody>
+                <tr>
+                  <td>Total IVA</td>
+                  <td class="text-end fw-semibold">{{ formatCurrency(selectedMonthStats.total_iva) }}</td>
+                </tr>
+                <tr>
+                  <td>IVA 5%</td>
+                  <td class="text-end">{{ formatCurrency(selectedMonthStats.total_iva_5) }}</td>
+                </tr>
+                <tr>
+                  <td>IVA 10%</td>
+                  <td class="text-end">{{ formatCurrency(selectedMonthStats.total_iva_10) }}</td>
+                </tr>
+                <tr>
+                  <td>Subtotal 5%</td>
+                  <td class="text-end">{{ formatCurrency(selectedMonthStats.total_subtotal_5) }}</td>
+                </tr>
+                <tr>
+                  <td>Subtotal 10%</td>
+                  <td class="text-end">{{ formatCurrency(selectedMonthStats.total_subtotal_10) }}</td>
+                </tr>
+                <tr>
+                  <td>Operaciones exentas</td>
+                  <td class="text-end">{{ formatCurrency(selectedMonthStats.total_exentas) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <h6 class="fw-semibold mb-3">Calidad y origen</h6>
+            <div class="mb-3">
+              <div class="d-flex justify-content-between small mb-1">
+                <span>Facturas con CDC</span>
+                <strong>{{ selectedMonthStats.porcentaje_cdc }}%</strong>
+              </div>
+              <div class="progress progress-thin">
+                <div class="progress-bar bg-primary" [style.width.%]="selectedMonthStats.porcentaje_cdc"></div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <div class="d-flex justify-content-between small mb-1">
+                <span>Facturas con timbrado</span>
+                <strong>{{ selectedMonthStats.porcentaje_timbrado }}%</strong>
+              </div>
+              <div class="progress progress-thin">
+                <div class="progress-bar bg-success" [style.width.%]="selectedMonthStats.porcentaje_timbrado"></div>
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <span class="badge rounded-pill bg-light text-dark border">XML nativo: {{ selectedMonthStats.xml_nativo }}</span>
+              <span class="badge rounded-pill bg-light text-dark border">Vision IA: {{ selectedMonthStats.openai_vision }}</span>
+              <span class="badge rounded-pill bg-light text-dark border">Clientes: {{ selectedMonthStats.total_clientes }}</span>
+            </div>
+            <div class="small text-muted mt-3">
+              Periodo: {{ formatDate(selectedMonthStats.primera_factura) }} - {{ formatDate(selectedMonthStats.ultima_factura) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+</div>
+

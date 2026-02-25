@@ -43,6 +43,26 @@
         </div>
       </div>
 
+      <div class="card border-0 shadow-sm mb-3 quick-add-card" *ngIf="!showAddForm">
+        <div class="card-body py-2 px-3 d-flex align-items-center flex-wrap gap-2">
+          <span class="text-muted small fw-semibold text-uppercase me-1">Agregar:</span>
+          <button class="btn btn-sm btn-outline-primary" type="button" (click)="startQuickAdd('other')"
+            [disabled]="loading || !canAddMore"
+            [title]="!canAddMore ? 'Has alcanzado el límite de cuentas de correo de tu plan' : 'Agregar cuenta personalizada'">
+            Personalizado (IMAP)
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" type="button" disabled>
+            Gmail (Próximamente)
+          </button>
+          <button class="btn btn-sm btn-outline-secondary" type="button" disabled>
+            Outlook (Próximamente)
+          </button>
+          <small class="text-muted ms-auto" *ngIf="maxEmailAccounts !== -1">
+            {{ emailConfigs.length }}/{{ maxEmailAccounts }} cuentas
+          </small>
+        </div>
+      </div>
+
       <!-- Formulario para agregar nueva configuración -->
       <div *ngIf="showAddForm" class="card mb-4">
         <div class="card-header header-primary">
@@ -168,10 +188,18 @@
               <!-- Términos de búsqueda -->
               <div class="mb-3">
                 <label class="form-label">Términos de Búsqueda</label>
+                <p class="text-muted small mb-2">Atajos sugeridos:</p>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                  <button type="button" class="btn btn-outline-secondary btn-sm preset-term-btn"
+                    *ngFor="let preset of searchTermPresets"
+                    (click)="applySearchPresetToNew(preset.id)">
+                    + {{ preset.label }}
+                  </button>
+                </div>
                 <div class="mb-2" *ngFor="let term of newConfig.search_terms; let i = index; trackBy: trackByIndex">
                   <div class="input-group">
                     <input type="text" class="form-control" [(ngModel)]="newConfig.search_terms[i]"
-                      [name]="'search_term_' + i" placeholder="ej: factura, invoice">
+                      [name]="'search_term_' + i" placeholder="ej: factura, comprobante">
                     <button class="btn btn-outline-danger" type="button" (click)="removeSearchTerm(i)"
                       [disabled]="newConfig.search_terms.length <= 1">
                       <i class="bi bi-trash"></i>
@@ -184,25 +212,31 @@
               </div>
 
               <div class="mb-3">
-                <label class="form-label">Fallback de coincidencia</label>
+                <label class="form-label">Opciones extra de búsqueda</label>
+                <p class="text-muted small mb-2">
+                  Si el sistema no encuentra correos por asunto, puede intentar estas opciones.
+                </p>
                 <div class="form-check mb-2">
                   <input class="form-check-input" type="checkbox" id="fallback_sender_new"
                     [(ngModel)]="newConfig.fallback_sender_match" name="fallback_sender_new">
                   <label class="form-check-label" for="fallback_sender_new">
-                    Usar remitente si el asunto no coincide
+                    Buscar también en el remitente
                   </label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="fallback_attachment_new"
                     [(ngModel)]="newConfig.fallback_attachment_match" name="fallback_attachment_new">
                   <label class="form-check-label" for="fallback_attachment_new">
-                    Usar nombre de adjunto si el asunto no coincide
+                    Buscar también en el nombre del archivo adjunto
                   </label>
                 </div>
               </div>
 
               <div class="mb-3">
-                <label class="form-label">Sinónimos por tenant (opcional)</label>
+                <label class="form-label">Palabras equivalentes (opcional)</label>
+                <p class="text-muted small mb-2">
+                  Útil cuando el correo puede venir con distintas palabras para lo mismo.
+                </p>
                 <div class="mb-2 border rounded p-2" *ngFor="let entry of newSynonymEntries; let si = index">
                   <div class="mb-2">
                     <label class="form-label small mb-1">Término base</label>
@@ -211,14 +245,14 @@
                   </div>
                   <div class="input-group">
                     <input type="text" class="form-control" [(ngModel)]="entry.synonymsText"
-                      [name]="'new_syn_vals_' + si" placeholder="sinónimos separados por coma">
+                      [name]="'new_syn_vals_' + si" placeholder="palabras separadas por coma">
                     <button class="btn btn-outline-danger" type="button" (click)="removeNewSynonymEntry(si)">
                       <i class="bi bi-trash"></i>
                     </button>
                   </div>
                 </div>
-                <button type="button" class="btn btn-outline-primary btn-sm" (click)="addNewSynonymEntry()">
-                  <i class="bi bi-plus"></i> Agregar grupo de sinónimos
+                <button type="button" class="btn btn-outline-primary btn-sm mt-2" (click)="addNewSynonymEntry()">
+                  <i class="bi bi-plus"></i> Agregar grupo de palabras
                 </button>
               </div>
 
@@ -350,18 +384,18 @@
                 </div>
               </div>
               <div class="mb-2" *ngIf="!editing[keyFor(i, config)]">
-                <div class="text-muted mb-1">Matcher Fase 4</div>
+                <div class="text-muted mb-1">Búsqueda flexible</div>
                 <div class="d-flex flex-wrap gap-1">
                   <span class="badge rounded-pill border"
                     [ngClass]="config.fallback_sender_match ? 'bg-success-subtle text-success border-success-subtle' : 'bg-light text-muted'">
-                    fallback remitente: {{ config.fallback_sender_match ? 'on' : 'off' }}
+                    Buscar por remitente: {{ config.fallback_sender_match ? 'Activo' : 'Inactivo' }}
                   </span>
                   <span class="badge rounded-pill border"
                     [ngClass]="config.fallback_attachment_match ? 'bg-success-subtle text-success border-success-subtle' : 'bg-light text-muted'">
-                    fallback adjunto: {{ config.fallback_attachment_match ? 'on' : 'off' }}
+                    Buscar por adjunto: {{ config.fallback_attachment_match ? 'Activo' : 'Inactivo' }}
                   </span>
                   <span class="badge rounded-pill bg-light border text-muted">
-                    {{ getSynonymSummary(config) }}
+                    Palabras equivalentes: {{ getSynonymSummary(config) }}
                   </span>
                 </div>
               </div>
@@ -407,15 +441,23 @@
 
                   <!-- Mensaje informativo para OAuth2 -->
                   <div class="col-12" *ngIf="isOAuthConfig(config)">
-                    <div class="alert alert-info py-2 mb-2">
+                  <div class="alert alert-info py-2 mb-2">
                       <i class="bi bi-info-circle me-1"></i>
-                      <small>Cuenta OAuth2 - La autenticación es gestionada por Google. Puedes editar nomenclaturas y
-                        fallback sin tocar credenciales.</small>
+                      <small>Cuenta OAuth2 - La autenticación es gestionada por Google. Puedes editar términos de
+                        búsqueda y opciones extra sin tocar credenciales.</small>
                     </div>
                   </div>
 
                   <div class="col-12">
                     <label class="form-label small">Términos de búsqueda</label>
+                    <p class="text-muted small mb-1">Atajos sugeridos:</p>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                      <button type="button" class="btn btn-outline-secondary btn-sm preset-term-btn"
+                        *ngFor="let preset of searchTermPresets"
+                        (click)="applySearchPresetToEdit(keyFor(i, config), preset.id)">
+                        + {{ preset.label }}
+                      </button>
+                    </div>
                     <div class="mb-1"
                       *ngFor="let term of editData[keyFor(i, config)].search_terms; let ti = index; trackBy: trackByIndex">
                       <div class="input-group input-group-sm">
@@ -430,13 +472,16 @@
                   </div>
 
                   <div class="col-12">
-                    <label class="form-label small">Fallback de coincidencia</label>
+                    <label class="form-label small">Opciones extra de búsqueda</label>
+                    <p class="text-muted small mb-1">
+                      Se aplican cuando no encuentra coincidencias por asunto.
+                    </p>
                     <div class="form-check mb-1">
                       <input class="form-check-input" type="checkbox"
                         [(ngModel)]="editData[keyFor(i, config)].fallback_sender_match"
                         [name]="'fallback_sender_' + i" [id]="'fallback_sender_' + i">
                       <label class="form-check-label small" [for]="'fallback_sender_' + i">
-                        Remitente cuando no coincide asunto
+                        Buscar también en el remitente
                       </label>
                     </div>
                     <div class="form-check">
@@ -444,13 +489,13 @@
                         [(ngModel)]="editData[keyFor(i, config)].fallback_attachment_match"
                         [name]="'fallback_attachment_' + i" [id]="'fallback_attachment_' + i">
                       <label class="form-check-label small" [for]="'fallback_attachment_' + i">
-                        Nombre de adjunto cuando no coincide asunto
+                        Buscar también en el nombre del archivo adjunto
                       </label>
                     </div>
                   </div>
 
                   <div class="col-12">
-                    <label class="form-label small">Sinónimos por tenant</label>
+                    <label class="form-label small">Palabras equivalentes (opcional)</label>
                     <div class="mb-2 border rounded p-2"
                       *ngFor="let entry of getSynonymEntriesForEdit(keyFor(i, config)); let si = index">
                       <div class="mb-1">
@@ -459,16 +504,16 @@
                       </div>
                       <div class="input-group input-group-sm">
                         <input class="form-control" type="text" [(ngModel)]="entry.synonymsText"
-                          [name]="'edit_syn_values_' + i + '_' + si" placeholder="sinónimos separados por coma">
+                          [name]="'edit_syn_values_' + i + '_' + si" placeholder="palabras separadas por coma">
                         <button type="button" class="btn btn-outline-danger"
                           (click)="removeEditSynonymEntry(keyFor(i, config), si)">
                           <i class="bi bi-x"></i>
                         </button>
                       </div>
                     </div>
-                    <button type="button" class="btn btn-outline-primary btn-sm"
+                    <button type="button" class="btn btn-outline-primary btn-sm mt-2"
                       (click)="addEditSynonymEntry(keyFor(i, config))">
-                      <i class="bi bi-plus"></i> Agregar grupo de sinónimos
+                      <i class="bi bi-plus"></i> Agregar grupo de palabras
                     </button>
                   </div>
                 </div>

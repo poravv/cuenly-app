@@ -187,7 +187,10 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     this.jobLoading = true;
     this.apiService.getJobStatus().subscribe({
       next: (data) => {
-        this.jobStatus = data;
+        this.jobStatus = {
+          ...data,
+          interval_minutes: this.getValidInterval(data?.interval_minutes)
+        };
         this.jobLoading = false;
         if (!this.jobIntervalTouched) {
           this.jobIntervalInput = this.getValidInterval(this.jobStatus?.interval_minutes ?? this.jobIntervalInput);
@@ -694,6 +697,10 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       return '--:--';
     }
     return this.formatParaguayTime(this.jobStatus.next_run);
+  }
+
+  getDisplayIntervalMinutes(): number {
+    return this.getValidInterval(this.jobStatus?.interval_minutes ?? this.jobIntervalInput);
   }
 
   formatParaguayDateTime(dateTime: any): string {

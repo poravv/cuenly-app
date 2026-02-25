@@ -18,6 +18,7 @@ export class InvoicesV2Component implements OnInit {
   rucReceptor: string = '';
   emisorNombre: string = '';
   sortBy: string = 'fecha_emision';
+  showMobileAdvancedFilters = false;
 
   // Paginación
   page = 1;
@@ -101,6 +102,19 @@ export class InvoicesV2Component implements OnInit {
   }
 
   refresh(): void { this.page = 1; this.loadHeaders(); }
+
+  toggleMobileAdvancedFilters(): void {
+    this.showMobileAdvancedFilters = !this.showMobileAdvancedFilters;
+  }
+
+  get activeAdvancedFiltersCount(): number {
+    let count = 0;
+    if (this.emisorNombre.trim()) count++;
+    if (this.rucEmisor.trim()) count++;
+    if (this.rucReceptor.trim()) count++;
+    if (this.sortBy !== 'fecha_emision') count++;
+    return count;
+  }
 
   prevPage(): void {
     if (this.page <= 1) return;

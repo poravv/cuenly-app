@@ -18,8 +18,14 @@
         </div>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-primary" (click)="loadDashboardData()" [disabled]="loading">
-            <i class="bi bi-arrow-clockwise me-1"></i>
-            Actualizar
+            <span *ngIf="!loading">
+              <i class="bi bi-arrow-clockwise me-1"></i>
+              Actualizar
+            </span>
+            <span *ngIf="loading" class="d-inline-flex align-items-center">
+              <span class="spinner-border spinner-border-sm me-2"></span>
+              Actualizando...
+            </span>
           </button>
           <div class="dropdown">
             <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
@@ -44,9 +50,78 @@
     </div>
   </div>
 
+  <div class="row mb-3" *ngIf="isRefreshingData()">
+    <div class="col-12">
+      <div class="refresh-indicator">
+        <span class="spinner-border spinner-border-sm me-2"></span>
+        Actualizando métricas y actividad...
+      </div>
+    </div>
+  </div>
+
+  <!-- Barra de Acciones Rápidas -->
+  <div class="row mb-4" *ngIf="systemStatus; else quickActionsSkeleton">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm quick-actions-bar">
+        <div class="card-body p-4">
+          <div class="row align-items-center g-3">
+            <!-- Estado del Sistema -->
+            <div class="col-lg-6">
+              <div class="d-flex align-items-center gap-3">
+                <div class="status-indicator">
+                  <div class="status-dot" [class.status-success]="systemStatus.email_configured"
+                    [class.status-warning]="!systemStatus.email_configured"></div>
+                </div>
+                <div>
+                  <h6 class="mb-1 fw-semibold">
+                    {{ systemStatus.email_configured ? 'Sistema Listo' : 'Configuración Pendiente' }}
+                  </h6>
+                  <p class="text-muted mb-0 small">
+                    <i class="bi bi-envelope me-1"></i>
+                    {{ systemStatus.email_configs_count || 0 }} cuenta(s) de correo configurada(s)
+                    <span *ngIf="!systemStatus.email_configured" class="text-warning">
+                      • <i class="bi bi-exclamation-triangle me-1"></i>Configura tu correo para comenzar
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <!-- CTA principal de flujo -->
+            <div class="col-lg-6 text-lg-end">
+              <a class="btn btn-lg btn-primary px-4 shadow-primary" routerLink="/automatizacion/procesamiento">
+                <i class="bi bi-gear-wide-connected me-2"></i>
+                Iniciar Automatización
+              </a>
+              <div class="small text-muted mt-2" *ngIf="!systemStatus.email_configured">
+                <button type="button" class="quick-setup-link" (click)="openQuickSetup()">
+                  <i class="bi bi-plus-circle me-1"></i>
+                  Configurar cuenta de correo <i class="bi bi-arrow-right"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ng-template #quickActionsSkeleton>
+    <div class="row mb-4" *ngIf="isInitialLoading()">
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-body p-4">
+            <div class="skeleton skeleton-line skeleton-line--xl mb-3"></div>
+            <div class="skeleton skeleton-line skeleton-line--md"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-template>
+
   <!-- Métricas Principales -->
   <!-- Métricas Principales -->
-  <div class="row g-4 mb-4">
+  <div class="row g-4 mb-4" *ngIf="!isInitialLoading(); else metricsSkeleton">
 
     <!-- Total Facturas Procesadas -->
     <div class="col-xl-3 col-md-6">
@@ -141,6 +216,25 @@
 
   </div>
 
+  <ng-template #metricsSkeleton>
+    <div class="row g-4 mb-4">
+      <div class="col-xl-3 col-md-6" *ngFor="let item of [1, 2, 3, 4]">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body">
+            <div class="d-flex align-items-center">
+              <div class="skeleton skeleton-circle me-3"></div>
+              <div class="flex-grow-1">
+                <div class="skeleton skeleton-line skeleton-line--sm mb-2"></div>
+                <div class="skeleton skeleton-line skeleton-line--lg mb-2"></div>
+                <div class="skeleton skeleton-line skeleton-line--sm w-75"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-template>
+
   <!-- Accesos Rápidos -->
   <div class="row g-4 mb-4">
     <div class="col-12">
@@ -154,7 +248,7 @@
         <div class="card-body">
           <div class="row g-3">
             <div class="col-lg-3 col-md-6">
-              <a href="/manage-invoices" class="btn btn-outline-primary w-100 py-3 text-decoration-none">
+              <a routerLink="/automatizacion/procesamiento" class="btn btn-outline-primary w-100 py-3 text-decoration-none">
                 <div class="d-flex align-items-center justify-content-center">
                   <i class="bi bi-gear-wide-connected fs-5 me-2"></i>
                   <div class="text-start">
@@ -165,7 +259,7 @@
               </a>
             </div>
             <div class="col-lg-3 col-md-6">
-              <a href="/invoice-list" class="btn btn-outline-success w-100 py-3 text-decoration-none">
+              <a routerLink="/facturas/todas" class="btn btn-outline-success w-100 py-3 text-decoration-none">
                 <div class="d-flex align-items-center justify-content-center">
                   <i class="bi bi-list-ul fs-5 me-2"></i>
                   <div class="text-start">
@@ -176,7 +270,7 @@
               </a>
             </div>
             <div class="col-lg-3 col-md-6">
-              <a href="/templates-export" class="btn btn-outline-info w-100 py-3 text-decoration-none">
+              <a routerLink="/facturas/exportar" class="btn btn-outline-info w-100 py-3 text-decoration-none">
                 <div class="d-flex align-items-center justify-content-center">
                   <i class="bi bi-download fs-5 me-2"></i>
                   <div class="text-start">
@@ -187,7 +281,7 @@
               </a>
             </div>
             <div class="col-lg-3 col-md-6">
-              <a href="/email-settings" class="btn btn-outline-warning w-100 py-3 text-decoration-none">
+              <a routerLink="/automatizacion/correos" class="btn btn-outline-warning w-100 py-3 text-decoration-none">
                 <div class="d-flex align-items-center justify-content-center">
                   <i class="bi bi-envelope-gear fs-5 me-2"></i>
                   <div class="text-start">
@@ -204,7 +298,7 @@
   </div>
 
   <!-- Gráficos y Análisis -->
-  <div class="row g-4 mb-4">
+  <div class="row g-4 mb-4" *ngIf="!isInitialLoading(); else chartsSkeleton">
     <!-- Gráfico de Tendencia Mensual -->
     <div class="col-lg-8">
       <div class="card border-0 shadow-sm h-100">
@@ -257,8 +351,31 @@
     </div>
   </div>
 
+  <ng-template #chartsSkeleton>
+    <div class="row g-4 mb-4">
+      <div class="col-lg-8">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body p-4">
+            <div class="skeleton skeleton-line skeleton-line--lg mb-3"></div>
+            <div class="skeleton skeleton-line skeleton-line--sm w-50 mb-4"></div>
+            <div class="skeleton skeleton-block skeleton-block--chart"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body p-4">
+            <div class="skeleton skeleton-line skeleton-line--lg mb-3"></div>
+            <div class="skeleton skeleton-line skeleton-line--sm w-75 mb-4"></div>
+            <div class="skeleton skeleton-block skeleton-block--donut mx-auto"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-template>
+
   <!-- Estado del Sistema y Actividad Reciente -->
-  <div class="row g-4">
+  <div class="row g-4" *ngIf="!isInitialLoading(); else statusAndActivitySkeleton">
     <!-- Estado del Sistema -->
     <div class="col-lg-6">
       <div class="card border-0 shadow-sm h-100">
@@ -271,30 +388,59 @@
         </div>
         <div class="card-body">
           <div *ngIf="systemStatus">
-            <div class="row g-3">
-              <div class="col-6">
-                <div class="text-center p-3 bg-light rounded-3">
-                  <div [class]="systemStatus.email_configured ? 'text-success' : 'text-warning'">
-                    <i
-                      class="bi bi-{{systemStatus.email_configured ? 'check-circle-fill' : 'exclamation-triangle-fill'}} fs-3"></i>
+            <div class="system-status-grid">
+              <div class="status-tile" [class.status-tile--success]="systemStatus.email_configured"
+                [class.status-tile--warning]="!systemStatus.email_configured">
+                <div class="status-tile__icon">
+                  <i class="bi bi-{{systemStatus.email_configured ? 'envelope-check-fill' : 'envelope-x-fill'}}"></i>
+                </div>
+                <div class="status-tile__content">
+                  <div class="status-tile__label">Correo</div>
+                  <div class="status-tile__value">
+                    {{ systemStatus.email_configs_count || 0 }} cuenta(s)
                   </div>
-                  <div class="fw-bold mt-2">{{ systemStatus.email_configs_count || 0 }}</div>
-                  <small class="text-muted">Cuentas Email</small>
                 </div>
               </div>
-              <div class="col-6">
-                <div class="text-center p-3 bg-light rounded-3">
-                  <div [class]="systemStatus.openai_configured ? 'text-success' : 'text-danger'">
-                    <i class="bi bi-{{systemStatus.openai_configured ? 'robot' : 'x-circle-fill'}} fs-3"></i>
+
+              <div class="status-tile" [class.status-tile--success]="systemStatus.openai_configured"
+                [class.status-tile--danger]="!systemStatus.openai_configured">
+                <div class="status-tile__icon">
+                  <i class="bi bi-{{systemStatus.openai_configured ? 'robot' : 'robot'}}"></i>
+                </div>
+                <div class="status-tile__content">
+                  <div class="status-tile__label">IA</div>
+                  <div class="status-tile__value">
+                    {{ systemStatus.openai_configured ? 'Configurada' : 'No configurada' }}
                   </div>
-                  <div class="fw-bold mt-2">{{ systemStatus.openai_configured ? 'OK' : 'NO' }}</div>
-                  <small class="text-muted">OpenAI</small>
+                </div>
+              </div>
+
+              <div class="status-tile" [class.status-tile--info]="processing" [class.status-tile--neutral]="!processing">
+                <div class="status-tile__icon">
+                  <span *ngIf="processing" class="spinner-border spinner-border-sm"></span>
+                  <i *ngIf="!processing" class="bi bi-pause-circle"></i>
+                </div>
+                <div class="status-tile__content">
+                  <div class="status-tile__label">Procesamiento</div>
+                  <div class="status-tile__value">
+                    {{ processing ? 'En curso' : 'Sin actividad' }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="status-tile status-tile--neutral">
+                <div class="status-tile__icon">
+                  <i class="bi bi-clock-history"></i>
+                </div>
+                <div class="status-tile__content">
+                  <div class="status-tile__label">Última actualización</div>
+                  <div class="status-tile__value">{{ getLastUpdatedLabel() }}</div>
                 </div>
               </div>
             </div>
           </div>
           <div class="mt-3 d-grid">
-            <a href="/manage-invoices" class="btn btn-primary">
+            <a routerLink="/automatizacion/procesamiento" class="btn btn-primary">
               <i class="bi bi-gear me-2"></i>
               Ir a Procesamiento
             </a>
@@ -349,17 +495,45 @@
       </div>
     </div>
   </div>
+
+  <ng-template #statusAndActivitySkeleton>
+    <div class="row g-4">
+      <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body p-4">
+            <div class="skeleton skeleton-line skeleton-line--lg mb-3"></div>
+            <div class="skeleton skeleton-line skeleton-line--sm w-50 mb-4"></div>
+            <div class="skeleton-grid">
+              <div class="skeleton skeleton-block skeleton-block--tile" *ngFor="let item of [1, 2, 3, 4]"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body p-4">
+            <div class="skeleton skeleton-line skeleton-line--lg mb-3"></div>
+            <div class="skeleton skeleton-line skeleton-line--sm w-50 mb-4"></div>
+            <div class="skeleton-list">
+              <div class="skeleton-list__item" *ngFor="let item of [1, 2, 3, 4]">
+                <div class="skeleton skeleton-circle skeleton-circle--sm"></div>
+                <div class="flex-grow-1">
+                  <div class="skeleton skeleton-line skeleton-line--md mb-2"></div>
+                  <div class="skeleton skeleton-line skeleton-line--sm w-50"></div>
+                </div>
+                <div class="skeleton skeleton-line skeleton-line--sm w-25"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-template>
 </div>
 
-<!-- Loading Overlay -->
-<div *ngIf="loading"
-  class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-white bg-opacity-75"
-  style="z-index: 9999;">
-  <div class="text-center">
-    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
-      <span class="visually-hidden">Cargando...</span>
-    </div>
-    <h5 class="fw-bold">Cargando dashboard...</h5>
-    <p class="text-muted">Obteniendo métricas y estadísticas</p>
-  </div>
-</div>
+<!-- Quick Email Setup Modal (Quick Win #2) -->
+<app-quick-email-modal
+  [isOpen]="showQuickSetup"
+  (closed)="showQuickSetup = false"
+  (saved)="onEmailConfigSaved($event)">
+</app-quick-email-modal>

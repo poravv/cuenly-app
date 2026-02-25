@@ -41,6 +41,17 @@ h6 {
 /* Ajustes de skeleton locales (usa base global .skeleton) */
 .skeleton { opacity: .9; }
 
+.quick-add-card .btn {
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+}
+
+.preset-term-btn {
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  line-height: 1.2;
+}
+
 @media (max-width: 768px) {
   .card-title {
     font-size: 0.9rem;

@@ -3,7 +3,7 @@ import { Title } from '@angular/platform-browser';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { HttpClient } from '@angular/common/http';
-import { forkJoin } from 'rxjs';
+import { forkJoin, finalize } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { ObservabilityService } from '../../services/observability.service';
 import { UserService } from '../../services/user.service';
@@ -159,6 +159,10 @@ export class DashboardComponent implements OnInit {
 
   // UI state
   loading = false;
+  processing = false;
+  showQuickSetup = false;
+  lastDashboardUpdate: Date | null = null;
+  hasLoadedData = false;
   currentPeriod = 'month';
   Math = Math;
   canDownload: boolean = true;
@@ -228,6 +232,8 @@ export class DashboardComponent implements OnInit {
           }
           if (recentRes.success) this.recentInvoices = recentRes.invoices;
           if (statusRes.success) this.systemStatus = statusRes.status;
+          this.lastDashboardUpdate = new Date();
+          this.hasLoadedData = true;
 
           this.loading = false;
         },
@@ -345,6 +351,137 @@ export class DashboardComponent implements OnInit {
       email_configs_count: 0,
       openai_configured: false
     };
+    this.lastDashboardUpdate = new Date();
+    this.hasLoadedData = true;
+  }
+
+  /**
+   * Procesar correos de forma inmediata desde el Dashboard
+   * Quick Win #1: Reducir navegación de 3 clicks a 1 click
+   */
+  processNow(): void {
+    if (this.processing) {
+      return;
+    }
+
+    if (!this.systemStatus?.email_configured) {
+      this.notificationService.warning(
+        'Primero debes configurar una cuenta de correo',
+        'Configuración Requerida'
+      );
+      return;
+    }
+
+    this.processing = true;
+    this.observability.logUserAction('process_now_clicked', 'DashboardComponent', {
+      email_configs: this.systemStatus.email_configs_count
+    });
+
+    this.notificationService.info(
+      'Procesando correos. Esto puede tardar unos segundos.',
+      'Procesamiento Iniciado'
+    );
+
+    this.api.processEmails(false).pipe(
+      finalize(() => {
+        this.processing = false;
+      })
+    ).subscribe({
+      next: (result) => {
+        if (!result.success) {
+          this.notificationService.warning(
+            result.message || 'No se pudieron procesar los correos',
+            'Advertencia'
+          );
+          this.refreshDashboardAfterProcessing(400);
+          return;
+        }
+
+        const processedInvoices = result.invoice_count ?? result.invoices?.length ?? 0;
+        if (processedInvoices > 0) {
+          this.notificationService.success(
+            `Se procesaron ${processedInvoices} factura(s) exitosamente`,
+            'Proceso Completado'
+          );
+          this.refreshDashboardAfterProcessing(800);
+          return;
+        }
+
+        this.notificationService.info(
+          'El procesamiento finalizó, pero no se encontraron facturas nuevas.',
+          'Sin Novedades'
+        );
+        this.refreshDashboardAfterProcessing(400);
+      },
+      error: (error) => {
+        console.error('Error processing emails:', error);
+
+        const errorMessage = error.error?.message || error.message || 'Error al procesar correos';
+        this.notificationService.error(errorMessage, 'Error de Procesamiento');
+
+        this.observability.error('Error processing emails from dashboard', error, 'DashboardComponent', {
+          context: 'processNow'
+        });
+      }
+    });
+  }
+
+  openQuickSetup(): void {
+    this.showQuickSetup = true;
+    this.observability.logUserAction('open_quick_email_setup_from_dashboard', 'DashboardComponent');
+  }
+
+  private refreshDashboardAfterProcessing(delayMs: number = 500): void {
+    window.setTimeout(() => {
+      this.loadDashboardData();
+    }, delayMs);
+  }
+
+  /**
+   * Callback cuando se guarda una configuración de correo desde el modal
+   * Recargar el dashboard para reflejar la nueva cuenta
+   */
+  onEmailConfigSaved(config: { provider?: string }): void {
+    this.observability.logUserAction('email_config_saved_from_dashboard', 'DashboardComponent', {
+      provider: config.provider || 'unknown'
+    });
+
+    // Recargar el dashboard para actualizar el estado del sistema
+    this.refreshDashboardAfterProcessing(300);
+  }
+
+  getLastUpdatedLabel(): string {
+    if (!this.lastDashboardUpdate) {
+      return 'Sin datos';
+    }
+
+    const diffSeconds = Math.floor((Date.now() - this.lastDashboardUpdate.getTime()) / 1000);
+    if (diffSeconds < 10) {
+      return 'Justo ahora';
+    }
+    if (diffSeconds < 60) {
+      return `Hace ${diffSeconds}s`;
+    }
+
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) {
+      return `Hace ${diffMinutes} min`;
+    }
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) {
+      return `Hace ${diffHours} h`;
+    }
+
+    return this.formatDate(this.lastDashboardUpdate.toISOString());
+  }
+
+  isInitialLoading(): boolean {
+    return this.loading && !this.hasLoadedData;
+  }
+
+  isRefreshingData(): boolean {
+    return this.loading && this.hasLoadedData;
   }
 
   formatCurrency(amount: number): string {

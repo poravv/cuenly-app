@@ -3935,36 +3935,23 @@ async def get_dashboard_stats(user: Dict[str, Any] = Depends(_get_current_user))
 
 @app.get("/dashboard/monthly-stats")
 async def get_dashboard_monthly(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Obtiene evolución mensual de inversión (usando fecha_emision)."""
+    """Obtiene evolución mensual de inversión con histórico completo."""
     try:
-        repo = MongoInvoiceRepository()
         owner_email = (user.get('email') or '').lower()
-        q = {"owner_email": owner_email} if owner_email else {}
-        
-        # Filter > 12 months ago
-        from datetime import datetime, timedelta
-        start_date = datetime.now() - timedelta(days=365)
-        
-        # Asegurar que fecha_emision existe y es > start_date
-        q["fecha_emision"] = {"$gte": start_date}
+        query_service = get_mongo_query_service()
+        owner = owner_email if settings.MULTI_TENANT_ENFORCE else None
 
-        pipeline = [
-             {"$match": q},
-             {
-                "$group": {
-                    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$fecha_emision"}},
-                    "total_amount": {"$sum": "$totales.total"},
-                    "count": {"$sum": 1}
-                }
-            },
-            {"$sort": {"_id": 1}}
-        ]
-
-        data = list(repo._headers().aggregate(pipeline))
+        months = query_service.get_available_months(owner_email=owner)
         monthly_data = [
-            {"year_month": d["_id"], "total_amount": d["total_amount"], "count": d["count"]}
-            for d in data
+            {
+                "year_month": m.get("year_month"),
+                "total_amount": float(m.get("total_amount", 0)),
+                "count": int(m.get("count", 0))
+            }
+            for m in months
+            if m.get("year_month")
         ]
+        monthly_data.sort(key=lambda item: item["year_month"])
         
         return {"success": True, "monthly_data": monthly_data}
     except Exception as e:

@@ -27,53 +27,151 @@
           <a class="nav-link" routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}"
             (click)="closeNavbar()">
             <div class="nav-item-content">
-              <i class="bi bi-speedometer2"></i>
-              <span>Dashboard</span>
+              <i class="bi bi-house-door"></i>
+              <span>Inicio</span>
             </div>
           </a>
         </li>
-        <li class="nav-item">
-          <a class="nav-link" routerLink="/manage-invoices" routerLinkActive="active" (click)="closeNavbar()">
-            <i class="bi bi-gear-wide-connected me-1"></i>
-            Gestión
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" routerLink="/invoice-explorer" routerLinkActive="active" (click)="closeNavbar()">
+
+        <li class="nav-item dropdown nav-item-group">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-auto-close="true"
+            aria-expanded="false" [class.active]="isAnyRouteActive(['/facturas'])" (click)="$event.preventDefault()">
             <div class="nav-item-content">
-              <i class="bi bi-database-fill"></i>
-              <span>Explorador</span>
-            </div>
-          </a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" routerLink="/invoice-list" routerLinkActive="active" (click)="closeNavbar()">
-            <div class="nav-item-content">
-              <i class="bi bi-journals"></i>
+              <i class="bi bi-receipt-cutoff"></i>
               <span>Facturas</span>
             </div>
           </a>
+          <ul class="dropdown-menu">
+            <li>
+              <a class="dropdown-item" routerLink="/facturas/todas" (click)="closeNavbar()">
+                <i class="bi bi-journals me-2"></i>
+                Todas las facturas
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/facturas/explorador" (click)="closeNavbar()">
+                <i class="bi bi-search me-2"></i>
+                Explorador
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/facturas/estadisticas" (click)="closeNavbar()">
+                <i class="bi bi-bar-chart-line me-2"></i>
+                Estadísticas
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/facturas/subir" (click)="closeNavbar()">
+                <i class="bi bi-cloud-upload me-2"></i>
+                Subir PDF/Imagen
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/facturas/subir-xml" (click)="closeNavbar()">
+                <i class="bi bi-filetype-xml me-2"></i>
+                Subir XML
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/facturas/exportar" (click)="closeNavbar()">
+                <i class="bi bi-file-earmark-excel me-2"></i>
+                Exportaciones
+              </a>
+            </li>
+          </ul>
         </li>
 
-        <li class="nav-item">
-          <a class="nav-link" routerLink="/templates-export" routerLinkActive="active" (click)="closeNavbar()">
+        <li class="nav-item dropdown nav-item-group">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-auto-close="true"
+            aria-expanded="false" [class.active]="isAnyRouteActive(['/automatizacion'])"
+            (click)="$event.preventDefault()">
             <div class="nav-item-content">
-              <i class="bi bi-file-earmark-excel"></i>
-              <span>Exportar</span>
+              <i class="bi bi-gear-wide-connected"></i>
+              <span>Automatización</span>
             </div>
           </a>
+          <ul class="dropdown-menu">
+            <li>
+              <a class="dropdown-item" routerLink="/automatizacion/procesamiento" (click)="closeNavbar()">
+                <i class="bi bi-arrow-clockwise me-2"></i>
+                Procesamiento
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/automatizacion/correos" (click)="closeNavbar()">
+                <i class="bi bi-envelope-at me-2"></i>
+                Cuentas de correo
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/automatizacion/cola" (click)="closeNavbar()">
+                <i class="bi bi-inboxes me-2"></i>
+                Cola de procesamiento
+              </a>
+            </li>
+          </ul>
         </li>
 
-        <li class="nav-item">
-          <a class="nav-link" routerLink="/upload" routerLinkActive="active" (click)="closeNavbar()">
-            <i class="bi bi-cloud-upload me-1"></i>
-            Subir Archivo
+        <li class="nav-item dropdown nav-item-group account-menu">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" data-bs-auto-close="true"
+            aria-expanded="false" [class.active]="isAnyRouteActive(['/cuenta'])" (click)="$event.preventDefault()">
+            <div class="nav-item-content">
+              <i class="bi bi-person-circle"></i>
+              <span>Cuenta</span>
+            </div>
           </a>
+          <ul class="dropdown-menu account-dropdown-menu">
+            <li class="account-dropdown-header">
+              <div class="d-flex align-items-center gap-2">
+                <img *ngIf="getAvatarUrl() && !profileImageFailed" [src]="getAvatarUrl()!" alt="avatar"
+                  class="account-dropdown-avatar" (load)="onImageLoad('account-menu', $event)"
+                  (error)="onImageError('account-menu', $event)">
+                <div *ngIf="shouldShowPlaceholder()" class="account-dropdown-avatar-placeholder">
+                  <i class="bi bi-person-fill"></i>
+                </div>
+                <div class="text-truncate">
+                  <div class="account-dropdown-name text-truncate">{{ userProfile?.name || user.displayName || 'Usuario' }}</div>
+                  <div class="account-dropdown-email text-truncate">{{ userProfile?.email || user.email || '' }}</div>
+                </div>
+              </div>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li *ngIf="userProfile?.is_admin">
+              <a class="dropdown-item admin-dropdown-link" routerLink="/admin" (click)="closeNavbar()">
+                <i class="bi bi-shield-lock me-2"></i>
+                Panel Admin
+                <span class="admin-badge ms-auto">
+                  <i class="bi bi-star-fill"></i>
+                </span>
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/cuenta/perfil" (click)="closeNavbar()">
+                <i class="bi bi-person me-2"></i>
+                Mi perfil
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/cuenta/suscripcion" (click)="closeNavbar()">
+                <i class="bi bi-credit-card-2-front me-2"></i>
+                Suscripción
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/cuenta/pagos" (click)="closeNavbar()">
+                <i class="bi bi-wallet2 me-2"></i>
+                Medios de pago
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item" routerLink="/cuenta/ayuda" (click)="closeNavbar()">
+                <i class="bi bi-robot me-2"></i>
+                Ayuda IA
+              </a>
+            </li>
+          </ul>
         </li>
-
       </ul>
-
-
 
       <!-- User Profile Dropdown -->
       <div class="navbar-auth ms-lg-3">
@@ -113,11 +211,9 @@
                     </div>
                   </div>
                 </li>
-                <li>
-                  <hr class="dropdown-divider">
-                </li>
+                <li><hr class="dropdown-divider"></li>
                 <li *ngIf="userProfile?.is_admin">
-                  <a class="dropdown-item admin-dropdown-link" routerLink="/admin">
+                  <a class="dropdown-item admin-dropdown-link" routerLink="/admin" (click)="closeNavbar()">
                     <i class="bi bi-shield-lock me-2"></i>
                     Panel Admin
                     <span class="admin-badge ms-auto">
@@ -125,48 +221,16 @@
                     </span>
                   </a>
                 </li>
-                <!-- <li *ngIf="userProfile?.is_admin">
-                  <a class="dropdown-item admin-dropdown-link" routerLink="/admin/plans">
-                    <i class="bi bi-credit-card me-2"></i>
-                    Gestión de Planes
-                    <span class="admin-badge ms-auto">
-                      <i class="bi bi-gear-fill"></i>
-                    </span>
-                  </a>
-                </li> -->
                 <li>
-                  <a class="dropdown-item" routerLink="/profile" (click)="closeNavbar()">
-                    <i class="bi bi-person-circle me-2"></i>
-                    Mi Perfil
-                  </a>
-                </li>
-                <li>
-                  <a class="dropdown-item" routerLink="/profile/queue" (click)="closeNavbar()">
+                  <a class="dropdown-item" routerLink="/automatizacion/cola" (click)="closeNavbar()">
                     <i class="bi bi-inboxes-fill me-2"></i>
-                    Cola de Procesamiento
+                    Cola de procesamiento
                   </a>
                 </li>
                 <li>
-                  <a class="dropdown-item" routerLink="/ayuda" (click)="closeNavbar()">
-                    <i class="bi bi-robot me-2"></i>
-                    Ayuda AI
-                    <span class="status-indicator ms-auto" [ngClass]="status?.openai_configured ? 'success' : 'danger'"
-                      [title]="'OpenAI: ' + (status?.openai_configured ? 'Configurado' : 'No configurado')">
-                      <i class="bi bi-circle-fill"></i>
-                    </span>
-                  </a>
-                </li>
-                <li>
-                  <a class="dropdown-item" routerLink="/subscription" (click)="closeNavbar()">
+                  <a class="dropdown-item" routerLink="/cuenta/suscripcion" (click)="closeNavbar()">
                     <i class="bi bi-credit-card-2-front me-2"></i>
-                    Ver Mis Planes
-                    <i class="bi bi-arrow-right ms-auto"></i>
-                  </a>
-                </li>
-                <li>
-                  <a class="dropdown-item" routerLink="/payment-methods" (click)="closeNavbar()">
-                    <i class="bi bi-wallet2 me-2"></i>
-                    Medios de Pago
+                    Ver mi suscripción
                   </a>
                 </li>
                 <li *ngIf="userProfile && userProfile.is_trial">
@@ -175,8 +239,8 @@
                     <div class="trial-details">
                       <div class="trial-status"
                         [ngClass]="{'text-danger': userProfile.trial_expired, 'text-warning': !userProfile.trial_expired}">
-                        <strong *ngIf="!userProfile.trial_expired">Período de Prueba</strong>
-                        <strong *ngIf="userProfile.trial_expired">Prueba Expirada</strong>
+                        <strong *ngIf="!userProfile.trial_expired">Período de prueba</strong>
+                        <strong *ngIf="userProfile.trial_expired">Prueba expirada</strong>
                       </div>
                       <div class="trial-stats" *ngIf="!userProfile.trial_expired">
                         <small>{{ userProfile.trial_days_remaining }} días restantes</small>
@@ -188,26 +252,14 @@
                   </div>
                 </li>
                 <li *ngIf="userProfile && userProfile.is_trial">
-                  <a class="dropdown-item subscription-link" routerLink="/subscription" (click)="closeNavbar()">
+                  <a class="dropdown-item subscription-link" routerLink="/cuenta/suscripcion" (click)="closeNavbar()">
                     <i class="bi bi-credit-card me-2"></i>
-                    <span *ngIf="!userProfile.trial_expired">Obtener Suscripción</span>
-                    <span *ngIf="userProfile.trial_expired">Suscribirse Ahora</span>
+                    <span *ngIf="!userProfile.trial_expired">Obtener suscripción</span>
+                    <span *ngIf="userProfile.trial_expired">Suscribirse ahora</span>
                     <i class="bi bi-arrow-right ms-auto"></i>
                   </a>
                 </li>
-                <li>
-                  <span class="dropdown-item-text">
-                    <i class="bi bi-shield-check me-2"></i>
-                    Estado del Sistema
-                    <span class="status-indicator success ms-auto" title="Sistema funcionando correctamente">
-                      <i class="bi bi-check-circle-fill"></i>
-                      <span class="ms-1">OK</span>
-                    </span>
-                  </span>
-                </li>
-                <li>
-                  <hr class="dropdown-divider">
-                </li>
+                <li><hr class="dropdown-divider"></li>
                 <li>
                   <button class="dropdown-item text-danger" (click)="signOut()">
                     <i class="bi bi-box-arrow-right me-2"></i>
@@ -242,58 +294,35 @@
                       [ngClass]="{'text-danger': userProfile.trial_expired, 'text-warning': !userProfile.trial_expired}">
                       <strong *ngIf="!userProfile.trial_expired">{{ userProfile.trial_days_remaining }} días
                         restantes</strong>
-                      <strong *ngIf="userProfile.trial_expired">Prueba Expirada</strong>
+                      <strong *ngIf="userProfile.trial_expired">Prueba expirada</strong>
                     </div>
                     <small>IA: {{ userProfile.ai_invoices_processed }}/{{ userProfile.ai_invoices_limit }}</small>
                   </div>
                 </div>
 
                 <a *ngIf="userProfile && userProfile.is_trial" class="profile-option-item subscription-link-mobile"
-                  routerLink="/subscription" (click)="closeNavbar()">
+                  routerLink="/cuenta/suscripcion" (click)="closeNavbar()">
                   <i class="bi bi-credit-card me-2"></i>
-                  <span *ngIf="!userProfile.trial_expired">Obtener Suscripción</span>
-                  <span *ngIf="userProfile.trial_expired">Suscribirse Ahora</span>
+                  <span *ngIf="!userProfile.trial_expired">Obtener suscripción</span>
+                  <span *ngIf="userProfile.trial_expired">Suscribirse ahora</span>
                   <i class="bi bi-arrow-right ms-auto"></i>
                 </a>
 
-                <a class="profile-option-item" routerLink="/profile" (click)="closeNavbar()">
-                  <i class="bi bi-person-circle me-2"></i>
-                  Mi Perfil
+                <a *ngIf="userProfile?.is_admin" class="profile-option-item admin-mobile-link" routerLink="/admin"
+                  (click)="closeNavbar()">
+                  <i class="bi bi-shield-lock me-2"></i>
+                  Panel Admin
                 </a>
 
-                <a class="profile-option-item" routerLink="/profile/queue" (click)="closeNavbar()">
+                <a class="profile-option-item" routerLink="/automatizacion/cola" (click)="closeNavbar()">
                   <i class="bi bi-inboxes-fill me-2"></i>
-                  Cola de Procesamiento
+                  Cola de procesamiento
                 </a>
 
-                <a class="profile-option-item" routerLink="/ayuda" (click)="closeNavbar()">
-                  <i class="bi bi-robot me-2"></i>
-                  Ayuda AI
-                  <span class="status-indicator ms-auto" [ngClass]="status?.openai_configured ? 'success' : 'danger'">
-                    <i class="bi bi-circle-fill"></i>
-                  </span>
-                </a>
-
-                <a class="profile-option-item" routerLink="/subscription" (click)="closeNavbar()">
+                <a class="profile-option-item" routerLink="/cuenta/suscripcion" (click)="closeNavbar()">
                   <i class="bi bi-credit-card-2-front me-2"></i>
-                  Ver Mis Planes
-                  <i class="bi bi-arrow-right ms-auto"></i>
+                  Ver mi suscripción
                 </a>
-
-                <a class="profile-option-item" routerLink="/payment-methods" (click)="closeNavbar()">
-                  <i class="bi bi-wallet2 me-2"></i>
-                  Medios de Pago
-                  <i class="bi bi-arrow-right ms-auto"></i>
-                </a>
-
-                <div class="profile-option-item">
-                  <i class="bi bi-shield-check me-2"></i>
-                  Estado del Sistema
-                  <span class="status-indicator success ms-auto">
-                    <i class="bi bi-check-circle-fill"></i>
-                    <span class="ms-1">OK</span>
-                  </span>
-                </div>
 
                 <button class="profile-option-item text-danger w-100 text-start" (click)="signOut(); closeNavbar()">
                   <i class="bi bi-box-arrow-right me-2"></i>

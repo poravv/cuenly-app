@@ -1,35 +1,25 @@
-<div class="container-fluid mt-4 px-4 px-lg-5">
-  <div class="row mb-3">
-    <div class="col-12 d-flex align-items-center justify-content-between flex-wrap">
-      <div>
-        <nav aria-label="breadcrumb" class="mb-2">
-          <ol class="breadcrumb mb-0">
-            <li class="breadcrumb-item"><a routerLink="/" class="text-decoration-none">Inicio</a></li>
-            <li class="breadcrumb-item active">Lista de Facturas</li>
-          </ol>
-        </nav>
-        <h1 class="h3 fw-bold mb-0 d-flex align-items-center">
-          <i class="bi bi-journals text-primary me-2"></i>
-          Cabeceras de Facturas
-        </h1>
-      </div>
-      <div class="d-flex gap-2 mt-2 mt-md-0">
-        <button class="btn btn-danger" (click)="deleteSelected()" [disabled]="!hasSelection || deleteLoading"
-          *ngIf="hasSelection">
-          <i class="bi bi-trash me-1"></i>
-          Eliminar ({{ selectedHeaders.size }})
-        </button>
-        <button class="btn btn-outline-primary" (click)="refresh()" [disabled]="loading">
-          <i class="bi bi-arrow-repeat"></i> Actualizar
-        </button>
-      </div>
+<div class="container-fluid px-4 px-lg-5 pb-4 facturas-tab-content">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 facturas-list-actions">
+    <div class="small text-muted">
+      Filtra, revisa y descarga tus facturas en un solo flujo.
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-danger" (click)="deleteSelected()" [disabled]="!hasSelection || deleteLoading"
+        *ngIf="hasSelection">
+        <i class="bi bi-trash me-1"></i>
+        Eliminar ({{ selectedHeaders.size }})
+      </button>
+      <button class="btn btn-outline-primary" (click)="refresh()" [disabled]="loading">
+        <i class="bi bi-arrow-repeat"></i> Actualizar
+      </button>
     </div>
   </div>
 
   <!-- Filtros -->
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
-      <div class="row g-3 align-items-end">
+      <div class="row g-3 align-items-end filters-grid"
+        [class.mobile-advanced-collapsed]="!showMobileAdvancedFilters">
         <div class="col-12 col-md-3">
           <label class="form-label small fw-semibold">Mes</label>
           <input type="month" class="form-control" [(ngModel)]="month" (change)="refresh()">
@@ -39,20 +29,35 @@
           <input type="text" class="form-control" placeholder="Texto (emisor/receptor/nro)" [(ngModel)]="search"
             (keyup.enter)="refresh()">
         </div>
-        <div class="col-12 col-md-3">
+        <div class="col-12 d-md-none">
+          <button type="button" class="btn btn-outline-secondary w-100 advanced-toggle-btn"
+            (click)="toggleMobileAdvancedFilters()" [attr.aria-expanded]="showMobileAdvancedFilters">
+            <span class="d-inline-flex align-items-center gap-2">
+              <i class="bi bi-sliders"></i>
+              {{ showMobileAdvancedFilters ? 'Ocultar filtros avanzados' : 'Mostrar filtros avanzados' }}
+            </span>
+            <span class="d-inline-flex align-items-center gap-2">
+              <span class="advanced-active-count" *ngIf="activeAdvancedFiltersCount">
+                {{ activeAdvancedFiltersCount }} activos
+              </span>
+              <i class="bi" [ngClass]="showMobileAdvancedFilters ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+            </span>
+          </button>
+        </div>
+        <div class="col-12 col-md-3 advanced-filter">
           <label class="form-label small fw-semibold">Nombre Emisor</label>
           <input type="text" class="form-control" placeholder="Ej: FARMACIA..." [(ngModel)]="emisorNombre"
             (keyup.enter)="refresh()">
         </div>
-        <div class="col-12 col-md-2">
+        <div class="col-12 col-md-2 advanced-filter">
           <label class="form-label small fw-semibold">RUC Emisor</label>
           <input type="text" class="form-control" [(ngModel)]="rucEmisor" (keyup.enter)="refresh()">
         </div>
-        <div class="col-12 col-md-2">
+        <div class="col-12 col-md-2 advanced-filter">
           <label class="form-label small fw-semibold">RUC Receptor</label>
           <input type="text" class="form-control" [(ngModel)]="rucReceptor" (keyup.enter)="refresh()">
         </div>
-        <div class="col-12 col-md-2">
+        <div class="col-12 col-md-2 advanced-filter">
           <label class="form-label small fw-semibold">Ordenar por</label>
           <select class="form-select" [(ngModel)]="sortBy" (change)="refresh()">
             <option value="fecha_emision">Fecha Emisión</option>
