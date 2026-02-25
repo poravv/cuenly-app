@@ -22,7 +22,6 @@ import { ExportTemplatesComponent } from './components/export-templates/export-t
 import { TemplateEditorComponent } from './components/export-templates/template-editor.component';
 import { TemplateExportComponent } from './components/export-templates/template-export.component';
 import { NotificationContainerComponent } from './components/shared/notification-container/notification-container.component';
-import { QuickEmailModalComponent } from './components/shared/quick-email-modal/quick-email-modal.component';
 import { PagoparResultComponent } from './components/pagopar-result/pagopar-result.component';
 
 import { SuspendedComponent } from './components/suspended/suspended.component';
@@ -62,7 +61,6 @@ import { InvoicesStatsComponent } from './components/invoices-stats/invoices-sta
     TemplateEditorComponent,
     TemplateExportComponent,
     NotificationContainerComponent,
-    QuickEmailModalComponent,
 
     SuspendedComponent,
     SuspendedComponent,

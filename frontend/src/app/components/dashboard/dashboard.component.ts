@@ -160,7 +160,6 @@ export class DashboardComponent implements OnInit {
   // UI state
   loading = false;
   processing = false;
-  showQuickSetup = false;
   lastDashboardUpdate: Date | null = null;
   hasLoadedData = false;
   currentPeriod = 'month';
@@ -426,28 +425,10 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  openQuickSetup(): void {
-    this.showQuickSetup = true;
-    this.observability.logUserAction('open_quick_email_setup_from_dashboard', 'DashboardComponent');
-  }
-
   private refreshDashboardAfterProcessing(delayMs: number = 500): void {
     window.setTimeout(() => {
       this.loadDashboardData();
     }, delayMs);
-  }
-
-  /**
-   * Callback cuando se guarda una configuración de correo desde el modal
-   * Recargar el dashboard para reflejar la nueva cuenta
-   */
-  onEmailConfigSaved(config: { provider?: string }): void {
-    this.observability.logUserAction('email_config_saved_from_dashboard', 'DashboardComponent', {
-      provider: config.provider || 'unknown'
-    });
-
-    // Recargar el dashboard para actualizar el estado del sistema
-    this.refreshDashboardAfterProcessing(300);
   }
 
   getLastUpdatedLabel(): string {

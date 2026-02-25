@@ -89,16 +89,18 @@
             
             <!-- CTA principal de flujo -->
             <div class="col-lg-6 text-lg-end">
-              <a class="btn btn-lg btn-primary px-4 shadow-primary" routerLink="/automatizacion/procesamiento">
+              <a *ngIf="systemStatus.email_configured; else configureEmailCta"
+                class="btn btn-lg btn-primary px-4 shadow-primary"
+                routerLink="/automatizacion/procesamiento">
                 <i class="bi bi-gear-wide-connected me-2"></i>
                 Iniciar Automatización
               </a>
-              <div class="small text-muted mt-2" *ngIf="!systemStatus.email_configured">
-                <button type="button" class="quick-setup-link" (click)="openQuickSetup()">
-                  <i class="bi bi-plus-circle me-1"></i>
-                  Configurar cuenta de correo <i class="bi bi-arrow-right"></i>
-                </button>
-              </div>
+              <ng-template #configureEmailCta>
+                <a class="btn btn-lg btn-primary px-4 shadow-primary" routerLink="/automatizacion/correos">
+                  <i class="bi bi-plus-circle me-2"></i>
+                  Configurar cuenta de correo
+                </a>
+              </ng-template>
             </div>
           </div>
         </div>
@@ -530,10 +532,3 @@
     </div>
   </ng-template>
 </div>
-
-<!-- Quick Email Setup Modal (Quick Win #2) -->
-<app-quick-email-modal
-  [isOpen]="showQuickSetup"
-  (closed)="showQuickSetup = false"
-  (saved)="onEmailConfigSaved($event)">
-</app-quick-email-modal>

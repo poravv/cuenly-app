@@ -169,6 +169,13 @@
                 Ayuda IA
               </a>
             </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <button class="dropdown-item text-danger" (click)="signOut(); closeNavbar()">
+                <i class="bi bi-box-arrow-right me-2"></i>
+                Cerrar sesión
+              </button>
+            </li>
           </ul>
         </li>
       </ul>
@@ -270,67 +277,6 @@
             </div>
           </div>
 
-          <!-- Mobile Profile Section -->
-          <div class="user-profile-mobile d-lg-none">
-            <div class="profile-mobile-container p-3 border-top">
-              <div class="d-flex align-items-center mb-3">
-                <img *ngIf="getAvatarUrl() && !profileImageFailed" [src]="getAvatarUrl()!" alt="avatar"
-                  class="profile-avatar-mobile me-3" (load)="onImageLoad('mobile', $event)"
-                  (error)="onImageError('mobile', $event)">
-                <div *ngIf="shouldShowPlaceholder()" class="profile-avatar-placeholder-mobile me-3">
-                  <i class="bi bi-person-fill"></i>
-                </div>
-                <div class="flex-grow-1">
-                  <div class="profile-name-mobile">{{ userProfile?.name || user.displayName || 'Usuario' }}</div>
-                  <div class="profile-email-mobile">{{ userProfile?.email || user.email || '' }}</div>
-                </div>
-              </div>
-
-              <div class="profile-options">
-                <div *ngIf="userProfile && userProfile.is_trial" class="profile-option-item trial-info-mobile">
-                  <i class="bi bi-clock-history me-2"></i>
-                  <div class="trial-details-mobile">
-                    <div class="trial-status-mobile"
-                      [ngClass]="{'text-danger': userProfile.trial_expired, 'text-warning': !userProfile.trial_expired}">
-                      <strong *ngIf="!userProfile.trial_expired">{{ userProfile.trial_days_remaining }} días
-                        restantes</strong>
-                      <strong *ngIf="userProfile.trial_expired">Prueba expirada</strong>
-                    </div>
-                    <small>IA: {{ userProfile.ai_invoices_processed }}/{{ userProfile.ai_invoices_limit }}</small>
-                  </div>
-                </div>
-
-                <a *ngIf="userProfile && userProfile.is_trial" class="profile-option-item subscription-link-mobile"
-                  routerLink="/cuenta/suscripcion" (click)="closeNavbar()">
-                  <i class="bi bi-credit-card me-2"></i>
-                  <span *ngIf="!userProfile.trial_expired">Obtener suscripción</span>
-                  <span *ngIf="userProfile.trial_expired">Suscribirse ahora</span>
-                  <i class="bi bi-arrow-right ms-auto"></i>
-                </a>
-
-                <a *ngIf="userProfile?.is_admin" class="profile-option-item admin-mobile-link" routerLink="/admin"
-                  (click)="closeNavbar()">
-                  <i class="bi bi-shield-lock me-2"></i>
-                  Panel Admin
-                </a>
-
-                <a class="profile-option-item" routerLink="/automatizacion/cola" (click)="closeNavbar()">
-                  <i class="bi bi-inboxes-fill me-2"></i>
-                  Cola de procesamiento
-                </a>
-
-                <a class="profile-option-item" routerLink="/cuenta/suscripcion" (click)="closeNavbar()">
-                  <i class="bi bi-credit-card-2-front me-2"></i>
-                  Ver mi suscripción
-                </a>
-
-                <button class="profile-option-item text-danger w-100 text-start" (click)="signOut(); closeNavbar()">
-                  <i class="bi bi-box-arrow-right me-2"></i>
-                  Cerrar sesión
-                </button>
-              </div>
-            </div>
-          </div>
         </ng-container>
 
         <ng-template #loginBtn>

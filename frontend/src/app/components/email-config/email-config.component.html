@@ -14,7 +14,7 @@
         </h1>
       </div>
       <div>
-        <button class="btn btn-outline-primary mt-2 mt-md-0" (click)="showAddForm = true" *ngIf="!showAddForm"
+        <button class="btn btn-outline-primary mt-2 mt-md-0" (click)="startQuickAdd('other')" *ngIf="!showAddForm"
           [disabled]="loading || !canAddMore"
           [title]="!canAddMore ? 'Has alcanzado el límite de cuentas de correo de tu plan' : 'Agregar nueva cuenta de correo'">
           <i class="bi bi-plus-circle"></i> Agregar Correo
@@ -46,15 +46,22 @@
       <div class="card border-0 shadow-sm mb-3 quick-add-card" *ngIf="!showAddForm">
         <div class="card-body py-2 px-3 d-flex align-items-center flex-wrap gap-2">
           <span class="text-muted small fw-semibold text-uppercase me-1">Agregar:</span>
-          <button class="btn btn-sm btn-outline-primary" type="button" (click)="startQuickAdd('other')"
+          <button class="btn btn-sm btn-outline-primary quick-add-provider-btn" type="button" (click)="startQuickAdd('other')"
             [disabled]="loading || !canAddMore"
             [title]="!canAddMore ? 'Has alcanzado el límite de cuentas de correo de tu plan' : 'Agregar cuenta personalizada'">
-            Personalizado (IMAP)
+            <span class="quick-add-provider-content">
+              <span class="quick-add-provider-stack" aria-hidden="true">
+                <img src="assets/google.svg" width="12" height="12" alt="" class="quick-add-provider-icon">
+                <i class="bi bi-microsoft quick-add-provider-ms-icon"></i>
+                <i class="bi bi-envelope-at quick-add-provider-custom-icon"></i>
+              </span>
+              <span>Personalizado (IMAP)</span>
+            </span>
           </button>
-          <button class="btn btn-sm btn-outline-secondary" type="button" disabled>
+          <button class="btn btn-sm btn-outline-secondary quick-add-provider-btn" type="button" disabled>
             Gmail (Próximamente)
           </button>
-          <button class="btn btn-sm btn-outline-secondary" type="button" disabled>
+          <button class="btn btn-sm btn-outline-secondary quick-add-provider-btn" type="button" disabled>
             Outlook (Próximamente)
           </button>
           <small class="text-muted ms-auto" *ngIf="maxEmailAccounts !== -1">
@@ -312,8 +319,8 @@
           <div class="mb-2"><i class="bi bi-envelope-slash fs-3 text-muted"></i></div>
           <p class="mt-2 text-muted mb-1">No hay configuraciones de correo</p>
           <p class="text-muted">Agrega al menos una configuración para comenzar a procesar correos</p>
-          <button class="btn btn-primary mt-2" (click)="showAddForm = true"><i class="bi bi-plus-circle me-1"></i>
-            Agregar correo</button>
+          <!-- <button class="btn btn-primary mt-2" (click)="showAddForm = true"><i class="bi bi-plus-circle me-1"></i>
+            Agregar correo</button> -->
         </div>
       </div>
 

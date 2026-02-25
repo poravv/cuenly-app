@@ -46,6 +46,32 @@ h6 {
   padding: 0.2rem 0.65rem;
 }
 
+.quick-add-provider-btn .quick-add-provider-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  line-height: 1.1;
+}
+
+.quick-add-provider-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.quick-add-provider-icon {
+  width: 12px;
+  height: 12px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.quick-add-provider-ms-icon,
+.quick-add-provider-custom-icon {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
 .preset-term-btn {
   border-radius: 999px;
   padding: 0.2rem 0.55rem;
