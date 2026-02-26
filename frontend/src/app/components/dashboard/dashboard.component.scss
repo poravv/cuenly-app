@@ -464,6 +464,11 @@ h1 i {
     background: #e2e8f0;
     color: #334155;
     flex-shrink: 0;
+
+    i {
+      font-size: 0.9rem;
+      line-height: 1;
+    }
   }
 
   &__label {
@@ -550,6 +555,33 @@ h1 i {
 .quick-actions-grid .quick-action-btn:hover .quick-action-subtitle,
 .quick-actions-grid .quick-action-btn:focus .quick-action-subtitle {
   color: #ffffff !important;
+}
+
+.recent-activity-item {
+  transition: background-color 0.2s ease;
+  border-radius: 0.5rem;
+
+  &:hover {
+    background-color: rgba(59, 130, 246, 0.06);
+  }
+}
+
+.recent-activity-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  color: #ffffff;
+  box-shadow: 0 6px 12px rgba(37, 99, 235, 0.25);
+  flex-shrink: 0;
+
+  i {
+    font-size: 0.95rem;
+    line-height: 1;
+  }
 }
 
 /* ====== RESPONSIVE ADJUSTMENTS ====== */
