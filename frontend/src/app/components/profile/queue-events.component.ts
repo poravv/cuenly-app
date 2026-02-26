@@ -22,6 +22,8 @@ export class QueueEventsComponent implements OnInit {
   statusOptions = [
     { value: 'all', label: 'Todos' },
     { value: 'pending', label: 'Pendiente' },
+    { value: 'processing', label: 'Procesando' },
+    { value: 'pending_ai_unread', label: 'Pendiente IA' },
     { value: 'failed', label: 'Fallido' },
     { value: 'error', label: 'Error' },
     { value: 'skipped_ai_limit', label: 'Límite IA' },
@@ -80,6 +82,8 @@ export class QueueEventsComponent implements OnInit {
     }
     switch (status) {
       case 'pending': return 'bg-warning text-dark';
+      case 'processing': return 'bg-primary';
+      case 'pending_ai_unread': return 'bg-warning text-dark';
       case 'skipped_ai_limit':
       case 'skipped_ai_limit_unread': return 'bg-info text-dark';
       case 'failed':
@@ -95,6 +99,8 @@ export class QueueEventsComponent implements OnInit {
     }
     switch (status) {
       case 'pending': return 'Pendiente';
+      case 'processing': return 'Procesando';
+      case 'pending_ai_unread': return 'Pendiente IA';
       case 'skipped_ai_limit':
       case 'skipped_ai_limit_unread': return 'En Pausa (Límite IA)';
       case 'failed':
@@ -130,7 +136,7 @@ export class QueueEventsComponent implements OnInit {
     // Fallback defensivo para respuestas antiguas
     const status = String(event.status || '').toLowerCase();
     const isManual = !!event.manual_upload || event.account_email === 'manual_upload';
-    const retryableStatuses = ['skipped_ai_limit', 'skipped_ai_limit_unread', 'failed', 'error', 'missing_metadata'];
+    const retryableStatuses = ['skipped_ai_limit', 'skipped_ai_limit_unread', 'pending_ai_unread', 'failed', 'error', 'missing_metadata'];
     return retryableStatuses.includes(status) && !isManual;
   }
 }

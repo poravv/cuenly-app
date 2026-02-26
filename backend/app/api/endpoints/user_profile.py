@@ -300,7 +300,19 @@ async def get_queue_events(
             # El usuario pidió poder filtrar, así que si es "all" no filtramos por status
             # pero el comportamiento original filtraba por estos:
             if status == "all":
-                 query["status"] = {"$in": ["skipped_ai_limit", "skipped_ai_limit_unread", "pending", "processing", "retry_requested", "failed", "error", "missing_metadata"]}
+                 query["status"] = {
+                     "$in": [
+                         "skipped_ai_limit",
+                         "skipped_ai_limit_unread",
+                         "pending_ai_unread",
+                         "pending",
+                         "processing",
+                         "retry_requested",
+                         "failed",
+                         "error",
+                         "missing_metadata",
+                     ]
+                 }
         
         # Contar total para paginación
         total = coll.count_documents(query)
@@ -308,7 +320,14 @@ async def get_queue_events(
         skip = (page - 1) * page_size
         cursor = coll.find(query).sort("processed_at", DESCENDING).skip(skip).limit(page_size)
         events = []
-        retryable_statuses = {"skipped_ai_limit", "skipped_ai_limit_unread", "failed", "error", "missing_metadata"}
+        retryable_statuses = {
+            "skipped_ai_limit",
+            "skipped_ai_limit_unread",
+            "pending_ai_unread",
+            "failed",
+            "error",
+            "missing_metadata",
+        }
         for doc in cursor:
             # Señal explícita para frontend: eventos manuales (uploads) no son reintentables por UID IMAP.
             is_manual = bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload"
@@ -330,6 +349,100 @@ async def get_queue_events(
             if "email_date" in doc and hasattr(doc["email_date"], "isoformat"):
                 doc["email_date"] = doc["email_date"].isoformat()
             events.append(doc)
+
+        # En clúster con múltiples réplicas, un job RQ de alto nivel puede estar corriendo
+        # aunque aún no existan documentos procesados en Mongo. Exponerlo como evento sintético
+        # evita que la cola aparezca vacía durante discovery inicial.
+        def _collect_active_owner_jobs(owner_email: str, requested_status: str) -> list[dict]:
+            try:
+                from rq.job import Job
+                from rq.registry import StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry
+                from app.worker.queues import get_queue
+
+                high_q = get_queue("high")
+                conn = high_q.connection
+                candidate_ids = set()
+                try:
+                    candidate_ids.update(high_q.get_job_ids() or [])
+                except Exception:
+                    pass
+                for registry_cls in (StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry):
+                    try:
+                        reg = registry_cls("high", connection=conn)
+                        candidate_ids.update(reg.get_job_ids() or [])
+                    except Exception:
+                        continue
+
+                synthetic_events = []
+                for job_id in candidate_ids:
+                    try:
+                        job = Job.fetch(job_id, connection=conn)
+                        kwargs = job.kwargs or {}
+                        if str(kwargs.get("owner_email", "")).lower() != owner_email:
+                            continue
+
+                        func_name = str(getattr(job, "func_name", "") or "")
+                        if "process_emails_range_job" in func_name:
+                            action = "process_emails_range"
+                            subject = "Procesamiento por rango"
+                        elif "process_emails_job" in func_name:
+                            action = "process_emails"
+                            subject = "Procesamiento manual"
+                        else:
+                            continue
+
+                        raw_status = str(job.get_status(refresh=True) or "").lower().strip()
+                        if "." in raw_status:
+                            raw_status = raw_status.split(".")[-1]
+
+                        if raw_status in {"queued", "deferred", "scheduled"}:
+                            mapped_status = "pending"
+                        elif raw_status in {"started", "running", "busy"}:
+                            mapped_status = "processing"
+                        elif raw_status in {"failed", "stopped", "canceled", "cancelled"}:
+                            mapped_status = "error"
+                        else:
+                            continue
+
+                        if requested_status != "all" and requested_status != mapped_status:
+                            continue
+
+                        ts = job.started_at or job.created_at
+                        processed_at = ts.isoformat() if hasattr(ts, "isoformat") else None
+
+                        synthetic_events.append({
+                            "_id": f"rq::{job.id}",
+                            "owner_email": owner_email,
+                            "account_email": "system",
+                            "email_uid": str(job.id),
+                            "status": mapped_status,
+                            "reason": (
+                                "Job en ejecución desde cola distribuida"
+                                if mapped_status == "processing"
+                                else "Job encolado y pendiente de ejecución"
+                            ),
+                            "subject": subject,
+                            "sender": "Sistema",
+                            "processed_at": processed_at,
+                            "can_retry": False,
+                            "retry_supported": False,
+                            "job_id": str(job.id),
+                            "job_action": action,
+                            "source": "rq_high",
+                        })
+                    except Exception:
+                        continue
+
+                return synthetic_events
+            except Exception as e:
+                logger.warning(f"No se pudieron recolectar jobs activos RQ para {owner_email}: {e}")
+                return []
+
+        if page == 1 and status in {"all", "pending", "processing"}:
+            synthetic = _collect_active_owner_jobs(email, status)
+            if synthetic:
+                events = (synthetic + events)[:page_size]
+                total += len(synthetic)
             
         return {
             "success": True, 

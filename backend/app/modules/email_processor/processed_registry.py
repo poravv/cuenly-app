@@ -14,7 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class MongoProcessedEmailRepository:
-    RETRYABLE_STATUSES = {"skipped_ai_limit", "skipped_ai_limit_unread", "retry_requested"}
+    RETRYABLE_STATUSES = {
+        "skipped_ai_limit",
+        "skipped_ai_limit_unread",
+        "pending_ai_unread",
+        "retry_requested",
+    }
 
     def __init__(self):
         self._client = None
