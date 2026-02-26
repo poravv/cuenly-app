@@ -309,9 +309,11 @@ def _iter_active_jobs(queue_names: tuple[str, ...] = ("high", "default", "low"))
             q = Queue(qname, connection=conn)
             candidate_ids: List[str] = []
             candidate_ids.extend(q.job_ids or [])
-            candidate_ids.extend(StartedJobRegistry(queue=qname, connection=conn).get_job_ids() or [])
-            candidate_ids.extend(DeferredJobRegistry(queue=qname, connection=conn).get_job_ids() or [])
-            candidate_ids.extend(ScheduledJobRegistry(queue=qname, connection=conn).get_job_ids() or [])
+            # En RQ 2.x el parámetro `queue` debe ser un objeto Queue, no el nombre str.
+            # Pasar el nombre como string provoca: "'str' object has no attribute 'name'".
+            candidate_ids.extend(StartedJobRegistry(queue=q, connection=conn).get_job_ids() or [])
+            candidate_ids.extend(DeferredJobRegistry(queue=q, connection=conn).get_job_ids() or [])
+            candidate_ids.extend(ScheduledJobRegistry(queue=q, connection=conn).get_job_ids() or [])
 
             for jid in candidate_ids:
                 if not jid or jid in seen:

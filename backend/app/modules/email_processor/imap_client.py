@@ -455,15 +455,25 @@ class IMAPClient:
                 logger.debug("No se encontraron correos candidatos con los filtros base.")
                 return []
             
-            # Limitar a los N más recientes para evitar sobrecarga si hay miles
-            # (aunque process-direct tiene su propio límite, aquí filtramos subjects)
-            # Ordenamos descendente (más recientes primero)
+            # Limitar a los N más recientes para evitar sobrecarga si hay miles.
+            # Para sincronización histórica por rango (ALL + fechas), el límite se
+            # controla por setting dedicado y por defecto se deja sin límite.
+            # Ordenamos descendente (más recientes primero).
             candidate_uids.sort(key=lambda x: int(x), reverse=True)
-            # Analizar un máximo generoso para sincronización histórica o deep sync
-            max_candidates = 10000 
-            if len(candidate_uids) > max_candidates:
-                 logger.info(f"⚠️ Limitando análisis de asuntos a los {max_candidates} correos más recientes (de {len(candidate_uids)} encontrados)")
-                 candidate_uids = candidate_uids[:max_candidates]
+
+            is_historical_range = (not unread_only) and (since_date is not None or before_date is not None)
+            if is_historical_range:
+                max_candidates = int(getattr(settings, "IMAP_SEARCH_MAX_CANDIDATES_RANGE", 0) or 0)
+            else:
+                max_candidates = int(getattr(settings, "IMAP_SEARCH_MAX_CANDIDATES", 10000) or 10000)
+
+            if max_candidates > 0 and len(candidate_uids) > max_candidates:
+                logger.info(
+                    "⚠️ Limitando análisis de asuntos a los %s correos más recientes (de %s encontrados)",
+                    max_candidates,
+                    len(candidate_uids),
+                )
+                candidate_uids = candidate_uids[:max_candidates]
             
             # 2. Fetch SUBJECTS/FROM/DATE en batch (y BODYSTRUCTURE si aplica fallback por adjunto)
             # Convertir lista de UIDs a string separado por comas para el fetch

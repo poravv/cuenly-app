@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     ENABLE_EMAIL_FANOUT: bool = os.getenv("ENABLE_EMAIL_FANOUT", "true").lower() in ("1", "true", "yes")
     FANOUT_DISCOVERY_BATCH_SIZE: int = int(os.getenv("FANOUT_DISCOVERY_BATCH_SIZE", 250))  # Descubrimiento IMAP por tandas
     FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN: int = int(os.getenv("FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN", 200))  # Cap por cuenta/corrida
+    # Límite de candidatos IMAP para matcher robusto (0 = sin límite).
+    # Aplica a corridas normales (UNSEEN / manual/direct).
+    IMAP_SEARCH_MAX_CANDIDATES: int = int(os.getenv("IMAP_SEARCH_MAX_CANDIDATES", 10000))
+    # Límite específico para sincronización histórica por rango (ALL + SINCE/BEFORE).
+    # 0 por defecto para no truncar históricos largos (2017->hoy, etc).
+    IMAP_SEARCH_MAX_CANDIDATES_RANGE: int = int(os.getenv("IMAP_SEARCH_MAX_CANDIDATES_RANGE", 0))
     
     # Job Processing Limits
     JOB_MAX_RUNTIME_HOURS: int = int(os.getenv("JOB_MAX_RUNTIME_HOURS", 24))  # Parar job después de 24 horas
