@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 import unicodedata
 
 from app.models.export_template import AVAILABLE_FIELDS
@@ -80,6 +81,36 @@ def test_enterprise_xml_end_to_end_mapping_pipeline():
     assert doc.items[1].iva == 10
 
 
+def test_map_invoice_uses_invoice_minio_key_when_param_missing():
+    invoice = InvoiceData(
+        fecha=datetime(2026, 2, 1),
+        numero_factura="001-001-0000001",
+        ruc_emisor="80012345-6",
+        nombre_emisor="Proveedor SA",
+        minio_key="2026/owner@test.py/02/010101_demo.pdf",
+    )
+
+    doc = map_invoice(invoice, fuente="EMAIL_BATCH_PROCESSOR")
+    assert doc.header.minio_key == "2026/owner@test.py/02/010101_demo.pdf"
+
+
+def test_map_invoice_prefers_explicit_minio_key():
+    invoice = InvoiceData(
+        fecha=datetime(2026, 2, 1),
+        numero_factura="001-001-0000002",
+        ruc_emisor="80012345-6",
+        nombre_emisor="Proveedor SA",
+        minio_key="2026/owner@test.py/02/010101_old.pdf",
+    )
+
+    doc = map_invoice(
+        invoice,
+        fuente="EMAIL_BATCH_PROCESSOR",
+        minio_key="2026/owner@test.py/02/010101_new.pdf",
+    )
+    assert doc.header.minio_key == "2026/owner@test.py/02/010101_new.pdf"
+
+
 def test_sifen_matrix_alignment_with_models_and_export_fields():
     invoice_fields = set(InvoiceData.model_fields.keys())
     header_fields = set(InvoiceHeader.model_fields.keys())
@@ -123,4 +154,3 @@ def test_enterprise_sample_covers_required_matrix_fields():
 
     assert not missing_keys, f"Campos requeridos ausentes en muestra enterprise: {missing_keys}"
     assert not empty_values, f"Campos requeridos vacíos en muestra enterprise: {empty_values}"
-

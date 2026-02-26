@@ -46,19 +46,21 @@ Archivo: `backend/app/modules/scheduler/job_handlers.py`
 
 - `handle_full_sync_job` también usa fan-out con cap por cuenta.
 
-## 5) Política UNSEEN y trazabilidad de cola
+## 5) Política de búsqueda e idempotencia de cola
 
 Archivo: `backend/app/modules/email_processor/single_processor.py`
 
-- Política uniforme:
-  - usa `UNSEEN` por defecto en todos los flujos
-  - solo usa `ALL` si la cuenta está configurada explícitamente así
+- Política de búsqueda:
+  - flujo normal/manual: usa `UNSEEN` por defecto
+  - flujo por rango: fuerza `ALL` para recorrer históricos del período solicitado
 - Trazabilidad de fan-out:
   - encolados
   - omitidos por estado existente
-  - reencolados desde estados reintantables
-- Evita duplicidad de cola:
-  - no reencola automáticamente `pending/success/skipped_ai_limit`
+  - reencolados solo desde estados explícitamente reintentables
+- Evita duplicidad de cola/procesamiento:
+  - reserva atómica previa por correo (`status=processing`)
+  - no reencola ni reprocesa correos ya reservados/procesados desde cualquier botón/método
+  - reintentos permitidos solo para `skipped_ai_limit`, `skipped_ai_limit_unread` y `retry_requested`
 
 ## 6) Frontend default alineado
 

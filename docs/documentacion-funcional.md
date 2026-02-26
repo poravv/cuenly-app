@@ -16,6 +16,11 @@ El sistema es capaz de conectarse automáticamente a las cuentas de correo elect
 2. **Adjuntos PDF:** Se procesan mediante conversión a imagen + OCR y luego se envían a OpenAI Vision (GPT-4o) para extraer los datos estructurados.
 3. **Enlaces Externos:** Como último recurso, el sistema visita enlaces en los correos y descarga los comprobantes que encuentre (XML o PDF).
 
+**Regla funcional de idempotencia (obligatoria):**
+- Aunque el usuario dispare distintos métodos de procesamiento (botón manual, botón asíncrono y botón por rango), un mismo correo no debe procesarse dos veces.
+- Si un correo ya fue reservado/procesado, los siguientes intentos se omiten automáticamente.
+- Si el documento ya existe en base (por CDC), se actualiza el registro existente y no se duplica.
+
 ### 2. Exportación y Templates
 Los usuarios pueden generar reportes de todas sus facturas procesadas.
 - **Plantillas (Templates) dinámicos:** El usuario puede crear *export templates* seleccionando exactamente qué columnas desea en su Excel (ej. RUC, Razón Social, IVA 5%, IVA 10%, Total, etc.).
@@ -59,6 +64,12 @@ La aplicación cuenta con feedback visual no intrusivo para todas las acciones d
 4. El sistema sube copias originales a un bucket remoto (MinIO) como respaldo legal.
 5. El motor extrae los datos (cabecera de la factura + ítems del producto) y los guarda en la base de datos.
 6. El usuario visualiza la grilla de facturas extraídas en el "Explorador de Facturas".
+
+**Comportamiento por botones de procesamiento:**
+- **Procesar normal**: toma correos pendientes según configuración.
+- **Procesar asíncrono**: encola procesamiento distribuido.
+- **Procesar por rango**: fuerza búsqueda por rango de fechas del correo y recorre históricos del período solicitado.
+- En los tres casos, se aplica el mismo control anti-duplicado para evitar reprocesar correos o duplicar facturas.
 
 ### Flujo de Suscripción y Cobro (Vía Pagopar)
 1. El usuario ingresa a la pestaña "Suscripción" y selecciona el plan deseado (ej. PRO).

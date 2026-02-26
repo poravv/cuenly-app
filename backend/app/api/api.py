@@ -8,6 +8,7 @@ import logging
 import uvicorn
 import uuid
 import time
+import re
 from typing import List, Optional, Dict, Any
 import shutil
 from datetime import datetime
@@ -28,7 +29,7 @@ from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus
 from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
-from app.modules.email_processor.storage import save_binary
+from app.modules.email_processor.storage import save_binary, cleanup_local_file_if_safe
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.repositories.user_repository import UserRepository
 from app.modules.mapping.invoice_mapping import map_invoice
@@ -587,7 +588,9 @@ async def process_emails_direct(
 
 @app.post("/tasks/process")
 async def enqueue_process_emails(
-    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check),
+    # Permitir encolado aunque no haya cupo IA: los XML se procesan y
+    # lo que requiera IA quedará en PENDING_AI dentro del pipeline.
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check),
     request: Request = None,
     _frontend_key: bool = Depends(validate_frontend_key)
 ):
@@ -813,7 +816,9 @@ async def trigger_retry_skipped(
 async def process_range_job(
     payload: ProcessRangeRequest,
     background_tasks: BackgroundTasks,
-    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
+    # Importante: no bloquear por límite IA a nivel endpoint.
+    # El procesamiento interno ya maneja XML vs IA y deja pendientes cuando corresponde.
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)
 ):
     """
     Inicia un job de procesamiento filtrado por rango de fechas (fecha del correo).
@@ -911,6 +916,8 @@ async def upload_pdf(
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
     
+    pdf_path = ""
+    minio_key = ""
     try:
         # Leer contenido
         content = await file.read()
@@ -986,6 +993,9 @@ async def upload_pdf(
             success=False,
             message=f"Error al procesar el archivo: {str(e)}"
         )
+    finally:
+        if pdf_path:
+            await run_in_threadpool(cleanup_local_file_if_safe, pdf_path, minio_key)
 
 @app.post("/upload-xml", response_model=ProcessResult)
 async def upload_xml(
@@ -999,6 +1009,8 @@ async def upload_xml(
     if not (file.filename.lower().endswith('.xml')):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
 
+    xml_path = ""
+    minio_key = ""
     try:
         # Leer contenido
         content = await file.read()
@@ -1071,6 +1083,9 @@ async def upload_xml(
             success=False,
             message=f"Error al procesar el XML: {str(e)}"
         )
+    finally:
+        if xml_path:
+            await run_in_threadpool(cleanup_local_file_if_safe, xml_path, minio_key)
 
 @app.post("/tasks/upload-pdf")
 async def enqueue_upload_pdf(
@@ -1082,6 +1097,8 @@ async def enqueue_upload_pdf(
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
 
+    pdf_path = ""
+    pdf_minio_key = ""
     try:
         file_bytes = await file.read()
         # Parsear fecha
@@ -1109,36 +1126,45 @@ async def enqueue_upload_pdf(
             email_meta["date"] = date_obj
 
         def _runner():
-            owner = (user.get('email') or '').lower()
-            inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
-            invoices = [inv] if inv else []
-            if invoices:
-                # Asignar minio_key
-                if pdf_minio_key and inv:
-                    inv.minio_key = pdf_minio_key
-                    
-                try:
-                    repo = MongoInvoiceRepository()
-                    owner = (user.get('email') or '').lower()
-                    doc = map_invoice(inv, fuente="OPENAI_VISION")
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
+            try:
+                owner = (user.get('email') or '').lower()
+                inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
+                invoices = [inv] if inv else []
+                if invoices:
+                    # Asignar minio_key
+                    if pdf_minio_key and inv:
+                        inv.minio_key = pdf_minio_key
+                        
+                    try:
+                        repo = MongoInvoiceRepository()
+                        owner = (user.get('email') or '').lower()
+                        doc = map_invoice(
+                            inv,
+                            fuente="OPENAI_VISION",
+                            minio_key=(getattr(inv, "minio_key", "") or pdf_minio_key or ""),
+                        )
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
 
-            if not invoices:
-                return ProcessResult(success=False, message="No se pudo extraer información del PDF")
-            return ProcessResult(success=True, message="PDF procesado correctamente", invoice_count=1, invoices=invoices)
+                if not invoices:
+                    return ProcessResult(success=False, message="No se pudo extraer información del PDF")
+                return ProcessResult(success=True, message="PDF procesado correctamente", invoice_count=1, invoices=invoices)
+            finally:
+                cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
 
         job_id = task_queue.enqueue("process_pdf_manual", _runner)
         return {"job_id": job_id}
     except Exception as e:
+        if pdf_path:
+            cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
         logger.error(f"Error encolando PDF: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1156,6 +1182,8 @@ async def upload_image(
     if not (file.filename.lower().endswith(allowed_exts)):
         raise HTTPException(status_code=400, detail="Solo se aceptan imágenes (JPG, PNG, WEBP)")
     
+    img_path = ""
+    img_minio_key = ""
     try:
         # Parsear fecha
         date_obj = None
@@ -1187,50 +1215,55 @@ async def upload_image(
             email_meta["date"] = date_obj
 
         def _runner():
-            owner = (user.get('email') or '').lower()
-            # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
-            invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
-            invoices = [invoice_data] if invoice_data else []
-            
-            if invoices:
-                # Asignar minio_key
-                if img_minio_key and invoice_data:
-                    invoice_data.minio_key = img_minio_key
-                    
-                try:
-                    repo = MongoInvoiceRepository()
-                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE", minio_key=img_minio_key)
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
+            try:
+                owner = (user.get('email') or '').lower()
+                # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
+                invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
+                invoices = [invoice_data] if invoice_data else []
+                
+                if invoices:
+                    # Asignar minio_key
+                    if img_minio_key and invoice_data:
+                        invoice_data.minio_key = img_minio_key
+                        
+                    try:
+                        repo = MongoInvoiceRepository()
+                        doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE", minio_key=img_minio_key)
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
 
-            if not invoices:
+                if not invoices:
+                    return ProcessResult(
+                        success=False,
+                        message="No se pudo extraer factura de la imagen",
+                        invoice_count=0,
+                        invoices=[]
+                    )
+
                 return ProcessResult(
-                    success=False,
-                    message="No se pudo extraer factura de la imagen",
-                    invoice_count=0,
-                    invoices=[]
+                    success=True,
+                    message=f"Imagen procesada y almacenada",
+                    invoice_count=1,
+                    invoices=invoices
                 )
-
-            return ProcessResult(
-                success=True,
-                message=f"Imagen procesada y almacenada",
-                invoice_count=1,
-                invoices=invoices
-            )
+            finally:
+                cleanup_local_file_if_safe(img_path, img_minio_key)
 
         # Encolar tarea en lugar de ejecutar síncronamente
         job_id = task_queue.enqueue("process_image_manual", _runner)
         return {"job_id": job_id}
 
     except Exception as e:
+        if img_path:
+            cleanup_local_file_if_safe(img_path, img_minio_key)
         logger.error(f"Error al procesar imagen: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
@@ -1247,6 +1280,8 @@ async def enqueue_upload_xml(
     if not file.filename.lower().endswith('.xml'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
 
+    xml_path = ""
+    xml_minio_key = ""
     try:
         file_bytes = await file.read()
         
@@ -1274,38 +1309,47 @@ async def enqueue_upload_xml(
             email_meta["date"] = date_obj
 
         def _runner():
-            owner = (user.get('email') or '').lower()
-            inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
-            invoices = [inv] if inv else []
-            if invoices:
-                # Assign minio key
-                if xml_minio_key and inv:
-                    inv.minio_key = xml_minio_key
-                    
-                try:
-                    repo = MongoInvoiceRepository()
-                    owner = (user.get('email') or '').lower()
-                    doc = map_invoice(inv, fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION")
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo (tasks upload XML): {e}")
-            return ProcessResult(
-                success=bool(invoices),
-                message=("Factura XML procesada y almacenada " if invoices else "No se pudo extraer información desde el XML"),
-                invoice_count=len(invoices), 
-                invoices=invoices
-            )
+            try:
+                owner = (user.get('email') or '').lower()
+                inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
+                invoices = [inv] if inv else []
+                if invoices:
+                    # Assign minio key
+                    if xml_minio_key and inv:
+                        inv.minio_key = xml_minio_key
+                        
+                    try:
+                        repo = MongoInvoiceRepository()
+                        owner = (user.get('email') or '').lower()
+                        doc = map_invoice(
+                            inv,
+                            fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION",
+                            minio_key=(getattr(inv, "minio_key", "") or xml_minio_key or ""),
+                        )
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo (tasks upload XML): {e}")
+                return ProcessResult(
+                    success=bool(invoices),
+                    message=("Factura XML procesada y almacenada " if invoices else "No se pudo extraer información desde el XML"),
+                    invoice_count=len(invoices), 
+                    invoices=invoices
+                )
+            finally:
+                cleanup_local_file_if_safe(xml_path, xml_minio_key)
 
         job_id = task_queue.enqueue("upload_xml", _runner)
         return {"job_id": job_id}
     except Exception as e:
+        if xml_path:
+            cleanup_local_file_if_safe(xml_path, xml_minio_key)
         logger.error(f"Error al encolar XML: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -3508,6 +3552,68 @@ async def list_public_plans(
         "count": len(plans)
     }
 
+
+_CDC_TOKEN_RE = re.compile(r"\d{44}")
+
+
+def _minio_key_matches_header_strict(
+    client: "Minio",
+    header: Dict[str, Any],
+    minio_key: str,
+) -> bool:
+    """Validación estricta: solo sirve archivo si evidencia fuerte de correspondencia."""
+    key = str(minio_key or "").strip()
+    if not key:
+        return False
+
+    cdc = str(header.get("cdc") or "").strip()
+    if not cdc:
+        # Sin CDC no se puede validar criptográficamente; confiamos solo en llave persistida.
+        return True
+
+    cdc_tokens = _CDC_TOKEN_RE.findall(key)
+    if cdc_tokens:
+        return cdc in cdc_tokens
+
+    # Si no hay CDC en el nombre, intentamos validar solo para XML por contenido.
+    if not key.lower().endswith(".xml"):
+        return False
+
+    try:
+        obj = client.get_object(settings.MINIO_BUCKET, key)
+        try:
+            content = obj.read().decode("utf-8", errors="ignore")
+        finally:
+            obj.close()
+            obj.release_conn()
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo validar XML por contenido para {header.get('_id')}: {e}")
+        return False
+
+    cdc_digits = "".join(ch for ch in cdc if ch.isdigit())
+    content_digits = "".join(ch for ch in content if ch.isdigit())
+    return cdc in content or (cdc_digits and cdc_digits in content_digits)
+
+
+def _resolve_minio_key_strict(
+    header: Dict[str, Any],
+    client: "Minio",
+) -> str:
+    """No adivina ni backfillea: solo acepta minio_key persistido y validado."""
+    minio_key = str(header.get("minio_key") or "").strip()
+    if not minio_key:
+        return ""
+
+    if not _minio_key_matches_header_strict(client, header, minio_key):
+        logger.warning(
+            "⚠️ minio_key rechazado por inconsistencia con factura %s: %s",
+            header.get("_id"),
+            minio_key,
+        )
+        return ""
+
+    return minio_key
+
 # Endpoints de suscripciones - TODOS MIGRADOS a admin_subscriptions.py
 # Rutas: /admin/subscriptions/stats, POST /admin/subscriptions, GET /admin/subscriptions/user/{user_email}
 
@@ -3571,10 +3677,6 @@ async def get_invoice_download_url(
                         detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
                     )
 
-        minio_key = header.get("minio_key")
-        if not minio_key:
-            return {"success": False, "message": "Archivo no disponible en el almacenamiento seguro"}
-            
         # Generar Signed URL
         # Re-importar para asegurar acceso si no estamos en scope gol
         try:
@@ -3593,6 +3695,10 @@ async def get_invoice_download_url(
             secure=settings.MINIO_SECURE,
             region=settings.MINIO_REGION
         )
+
+        minio_key = _resolve_minio_key_strict(header, client)
+        if not minio_key:
+            return {"success": False, "message": "Archivo no disponible en el almacenamiento seguro"}
         
         # Determinar Content-Type basado en la extensión del archivo
         filename = minio_key.split("/")[-1]
@@ -3671,10 +3777,6 @@ async def get_invoice_file_direct(
             if not user_repo.is_admin(owner):
                 raise HTTPException(status_code=403, detail="Acceso denegado")
             
-        minio_key = header.get("minio_key")
-        if not minio_key:
-            raise HTTPException(status_code=404, detail="Archivo no disponible")
-            
         try:
             from minio import Minio
         except ImportError:
@@ -3690,6 +3792,10 @@ async def get_invoice_file_direct(
             secure=settings.MINIO_SECURE,
             region=settings.MINIO_REGION
         )
+
+        minio_key = _resolve_minio_key_strict(header, client)
+        if not minio_key:
+            raise HTTPException(status_code=404, detail="Archivo no disponible")
         
         # Obtener el archivo desde MinIO
         response = client.get_object(settings.MINIO_BUCKET, minio_key)
@@ -3983,6 +4089,8 @@ async def get_dashboard_stats(user: Dict[str, Any] = Depends(_get_current_user))
         
         # Filtro base
         q = {"owner_email": owner_email} if owner_email else {}
+        q["status"] = {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]}
+        q["numero_documento"] = {"$not": {"$regex": "^ERR_"}}
         
         # Total facturas
         total_invoices = repo._headers().count_documents(q)
@@ -4038,6 +4146,8 @@ async def get_dashboard_top_emisores(user: Dict[str, Any] = Depends(_get_current
         repo = MongoInvoiceRepository()
         owner_email = (user.get('email') or '').lower()
         q = {"owner_email": owner_email} if owner_email else {}
+        q["status"] = {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]}
+        q["numero_documento"] = {"$not": {"$regex": "^ERR_"}}
         
         pipeline = [
             {"$match": q},
@@ -4067,6 +4177,8 @@ async def get_dashboard_recent(user: Dict[str, Any] = Depends(_get_current_user)
         repo = MongoInvoiceRepository()
         owner_email = (user.get('email') or '').lower()
         q = {"owner_email": owner_email} if owner_email else {}
+        q["status"] = {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]}
+        q["numero_documento"] = {"$not": {"$regex": "^ERR_"}}
         
         cursor = repo._headers().find(q).sort("fecha_emision", -1).limit(5)
         invoices = []

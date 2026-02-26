@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from typing import Tuple, List, Optional
 from datetime import datetime
 
@@ -16,6 +17,28 @@ def _split_numero(numero: Optional[str]) -> Tuple[str, str, str, str]:
     return "", "", numero, numero
 
 
+def _normalize_identifier(value: str) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return ""
+    return re.sub(r"[^a-z0-9._@-]+", "_", cleaned)
+
+
+def _build_header_id(invoice: InvoiceData, full: str, fecha: Optional[datetime]) -> str:
+    cdc = str(getattr(invoice, "cdc", "") or "").strip()
+    if cdc:
+        return cdc
+
+    message_id = _normalize_identifier(str(getattr(invoice, "message_id", "") or ""))
+    if message_id:
+        return f"msgid_{message_id}"
+
+    ruc = str(getattr(invoice, "ruc_emisor", "SINRUC") or "SINRUC").strip() or "SINRUC"
+    numero = str(full or getattr(invoice, "numero_factura", "") or "SINNUMERO").strip() or "SINNUMERO"
+    fecha_token = fecha.date().isoformat() if fecha else "nodate"
+    return f"{ruc}_{numero}_{fecha_token}"
+
+
 def map_invoice(invoice: InvoiceData, fuente: str = "", minio_key: str = "") -> InvoiceDocument:
     est, pto, num, full = _split_numero(getattr(invoice, "numero_factura", ""))
     fecha: Optional[datetime] = getattr(invoice, "fecha", None)
@@ -25,7 +48,9 @@ def map_invoice(invoice: InvoiceData, fuente: str = "", minio_key: str = "") -> 
         except Exception:
             fecha = None
 
-    header_id = (getattr(invoice, "cdc", None) or f"{getattr(invoice, 'ruc_emisor', 'SINRUC')}_{full}_{(fecha or datetime.utcnow()).date().isoformat()}")
+    header_id = _build_header_id(invoice, full, fecha)
+
+    resolved_minio_key = (minio_key or getattr(invoice, "minio_key", "") or "").strip()
 
     header = InvoiceHeader(
         id=str(header_id),
@@ -105,7 +130,7 @@ def map_invoice(invoice: InvoiceData, fuente: str = "", minio_key: str = "") -> 
         email_origen=getattr(invoice, "email_origen", ""),
         mes_proceso=getattr(invoice, "mes_proceso", ""),
         fuente=fuente,
-        minio_key=minio_key
+        minio_key=resolved_minio_key
     )
 
     items: List[InvoiceDetail] = []

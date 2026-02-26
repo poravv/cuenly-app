@@ -13,12 +13,12 @@ Para no tener demasiados archivos `.md` sueltos, la documentación de Cuenly est
 Asegúrate de consultar estos archivos según tu rol o la tarea a realizar:
 
 1. 🚀 **[Este Archivo] README.md**: Información general de configuración e introducción al proyecto.
-2. 📖 **[documentacion-funcional.md](documentacion-funcional.md)**: Aquí encontrarás **TODOS** los aspectos de negocio y funcionales de Cuenly.
+2. 📖 **[documentacion-funcional.md](docs/documentacion-funcional.md)**: Aquí encontrarás **TODOS** los aspectos de negocio y funcionales de Cuenly.
    - Qué hace el producto.
    - Detalle de cómo se extrae y prioriza el cobro mensual, exportación de Excel, etc.
    - Sistema de notificaciones moderno (Toast UI).
    - Control de trial (Freemium, Pro, Suscripciones).
-3. ⚙️ **[documentacion-tecnica.md](documentacion-tecnica.md)**: Aquí encontrarás toda la arquitectura de sistemas:
+3. ⚙️ **[documentacion-tecnica.md](docs/documentacion-tecnica.md)**: Aquí encontrarás toda la arquitectura de sistemas:
    - Diagramas Mermaid de Backend y Frontend.
    - Estructura de Base de Datos.
    - **Información completa de integración de pagos con Pagopar (Paso a Paso de Bancard y suscripciones).**
@@ -53,14 +53,20 @@ Asegúrate de consultar estos archivos según tu rol o la tarea a realizar:
 
 2. Configura las variables de entorno en un archivo `.env` en la raíz (Backend) y tu `environment.ts` (Frontend). Es fundamental incluir `OPENAI_API_KEY` y claves de Firebase/Pagopar.
    
-3. Inicia los contenedores (modo completo local):
+3. Inicia los contenedores (stack local estándar):
    ```bash
-   docker-compose up -d --build
+   docker compose up -d --build
+   ```
+
+   Stack dev aislado (opcional, sin pisar puertos del stack estándar):
+   ```bash
+   docker compose --profile dev up -d --build mongodb-dev redis-dev backend-dev frontend-dev
    ```
 
 4. Accede:
    - Frontend en `http://localhost:4200`
-   - Backend API Docs en `http://localhost:8000/docs`
+   - Backend API Docs (vía proxy) en `http://localhost:4200/docs`
+   - Stack dev aislado: Frontend `http://localhost:4300`, Backend `http://localhost:8001/docs`
 
 ---
 

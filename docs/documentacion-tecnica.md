@@ -123,6 +123,20 @@ Para evitar bloqueos en el backend, el procesamiento se divide en dos fases:
 - **Imágenes / PDF**: Se extraen los adjuntos (o se descargan desde enlaces), se almacenan los originales en MinIO (bucket privado) y se usa GPT-4o Vision para pasarlos a estructura JSON.
 - **Seguridad de Archivos**: Uso de `python-magic` (Magic Numbers) para validar que no sean ejecutables o scripts maliciosos ocultos bajo extensiones `.pdf`.
 
+### 3.3 Idempotencia Global (Anti-Duplicados)
+- **Reserva atómica por correo (`processed_emails`)**:
+  - Antes de procesar un UID, el sistema realiza un `claim` atómico (`status=processing`) en `processed_emails`.
+  - Si el correo ya estaba reservado/procesado por cualquier método (botones manual, async o rango), se omite.
+  - Solo estados explícitamente reintentables (`skipped_ai_limit`, `skipped_ai_limit_unread`, `retry_requested`) pueden reclamarse de nuevo.
+- **Control por `Message-ID`**:
+  - Se guarda el `message_id` RFC822 del correo.
+  - Si aparece otro correo con el mismo `Message-ID` para el mismo owner, se marca como duplicado y se evita reproceso.
+- **No duplicación en Mongo (`invoice_headers` / `invoice_items`)**:
+  - Persistencia canónica por `owner_email + cdc` (prioridad principal).
+  - Fallback por `owner_email + message_id` cuando no hay CDC.
+  - Índice único parcial en `(owner_email, cdc)` para reforzar unicidad en base de datos.
+  - En caso de reingreso del mismo documento, se actualiza (`upsert`) el registro existente en lugar de crear uno nuevo.
+
 ---
 
 ## 💳 4. Integración Detallada con PAGOPAR (Suscripciones)
@@ -196,3 +210,17 @@ Todo el tráfico, recursos de CPU y logs están integrados en Grafana / Promethe
 - **AlertManager SMTP**: Notifica en caso de colas colapsadas o CPU al 100%.
 
 > **Ubicación de ConfigMaps**: *k8s-monitoring/simple-monitoring-stack.yaml*.
+
+---
+
+## 🐳 7. Docker Compose y Perfiles (Local)
+- **Stack local estándar**:
+  - `docker compose up -d --build`
+  - Frontend: `http://localhost:4200`
+- **Stack dev aislado (opcional)**:
+  - `docker compose --profile dev up -d --build mongodb-dev redis-dev backend-dev frontend-dev`
+  - Frontend dev: `http://localhost:4300`
+  - Backend dev: `http://localhost:8001`
+- **Objetivo del ajuste**:
+  - Evitar confusión con perfiles “default” no activados automáticamente.
+  - Evitar colisión de puertos entre stack estándar y stack dev.

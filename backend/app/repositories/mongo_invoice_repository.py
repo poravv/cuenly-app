@@ -1,9 +1,10 @@
 from __future__ import annotations
 import logging
+import re
 from typing import List, Optional
 from datetime import datetime
 
-from pymongo import MongoClient, UpdateOne
+from pymongo import MongoClient
 from pymongo.collection import Collection
 
 from app.models.invoice_v2 import InvoiceHeader, InvoiceDetail, InvoiceDocument
@@ -11,6 +12,7 @@ from app.repositories.invoice_repository import InvoiceRepository
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
+_CDC_TOKEN_RE = re.compile(r"\d{44}")
 
 
 class MongoInvoiceRepository(InvoiceRepository):
@@ -35,15 +37,37 @@ class MongoInvoiceRepository(InvoiceRepository):
     def _headers(self) -> Collection:
         coll = self._get_db()[self.headers_collection_name]
         try:
-            coll.create_index("_id", unique=True)
+            # _id ya es único por definición en MongoDB; no forzar opciones evita warnings.
             coll.create_index([("emisor.ruc", 1), ("fecha_emision", -1)])
             coll.create_index("emisor.nombre")
             coll.create_index("receptor.nombre")
             coll.create_index("mes_proceso")
             coll.create_index("owner_email")
             coll.create_index("message_id")
-        except Exception:
-            pass
+            coll.create_index([("owner_email", 1), ("message_id", 1)])
+
+            desired_partial = {
+                # Evita $ne porque algunos engines Mongo no lo aceptan en partial indexes.
+                # $gt: "" filtra strings no vacíos.
+                "owner_email": {"$exists": True, "$gt": ""},
+                "cdc": {"$exists": True, "$gt": ""},
+            }
+            idx_name = "owner_email_1_cdc_1"
+            idx_info = coll.index_information().get(idx_name)
+            if idx_info:
+                current_partial = idx_info.get("partialFilterExpression")
+                current_unique = bool(idx_info.get("unique"))
+                if (not current_unique) or (current_partial != desired_partial):
+                    coll.drop_index(idx_name)
+
+            coll.create_index(
+                [("owner_email", 1), ("cdc", 1)],
+                name=idx_name,
+                unique=True,
+                partialFilterExpression=desired_partial,
+            )
+        except Exception as e:
+            logger.warning(f"No se pudieron crear/actualizar índices de invoice_headers: {e}")
         return coll
 
     def _items(self) -> Collection:
@@ -51,8 +75,8 @@ class MongoInvoiceRepository(InvoiceRepository):
         try:
             coll.create_index([("header_id", 1), ("linea", 1)], unique=True)
             coll.create_index("owner_email")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"No se pudieron crear/actualizar índices de invoice_items: {e}")
         return coll
 
     def get_invoices_by_user(self, owner_email: str, filters: dict = None) -> List[dict]:
@@ -235,6 +259,46 @@ class MongoInvoiceRepository(InvoiceRepository):
     def _get_priority(self, fuente: str) -> int:
         return self.PRIORITY_MAP.get(fuente, 0)
 
+    @staticmethod
+    def _is_minio_key_compatible_with_cdc(minio_key: str, cdc: str) -> bool:
+        key = (minio_key or "").strip()
+        if not key:
+            return False
+        cdc = (cdc or "").strip()
+        if not cdc:
+            return True
+        tokens = _CDC_TOKEN_RE.findall(key)
+        if not tokens:
+            # Sin token CDC en nombre no podemos validarlo aquí.
+            return False
+        return cdc in tokens
+
+    def _resolve_canonical_header_id(
+        self,
+        owner: str,
+        current_id: str,
+        cdc: str,
+        message_id: str
+    ) -> str:
+        headers = self._headers()
+        if owner and cdc:
+            existing = headers.find_one(
+                {"owner_email": owner, "cdc": cdc},
+                {"_id": 1}
+            )
+            if existing and existing.get("_id"):
+                return str(existing["_id"])
+
+        if owner and message_id:
+            existing = headers.find_one(
+                {"owner_email": owner, "message_id": message_id},
+                {"_id": 1}
+            )
+            if existing and existing.get("_id"):
+                return str(existing["_id"])
+
+        return f"{owner}:{current_id}" if owner else current_id
+
     # Override: asegurar unicidad por usuario + factura
     def save_document(self, doc: InvoiceDocument) -> None:
         """
@@ -253,9 +317,20 @@ class MongoInvoiceRepository(InvoiceRepository):
             except Exception:
                 owner = ''
 
-        original_id = doc.header.id
-        # Construir ID compuesto solo si hay owner; si no, mantener comportamiento actual
-        combined_id = f"{owner}:{original_id}" if owner else original_id
+        original_id = str(doc.header.id)
+        cdc = str(getattr(doc.header, "cdc", "") or "").strip()
+        message_id = str(getattr(doc.header, "message_id", "") or "").strip()
+        if cdc:
+            doc.header.cdc = cdc
+        if message_id:
+            doc.header.message_id = message_id
+
+        combined_id = self._resolve_canonical_header_id(
+            owner=owner,
+            current_id=original_id,
+            cdc=cdc,
+            message_id=message_id
+        )
 
         # Mutar documento en memoria para mantener consistencia
         doc.header.id = combined_id
@@ -285,6 +360,21 @@ class MongoInvoiceRepository(InvoiceRepository):
             # Si actualizamos, preservamos ciertos campos si la nueva fuente es de menor calidad pero igual prioridad (edge case)
             # Pero la regla es simple: si new >= old, sobreescribimos.
             logger.info(f"🔄 Actualizando factura {combined_id}: Prioridad nueva ({new_fuente}={new_priority}) >= Existente ({existing_fuente}={existing_priority})")
+
+            # No perder referencia al archivo ya subido por reprocesos sin adjunto.
+            existing_minio_key = (existing_header.get("minio_key") or "").strip()
+            new_minio_key = (getattr(doc.header, "minio_key", "") or "").strip()
+            if existing_minio_key and not new_minio_key:
+                header_cdc = str(getattr(doc.header, "cdc", "") or "").strip()
+                if self._is_minio_key_compatible_with_cdc(existing_minio_key, header_cdc):
+                    doc.header.minio_key = existing_minio_key
+                    logger.info(f"♻️ Preservando minio_key existente para factura {combined_id}")
+                else:
+                    logger.warning(
+                        "⚠️ No se preserva minio_key en %s por posible inconsistencia de CDC (%s)",
+                        combined_id,
+                        header_cdc or "sin_cdc",
+                    )
 
         # Upsert de header e items
         self.upsert_header(doc.header)

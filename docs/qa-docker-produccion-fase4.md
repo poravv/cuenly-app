@@ -1,7 +1,7 @@
 # QA en Docker Compose Producción - Fase 4
 
 Fecha: 2026-02-24  
-Entorno: `docker compose --profile production`
+Entorno: `docker compose` (stack estándar)
 
 ## 1) Estado de contenedores
 
@@ -95,7 +95,7 @@ Resultados:
 
 Comando:
 
-- `docker compose --profile production up -d --build frontend`
+- `docker compose up -d --build frontend`
 
 Resultado:
 

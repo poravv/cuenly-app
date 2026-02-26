@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     EMAIL_BATCH_SIZE: int = int(os.getenv("EMAIL_BATCH_SIZE", 50))  # Fallback local si fan-out no está disponible
     EMAIL_BATCH_DELAY: float = float(os.getenv("EMAIL_BATCH_DELAY", 3.0))  # Segundos entre lotes
     EMAIL_PROCESSING_DELAY: float = float(os.getenv("EMAIL_PROCESSING_DELAY", 0.5))  # Segundos entre correos
+    # Si es false, no persiste placeholders ERR_* en invoice_headers/items.
+    STORE_FAILED_INVOICE_HEADERS: bool = os.getenv("STORE_FAILED_INVOICE_HEADERS", "false").lower() in ("1", "true", "yes")
     
     # Email Processing - Procesamiento paralelo
     MAX_CONCURRENT_ACCOUNTS: int = int(os.getenv("MAX_CONCURRENT_ACCOUNTS", 10))  # Cuentas procesadas simultáneamente (reducido para prod)

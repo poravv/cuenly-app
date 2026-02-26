@@ -300,7 +300,7 @@ async def get_queue_events(
             # El usuario pidió poder filtrar, así que si es "all" no filtramos por status
             # pero el comportamiento original filtraba por estos:
             if status == "all":
-                 query["status"] = {"$in": ["skipped_ai_limit", "skipped_ai_limit_unread", "pending", "failed", "error", "missing_metadata"]}
+                 query["status"] = {"$in": ["skipped_ai_limit", "skipped_ai_limit_unread", "pending", "processing", "retry_requested", "failed", "error", "missing_metadata"]}
         
         # Contar total para paginación
         total = coll.count_documents(query)
@@ -369,11 +369,11 @@ async def retry_queue_event(event_id: str, user: Dict[str, Any] = Depends(_get_c
                 detail="Evento incompleto para reintento (owner/account/uid requeridos)"
             )
         
-        # Actualizar estado a pending
+        # Actualizar estado a retry_requested (estado explícitamente reintentable)
         coll.update_one(
             {"_id": event_id},
             {"$set": {
-                "status": "pending",
+                "status": "retry_requested",
                 "reason": "Reintento manual por usuario",
                 "last_retry_at": datetime.utcnow()
             }}

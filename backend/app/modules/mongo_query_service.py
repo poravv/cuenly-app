@@ -69,7 +69,11 @@ class MongoQueryService:
             collection = db[self.collection_name]
 
             if self._is_v2():
-                match: Dict[str, Any] = {"fecha_emision": {"$ne": None}}
+                match: Dict[str, Any] = {
+                    "fecha_emision": {"$ne": None},
+                    "status": {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]},
+                    "numero_documento": {"$not": {"$regex": "^ERR_"}},
+                }
                 if owner_email:
                     match["owner_email"] = owner_email.lower()
                 pipeline = [
@@ -210,7 +214,11 @@ class MongoQueryService:
             collection = db[self.collection_name]
             
             if self._is_v2():
-                match: Dict[str, Any] = {"mes_proceso": year_month}
+                match: Dict[str, Any] = {
+                    "mes_proceso": year_month,
+                    "status": {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]},
+                    "numero_documento": {"$not": {"$regex": "^ERR_"}},
+                }
                 if owner_email:
                     match["owner_email"] = owner_email.lower()
                 pipeline = [

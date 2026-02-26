@@ -176,6 +176,7 @@ def process_single_email_from_uid_job(
     email_uid: Optional[str] = None,
     account_email: Optional[str] = None,
     message_id: Optional[str] = None,
+    preclaimed: bool = False,
     **kwargs: Any
 ) -> Dict[str, Any]:
     """
@@ -187,6 +188,8 @@ def process_single_email_from_uid_job(
         email_address = account_email
     if not email_uid and "uid" in kwargs:
         email_uid = str(kwargs.get("uid"))
+    if "preclaimed" in kwargs:
+        preclaimed = bool(kwargs.get("preclaimed"))
 
     logger.info(
         f"🚀 Procesando correo individual UID {email_uid} de la cuenta {email_address} "
@@ -218,7 +221,7 @@ def process_single_email_from_uid_job(
         if not processor.connect():
             return {"success": False, "message": "No se pudo conectar a la cuenta IMAP"}
             
-        invoice = processor._process_single_email(email_uid)
+        invoice = processor._process_single_email(email_uid, already_claimed=preclaimed)
         
         if invoice:
             # _store_invoice_v2 is usually called inside process_emails, but we must call it here since we bypassed the loop

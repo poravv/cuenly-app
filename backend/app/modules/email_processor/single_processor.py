@@ -22,13 +22,19 @@ from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryable
 from .imap_client import IMAPClient, decode_mime_header
 from .link_extractor import extract_links_from_message
 from .downloader import download_pdf_from_url
-from .storage import save_binary, sanitize_filename, ensure_dirs
+from .storage import save_binary, sanitize_filename, ensure_dirs, cleanup_local_file_if_safe
 from .connection_pool import get_imap_pool
 from .config_store import get_enabled_configs
 
 
 from .dedup import deduplicate_invoices
-from .processed_registry import build_key as build_processed_key, was_processed, mark_processed, was_processed_by_message_id, _repo
+from .processed_registry import (
+    build_key as build_processed_key,
+    claim_for_processing,
+    was_processed_by_message_id,
+    set_message_id,
+    _repo,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -411,16 +417,6 @@ class EmailProcessor:
                     )
                     discovery_batch_size = max(1, int(effective_discovery_batch_size or 250))
 
-                    # Estados existentes que NO deben reencolarse automáticamente
-                    non_requeueable_statuses = {
-                        "success",
-                        "pending",
-                        "processing",
-                        "queued",
-                        "skipped_ai_limit",
-                        "skipped_ai_limit_unread",
-                    }
-
                     for i in range(0, total_emails, discovery_batch_size):
                         batch_info = email_info[i:i+discovery_batch_size]
                         batch_ids = [item['uid'] for item in batch_info]
@@ -438,7 +434,7 @@ class EmailProcessor:
                             key = self._email_key(eid)
 
                             prev_status = existing_map.get(key)
-                            if prev_status in non_requeueable_statuses:
+                            if prev_status and not _repo.is_retryable_status(prev_status):
                                 skipped_existing += 1
                                 continue
 
@@ -450,16 +446,18 @@ class EmailProcessor:
                                 )
                                 requeued_errors += 1
 
-                            _repo.mark_processed(
+                            claimed = _repo.claim_for_processing(
                                 key=key,
-                                status="pending",
                                 reason=pending_reason,
                                 owner_email=self.owner_email,
                                 account_email=self.config.username,
                                 subject=info.get('subject'),
                                 sender=info.get('sender'),
-                                email_date=info.get('date')
+                                email_date=info.get('date'),
                             )
+                            if not claimed:
+                                skipped_existing += 1
+                                continue
 
                             # 2. Encolar a RQ
                             enqueue_job(
@@ -467,6 +465,7 @@ class EmailProcessor:
                                 self.config.username,
                                 self.owner_email,
                                 eid,
+                                preclaimed=True,
                                 priority='default'
                             )
                             items_queued += 1
@@ -490,32 +489,8 @@ class EmailProcessor:
                     logger.error(f"❌ Error en sincronización por rango/fan-out: {fanout_err}. Intentando procesamiento local.")
 
             # CASO B: Procesamiento Regular (Síncrono/Local)
-            # 🚀 FASE DE REGISTRO RÁPIDO (DISCOVERY) LIMITADA A 50
-            discovery_limit = 50
-            new_discovered = 0
-            from app.modules.email_processor.processed_registry import _repo
-            try:
-                coll = _repo._get_collection()
-                for eid in email_ids:
-                    if new_discovered >= discovery_limit:
-                        break
-                    key = self._email_key(eid)
-                    if not coll.find_one({"_id": key}):
-                        _repo.mark_processed(
-                            key=key,
-                            status="pending",
-                            reason="Descubierto en escaneo regular (Pendiente de procesamiento)",
-                            owner_email=self.owner_email,
-                            account_email=self.config.username,
-                            subject=meta_map.get(eid, {}).get('subject'),
-                            sender=meta_map.get(eid, {}).get('sender'),
-                            email_date=meta_map.get(eid, {}).get('date')
-                        )
-                        new_discovered += 1
-                if new_discovered > 0:
-                    logger.info(f"✅ Fast Discovery: {new_discovered} nuevos correos marcados como 'pending'")
-            except Exception as e:
-                logger.warning(f"⚠️ Error en fase de registro rápido: {e}")
+            # Evitamos pre-marcar "pending" para no bloquear la reserva atómica de _process_single_email.
+            logger.info("🔒 Discovery local sin pre-registro: la reserva se hace al iniciar cada procesamiento.")
 
             # Configuración para procesamiento local (fallback si fan-out falla)
             batch_size = getattr(settings, 'EMAIL_BATCH_SIZE', 50)
@@ -595,10 +570,10 @@ class EmailProcessor:
                             result.invoice_count += 1
                             logger.debug(f"✅ Factura procesada: {invoice.numero_factura}")
                     except OpenAIFatalError as e:
-                        logger.error(f"❌ Error FATAL de OpenAI en correo {eid}: {e}. Se omite y se continúa con el siguiente.")
-                        try:
-                            self.mark_as_read(eid)
-                        except: pass
+                        logger.warning(
+                            f"⚠️ Error FATAL de OpenAI en correo {eid}: {e}. "
+                            "Se mantiene NO LEÍDO para reintento controlado."
+                        )
                     except OpenAIRetryableError as e:
                         logger.warning(f"⚠️ Error transitorio de OpenAI en correo {eid}: {e}. Se omitirá este correo en esta corrida.")
                         # No marcar como leído para reintentar luego
@@ -647,21 +622,32 @@ class EmailProcessor:
             self.disconnect()
             return ProcessResult(success=False, message=f"Error en procesamiento por lotes: {str(e)}")
 
-    def _process_single_email(self, email_id: str):
+    def _process_single_email(self, email_id: str, already_claimed: bool = False):
         """
         Procesa un solo correo y retorna la factura extraída.
         Versión optimizada para uso en lotes.
         """
         key = self._email_key(email_id)
-
-        if was_processed(key):
-            logger.info(f"⏭️ Correo {email_id} ya estaba procesado; se omite para evitar duplicados.")
-            return None
+        temp_files_to_cleanup: List[Tuple[str, str]] = []
+        real_msg_id: Optional[str] = None
+        metadata: Dict[str, Any] = {}
+        if not already_claimed:
+            if not claim_for_processing(
+                key=key,
+                owner_email=self.owner_email,
+                account_email=self.config.username,
+                reason="Reserva para procesamiento individual",
+            ):
+                logger.info(f"⏭️ Correo {email_id} ya estaba reservado/procesado; se omite para evitar duplicados.")
+                return None
 
         try:
             # 🚀 OPTIMIZACIÓN: Fetch Message-ID antes de bajar todo el correo
             real_msg_id = self.client.fetch_rfc822_message_id(email_id)
-            if real_msg_id and was_processed_by_message_id(real_msg_id, self.owner_email):
+            if real_msg_id:
+                set_message_id(key, real_msg_id)
+
+            if real_msg_id and was_processed_by_message_id(real_msg_id, self.owner_email, exclude_key=key):
                 logger.info(f"⏭️ Correo con Message-ID {real_msg_id} (UID {email_id}) ya procesado globalmente; se omite.")
                 self._mark_email_processed(email_id, "skipped_duplicate_msgid", message_id=real_msg_id, reason="Correo duplicado detectado por Message-ID")
                 return None
@@ -746,6 +732,8 @@ class EmailProcessor:
                         date_obj=metadata.get("date")
                     )
                     xml_path = xml_storage.local_path
+                    if xml_path:
+                        temp_files_to_cleanup.append((xml_path, xml_storage.minio_key))
                     # Guardamos referencia para asignar después
                     xml_minio_key = xml_storage.minio_key
                     
@@ -756,6 +744,8 @@ class EmailProcessor:
                         date_obj=metadata.get("date")
                     )
                     pdf_path = pdf_storage.local_path
+                    if pdf_path:
+                        temp_files_to_cleanup.append((pdf_path, pdf_storage.minio_key))
                     pdf_minio_key = pdf_storage.minio_key
             
             # Procesar con prioridad: XML > PDF > Enlaces
@@ -791,6 +781,7 @@ class EmailProcessor:
                         downloaded_path = storage_result.local_path
                         if not downloaded_path:
                              continue
+                        temp_files_to_cleanup.append((downloaded_path, storage_result.minio_key))
 
                         if downloaded_path.lower().endswith(".xml"):
                             inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
@@ -816,16 +807,40 @@ class EmailProcessor:
             return None
 
         except OpenAIFatalError as e:
-            self._mark_email_processed(email_id, "openai_fatal")
-            logger.error(f"❌ Error fatal al procesar correo {email_id}: {e}")
-            raise
+            reason = f"OpenAI no disponible (fatal): {str(e)[:350]}"
+            self._mark_email_processed(
+                email_id,
+                "pending_ai_unread",
+                message_id=real_msg_id,
+                reason=reason,
+            )
+            self._store_failed_invoice(email_id, reason, metadata or {}, status="PENDING_AI")
+            logger.warning(
+                f"⚠️ Correo {email_id} pasa a PENDING_AI por error fatal de OpenAI; "
+                "se preserva NO LEÍDO para reintento."
+            )
+            raise SkipEmailKeepUnread(reason)
         except OpenAIRetryableError as e:
-            logger.warning(f"⚠️ Error transitorio al procesar correo {email_id}: {e}")
-            raise
+            reason = f"OpenAI temporalmente no disponible: {str(e)[:350]}"
+            self._mark_email_processed(
+                email_id,
+                "pending_ai_unread",
+                message_id=real_msg_id,
+                reason=reason,
+            )
+            self._store_failed_invoice(email_id, reason, metadata or {}, status="PENDING_AI")
+            logger.warning(
+                f"⚠️ Correo {email_id} pasa a PENDING_AI por error transitorio de OpenAI; "
+                "se preserva NO LEÍDO para reintento."
+            )
+            raise SkipEmailKeepUnread(reason)
         except Exception as e:
             logger.error(f"❌ Error en _process_single_email para {email_id}: {e}")
             self._mark_email_processed(email_id, "error")
             return None
+        finally:
+            for temp_path, minio_key in temp_files_to_cleanup:
+                cleanup_local_file_if_safe(temp_path, minio_key)
 
     def _store_invoice_v2(self, invoice, status: str = "DONE", error: str = None):
         """
@@ -844,7 +859,11 @@ class EmailProcessor:
             if error and hasattr(invoice, 'processing_error'):
                 invoice.processing_error = error
 
-            doc = map_invoice(invoice, fuente="EMAIL_BATCH_PROCESSOR")
+            doc = map_invoice(
+                invoice,
+                fuente="EMAIL_BATCH_PROCESSOR",
+                minio_key=(getattr(invoice, "minio_key", "") or ""),
+            )
             
             # Asignar owner_email si está disponible
             if hasattr(self, 'owner_email') and self.owner_email:
@@ -880,6 +899,13 @@ class EmailProcessor:
         """
         Guarda un registro minimal en MongoDB con status=FAILED para tracking en dashboard.
         """
+        if not getattr(settings, "STORE_FAILED_INVOICE_HEADERS", False):
+            logger.info(
+                "ℹ️ STORE_FAILED_INVOICE_HEADERS=false: omitiendo persistencia de ERR_* para UID %s",
+                str(email_id),
+            )
+            return
+
         try:
             from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
             from app.models.models import InvoiceData
@@ -895,6 +921,7 @@ class EmailProcessor:
                 nombre_emisor=str(metadata.get("sender", "Unknown sender"))[:100],
                 fecha=metadata.get("date"),
                 email_origen=str(metadata.get("sender", "")),
+                message_id=str(email_id),
                 status=status,
                 processing_error=str(error_msg)[:500],
                 fuente="EMAIL_BATCH_PROCESSOR",
@@ -902,7 +929,11 @@ class EmailProcessor:
             if self.owner_email:
                 inv.email_origen = self.owner_email
 
-            doc = map_invoice(inv, fuente="EMAIL_BATCH_PROCESSOR")
+            doc = map_invoice(
+                inv,
+                fuente="EMAIL_BATCH_PROCESSOR",
+                minio_key=(getattr(inv, "minio_key", "") or ""),
+            )
             if self.owner_email:
                 doc.header.owner_email = self.owner_email
                 for item in doc.items:
