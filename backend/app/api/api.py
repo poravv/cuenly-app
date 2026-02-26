@@ -683,6 +683,7 @@ async def get_task_status(job_id: str):
     raw_error = rq_job.get("error")
     raw_meta = rq_job.get("meta")
     job_meta = raw_meta if isinstance(raw_meta, dict) else {}
+    progress = job_meta.get("progress") if isinstance(job_meta.get("progress"), dict) else None
     cancel_requested = bool(job_meta.get("cancelled_by_user"))
     ended_ts = _to_ts(rq_job.get("ended_at"))
 
@@ -709,6 +710,31 @@ async def get_task_status(job_id: str):
         else:
             message = raw_error or "Error en procesamiento"
 
+    def _format_progress_message(action_name: str, progress_payload: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not progress_payload:
+            return None
+
+        queued = int(progress_payload.get("queued_count") or 0)
+        skipped = int(progress_payload.get("skipped_existing") or 0)
+        requeued = int(progress_payload.get("requeued_errors") or 0)
+        matches = int(progress_payload.get("discovered_matches") or 0)
+        stage = str(progress_payload.get("stage") or "").strip().lower()
+
+        if action_name == "process_emails_range":
+            if stage in {"starting"}:
+                return "Inicializando procesamiento histórico..."
+            if stage in {"fanout_discovery_complete", "fanout_streaming", "fanout_batch", "fanout_streaming_done", "fanout_done"}:
+                return (
+                    "Procesando histórico: "
+                    f"matches={matches}, encolados={queued}, omitidos_existentes={skipped}, "
+                    f"reencolados_error={requeued}"
+                )
+            if stage == "fanout_no_matches":
+                return "Procesamiento histórico en ejecución: no se encontraron nuevos correos para encolar."
+            if stage == "fanout_error":
+                return "Procesamiento histórico en ejecución: ocurrió un error en fan-out, continuando con fallback."
+        return None
+
     func_name = str(rq_job.get("func_name", "") or "")
     action = "process_emails"
     if "process_emails_range_job" in func_name:
@@ -718,6 +744,11 @@ async def get_task_status(job_id: str):
     elif "process_emails_job" in func_name:
         action = "process_emails"
 
+    if mapped_status == "running":
+        progress_message = _format_progress_message(action, progress)
+        if progress_message:
+            message = progress_message
+
     return {
         "job_id": job_id,
         "action": action,
@@ -726,6 +757,7 @@ async def get_task_status(job_id: str):
         "started_at": _to_ts(rq_job.get("started_at")),
         "finished_at": ended_ts,
         "message": message,
+        "progress": progress,
         "result": raw_result,
     }
 
@@ -2546,8 +2578,22 @@ async def get_status(user: Dict[str, Any] = Depends(_get_current_user)):
         excel_exists = False
         last_modified = None
 
-        # Estado del job
+        # Estado del job (automatización) + actividad manual en RQ para este usuario
         job_status = invoice_sync.get_job_status()
+        owner_email = (user.get('email') or '').lower()
+        manual_active_jobs = []
+        try:
+            from app.worker.queues import find_active_owner_jobs
+            manual_active_jobs = find_active_owner_jobs(
+                owner_email,
+                func_filters=(
+                    "process_emails_range_job",
+                    "process_emails_job",
+                    "process_single_email_from_uid_job",
+                ),
+            )
+        except Exception as e:
+            logger.warning(f"No se pudieron consultar jobs manuales activos para {owner_email}: {e}")
         
         # Configuraciones de correo (desde MongoDB)
         try:
@@ -2567,7 +2613,7 @@ async def get_status(user: Dict[str, Any] = Depends(_get_current_user)):
             "openai_configured": bool(settings.OPENAI_API_KEY),
             "job": {
                 "running": job_status.running,
-                "is_processing": job_status.is_processing,
+                "is_processing": bool(job_status.is_processing or manual_active_jobs),
                 "interval_minutes": job_status.interval_minutes,
                 "next_run": job_status.next_run,
                 "last_run": job_status.last_run
@@ -3158,14 +3204,40 @@ async def stop_job():
         raise HTTPException(status_code=500, detail=f"Error al detener el job: {str(e)}")
 
 @app.get("/job/status", response_model=JobStatus)
-async def job_status():
+async def job_status(request: Request):
     """
     Obtiene el estado actual del trabajo programado.
     
     Returns:
         JobStatus: Estado del trabajo.
     """
-    return invoice_sync.get_job_status()
+    status = invoice_sync.get_job_status()
+
+    # Compatibilidad UI: reflejar también procesamiento manual en RQ para el usuario autenticado.
+    # `running` sigue representando automatización; `is_processing` incluye manual/rango.
+    try:
+        owner_email = ""
+        token = extract_bearer_token(request)
+        if token:
+            claims = verify_firebase_token(token)
+            owner_email = str(claims.get("email") or "").lower()
+
+        if owner_email:
+            from app.worker.queues import find_active_owner_jobs
+            active_jobs = find_active_owner_jobs(
+                owner_email,
+                func_filters=(
+                    "process_emails_range_job",
+                    "process_emails_job",
+                    "process_single_email_from_uid_job",
+                ),
+            )
+            if active_jobs:
+                status.is_processing = True
+    except Exception as e:
+        logger.warning(f"No se pudo enriquecer /job/status con jobs manuales activos: {e}")
+
+    return status
 
 @app.post("/job/interval", response_model=JobStatus)
 async def set_job_interval(payload: IntervalPayload):

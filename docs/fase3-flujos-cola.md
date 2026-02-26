@@ -92,6 +92,28 @@ Resultado funcional:
 - En rangos grandes, la cola muestra actividad antes (menos percepción de “no hace nada”).
 - Se mantiene idempotencia global sin duplicar procesamiento ni registros.
 
+## 8) Control operativo de jobs activos (cancelación masiva)
+
+Archivos:
+- `backend/app/worker/queues.py`
+- `backend/app/api/endpoints/user_profile.py`
+
+Cambios aplicados:
+- Se agregó cancelación masiva de jobs activos por `owner_email` en RQ:
+  - función `cancel_active_owner_jobs(...)` en `worker/queues.py`.
+- Se expuso endpoint de usuario:
+  - `POST /user/queue-events/cancel-active`
+  - payload:
+    - `scope`: `all | single_email | range | full_sync`
+    - `max_jobs`: límite de intentos por request (cap de seguridad).
+- El endpoint devuelve resumen:
+  - `total_found`, `attempted`, `cancelled`, `stopping`, `failed`
+  - listas de IDs afectados.
+
+Resultado funcional:
+- El usuario recupera control sobre lotes en ejecución/encolados sin limpiar Redis global.
+- Se evita la percepción de “job automático incontrolable” ante reinicios con cola pendiente.
+
 ## Pruebas
 
 Nuevo archivo:

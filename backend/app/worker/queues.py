@@ -333,6 +333,7 @@ def _iter_active_jobs(queue_names: tuple[str, ...] = ("high", "default", "low"))
                             "origin": str(getattr(job, "origin", "") or qname),
                             "func_name": str(getattr(job, "func_name", "") or ""),
                             "kwargs": dict(getattr(job, "kwargs", {}) or {}),
+                            "args": list(getattr(job, "args", ()) or ()),
                             "created_at": job.created_at.isoformat() if job.created_at else None,
                             "started_at": job.started_at.isoformat() if job.started_at else None,
                         }
@@ -346,9 +347,43 @@ def _iter_active_jobs(queue_names: tuple[str, ...] = ("high", "default", "low"))
         return []
 
 
-def find_active_range_jobs(owner_email: str) -> List[Dict[str, Any]]:
+def _extract_owner_email_from_active_job(item: Dict[str, Any]) -> str:
+    kwargs = item.get("kwargs") or {}
+    owner = str(kwargs.get("owner_email", "")).strip().lower()
+    if owner:
+        return owner
+
+    func_name = str(item.get("func_name", "")).strip()
+    args = item.get("args") or []
+
+    # process_single_email_from_uid_job(email_address, owner_email, email_uid, ...)
+    if "process_single_email_from_uid_job" in func_name and len(args) >= 2:
+        return str(args[1] or "").strip().lower()
+
+    # process_emails_range_job(owner_email, ...)
+    if "process_emails_range_job" in func_name and len(args) >= 1:
+        return str(args[0] or "").strip().lower()
+
+    # process_emails_job(owner_email, ...)
+    if "process_emails_job" in func_name and len(args) >= 1:
+        return str(args[0] or "").strip().lower()
+
+    # process_single_account_job(email_address, owner_email, ...)
+    if "process_single_account_job" in func_name and len(args) >= 2:
+        return str(args[1] or "").strip().lower()
+
+    return ""
+
+
+def find_active_owner_jobs(
+    owner_email: str,
+    func_filters: Optional[tuple[str, ...]] = None,
+) -> List[Dict[str, Any]]:
     """
-    Retorna jobs activos de `process_emails_range_job` para un owner_email.
+    Retorna jobs activos del owner_email (queued/started/deferred/scheduled).
+
+    - `func_filters`: tupla opcional de substrings de func_name para filtrar.
+      Ej: ("process_emails_range_job", "process_emails_job")
     """
     target_owner = str(owner_email or "").strip().lower()
     if not target_owner:
@@ -357,12 +392,94 @@ def find_active_range_jobs(owner_email: str) -> List[Dict[str, Any]]:
     active_jobs = _iter_active_jobs()
     result: List[Dict[str, Any]] = []
     for item in active_jobs:
-        func_name = str(item.get("func_name", "")).strip()
-        kwargs = item.get("kwargs") or {}
-        kw_owner = str(kwargs.get("owner_email", "")).strip().lower()
-        if "process_emails_range_job" in func_name and kw_owner == target_owner:
-            result.append(item)
+        item_owner = _extract_owner_email_from_active_job(item)
+        if item_owner != target_owner:
+            continue
 
-    # Más reciente primero (si hay varios por condiciones de carrera/retries)
+        func_name = str(item.get("func_name", "")).strip()
+        if func_filters and not any(f in func_name for f in func_filters):
+            continue
+
+        result.append(item)
+
     result.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
     return result
+
+
+def find_active_range_jobs(owner_email: str) -> List[Dict[str, Any]]:
+    """
+    Retorna jobs activos de `process_emails_range_job` para un owner_email.
+    """
+    return find_active_owner_jobs(
+        owner_email,
+        func_filters=("process_emails_range_job",),
+    )
+
+
+def cancel_active_owner_jobs(
+    owner_email: str,
+    func_filters: Optional[tuple[str, ...]] = None,
+    max_jobs: int = 500,
+) -> Dict[str, Any]:
+    """
+    Cancela en bloque jobs activos de un owner_email.
+
+    Retorna un resumen con conteos y IDs afectados.
+    """
+    target_owner = str(owner_email or "").strip().lower()
+    if not target_owner:
+        return {
+            "owner_email": "",
+            "total_found": 0,
+            "attempted": 0,
+            "cancelled": 0,
+            "stopping": 0,
+            "failed": 0,
+            "cancelled_job_ids": [],
+            "stopping_job_ids": [],
+            "failed_jobs": [],
+        }
+
+    safe_max = max(1, min(int(max_jobs or 500), 2000))
+    active_jobs = find_active_owner_jobs(target_owner, func_filters=func_filters)
+    selected_jobs = active_jobs[:safe_max]
+
+    cancelled_job_ids: List[str] = []
+    stopping_job_ids: List[str] = []
+    failed_jobs: List[Dict[str, Any]] = []
+
+    for item in selected_jobs:
+        job_id = str(item.get("id") or "").strip()
+        if not job_id:
+            continue
+
+        result = cancel_job(job_id, requester_email=target_owner)
+        status = str(result.get("status", "")).lower().strip()
+        was_cancelled = bool(result.get("cancelled"))
+
+        if was_cancelled and status == "stopping":
+            stopping_job_ids.append(job_id)
+            continue
+        if was_cancelled:
+            cancelled_job_ids.append(job_id)
+            continue
+
+        failed_jobs.append(
+            {
+                "id": job_id,
+                "status": status or "unknown",
+                "message": str(result.get("message") or ""),
+            }
+        )
+
+    return {
+        "owner_email": target_owner,
+        "total_found": len(active_jobs),
+        "attempted": len(selected_jobs),
+        "cancelled": len(cancelled_job_ids),
+        "stopping": len(stopping_job_ids),
+        "failed": len(failed_jobs),
+        "cancelled_job_ids": cancelled_job_ids,
+        "stopping_job_ids": stopping_job_ids,
+        "failed_jobs": failed_jobs,
+    }

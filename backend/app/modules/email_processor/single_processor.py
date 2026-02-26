@@ -425,6 +425,45 @@ class EmailProcessor:
             stream_requeued_errors = 0
             stream_seen_uids: set[str] = set()
             stream_remaining_cap = effective_cap
+            _last_distributed_progress_ts = 0.0
+
+            def _update_distributed_progress(stage: str, force: bool = False, **extra: Any) -> None:
+                """
+                Publica progreso incremental en meta del job RQ actual (si existe).
+                Ayuda a mostrar actividad real aunque no se encolen nuevos jobs.
+                """
+                nonlocal _last_distributed_progress_ts
+
+                now_ts = time.monotonic()
+                if not force and (now_ts - _last_distributed_progress_ts) < 0.75:
+                    return
+
+                try:
+                    from rq import get_current_job
+
+                    current_job = get_current_job()
+                    if not current_job:
+                        return
+
+                    progress = dict(current_job.meta.get("progress", {}) or {})
+                    progress.update(
+                        {
+                            "stage": stage,
+                            "owner_email": self.owner_email,
+                            "account_email": self.config.username,
+                            "queued_count": int(stream_items_queued),
+                            "skipped_existing": int(stream_skipped_existing),
+                            "requeued_errors": int(stream_requeued_errors),
+                            "discovered_matches": int(len(stream_seen_uids)),
+                            "updated_at": datetime.utcnow().isoformat(),
+                        }
+                    )
+                    progress.update(extra or {})
+                    current_job.meta["progress"] = progress
+                    current_job.save_meta()
+                    _last_distributed_progress_ts = now_ts
+                except Exception:
+                    return
 
             def _enqueue_discovery_batch(batch_info: List[Dict[str, Any]]) -> None:
                 nonlocal stream_items_queued, stream_skipped_existing, stream_requeued_errors, stream_remaining_cap
@@ -505,6 +544,10 @@ class EmailProcessor:
                     stream_skipped_existing,
                     stream_requeued_errors,
                 )
+                _update_distributed_progress(
+                    "fanout_streaming",
+                    matched_in_batch=int(len(candidates)),
+                )
 
             # 1. Búsqueda de UIDs y metadatos base
             # search_emails devuelve una lista de diccionarios: [{"uid": "...", "subject": "...", ...}]
@@ -519,6 +562,7 @@ class EmailProcessor:
                 self.disconnect()
                 result.success = True
                 result.message = f"No hay correos nuevos para procesar en {self.config.username}"
+                _update_distributed_progress("fanout_no_matches", force=True)
                 return result
 
             if effective_cap is not None and len(email_info) > effective_cap:
@@ -533,6 +577,11 @@ class EmailProcessor:
             email_ids = [item['uid'] for item in email_info]
             # Mappear metadatos para acceso rápido durante Fan-out/Discovery
             meta_map = {item['uid']: item for item in email_info}
+            _update_distributed_progress(
+                "fanout_discovery_complete",
+                force=True,
+                total_matches=int(total_emails),
+            )
             
             logger.info(f"🔍 [Discovery] {total_emails} correos encontrados para {self.config.username}")
 
@@ -550,6 +599,14 @@ class EmailProcessor:
                     result.success = True
                     result.invoice_count = stream_items_queued
                     result.queued_count = stream_items_queued
+                    _update_distributed_progress(
+                        "fanout_streaming_done",
+                        force=True,
+                        total_matches=int(total_emails),
+                        queued_count=int(stream_items_queued),
+                        skipped_existing=int(stream_skipped_existing),
+                        requeued_errors=int(stream_requeued_errors),
+                    )
                     return result
 
                 items_queued = 0
@@ -626,6 +683,14 @@ class EmailProcessor:
                             f"encolados={items_queued}, omitidos_existentes={skipped_existing}, "
                             f"reencolados_error={requeued_errors}, analizados={min(i + len(batch_info), total_emails)}/{total_emails}"
                         )
+                        _update_distributed_progress(
+                            "fanout_batch",
+                            total_matches=int(total_emails),
+                            analyzed_matches=int(min(i + len(batch_info), total_emails)),
+                            queued_count=int(items_queued),
+                            skipped_existing=int(skipped_existing),
+                            requeued_errors=int(requeued_errors),
+                        )
                             
                     self.disconnect()
                     result.message = (
@@ -635,10 +700,23 @@ class EmailProcessor:
                     result.success = True
                     result.invoice_count = items_queued
                     result.queued_count = items_queued
+                    _update_distributed_progress(
+                        "fanout_done",
+                        force=True,
+                        total_matches=int(total_emails),
+                        queued_count=int(items_queued),
+                        skipped_existing=int(skipped_existing),
+                        requeued_errors=int(requeued_errors),
+                    )
                     return result
                     
                 except Exception as fanout_err:
                     logger.error(f"❌ Error en sincronización por rango/fan-out: {fanout_err}. Intentando procesamiento local.")
+                    _update_distributed_progress(
+                        "fanout_error",
+                        force=True,
+                        error=str(fanout_err)[:240],
+                    )
 
             # CASO B: Procesamiento Regular (Síncrono/Local)
             # Evitamos pre-marcar "pending" para no bloquear la reserva atómica de _process_single_email.

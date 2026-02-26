@@ -168,11 +168,27 @@ Para evitar bloqueos en el backend, el procesamiento se divide en dos fases:
 - `POST /jobs/process-range`:
   - Encola procesamiento por rango de fechas (histórico), con búsqueda `ALL` en el período indicado.
   - El job responde rápido con `job_id`; el trabajo pesado se refleja en la cola/eventos.
+- `POST /user/queue-events/cancel-active`:
+  - Cancela en bloque jobs activos de RQ del usuario autenticado.
+  - Soporta `scope` para controlar granularidad:
+    - `all`
+    - `single_email` (`process_single_email_from_uid_job`)
+    - `range` (`process_emails_range_job`)
+    - `full_sync` (`process_emails_job`)
+  - Soporta `max_jobs` para acotar cuántos jobs se intentan cancelar por request.
 - `POST /tasks/upload-pdf`, `POST /tasks/upload-xml`, `POST /upload-image`:
   - Encolan o resuelven inmediatamente según disponibilidad de IA.
   - Si no hay IA, retornan resultado exitoso de registro con `reason_code` y persisten `PENDING_AI` para trazabilidad.
 - `GET /tasks/{job_id}`:
   - Entrega estado del job (`queued`, `started`, `done`, `error`) y resultado asociado.
+
+### 3.8 Comportamiento de cola RQ al reinicio (operación)
+- Redis es persistente por diseño: si existen jobs pendientes en `rq:queue:*`, el worker los retomará al reiniciar.
+- Esto no implica necesariamente que se haya disparado un job nuevo de automatización; puede ser drenado de cola existente.
+- Para detener jobs bajo control del usuario:
+  - Cancelación individual: `POST /tasks/{job_id}/cancel`
+  - Cancelación masiva por usuario: `POST /user/queue-events/cancel-active`
+- En entornos locales de prueba, si se requiere arranque limpio de cola, vaciar Redis del entorno antes de levantar worker.
 
 ---
 

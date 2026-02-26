@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Subscription, interval } from 'rxjs';
 import { UserService } from '../../services/user.service';
 
 @Component({
@@ -18,6 +19,8 @@ export class QueueEventsComponent implements OnInit {
   totalItems: number = 0;
   totalPages: number = 0;
   selectedStatus: string = 'all';
+  private autoRefreshSub: Subscription | null = null;
+  private readonly autoRefreshMs: number = 5000;
 
   statusOptions = [
     { value: 'all', label: 'Todos' },
@@ -34,6 +37,11 @@ export class QueueEventsComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadEvents();
+    this.startAutoRefresh();
+  }
+
+  ngOnDestroy(): void {
+    this.stopAutoRefresh();
   }
 
   loadEvents(): void {
@@ -74,6 +82,22 @@ export class QueueEventsComponent implements OnInit {
   }
   refresh(): void {
     this.loadEvents();
+  }
+
+  private startAutoRefresh(): void {
+    this.stopAutoRefresh();
+    this.autoRefreshSub = interval(this.autoRefreshMs).subscribe(() => {
+      if (!this.loading) {
+        this.loadEvents();
+      }
+    });
+  }
+
+  private stopAutoRefresh(): void {
+    if (this.autoRefreshSub) {
+      this.autoRefreshSub.unsubscribe();
+      this.autoRefreshSub = null;
+    }
   }
 
   getStatusBadgeClass(status: string, event?: any): string {

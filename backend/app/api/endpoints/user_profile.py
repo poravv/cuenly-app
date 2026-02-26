@@ -4,7 +4,7 @@ Migrado desde api.py
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Literal
 from datetime import datetime
 import logging
 
@@ -33,6 +33,11 @@ class ProfileStatusResponse(BaseModel):
 
 class UpdateProcessingStartDatePayload(BaseModel):
     start_date: Optional[str] = None  # ISO format date, si es None usa fecha actual
+
+
+class CancelActiveJobsPayload(BaseModel):
+    scope: Literal["all", "single_email", "range", "full_sync"] = "all"
+    max_jobs: int = 500
 
 
 @router.get("")
@@ -359,35 +364,89 @@ async def get_queue_events(
                 from rq.registry import StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry
                 from app.worker.queues import get_queue
 
-                high_q = get_queue("high")
-                conn = high_q.connection
                 candidate_ids = set()
-                try:
-                    candidate_ids.update(high_q.get_job_ids() or [])
-                except Exception:
-                    pass
-                for registry_cls in (StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry):
+                queue_sources: Dict[str, str] = {}
+                conn = None
+
+                for qname in ("high", "default"):
+                    q = get_queue(qname)
+                    conn = q.connection
                     try:
-                        reg = registry_cls(queue=high_q, connection=conn)
-                        candidate_ids.update(reg.get_job_ids() or [])
+                        for jid in (q.get_job_ids() or []):
+                            candidate_ids.add(jid)
+                            queue_sources.setdefault(jid, qname)
                     except Exception:
-                        continue
+                        pass
+
+                    for registry_cls in (StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry):
+                        try:
+                            reg = registry_cls(queue=q, connection=conn)
+                            for jid in (reg.get_job_ids() or []):
+                                candidate_ids.add(jid)
+                                queue_sources.setdefault(jid, qname)
+                        except Exception:
+                            continue
+
+                if conn is None:
+                    return []
+
+                def _build_reason_from_progress(default_reason: str, progress_payload: Optional[Dict[str, Any]]) -> str:
+                    if not isinstance(progress_payload, dict):
+                        return default_reason
+
+                    queued = int(progress_payload.get("queued_count") or 0)
+                    skipped = int(progress_payload.get("skipped_existing") or 0)
+                    requeued = int(progress_payload.get("requeued_errors") or 0)
+                    matches = int(progress_payload.get("discovered_matches") or 0)
+                    stage = str(progress_payload.get("stage") or "").strip().lower()
+
+                    if stage in {"fanout_discovery_complete", "fanout_streaming", "fanout_batch", "fanout_streaming_done", "fanout_done"}:
+                        return (
+                            "Procesando histórico: "
+                            f"matches={matches}, encolados={queued}, omitidos_existentes={skipped}, "
+                            f"reencolados_error={requeued}"
+                        )
+                    if stage == "fanout_no_matches":
+                        return "Procesando histórico: no hay nuevos correos para encolar en este rango."
+                    if stage == "starting":
+                        return "Inicializando procesamiento histórico..."
+                    return default_reason
 
                 synthetic_events = []
                 for job_id in candidate_ids:
                     try:
                         job = Job.fetch(job_id, connection=conn)
                         kwargs = job.kwargs or {}
-                        if str(kwargs.get("owner_email", "")).lower() != owner_email:
+                        args = list(getattr(job, "args", ()) or ())
+                        func_name = str(getattr(job, "func_name", "") or "")
+
+                        # owner_email puede venir por kwargs (range/manual) o por args (single UID).
+                        candidate_owner = str(kwargs.get("owner_email", "")).lower().strip()
+                        if not candidate_owner and "process_single_email_from_uid_job" in func_name and len(args) >= 2:
+                            candidate_owner = str(args[1] or "").lower().strip()
+                        if not candidate_owner and "process_emails_range_job" in func_name and len(args) >= 1:
+                            candidate_owner = str(args[0] or "").lower().strip()
+                        if not candidate_owner and "process_emails_job" in func_name and len(args) >= 1:
+                            candidate_owner = str(args[0] or "").lower().strip()
+
+                        if candidate_owner != owner_email:
                             continue
 
-                        func_name = str(getattr(job, "func_name", "") or "")
                         if "process_emails_range_job" in func_name:
                             action = "process_emails_range"
                             subject = "Procesamiento por rango"
+                            email_uid = str(job.id)
                         elif "process_emails_job" in func_name:
                             action = "process_emails"
                             subject = "Procesamiento manual"
+                            email_uid = str(job.id)
+                        elif "process_single_email_from_uid_job" in func_name:
+                            action = "process_single_email"
+                            uid_from_kw = kwargs.get("email_uid")
+                            uid_from_args = args[2] if len(args) >= 3 else None
+                            uid_val = uid_from_kw if uid_from_kw else uid_from_args
+                            email_uid = str(uid_val) if uid_val is not None else str(job.id)
+                            subject = f"Procesamiento de correo UID {email_uid}"
                         else:
                             continue
 
@@ -409,18 +468,22 @@ async def get_queue_events(
 
                         ts = job.started_at or job.created_at
                         processed_at = ts.isoformat() if hasattr(ts, "isoformat") else None
+                        job_meta = dict(getattr(job, "meta", {}) or {})
+                        progress = job_meta.get("progress") if isinstance(job_meta.get("progress"), dict) else None
+                        default_reason = (
+                            "Job en ejecución desde cola distribuida"
+                            if mapped_status == "processing"
+                            else "Job encolado y pendiente de ejecución"
+                        )
+                        reason = _build_reason_from_progress(default_reason, progress)
 
                         synthetic_events.append({
                             "_id": f"rq::{job.id}",
                             "owner_email": owner_email,
                             "account_email": "system",
-                            "email_uid": str(job.id),
+                            "email_uid": email_uid,
                             "status": mapped_status,
-                            "reason": (
-                                "Job en ejecución desde cola distribuida"
-                                if mapped_status == "processing"
-                                else "Job encolado y pendiente de ejecución"
-                            ),
+                            "reason": reason,
                             "subject": subject,
                             "sender": "Sistema",
                             "processed_at": processed_at,
@@ -428,11 +491,12 @@ async def get_queue_events(
                             "retry_supported": False,
                             "job_id": str(job.id),
                             "job_action": action,
-                            "source": "rq_high",
+                            "source": f"rq_{queue_sources.get(job.id, 'unknown')}",
                         })
                     except Exception:
                         continue
 
+                synthetic_events.sort(key=lambda item: str(item.get("processed_at") or ""), reverse=True)
                 return synthetic_events
             except Exception as e:
                 logger.warning(f"No se pudieron recolectar jobs activos RQ para {owner_email}: {e}")
@@ -457,6 +521,44 @@ async def get_queue_events(
     except Exception as e:
         logger.error(f"Error fetching queue events for {email}: {e}")
         raise HTTPException(status_code=500, detail="Error fetching queue events")
+
+@router.post("/queue-events/cancel-active")
+async def cancel_active_queue_events(
+    payload: CancelActiveJobsPayload,
+    user: Dict[str, Any] = Depends(_get_current_user),
+):
+    """
+    Cancela en bloque jobs activos del usuario autenticado en RQ.
+    Permite filtrar por tipo de job para evitar cancelar más de lo necesario.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+
+    owner_email = (user.get("email") or "").lower().strip()
+    if not owner_email:
+        raise HTTPException(status_code=400, detail="Usuario inválido")
+
+    try:
+        from app.worker.queues import cancel_active_owner_jobs
+
+        scope_to_filters: Dict[str, Optional[tuple[str, ...]]] = {
+            "all": None,
+            "single_email": ("process_single_email_from_uid_job",),
+            "range": ("process_emails_range_job",),
+            "full_sync": ("process_emails_job",),
+        }
+        func_filters = scope_to_filters.get(payload.scope, None)
+        safe_max_jobs = max(1, min(int(payload.max_jobs or 500), 2000))
+
+        result = cancel_active_owner_jobs(
+            owner_email=owner_email,
+            func_filters=func_filters,
+            max_jobs=safe_max_jobs,
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        logger.error(f"Error cancelando jobs activos para {owner_email}: {e}")
+        raise HTTPException(status_code=500, detail="No se pudieron cancelar jobs activos")
 
 @router.post("/queue-events/{event_id}/retry")
 async def retry_queue_event(event_id: str, user: Dict[str, Any] = Depends(_get_current_user)):

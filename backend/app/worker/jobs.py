@@ -20,6 +20,31 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def _set_current_job_progress(stage: str, **extra: Any) -> None:
+    """
+    Actualiza meta de progreso del job RQ actual, si existe.
+    """
+    try:
+        from rq import get_current_job
+
+        current_job = get_current_job()
+        if not current_job:
+            return
+
+        progress = dict(current_job.meta.get("progress", {}) or {})
+        progress.update(
+            {
+                "stage": stage,
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+        )
+        progress.update(extra or {})
+        current_job.meta["progress"] = progress
+        current_job.save_meta()
+    except Exception:
+        return
+
+
 def process_emails_job(
     owner_email: str,
     start_date: Optional[str] = None,
@@ -127,6 +152,12 @@ def process_emails_range_job(
     - desactiva el cap por cuenta para recorrer todo el rango
     """
     logger.info(f"🚀 Iniciando job de rango para {owner_email}: {start_date} → {end_date}")
+    _set_current_job_progress(
+        "starting",
+        owner_email=owner_email,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
     try:
         from app.modules.email_processor.config_store import get_enabled_configs
@@ -182,16 +213,30 @@ def process_emails_range_job(
         )
 
         if hasattr(result, "dict"):
-            return result.dict()
-        if hasattr(result, "__dict__"):
-            return result.__dict__
-        return {
-            "success": True,
-            "result": result,
-            "owner_email": owner_email,
-        }
+            payload = result.dict()
+        elif hasattr(result, "__dict__"):
+            payload = result.__dict__
+        else:
+            payload = {
+                "success": True,
+                "result": result,
+                "owner_email": owner_email,
+            }
+
+        _set_current_job_progress(
+            "completed",
+            owner_email=owner_email,
+            queued_count=int(payload.get("queued_count") or 0),
+            invoice_count=int(payload.get("invoice_count") or 0),
+        )
+        return payload
     except Exception as e:
         logger.error(f"❌ Error en job de rango para {owner_email}: {e}", exc_info=True)
+        _set_current_job_progress(
+            "error",
+            owner_email=owner_email,
+            error=str(e)[:240],
+        )
         return {
             "success": False,
             "message": str(e),
