@@ -24,7 +24,12 @@ spec:
           podSelector:
             matchLabels:
               app: cuenly-backend
+        - namespaceSelector:
+            matchLabels:
+              name: cuenly-backend
+          podSelector:
+            matchLabels:
+              app: cuenly-worker
       ports:
         - protocol: TCP
           port: 27017
-

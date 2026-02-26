@@ -814,7 +814,9 @@ class EmailProcessor:
             email_meta_for_ai = {
                 "sender": metadata.get("sender", ""),
                 "subject": metadata.get("subject", ""),
-                "date": metadata.get("date")
+                "date": metadata.get("date"),
+                "message_id": str(email_id),
+                "rfc822_message_id": real_msg_id or metadata.get("rfc822_message_id", ""),
             }
 
             xml_path = None

@@ -2755,6 +2755,60 @@ async def v2_list_items(
         logger.error(f"Error listando items v2: {e}")
         raise HTTPException(status_code=500, detail="Error listando items")
 
+
+def _cleanup_processing_cache_for_deleted_headers(
+    repo: MongoInvoiceRepository,
+    headers: List[Dict[str, Any]],
+    fallback_owner: str = "",
+) -> int:
+    """
+    Limpia cache de procesamiento (processed_emails) asociado a headers eliminados.
+    Estrategia:
+    - owner_email + message_id (principal para correos procesados)
+    - owner_email + minio_key + manual_upload (fallback para uploads manuales pending)
+    """
+    if not headers:
+        return 0
+
+    try:
+        coll = repo._get_db().processed_emails
+        clauses: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for hdr in headers:
+            owner = str((hdr.get("owner_email") or fallback_owner or "")).strip().lower()
+            if not owner:
+                continue
+
+            msg_id = str(hdr.get("message_id") or "").strip()
+            if msg_id:
+                key = f"msg::{owner}::{msg_id}"
+                if key not in seen:
+                    clauses.append({"owner_email": owner, "message_id": msg_id})
+                    seen.add(key)
+
+            minio_key = str(hdr.get("minio_key") or "").strip()
+            if minio_key:
+                key = f"minio::{owner}::{minio_key}"
+                if key not in seen:
+                    clauses.append(
+                        {
+                            "owner_email": owner,
+                            "manual_upload": True,
+                            "minio_key": minio_key,
+                        }
+                    )
+                    seen.add(key)
+
+        if not clauses:
+            return 0
+
+        deleted = coll.delete_many({"$or": clauses}).deleted_count
+        return int(deleted or 0)
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo limpiar processed_emails tras eliminación de factura(s): {e}")
+        return 0
+
 @app.delete("/v2/invoices/{header_id}")
 async def v2_delete_invoice(header_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
     """
@@ -2783,12 +2837,23 @@ async def v2_delete_invoice(header_id: str, user: Dict[str, Any] = Depends(_get_
         if header_result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="No se pudo eliminar la factura")
         
-        logger.info(f"✅ Factura eliminada: {header_id} ({items_result.deleted_count} items)")
+        owner_fallback = (user.get("email") or "").lower()
+        deleted_cache = _cleanup_processing_cache_for_deleted_headers(
+            repo=repo,
+            headers=[header],
+            fallback_owner=owner_fallback,
+        )
+
+        logger.info(
+            f"✅ Factura eliminada: {header_id} ({items_result.deleted_count} items, "
+            f"{deleted_cache} cache entries)"
+        )
         
         return {
             "success": True,
             "message": f"Factura eliminada correctamente",
             "deleted_items": items_result.deleted_count,
+            "deleted_processing_cache": deleted_cache,
             "header_id": header_id
         }
         
@@ -2823,7 +2888,17 @@ async def v2_bulk_delete_invoices(
                 q['owner_email'] = owner
         
         # Verificar que todas las facturas existen y pertenecen al usuario
-        existing_headers = list(repo._headers().find(q, {"_id": 1}))
+        existing_headers = list(
+            repo._headers().find(
+                q,
+                {
+                    "_id": 1,
+                    "owner_email": 1,
+                    "message_id": 1,
+                    "minio_key": 1,
+                },
+            )
+        )
         existing_ids = [h["_id"] for h in existing_headers]
         
         if len(existing_ids) != len(header_ids):
@@ -2839,13 +2914,24 @@ async def v2_bulk_delete_invoices(
         # Eliminar headers
         headers_result = repo._headers().delete_many({"_id": {"$in": existing_ids}})
         
-        logger.info(f"✅ Eliminación en lote: {headers_result.deleted_count} facturas, {items_result.deleted_count} items")
+        owner_fallback = (user.get("email") or "").lower()
+        deleted_cache = _cleanup_processing_cache_for_deleted_headers(
+            repo=repo,
+            headers=existing_headers,
+            fallback_owner=owner_fallback,
+        )
+
+        logger.info(
+            f"✅ Eliminación en lote: {headers_result.deleted_count} facturas, "
+            f"{items_result.deleted_count} items, {deleted_cache} cache entries"
+        )
         
         return {
             "success": True,
             "message": f"Se eliminaron {headers_result.deleted_count} facturas correctamente",
             "deleted_headers": headers_result.deleted_count,
             "deleted_items": items_result.deleted_count,
+            "deleted_processing_cache": deleted_cache,
             "processed_ids": existing_ids
         }
         

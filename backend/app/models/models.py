@@ -340,6 +340,11 @@ class InvoiceData(BaseModel):
             cliente=ClienteData(**data["cliente"]) if data.get("cliente") else None,
 
             email_origen=(email_metadata or {}).get("sender"),
+            message_id=(
+                (email_metadata or {}).get("rfc822_message_id")
+                or (email_metadata or {}).get("message_id")
+                or data.get("message_id", "")
+            ),
             mes_proceso=fecha_parsed.strftime("%Y-%m") if fecha_parsed else datetime.now().strftime("%Y-%m"),
             created_at=data.get("created_at") if isinstance(data.get("created_at"), datetime) else None,
         )
