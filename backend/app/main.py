@@ -81,19 +81,79 @@ class CuenlyApp:
             last_run=None,
             last_result=None
         )
+        self._job_enabled_key = "cuenly:job:enabled"
+        self._job_owner_key = "cuenly:job:owner"
+        self._job_owner_ttl_seconds = int(os.getenv("JOB_OWNER_TTL_SECONDS", "120"))
+        self._pod_id = os.getenv("HOSTNAME", "local")
         
         
-        # Intentar restaurar estado del job desde Redis
+        # Estado por defecto seguro del job: desactivado.
+        # Solo se restaura al boot si JOB_RESTORE_ON_BOOT=true.
         try:
             redis_client = get_redis_client()
-            job_enabled = redis_client.get("cuenly:job:enabled")
-            if job_enabled and job_enabled == "true":
-                logger.info("🔄 Restaurando job programado desde estado persistente...")
-                self.start_scheduled_job(restore=True)
+            raw_enabled = redis_client.get(self._job_enabled_key)
+            normalized_enabled = self._decode_redis_str(raw_enabled)
+            if normalized_enabled is not None:
+                normalized_enabled = normalized_enabled.lower()
+
+            # Si no existe la clave, se fuerza explícitamente a false.
+            if normalized_enabled is None:
+                redis_client.set(self._job_enabled_key, "false")
+                redis_client.delete(self._job_owner_key)
+                normalized_enabled = "false"
+
+            if settings.JOB_RESTORE_ON_BOOT and normalized_enabled == "true":
+                if email_configs:
+                    logger.info("🔄 Restaurando job programado desde estado persistente (JOB_RESTORE_ON_BOOT=true)...")
+                    self.start_scheduled_job(restore=True)
+                else:
+                    logger.info("ℹ️ Se encontró job enabled=true pero no hay cuentas configuradas. Forzando enabled=false.")
+                    redis_client.set(self._job_enabled_key, "false")
+                    redis_client.delete(self._job_owner_key)
+            elif normalized_enabled == "true":
+                logger.info("ℹ️ Job persistido como enabled=true, pero JOB_RESTORE_ON_BOOT=false. Forzando enabled=false en arranque.")
+                redis_client.set(self._job_enabled_key, "false")
+                redis_client.delete(self._job_owner_key)
         except Exception as e:
             logger.warning(f"No se pudo restaurar estado de job desde Redis: {e}")
         
         logger.info("Sistema CuenlyApp inicializado correctamente")
+
+    @staticmethod
+    def _decode_redis_str(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, (bytes, bytearray)):
+            return str(value, "utf-8").strip()
+        return str(value).strip()
+
+    def _redis_bool(self, value: Any, default: bool = False) -> bool:
+        parsed = self._decode_redis_str(value)
+        if parsed is None:
+            return default
+        return parsed.lower() in ("1", "true", "yes", "on")
+
+    def _should_local_scheduler_continue(self) -> bool:
+        """
+        Verifica ownership global del scheduler para entornos con pods replicados.
+        """
+        try:
+            redis_client = get_redis_client()
+            enabled = self._redis_bool(redis_client.get(self._job_enabled_key), default=False)
+            owner = self._decode_redis_str(redis_client.get(self._job_owner_key))
+            if not enabled:
+                return False
+            if owner and owner != self._pod_id:
+                return False
+            if owner == self._pod_id:
+                try:
+                    redis_client.expire(self._job_owner_key, self._job_owner_ttl_seconds)
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            # En caso de falla temporal de Redis, no forzar stop inmediato.
+            return True
     
     def process_emails(self) -> ProcessResult:
         """
@@ -197,21 +257,68 @@ class CuenlyApp:
         Returns:
             JobStatus: Estado actual del trabajo.
         """
-        if not self._job_status.running:
-            self.email_processor.start_scheduled_job()
-            self._job_status.running = True
-            self._job_status.next_run = self._calculate_next_run()
-            
-            # Persistir estado si no es una restauración
-            if not restore:
-                try:
-                    redis_client = get_redis_client()
-                    redis_client.set("cuenly:job:enabled", "true")
-                except Exception as e:
-                    logger.warning(f"No se pudo persistir estado start de job en Redis: {e}")
-                    
-            logger.info(f"Job programado iniciado. Próxima ejecución: {self._job_status.next_run}")
-        
+        try:
+            redis_client = get_redis_client()
+            redis_enabled = self._redis_bool(redis_client.get(self._job_enabled_key), default=False)
+            owner = self._decode_redis_str(redis_client.get(self._job_owner_key))
+
+            # Si ya está habilitado globalmente y otro pod es dueño, no iniciar aquí.
+            if redis_enabled and owner and owner != self._pod_id:
+                logger.info(
+                    "Job ya activo globalmente en otro pod (%s). Este pod (%s) no iniciará scheduler local.",
+                    owner, self._pod_id
+                )
+                self._job_status.running = True
+                return self._job_status
+
+            # Intentar reclamar ownership si no existe dueño
+            if not owner:
+                claimed = bool(
+                    redis_client.set(
+                        self._job_owner_key,
+                        self._pod_id,
+                        nx=True,
+                        ex=self._job_owner_ttl_seconds
+                    )
+                )
+                if claimed:
+                    owner = self._pod_id
+                else:
+                    owner = self._decode_redis_str(redis_client.get(self._job_owner_key))
+
+            if owner and owner != self._pod_id:
+                redis_client.set(self._job_enabled_key, "true")
+                logger.info(
+                    "Ownership del scheduler ya tomado por %s. Este pod (%s) no iniciará scheduler local.",
+                    owner, self._pod_id
+                )
+                self._job_status.running = True
+                return self._job_status
+
+            # Este pod es owner
+            if not self._job_status.running:
+                self.email_processor.start_scheduled_job(
+                    should_continue=self._should_local_scheduler_continue
+                )
+                self._job_status.running = True
+                self._job_status.next_run = self._calculate_next_run()
+
+            redis_client.set(self._job_enabled_key, "true")
+            redis_client.set(self._job_owner_key, self._pod_id, ex=self._job_owner_ttl_seconds)
+            logger.info(
+                "Job programado iniciado por pod owner=%s. Próxima ejecución: %s",
+                self._pod_id,
+                self._job_status.next_run
+            )
+        except Exception as e:
+            logger.warning(f"No se pudo coordinar start de job en Redis: {e}")
+            if not self._job_status.running:
+                self.email_processor.start_scheduled_job(
+                    should_continue=self._should_local_scheduler_continue
+                )
+                self._job_status.running = True
+                self._job_status.next_run = self._calculate_next_run()
+
         return self._job_status
     
     def stop_scheduled_job(self) -> JobStatus:
@@ -221,20 +328,23 @@ class CuenlyApp:
         Returns:
             JobStatus: Estado actual del trabajo.
         """
+        # Detener scheduler local si está corriendo en este pod
         if self._job_status.running:
             self.email_processor.stop_scheduled_job()
-            self._job_status.running = False
-            self._job_status.next_run = None
-            
-            # Persistir estado
-            try:
-                redis_client = get_redis_client()
-                redis_client.set("cuenly:job:enabled", "false")
-            except Exception as e:
-                logger.warning(f"No se pudo persistir estado stop de job en Redis: {e}")
-                
-            logger.info("Job programado detenido")
-        
+            logger.info("Job programado local detenido")
+
+        self._job_status.running = False
+        self._job_status.next_run = None
+        self._job_status.next_run_ts = None
+
+        # Persistir estado global SIEMPRE, incluso si el request llegó a un pod no-owner
+        try:
+            redis_client = get_redis_client()
+            redis_client.set(self._job_enabled_key, "false")
+            redis_client.delete(self._job_owner_key)
+        except Exception as e:
+            logger.warning(f"No se pudo persistir estado stop de job en Redis: {e}")
+
         return self._job_status
     
     def get_job_status(self) -> JobStatus:
@@ -244,25 +354,27 @@ class CuenlyApp:
         Returns:
             JobStatus: Estado actual del trabajo.
         """
-        # 1. Verificar fuente de verdad en Redis para entornos multi-worker
+        # 1. Verificar fuente de verdad en Redis para entornos multi-pod
+        redis_enabled = False
+        redis_owner = None
         try:
             redis_client = get_redis_client()
-            redis_val = redis_client.get("cuenly:job:enabled")
-            if redis_val in (b"false", "false", False):
-                if getattr(self._job_status, 'running', False) or (hasattr(self.email_processor, 'scheduled_job_status') and self.email_processor.scheduled_job_status().get('running', False)):
+            redis_enabled = self._redis_bool(redis_client.get(self._job_enabled_key), default=False)
+            redis_owner = self._decode_redis_str(redis_client.get(self._job_owner_key))
+            if not redis_enabled:
+                # Si globalmente está apagado, forzar stop local (si aplica)
+                if getattr(self._job_status, 'running', False) or (
+                    hasattr(self.email_processor, 'scheduled_job_status')
+                    and self.email_processor.scheduled_job_status().get('running', False)
+                ):
                     try:
                         if hasattr(self.email_processor, 'stop_scheduled_job'):
                             self.email_processor.stop_scheduled_job()
-                    except Exception: pass
+                    except Exception:
+                        pass
                 self._job_status.running = False
                 self._job_status.next_run = None
                 self._job_status.next_run_ts = None
-            elif redis_val in (b"true", "true", True):
-                if not getattr(self._job_status, 'running', False):
-                    try:
-                        if hasattr(self.email_processor, 'start_scheduled_job'):
-                            self.email_processor.start_scheduled_job()
-                    except Exception: pass
         except Exception as e:
             logger.warning(f"No se pudo verificar estado de Redis en get_job_status: {e}")
             
@@ -285,10 +397,35 @@ class CuenlyApp:
             from datetime import timezone
             tz = timezone.utc
 
+        local_running = False
         if hasattr(self.email_processor, 'scheduled_job_status'):
             sched = self.email_processor.scheduled_job_status()
             if isinstance(sched, dict) and sched:
-                self._job_status.running = bool(sched.get('running', False))
+                local_running = bool(sched.get('running', False))
+
+                # Auto-heal: si el job está habilitado globalmente pero no hay owner,
+                # este pod puede reclamar ownership y arrancar scheduler local.
+                if redis_enabled and not redis_owner and not local_running:
+                    try:
+                        redis_client = get_redis_client()
+                        claimed = bool(
+                            redis_client.set(
+                                self._job_owner_key,
+                                self._pod_id,
+                                nx=True,
+                                ex=self._job_owner_ttl_seconds
+                            )
+                        )
+                        if claimed:
+                            self.email_processor.start_scheduled_job(
+                                should_continue=self._should_local_scheduler_continue
+                            )
+                            local_running = True
+                            logger.info("Auto-heal scheduler: ownership reclamado por pod %s", self._pod_id)
+                    except Exception as e:
+                        logger.warning(f"No se pudo ejecutar auto-heal del scheduler: {e}")
+
+                self._job_status.running = bool(redis_enabled or local_running)
                 
                 def _to_iso(v):
                     try:
@@ -321,6 +458,7 @@ class CuenlyApp:
                 self._job_status.interval_minutes = int(sched.get('interval_minutes', self._job_status.interval_minutes))
                 self._job_status.last_result = sched.get('last_result')
             else:
+                self._job_status.running = bool(redis_enabled)
                 if self._job_status.running:
                     next_iso = self._calculate_next_run()
                     self._job_status.next_run = next_iso
@@ -332,7 +470,7 @@ class CuenlyApp:
         try:
             now_ts = int(_now().timestamp())
             interval_sec = max(60, int(self._job_status.interval_minutes) * 60)
-            if self._job_status.running and self._job_status.next_run_ts:
+            if local_running and self._job_status.running and self._job_status.next_run_ts:
                 drift = now_ts - self._job_status.next_run_ts
                 if drift > interval_sec * 2:
                     logger.warning(f"Job scheduler zombie detectado. Drift: {drift}s")

@@ -155,6 +155,8 @@ def get_job_status(job_id: str) -> dict:
         return {
             "id": job.id,
             "status": final_status,
+            "func_name": str(getattr(job, "func_name", "") or ""),
+            "meta": dict(getattr(job, "meta", {}) or {}),
             "result": job.result if job.is_finished else None,
             "error": str(job.exc_info) if job.is_failed else None,
             "created_at": job.created_at.isoformat() if job.created_at else None,
@@ -167,6 +169,100 @@ def get_job_status(job_id: str) -> dict:
             "id": job_id,
             "status": "not_found",
             "error": str(e)
+        }
+
+
+def cancel_job(job_id: str, requester_email: Optional[str] = None) -> dict:
+    """
+    Cancela un job RQ.
+
+    - queued/deferred/scheduled: cancelación inmediata
+    - started/running: envía comando de stop al worker
+    """
+    try:
+        from rq.job import Job
+        try:
+            from rq.command import send_stop_job_command
+        except Exception:
+            send_stop_job_command = None
+        from app.core.redis_client import get_redis_client
+
+        conn = get_redis_client(decode_responses=False)
+        job = Job.fetch(job_id, connection=conn)
+
+        owner_email = str((job.kwargs or {}).get("owner_email", "")).strip().lower()
+        if requester_email and owner_email and requester_email.strip().lower() != owner_email:
+            return {
+                "id": job_id,
+                "cancelled": False,
+                "status": "forbidden",
+                "message": "No autorizado para cancelar este job",
+            }
+
+        raw_status = str(job.get_status(refresh=True) or "").lower().strip()
+        if "." in raw_status:
+            raw_status = raw_status.split(".")[-1]
+
+        if job.is_finished:
+            return {
+                "id": job_id,
+                "cancelled": False,
+                "status": "finished",
+                "message": "El job ya finalizó",
+            }
+        if job.is_failed or raw_status in {"failed", "stopped", "canceled", "cancelled"}:
+            return {
+                "id": job_id,
+                "cancelled": False,
+                "status": raw_status or "failed",
+                "message": "El job ya no está en ejecución",
+            }
+
+        # Cancelación inmediata si aún está en cola
+        if raw_status in {"queued", "deferred", "scheduled"}:
+            job.meta["cancelled_by_user"] = True
+            job.save_meta()
+            job.cancel()
+            return {
+                "id": job_id,
+                "cancelled": True,
+                "status": "cancelled",
+                "message": "Job cancelado en cola",
+            }
+
+        # Si está corriendo, solicitar stop al worker
+        if raw_status in {"started", "running", "busy"}:
+            if send_stop_job_command is None:
+                return {
+                    "id": job_id,
+                    "cancelled": False,
+                    "status": "running",
+                    "message": "El worker no soporta stop remoto para jobs en ejecución",
+                }
+            job.meta["cancelled_by_user"] = True
+            job.save_meta()
+            send_stop_job_command(conn, job_id)
+            return {
+                "id": job_id,
+                "cancelled": True,
+                "status": "stopping",
+                "message": "Cancelación solicitada. El proceso se detendrá en breve.",
+            }
+
+        # Fallback: intentar cancel()
+        job.cancel()
+        return {
+            "id": job_id,
+            "cancelled": True,
+            "status": "cancelled",
+            "message": "Job cancelado",
+        }
+    except Exception as e:
+        return {
+            "id": job_id,
+            "cancelled": False,
+            "status": "error",
+            "message": str(e),
         }
 
 

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
 
     # Job
     JOB_INTERVAL_MINUTES: int = int(os.getenv("JOB_INTERVAL_MINUTES", 60))
+    # Por seguridad, NO restaurar el job de automatización al reiniciar
+    # salvo que se habilite explícitamente.
+    JOB_RESTORE_ON_BOOT: bool = os.getenv("JOB_RESTORE_ON_BOOT", "false").lower() in ("1", "true", "yes")
 
     # Auth / Multi-tenant
     AUTH_REQUIRE: bool = os.getenv("AUTH_REQUIRE", "true").lower() in ("1", "true", "yes")

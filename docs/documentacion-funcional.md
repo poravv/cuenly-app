@@ -61,9 +61,11 @@ La aplicación cuenta con feedback visual no intrusivo para todas las acciones d
 1. El usuario hace clic en "Procesar Correos" o activa la automatización.
 2. (Si su trial está expirado, el sistema bloquea aquí de inmediato y muestra una pantalla para ir a facturación).
 3. El backend lee los últimos emails buscando adjuntos válidos (XML/PDF).
-4. El sistema sube copias originales a un bucket remoto (MinIO) como respaldo legal.
-5. El motor extrae los datos (cabecera de la factura + ítems del producto) y los guarda en la base de datos.
-6. El usuario visualiza la grilla de facturas extraídas en el "Explorador de Facturas".
+4. El archivo se guarda temporalmente en `data/temp_pdfs` para staging local.
+5. El sistema sube copia original a MinIO (bucket privado) como respaldo legal.
+6. Tras completar el procesamiento, el staging local se limpia y se conserva MinIO como almacenamiento final.
+7. El motor extrae los datos (cabecera de la factura + ítems del producto) y los guarda en la base de datos.
+8. El usuario visualiza la grilla de facturas extraídas en el "Explorador de Facturas".
 
 **Comportamiento por botones de procesamiento:**
 - **Procesar normal**: toma correos pendientes según configuración.
@@ -71,10 +73,25 @@ La aplicación cuenta con feedback visual no intrusivo para todas las acciones d
 - **Procesar por rango**: fuerza búsqueda por rango de fechas del correo y recorre históricos del período solicitado.
 - En los tres casos, se aplica el mismo control anti-duplicado para evitar reprocesar correos o duplicar facturas.
 
+**Comportamiento con límite/disponibilidad de IA:**
+- Si el correo/archivo puede resolverse por XML nativo, se procesa aunque no haya cupo de IA.
+- Si requiere IA y el usuario no tiene cupo/disponibilidad:
+  - en flujo correo (IMAP): el evento queda en cola como pausa por IA (`skipped_ai_limit` / `skipped_ai_limit_unread`).
+  - en carga manual (PDF/XML fallback/imagen): se registra como `PENDING_AI` con `reason_code` (`ai_limit_reached` o `ai_unavailable`) y marcado como **sin reproceso automático**.
+- Los reintentos automáticos solo aplican a estados reintentables de cola IMAP; las cargas manuales pendientes requieren acción manual posterior.
+
+### Flujo de Descarga de Archivos
+1. El usuario solicita abrir/descargar un archivo de factura desde la UI.
+2. El backend valida ownership (o rol admin) y plan.
+3. Se verifica `minio_key` persistido y consistente con la factura (no se adivina archivo).
+4. El backend entrega:
+   - URL firmada (`/invoices/{id}/download`), o
+   - streaming proxy (`/invoices/{id}/file`) para evitar problemas de CORS en frontend.
+
 ### Flujo de Suscripción y Cobro (Vía Pagopar)
 1. El usuario ingresa a la pestaña "Suscripción" y selecciona el plan deseado (ej. PRO).
 2. El sistema muestra un formulario seguro de Bancard (PagoPar) para que introduzca los datos de su tarjeta de crédito.
 3. Se realiza un "catastro" (guardado seguro del token de la tarjeta).
 4. Se realiza el débito inicial de forma síncrona en el momento de crear la suscripción.
 5. Mensualmente, un cronjob interno en Cuenly debita automáticamente la siguiente cuota de su tarjeta guardada.
-5. Si falla el débito, se reintenta varias veces antes de cancelar el servicio y notificar al usuario.
+6. Si falla el débito, se reintenta varias veces antes de cancelar el servicio y notificar al usuario.

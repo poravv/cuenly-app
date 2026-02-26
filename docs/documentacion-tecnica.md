@@ -113,7 +113,7 @@ erDiagram
 ### 3.1 Arquitectura de Alto Rendimiento (Fan-out)
 Para evitar bloqueos en el backend, el procesamiento se divide en dos fases:
 - **Fase de Descubrimiento (Discovery)**: El API busca UIDs de correos, descarga metadatos básicos (Asunto, Remitente, Fecha) en bloque y registra el correo como `pending` en MongoDB. Esta fase toma segundos.
-- **Fase de Fan-out**: Cada correo descubierto se encola como una tarea independiente en **BullMQ/RQ**.
+- **Fase de Fan-out**: Cada correo descubierto se encola como una tarea independiente en **RQ (Redis Queue)**.
 - **Fase de Procesamiento**: Los Workers procesan cada tarea: descargan el contenido completo (FETCH), extraen adjuntos y ejecutan la lógica de IA.
 
 ### 3.2 Optimización IMAP y Conexiones
@@ -122,6 +122,7 @@ Para evitar bloqueos en el backend, el procesamiento se divide en dos fases:
 - **Prioridad XML**: El sistema intenta leer archivos XML primero usando un parser nativo SIFEN (para Facturación Electrónica en Paraguay). Si falla o falta data, usa GPT-4o como respaldo.
 - **Imágenes / PDF**: Se extraen los adjuntos (o se descargan desde enlaces), se almacenan los originales en MinIO (bucket privado) y se usa GPT-4o Vision para pasarlos a estructura JSON.
 - **Seguridad de Archivos**: Uso de `python-magic` (Magic Numbers) para validar que no sean ejecutables o scripts maliciosos ocultos bajo extensiones `.pdf`.
+- **Descubrimiento progresivo por lotes**: el matcher IMAP puede ir emitiendo tandas y encolando de forma incremental para mejorar el tiempo al primer evento visible en cola.
 
 ### 3.3 Idempotencia Global (Anti-Duplicados)
 - **Reserva atómica por correo (`processed_emails`)**:
@@ -136,6 +137,42 @@ Para evitar bloqueos en el backend, el procesamiento se divide en dos fases:
   - Fallback por `owner_email + message_id` cuando no hay CDC.
   - Índice único parcial en `(owner_email, cdc)` para reforzar unicidad en base de datos.
   - En caso de reingreso del mismo documento, se actualiza (`upsert`) el registro existente en lugar de crear uno nuevo.
+
+### 3.4 Estados operativos de cola y IA
+- **Procesamiento IMAP (correo)**:
+  - Estados reintentables por sistema: `skipped_ai_limit`, `skipped_ai_limit_unread`, `retry_requested`.
+  - Si un correo requiere IA y no hay cupo/disponibilidad, se pausa sin marcar como éxito falso de extracción.
+- **Carga manual (`/tasks/upload-pdf`, `/tasks/upload-xml`, `/upload-image`)**:
+  - Si IA no está disponible, se registra evento en `processed_emails` con `status=pending` y marca de **sin reproceso automático**.
+  - También se persiste tracking en `invoice_headers` con `status=PENDING_AI`.
+- **`reason_code` estable para frontend**:
+  - `ai_limit_reached`
+  - `ai_unavailable`
+  - `extraction_failed`
+
+### 3.5 Pipeline de archivos: staging local -> MinIO
+- El backend usa staging local en `TEMP_PDF_DIR` (por defecto `./data/temp_pdfs`) para recibir/normalizar archivos.
+- Luego sube el original a MinIO (`minio_key`) como almacenamiento fuente.
+- Al finalizar, limpia el archivo local mediante `cleanup_local_file_if_safe` para evitar duplicar almacenamiento.
+- Para descarga y visualización se utiliza **solo** `minio_key` persistido y validado contra la factura; no se hace “matching heurístico” de archivos.
+
+### 3.6 Endpoints de archivo (contrato)
+- `GET /invoices/{invoice_id}/download`:
+  - Retorna URL firmada (presigned) para abrir/descargar desde MinIO.
+  - Respuesta JSON con `success`, `download_url`, `filename`, `content_type`.
+- `GET /invoices/{invoice_id}/file`:
+  - Devuelve streaming proxy desde backend para evitar problemas de CORS/redirección en cliente.
+  - Responde `404` cuando `minio_key` no existe o no valida con el registro de factura.
+
+### 3.7 Endpoints de procesamiento (contrato resumido)
+- `POST /jobs/process-range`:
+  - Encola procesamiento por rango de fechas (histórico), con búsqueda `ALL` en el período indicado.
+  - El job responde rápido con `job_id`; el trabajo pesado se refleja en la cola/eventos.
+- `POST /tasks/upload-pdf`, `POST /tasks/upload-xml`, `POST /upload-image`:
+  - Encolan o resuelven inmediatamente según disponibilidad de IA.
+  - Si no hay IA, retornan resultado exitoso de registro con `reason_code` y persisten `PENDING_AI` para trazabilidad.
+- `GET /tasks/{job_id}`:
+  - Entrega estado del job (`queued`, `started`, `done`, `error`) y resultado asociado.
 
 ---
 
@@ -206,7 +243,7 @@ kubectl set image deployment/cuenly-frontend cuenly-frontend=ghcr.io/poravv/cuen
 Todo el tráfico, recursos de CPU y logs están integrados en Grafana / Prometheus / Loki en el namespace `cuenly-monitoring`.
 
 - **Retención de 30 Días Garantizada**: Loki (5GB) y Prometheus (8GB) usan **PersistentVolumeClaims** de clase Longhorn. Si el pod/nodo reinicia, no se pierden métricas ni historial de requests.
-- **Firebase Analytics**: Integración directa en Frontend Angular para trazabilidad de usuario final.
+- **Firebase Analytics**: Integración en Frontend Angular para trazabilidad de usuario final (backend no envía eventos a Firebase).
 - **AlertManager SMTP**: Notifica en caso de colas colapsadas o CPU al 100%.
 
 > **Ubicación de ConfigMaps**: *k8s-monitoring/simple-monitoring-stack.yaml*.
@@ -224,3 +261,6 @@ Todo el tráfico, recursos de CPU y logs están integrados en Grafana / Promethe
 - **Objetivo del ajuste**:
   - Evitar confusión con perfiles “default” no activados automáticamente.
   - Evitar colisión de puertos entre stack estándar y stack dev.
+- **Notas operativas**:
+  - El stack estándar usa `frontend` en `:4200` y backend por proxy Nginx.
+  - El perfil `dev` usa puertos alternos (`frontend-dev :4300`, `backend-dev :8001`) para ejecución paralela sin choque.

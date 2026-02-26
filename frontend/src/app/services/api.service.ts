@@ -260,6 +260,14 @@ export class ApiService {
     return this.http.get<TaskStatusResponse>(`${this.apiUrl}/tasks/${jobId}`);
   }
 
+  // Cancelar una tarea en cola/ejecución
+  cancelTask(jobId: string): Observable<{ success: boolean; job_id: string; status: string; message: string }> {
+    return this.http.post<{ success: boolean; job_id: string; status: string; message: string }>(
+      `${this.apiUrl}/tasks/${jobId}/cancel`,
+      {}
+    );
+  }
+
   // Limpiar tareas antiguas
   cleanupOldTasks(): Observable<{ message: string, cleaned_count: number }> {
     return this.http.delete<{ message: string, cleaned_count: number }>(`${this.apiUrl}/tasks/cleanup`);

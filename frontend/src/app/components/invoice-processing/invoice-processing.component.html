@@ -18,7 +18,7 @@
         </div>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-primary" (click)="getSystemStatus()"
-            [disabled]="loading || jobStatus?.is_processing">
+            [disabled]="loading || isProcessingBlocked">
             <i class="bi bi-arrow-clockwise me-1"></i>
             Actualizar
           </button>
@@ -238,7 +238,7 @@
             <div class="col-md-6">
               <div class="d-grid">
                 <button class="btn btn-success btn-lg py-3"
-                  [disabled]="!hasConfiguredEmail || loading || (jobStatus?.running === true) || jobStatus?.is_processing"
+                  [disabled]="!hasConfiguredEmail || loading || (jobStatus?.running === true) || isProcessingBlocked"
                   [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para habilitar esta acción' : null"
                   (click)="processEmails(true)">
                   <div class="d-flex align-items-center justify-content-center">
@@ -449,14 +449,14 @@
                 <!-- Controles principales -->
                 <div class="d-grid gap-2">
                   <button *ngIf="!jobStatus.running" class="btn btn-success py-2"
-                    [disabled]="!hasConfiguredEmail || loading || jobLoading || jobStatus.is_processing"
+                    [disabled]="!hasConfiguredEmail || loading || jobLoading || isProcessingBlocked"
                     [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para activar la automatización' : null"
                     (click)="startJob()">
                     <i class="bi bi-play-fill me-2"></i>
                     Activar Automatización
                   </button>
                   <button *ngIf="jobStatus.running" class="btn btn-danger py-2"
-                    [disabled]="loading || jobLoading || jobStatus.is_processing" (click)="stopJob()">
+                    [disabled]="loading || jobLoading || isProcessingBlocked" (click)="stopJob()">
                     <i class="bi bi-stop-fill me-2"></i>
                     Detener Automatización
                   </button>
@@ -481,7 +481,7 @@
                       <option *ngFor="let opt of intervalOptions" [ngValue]="opt">{{ opt }} minutos</option>
                     </select>
                     <button class="btn btn-outline-primary" (click)="applyJobInterval()"
-                      [disabled]="loading || jobLoading || jobStatus.is_processing">
+                      [disabled]="loading || jobLoading || isProcessingBlocked">
                       <i class="bi bi-check"></i>
                     </button>
                   </div>
@@ -572,23 +572,38 @@
               <label class="form-label small fw-semibold">Fecha Inicio</label>
               <input type="date" class="form-control" [(ngModel)]="dateRangeStart"
                 (ngModelChange)="onDateRangeStartChange($event)"
-                [disabled]="!hasConfiguredEmail || dateRangeLoading || jobStatus.is_processing">
+                [disabled]="!hasConfiguredEmail || dateRangeLoading || isProcessingBlocked">
             </div>
             <div class="col-md-4">
               <label class="form-label small fw-semibold">Fecha Fin</label>
               <input type="date" class="form-control" [(ngModel)]="dateRangeEnd"
                 (ngModelChange)="onDateRangeEndChange($event)"
-                [disabled]="!hasConfiguredEmail || dateRangeLoading || jobStatus.is_processing">
+                [disabled]="!hasConfiguredEmail || dateRangeLoading || isProcessingBlocked">
             </div>
             <div class="col-md-4">
               <button class="btn btn-primary w-100 fw-semibold" (click)="processDateRange()"
-                [disabled]="!hasConfiguredEmail || dateRangeLoading || !dateRangeStart || !dateRangeEnd || jobStatus.is_processing"
+                [disabled]="!hasConfiguredEmail || dateRangeLoading || !dateRangeStart || !dateRangeEnd || isProcessingBlocked"
                 [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para habilitar este procesamiento' : null">
                 <span *ngIf="!dateRangeLoading">
                   <i class="bi bi-play-circle me-2"></i>Procesar Rango
                 </span>
                 <span *ngIf="dateRangeLoading">
                   <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
+                </span>
+              </button>
+              <button
+                *ngIf="isDateRangeTaskActive && dateRangeJobId"
+                class="btn btn-outline-danger w-100 fw-semibold mt-2"
+                (click)="cancelDateRangeTask()"
+                [disabled]="dateRangeCancelLoading || dateRangeCancelRequested">
+                <span *ngIf="!dateRangeCancelLoading && !dateRangeCancelRequested">
+                  <i class="bi bi-stop-circle me-2"></i>Cancelar Proceso
+                </span>
+                <span *ngIf="dateRangeCancelLoading">
+                  <span class="spinner-border spinner-border-sm me-2"></span>Cancelando...
+                </span>
+                <span *ngIf="dateRangeCancelRequested && !dateRangeCancelLoading">
+                  <i class="bi bi-hourglass-split me-2"></i>Cancelación Solicitada
                 </span>
               </button>
             </div>
@@ -599,14 +614,26 @@
             Debes configurar una cuenta de correo para procesar por rango.
           </div>
 
+          <div *ngIf="dateRangeNotice" class="alert alert-warning mt-3 mb-0">
+            <i class="bi bi-info-circle-fill me-2"></i>
+            {{ dateRangeNotice }}
+          </div>
+
           <!-- Resultado del procesamiento -->
           <div *ngIf="dateRangeResult" class="alert alert-light mt-3 mb-0">
             <div class="d-flex align-items-center justify-content-between">
               <div>
-                <i class="bi bi-check-circle-fill text-success me-2"></i>
-                <strong *ngIf="dateRangeResult.job_id">Tarea encolada:</strong>
-                <span *ngIf="dateRangeResult.job_id">El proceso histórico ha iniciado. Puedes ver el progreso en
-                  <a routerLink="/automatizacion/cola" class="alert-link">Cola de Eventos</a>.</span>
+                <i class="bi me-2"
+                  [ngClass]="isDateRangeTaskActive ? 'bi-hourglass-split text-warning' : 'bi-check-circle-fill text-success'"></i>
+                <strong *ngIf="dateRangeResult.job_id && isDateRangeTaskActive">Tarea en progreso:</strong>
+                <span *ngIf="dateRangeResult.job_id && isDateRangeTaskActive">
+                  El proceso histórico está ejecutándose. Puedes ver el progreso en
+                  <a routerLink="/automatizacion/cola" class="alert-link">Cola de Eventos</a>.
+                </span>
+                <strong *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">Procesamiento finalizado:</strong>
+                <span *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">
+                  {{ dateRangeResult.invoice_count || 0 }} facturas procesadas.
+                </span>
                 <strong *ngIf="!dateRangeResult.job_id">Procesamiento completado:</strong>
                 <span *ngIf="!dateRangeResult.job_id">{{ dateRangeResult.invoice_count || 0 }} facturas procesadas</span>
               </div>

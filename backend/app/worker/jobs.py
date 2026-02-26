@@ -113,6 +113,94 @@ def process_emails_job(
         }
 
 
+def process_emails_range_job(
+    owner_email: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Job distribuido para procesamiento por rango histórico.
+
+    A diferencia del procesamiento manual "rápido", este flujo:
+    - fuerza búsqueda sobre LEÍDOS + NO LEÍDOS (ALL)
+    - procesa en fan-out por lotes de 50
+    - desactiva el cap por cuenta para recorrer todo el rango
+    """
+    logger.info(f"🚀 Iniciando job de rango para {owner_email}: {start_date} → {end_date}")
+
+    try:
+        from app.modules.email_processor.config_store import get_enabled_configs
+        from app.modules.email_processor.email_processor import MultiEmailProcessor
+        from app.models.models import MultiEmailConfig
+
+        def _parse_date(value: Optional[str]) -> Optional[datetime]:
+            if not value:
+                return None
+            return datetime.strptime(value, "%Y-%m-%d")
+
+        start_dt = _parse_date(start_date)
+        end_dt = _parse_date(end_date)
+
+        configs = get_enabled_configs(include_password=True, owner_email=owner_email)
+        if not configs:
+            logger.warning(f"⚠️ Sin cuentas configuradas para proceso por rango: {owner_email}")
+            return {
+                "success": False,
+                "message": "No hay cuentas de correo configuradas",
+                "owner_email": owner_email,
+                "invoice_count": 0,
+                "invoices": [],
+            }
+
+        email_configs = []
+        for cfg in configs:
+            try:
+                email_configs.append(MultiEmailConfig(**{**cfg, "owner_email": owner_email}))
+            except Exception as e:
+                logger.warning(f"Error creando config para {cfg.get('email')}: {e}")
+
+        if not email_configs:
+            return {
+                "success": False,
+                "message": "No se pudieron cargar las configuraciones de email",
+                "owner_email": owner_email,
+                "invoice_count": 0,
+                "invoices": [],
+            }
+
+        processor = MultiEmailProcessor(
+            email_configs=email_configs,
+            owner_email=owner_email,
+        )
+
+        result = processor.process_all_emails(
+            start_date=start_dt,
+            end_date=end_dt,
+            force_search_criteria_all=True,
+            fanout_batch_size=50,
+            disable_fanout_account_cap=True,
+        )
+
+        if hasattr(result, "dict"):
+            return result.dict()
+        if hasattr(result, "__dict__"):
+            return result.__dict__
+        return {
+            "success": True,
+            "result": result,
+            "owner_email": owner_email,
+        }
+    except Exception as e:
+        logger.error(f"❌ Error en job de rango para {owner_email}: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": str(e),
+            "owner_email": owner_email,
+            "invoice_count": 0,
+            "invoices": [],
+        }
+
+
 def process_single_account_job(
     email_address: str,
     owner_email: str,

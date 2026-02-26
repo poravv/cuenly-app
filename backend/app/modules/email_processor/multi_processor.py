@@ -511,7 +511,7 @@ class MultiEmailProcessor:
     # ------------------------------------------
     # Scheduler Moderno (ScheduledJobRunner)
     # ------------------------------------------
-    def start_scheduled_job(self):
+    def start_scheduled_job(self, should_continue=None):
         """
         Mantiene el nombre que espera tu API.
         Inicia un runner que ejecuta process_all_emails() cada X minutos.
@@ -528,7 +528,8 @@ class MultiEmailProcessor:
 
         self._scheduler = ScheduledJobRunner(
             interval_minutes=interval,
-            target=self.process_all_emails
+            target=self.process_all_emails,
+            should_continue=should_continue,
         )
         self._scheduler.start()
         logger.info(f"start_scheduled_job: iniciado (cada {interval} min)")

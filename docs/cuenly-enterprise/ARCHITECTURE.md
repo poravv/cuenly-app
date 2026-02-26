@@ -1,5 +1,11 @@
 # Cuenly Enterprise — Arquitectura del Sistema
 
+> ⚠️ **Documento de referencia Enterprise / Legacy**  
+> Este documento describe una arquitectura alternativa (Spring Boot + RabbitMQ + Next.js) y **no** representa el runtime principal actual de este repositorio (`FastAPI + RQ + Angular`).  
+> Para la arquitectura vigente, usar:
+> - `docs/documentacion-tecnica.md`
+> - `docs/documentacion-funcional.md`
+
 ## Visión General
 
 Cuenly Enterprise es una plataforma de **procesamiento automático de facturas electrónicas** orientada a empresas B2B en Paraguay. El sistema ingiere facturas desde correo electrónico (IMAP), las almacena en la nube (MinIO), las encola en RabbitMQ y las procesa de forma asíncrona extraendo datos estructurados del formato SIFEN (SET Paraguay).

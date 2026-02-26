@@ -41,6 +41,10 @@ Asegúrate de consultar estos archivos según tu rol o la tarea a realizar:
 - **SMTP server** (Envío de correos de Alerta)
 - **Claves Privadas/Públicas Pagopar** (Cobros locales)
 
+### Nota de Analytics (Firebase)
+- **Firebase Analytics se usa solo en Frontend** (eventos de navegación/uso desde Angular).
+- El backend no envía eventos a Firebase Analytics; su observabilidad va por logs/métricas internas.
+
 ---
 
 ## 🛠️ Instalación Rápida (Local)
@@ -52,6 +56,7 @@ Asegúrate de consultar estos archivos según tu rol o la tarea a realizar:
    ```
 
 2. Configura las variables de entorno en un archivo `.env` en la raíz (Backend) y tu `environment.ts` (Frontend). Es fundamental incluir `OPENAI_API_KEY` y claves de Firebase/Pagopar.
+   - Para tracking de usuario en Firebase, verifica `measurementId` en `frontend/src/environments/environment.ts`.
    
 3. Inicia los contenedores (stack local estándar):
    ```bash

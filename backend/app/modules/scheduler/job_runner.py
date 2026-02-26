@@ -10,8 +10,9 @@ class ScheduledJobRunner:
     Ejecuta 'target' cada 'interval_minutes' en un hilo daemon.
     No depende de 'schedule'.
     """
-    def __init__(self, interval_minutes: int, target: Callable[[], object], 
-                 start_date=None, end_date=None, stop_after_range: bool = False):
+    def __init__(self, interval_minutes: int, target: Callable[[], object],
+                 start_date=None, end_date=None, stop_after_range: bool = False,
+                 should_continue: Optional[Callable[[], bool]] = None):
         self.interval_minutes = max(1, int(interval_minutes or 1))
         self.target = target
         self._thread: Optional[threading.Thread] = None
@@ -25,6 +26,7 @@ class ScheduledJobRunner:
         self.start_date = start_date
         self.end_date = end_date
         self.stop_after_range = stop_after_range
+        self.should_continue = should_continue
 
     @property
     def is_running(self) -> bool:
@@ -49,6 +51,14 @@ class ScheduledJobRunner:
         logger.info(f"Scheduler iniciado (cada {self.interval_minutes} min)")
         self._next_run_ts = time.time()  # primera corrida inmediata
         while not self._stop.is_set():
+            if self.should_continue is not None:
+                try:
+                    if not self.should_continue():
+                        logger.info("Scheduler detenido por condición externa (ownership/flag).")
+                        self._stop.set()
+                        break
+                except Exception as e:
+                    logger.warning(f"Error evaluando condición de continuidad del scheduler: {e}")
             now = time.time()
             if self._next_run_ts is not None and now >= self._next_run_ts:
                 try:
@@ -73,6 +83,8 @@ class ScheduledJobRunner:
                 finally:
                     self._next_run_ts = time.time() + self.interval_minutes * 60
             time.sleep(1)
+        self._running = False
+        self._next_run_ts = None
         logger.info("Scheduler detenido")
 
     def start(self):

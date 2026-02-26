@@ -2,6 +2,7 @@
 
 Fecha: 2026-02-24  
 Estado: `IMPLEMENTADO`
+Última actualización: 2026-02-26
 
 ## Objetivo
 
@@ -67,6 +68,29 @@ Archivo: `backend/app/modules/email_processor/single_processor.py`
 Archivo: `frontend/src/app/services/api.service.ts`
 
 - `processEmailsDirect()` ahora usa default `50`.
+
+## 7) Mejoras posteriores de throughput y visibilidad en cola
+
+Archivos:
+- `backend/app/modules/email_processor/single_processor.py`
+- `backend/app/modules/email_processor/imap_client.py`
+- `frontend/src/app/components/profile/queue-events.component.*`
+
+Cambios aplicados:
+- **Encolado progresivo durante discovery**:
+  - fan-out puede encolar por tandas durante el barrido, sin esperar a terminar todo el rango.
+- **Lotes de FETCH IMAP ajustados para time-to-first-event**:
+  - `IMAP_SEARCH_FETCH_BATCH_SIZE` (default operativo: `100`).
+- **Presupuesto de sondas de cuerpo** para detectar enlaces cuando no hay señal en headers:
+  - `IMAP_BODY_PROBE_BUDGET` (default operativo: `600`).
+- **Streaming fan-out** habilitable:
+  - `FANOUT_STREAM_ENQUEUE` (default lógico: `true`).
+- **UX de cola para manual pendiente IA**:
+  - eventos manuales `pending` muestran “sin reproceso automático” y no se presentan como retry IMAP.
+
+Resultado funcional:
+- En rangos grandes, la cola muestra actividad antes (menos percepción de “no hace nada”).
+- Se mantiene idempotencia global sin duplicar procesamiento ni registros.
 
 ## Pruebas
 

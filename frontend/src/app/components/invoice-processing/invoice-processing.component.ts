@@ -40,8 +40,14 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   dateRangeStart: string = '';
   dateRangeEnd: string = '';
   dateRangeLoading = false;
+  dateRangeCancelLoading = false;
+  dateRangeCancelRequested = false;
   dateRangeResult: any = null;
+  dateRangeNotice: string | null = null;
   dateRangeError: string | null = null;
+  dateRangeJobId: string | null = null;
+  dateRangeTaskStatus: TaskStatusResponse | null = null;
+  dateRangePolling: Subscription | null = null;
 
   // Setup rápido en la misma pantalla (Fase 5 UX)
   showQuickSetup = false;
@@ -85,6 +91,9 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     if (savedResult) {
       try {
         this.dateRangeResult = JSON.parse(savedResult);
+        if (this.dateRangeResult?.job_id) {
+          this.dateRangeJobId = this.dateRangeResult.job_id;
+        }
       } catch (e) {
         localStorage.removeItem('cuenlyapp:dateRangeResult');
       }
@@ -120,6 +129,10 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       this.startAutoRefresh();
     }
 
+    if (this.dateRangeJobId) {
+      this.startDateRangeTaskPolling(this.dateRangeJobId, true);
+    }
+
     this.storageHandler = (e: StorageEvent) => {
       if (!e) { return; }
       if (e.key === 'cuenlyapp:autoRefresh' && e.newValue !== null) {
@@ -152,6 +165,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       this.processingPolling.unsubscribe();
       this.processingPolling = null;
     }
+    this.clearDateRangePolling();
     if (this.storageHandler) {
       window.removeEventListener('storage', this.storageHandler);
       this.storageHandler = null;
@@ -160,6 +174,15 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
 
   get hasConfiguredEmail(): boolean {
     return !!this.status?.email_configured;
+  }
+
+  get isDateRangeTaskActive(): boolean {
+    const status = String(this.dateRangeTaskStatus?.status || '').toLowerCase();
+    return status === 'queued' || status === 'running' || status === 'started';
+  }
+
+  get isProcessingBlocked(): boolean {
+    return !!this.jobStatus?.is_processing || this.isDateRangeTaskActive;
   }
 
   getSystemStatus(): void {
@@ -207,12 +230,6 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
           endpoint: '/job/status',
           action: 'loadJobStatus'
         });
-      },
-      complete: () => {
-        // Si ya no se está procesando nada, limpiar el resultado guardado de rango
-        if (this.jobStatus && !this.jobStatus.is_processing && this.dateRangeResult?.job_id) {
-          this.clearDateRangeResult();
-        }
       }
     });
   }
@@ -684,8 +701,13 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     }
 
     this.dateRangeLoading = true;
+    this.dateRangeCancelLoading = false;
+    this.dateRangeCancelRequested = false;
     this.dateRangeResult = null;
+    this.dateRangeNotice = null;
     this.dateRangeError = null;
+    this.dateRangeTaskStatus = null;
+    this.clearDateRangePolling();
 
     this.observability.logUserAction('process_date_range_started', 'InvoiceProcessingComponent', {
       start_date: this.dateRangeStart,
@@ -696,25 +718,23 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       next: (result) => {
         this.dateRangeResult = result;
         this.dateRangeLoading = false;
+        this.dateRangeCancelLoading = false;
+        this.dateRangeCancelRequested = false;
+        this.dateRangeNotice = null;
 
         // Persistir resultado
         if (result && result.job_id) {
+          this.dateRangeJobId = result.job_id;
           localStorage.setItem('cuenlyapp:dateRangeResult', JSON.stringify(result));
-        }
-
-        // Refrescar estado inmediatamente para capturar el flag is_processing
-        this.getJobStatus();
-
-        // Si no hay auto-refresh, hacer un par de refrescos extra manuales
-        if (!this.autoRefresh) {
-          setTimeout(() => this.getJobStatus(), 3000);
-          setTimeout(() => this.getJobStatus(), 8000);
+          this.startDateRangeTaskPolling(result.job_id);
         }
       },
       error: (err) => {
         this.dateRangeError = err.error?.detail || err.error?.message || 'Error al procesar rango de fechas';
+        this.dateRangeNotice = null;
         this.dateRangeLoading = false;
-        this.getJobStatus();
+        this.dateRangeCancelLoading = false;
+        this.dateRangeCancelRequested = false;
         this.observability.error('Error processing date range', err, 'InvoiceProcessingComponent', {
           action: 'processDateRange',
           start_date: this.dateRangeStart,
@@ -724,10 +744,177 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     });
   }
 
+  cancelDateRangeTask(): void {
+    if (!this.dateRangeJobId || this.dateRangeCancelLoading || this.dateRangeCancelRequested) {
+      return;
+    }
+
+    this.dateRangeLoading = false;
+    this.dateRangeCancelLoading = true;
+    const jobId = this.dateRangeJobId;
+    this.apiService.cancelTask(jobId).subscribe({
+      next: (resp) => {
+        const responseStatus = String(resp?.status || '').toLowerCase();
+        const isStopping = responseStatus === 'stopping';
+        const message = resp?.message || (isStopping
+          ? 'Cancelación solicitada. El proceso se está deteniendo.'
+          : 'Proceso cancelado por el usuario');
+
+        this.dateRangeLoading = false;
+        this.dateRangeCancelLoading = false;
+        this.dateRangeError = null;
+        this.dateRangeNotice = message;
+        this.dateRangeCancelRequested = isStopping;
+
+        if (isStopping) {
+          this.dateRangeTaskStatus = {
+            ...(this.dateRangeTaskStatus || {}),
+            job_id: jobId,
+            action: 'process_emails_range',
+            status: 'running',
+            message
+          };
+          this.dateRangeResult = {
+            ...(this.dateRangeResult || {}),
+            job_id: jobId,
+            success: true,
+            message
+          };
+          localStorage.setItem('cuenlyapp:dateRangeResult', JSON.stringify(this.dateRangeResult));
+          if (!this.dateRangePolling) {
+            this.startDateRangeTaskPolling(jobId, true);
+          }
+          return;
+        }
+
+        this.dateRangeTaskStatus = {
+          ...(this.dateRangeTaskStatus || {}),
+          job_id: jobId,
+          action: 'process_emails_range',
+          status: 'error',
+          finished_at: Date.now() / 1000,
+          message
+        };
+        this.dateRangeResult = {
+          ...(this.dateRangeResult || {}),
+          job_id: jobId,
+          success: true,
+          message
+        };
+        localStorage.setItem('cuenlyapp:dateRangeResult', JSON.stringify(this.dateRangeResult));
+        this.clearDateRangePolling();
+      },
+      error: (err) => {
+        this.dateRangeLoading = false;
+        this.dateRangeCancelLoading = false;
+        this.dateRangeCancelRequested = false;
+        this.dateRangeNotice = null;
+        this.dateRangeError = err?.error?.detail || err?.error?.message || 'No se pudo cancelar el procesamiento por rango';
+        this.observability.error('Error cancelling date range task', err, 'InvoiceProcessingComponent', {
+          action: 'cancelDateRangeTask',
+          endpoint: `/tasks/${jobId}/cancel`
+        });
+      }
+    });
+  }
+
   clearDateRangeResult(): void {
+    this.clearDateRangePolling();
+    this.dateRangeLoading = false;
+    this.dateRangeCancelLoading = false;
+    this.dateRangeCancelRequested = false;
     this.dateRangeResult = null;
+    this.dateRangeNotice = null;
     this.dateRangeError = null;
+    this.dateRangeJobId = null;
+    this.dateRangeTaskStatus = null;
     localStorage.removeItem('cuenlyapp:dateRangeResult');
+  }
+
+  private startDateRangeTaskPolling(jobId: string, isResume: boolean = false): void {
+    this.clearDateRangePolling();
+    this.dateRangeJobId = jobId;
+
+    if (!isResume) {
+      this.dateRangeTaskStatus = {
+        job_id: jobId,
+        action: 'process_emails_range',
+        status: 'queued'
+      };
+    }
+
+    this.dateRangePolling = interval(2500).pipe(
+      startWith(0),
+      switchMap(() => this.apiService.getTaskStatus(jobId))
+    ).subscribe({
+      next: (job: TaskStatusResponse | any) => {
+        const status = String(job?.status || '').toLowerCase();
+        const message = (job?.message || job?.error || '').toString();
+        this.dateRangeTaskStatus = {
+          ...job,
+          status: (status as any) || 'queued'
+        };
+
+        if (status === 'running' && message) {
+          this.dateRangeNotice = message;
+          this.dateRangeError = null;
+        }
+
+        if (status === 'queued' || status === 'running' || status === 'started') {
+          return;
+        }
+
+        if (status === 'done' || status === 'finished') {
+          this.dateRangeCancelRequested = false;
+          const normalized = this.normalizeTaskProcessResult(job?.result, job?.message);
+          this.dateRangeResult = {
+            ...(this.dateRangeResult || {}),
+            success: normalized.success,
+            message: normalized.message,
+            invoice_count: normalized.invoice_count || 0,
+            invoices: normalized.invoices || [],
+            job_id: jobId
+          };
+          this.dateRangeError = null;
+          localStorage.setItem('cuenlyapp:dateRangeResult', JSON.stringify(this.dateRangeResult));
+          this.clearDateRangePolling();
+          return;
+        }
+
+        this.dateRangeCancelRequested = false;
+        const terminalMessage = job?.message || job?.error || 'Error al procesar rango de fechas';
+        if (String(terminalMessage).toLowerCase().includes('cancel')) {
+          this.dateRangeNotice = terminalMessage;
+          this.dateRangeError = null;
+        } else {
+          this.dateRangeNotice = null;
+          this.dateRangeError = terminalMessage;
+        }
+        this.clearDateRangePolling();
+      },
+      error: (err) => {
+        const statusCode = err?.status;
+        if (isResume && statusCode === 404) {
+          this.clearDateRangeResult();
+          return;
+        }
+        this.dateRangeCancelRequested = false;
+        this.dateRangeNotice = null;
+        this.dateRangeError = err?.error?.detail || err?.error?.message || 'No se pudo consultar el estado del procesamiento por rango';
+        this.clearDateRangePolling();
+        this.observability.error('Error polling date range task', err, 'InvoiceProcessingComponent', {
+          action: 'pollDateRangeTask',
+          endpoint: `/tasks/${jobId}`
+        });
+      }
+    });
+  }
+
+  private clearDateRangePolling(): void {
+    if (this.dateRangePolling) {
+      this.dateRangePolling.unsubscribe();
+      this.dateRangePolling = null;
+    }
   }
 
   // Guardar fechas cuando cambien

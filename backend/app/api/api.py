@@ -681,6 +681,9 @@ async def get_task_status(job_id: str):
 
     raw_result = rq_job.get("result")
     raw_error = rq_job.get("error")
+    raw_meta = rq_job.get("meta")
+    job_meta = raw_meta if isinstance(raw_meta, dict) else {}
+    cancel_requested = bool(job_meta.get("cancelled_by_user"))
     ended_ts = _to_ts(rq_job.get("ended_at"))
 
     mapped_status = _map_status(raw_status)
@@ -695,18 +698,80 @@ async def get_task_status(job_id: str):
             message = raw_result.get("message") or "Completado"
         else:
             message = "Completado"
+    elif mapped_status == "running" and cancel_requested:
+        message = "Cancelación solicitada. El proceso se está deteniendo."
     elif mapped_status == "error":
-        message = raw_error or "Error en procesamiento"
+        lowered_error = str(raw_error or "").lower()
+        if raw_status in {"stopped", "canceled", "cancelled"} or any(
+            token in lowered_error for token in ("stopped", "cancel")
+        ):
+            message = "Proceso cancelado por el usuario"
+        else:
+            message = raw_error or "Error en procesamiento"
+
+    func_name = str(rq_job.get("func_name", "") or "")
+    action = "process_emails"
+    if "process_emails_range_job" in func_name:
+        action = "process_emails_range"
+    elif "process_single_email_from_uid_job" in func_name:
+        action = "process_single_email"
+    elif "process_emails_job" in func_name:
+        action = "process_emails"
 
     return {
         "job_id": job_id,
-        "action": "process_emails",
+        "action": action,
         "status": mapped_status,
         "created_at": _to_ts(rq_job.get("created_at")),
         "started_at": _to_ts(rq_job.get("started_at")),
         "finished_at": ended_ts,
         "message": message,
         "result": raw_result,
+    }
+
+
+@app.post("/tasks/{job_id}/cancel")
+async def cancel_task(
+    job_id: str,
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check),
+):
+    """Cancela una tarea en cola (o solicita stop si ya está en ejecución)."""
+    owner_email = (user.get("email") or "").lower()
+
+    # 1) Compatibilidad con cola local en memoria
+    local_job = task_queue.get(job_id)
+    if local_job:
+        status = str(local_job.get("status", "")).lower()
+        if status in {"done", "error"}:
+            return {"success": False, "job_id": job_id, "status": status, "message": "La tarea ya finalizó"}
+        with task_queue._lock:
+            if job_id in task_queue._jobs:
+                task_queue._jobs[job_id]["status"] = "error"
+                task_queue._jobs[job_id]["message"] = "Proceso cancelado por el usuario"
+                task_queue._jobs[job_id]["finished_at"] = time.time()
+        return {"success": True, "job_id": job_id, "status": "cancelled", "message": "Tarea cancelada"}
+
+    # 2) Cola distribuida RQ
+    from app.worker.queues import cancel_job as cancel_rq_job
+
+    result = cancel_rq_job(job_id, requester_email=owner_email)
+    status = str(result.get("status", "")).lower()
+    if status == "forbidden":
+        raise HTTPException(status_code=403, detail=result.get("message") or "No autorizado")
+    if status in {"not_found", ""}:
+        raise HTTPException(status_code=404, detail="Job no encontrado")
+    if not result.get("cancelled", False):
+        return {
+            "success": False,
+            "job_id": job_id,
+            "status": status or "unknown",
+            "message": result.get("message") or "No se pudo cancelar el job",
+        }
+    return {
+        "success": True,
+        "job_id": job_id,
+        "status": status,
+        "message": result.get("message") or "Cancelación solicitada",
     }
 
 @app.delete("/tasks/cleanup")
@@ -816,7 +881,6 @@ async def trigger_retry_skipped(
 @app.post("/jobs/process-range")
 async def process_range_job(
     payload: ProcessRangeRequest,
-    background_tasks: BackgroundTasks,
     # Importante: no bloquear por límite IA a nivel endpoint.
     # El procesamiento interno ya maneja XML vs IA y deja pendientes cuando corresponde.
     user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)
@@ -843,35 +907,36 @@ async def process_range_job(
             raise HTTPException(status_code=400, detail="Formato end_date inválido (Use YYYY-MM-DD)")
 
     if payload.run_async:
-        # Verificar si el job automático está ejecutándose para omitir si es necesario
+        # Evitar solapamiento con scheduler automático.
         job_status = invoice_sync.get_job_status()
         if job_status.running:
-            from app.models.models import ProcessResult
-            import uuid, time
-            job_id = str(uuid.uuid4().hex)
-            task_queue._jobs[job_id] = {
-                'job_id': job_id,
-                'action': 'process_emails_range',
-                'status': 'error',
-                'created_at': time.time(),
-                'started_at': time.time(),
-                'finished_at': time.time(),
-                'message': 'No se puede procesar el historial mientras la automatización esté activa. Detenga la automatización primero.',
-                'result': ProcessResult(
-                    success=False,
-                    message='No se puede procesar el historial mientras la automatización esté activa. Detenga la automatización primero.',
-                    invoice_count=0,
-                    invoices=[]
-                ),
-                '_func': None,
+            raise HTTPException(
+                status_code=409,
+                detail="No se puede procesar el historial mientras la automatización esté activa. Detenga la automatización primero."
+            )
+
+        try:
+            from app.worker.queues import enqueue_job
+            from app.worker.jobs import process_emails_range_job
+
+            start_str = payload.start_date if payload.start_date else None
+            end_str = payload.end_date if payload.end_date else None
+            job = enqueue_job(
+                process_emails_range_job,
+                owner_email=owner_email,
+                start_date=start_str,
+                end_date=end_str,
+                priority='high',
+                timeout='2h'
+            )
+            return {
+                "success": True,
+                "message": "Procesamiento por rango encolado exitosamente",
+                "job_id": job.id
             }
-            return {"success": False, "message": "Automatización activa. Deténgala primero.", "job_id": job_id}
-            
-        def _runner():
-            return process_emails_range_task(owner_email, s_date, e_date)
-            
-        job_id = task_queue.enqueue("process_emails_range", _runner)
-        return {"success": True, "message": "Procesamiento por rango encolado exitosamente", "job_id": job_id}
+        except Exception as e:
+            logger.error(f"Error encolando /jobs/process-range en RQ: {e}")
+            raise HTTPException(status_code=500, detail="No se pudo encolar el procesamiento por rango")
     else:
         # Ejecución síncrona (con precaución)
         try:
