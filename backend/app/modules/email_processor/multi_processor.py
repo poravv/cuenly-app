@@ -262,7 +262,14 @@ class MultiEmailProcessor:
             invoices=all_invoices
         )
 
-    def process_all_emails(self, start_date=None, end_date=None) -> ProcessResult:
+    def process_all_emails(
+        self,
+        start_date=None,
+        end_date=None,
+        force_search_criteria_all: bool = False,
+        fanout_batch_size: Optional[int] = None,
+        disable_fanout_account_cap: bool = False
+    ) -> ProcessResult:
         # ✅ CONVERSIÓN DE FECHAS (Strings a Datetime)
         from datetime import datetime
         dt_start = None
@@ -279,7 +286,11 @@ class MultiEmailProcessor:
         # Refrescar configuración en cada corrida para reflejar cambios dinámicos desde el frontend
         # Usar check_trial=True para que automáticamente filtre usuarios con trial expirado
         try:
-            configs_data = get_enabled_configs(include_password=True, check_trial=True)
+            configs_data = get_enabled_configs(
+                include_password=True,
+                check_trial=True,
+                owner_email=self.owner_email if self.owner_email else None
+            )
             self.email_configs = [MultiEmailConfig(**cfg) for cfg in configs_data]
         except Exception as e:
             logger.warning(f"No se pudo refrescar configuraciones desde MongoDB: {e}")
@@ -335,6 +346,11 @@ class MultiEmailProcessor:
         use_parallel = getattr(settings, 'ENABLE_PARALLEL_PROCESSING', True)
         max_workers = getattr(settings, 'MAX_CONCURRENT_ACCOUNTS', 10)
         fanout_per_account_cap = int(getattr(settings, "FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN", 200) or 0)
+        max_discovery_per_account = (
+            None
+            if disable_fanout_account_cap
+            else (fanout_per_account_cap if fanout_per_account_cap > 0 else None)
+        )
         
         if use_parallel and len(self.email_configs) > 1:
             logger.info(f"🚀 Procesamiento paralelo habilitado: {max_workers} cuentas simultáneas")
@@ -344,7 +360,8 @@ class MultiEmailProcessor:
                 try:
                     single = EmailProcessor(EmailConfig(
                         host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or [],
+                        search_criteria=("ALL" if force_search_criteria_all else cfg.search_criteria),
+                        search_terms=cfg.search_terms or [],
                         search_synonyms=cfg.search_synonyms or {},
                         fallback_sender_match=bool(getattr(cfg, "fallback_sender_match", False)),
                         fallback_attachment_match=bool(getattr(cfg, "fallback_attachment_match", False)),
@@ -358,7 +375,10 @@ class MultiEmailProcessor:
                         start_date=dt_start,
                         end_date=dt_end,
                         fan_out=True,
-                        max_discovery_emails=fanout_per_account_cap if fanout_per_account_cap > 0 else None
+                        max_discovery_emails=max_discovery_per_account,
+                        search_criteria_override="ALL" if force_search_criteria_all else None,
+                        respect_fanout_account_cap=not disable_fanout_account_cap,
+                        discovery_batch_size_override=fanout_batch_size
                     )
                     return (True, result, cfg.username)
                 except Exception as e:
@@ -427,7 +447,8 @@ class MultiEmailProcessor:
                 try:
                     single = EmailProcessor(EmailConfig(
                         host=cfg.host, port=cfg.port, username=cfg.username, password=cfg.password,
-                        search_criteria=cfg.search_criteria, search_terms=cfg.search_terms or [],
+                        search_criteria=("ALL" if force_search_criteria_all else cfg.search_criteria),
+                        search_terms=cfg.search_terms or [],
                         search_synonyms=cfg.search_synonyms or {},
                         fallback_sender_match=bool(getattr(cfg, "fallback_sender_match", False)),
                         fallback_attachment_match=bool(getattr(cfg, "fallback_attachment_match", False)),
@@ -439,7 +460,10 @@ class MultiEmailProcessor:
                         start_date=dt_start,
                         end_date=dt_end,
                         fan_out=True,
-                        max_discovery_emails=fanout_per_account_cap if fanout_per_account_cap > 0 else None
+                        max_discovery_emails=max_discovery_per_account,
+                        search_criteria_override="ALL" if force_search_criteria_all else None,
+                        respect_fanout_account_cap=not disable_fanout_account_cap,
+                        discovery_batch_size_override=fanout_batch_size
                     )
                     
                     if r.success:

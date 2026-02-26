@@ -177,7 +177,8 @@ class EmailProcessor:
 
     # --------- Search logic ---------
     def search_emails(self, ignore_date_filter: bool = False, 
-                      start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[dict]:
+                      start_date: Optional[datetime] = None, end_date: Optional[datetime] = None,
+                      search_criteria_override: Optional[str] = None) -> List[dict]:
         """
         Usa IMAPClient.search(...) con matcher robusto (acentos/sinonimos/fallback opcional).
         Filtra correos por fecha de registro del usuario (o start_date param) y opcionalmente end_date.
@@ -229,9 +230,8 @@ class EmailProcessor:
             logger.info(f"📅 Filtro de fecha fin explícito (Job): BEFORE {target_end.date()}")
 
         # Pasamos la lista de términos directamente al nuevo IMAPClient.search()
-        # Política consistente: por defecto procesar NO LEÍDOS (UNSEEN) en todos los flujos.
-        # Solo usar ALL cuando la cuenta esté explícitamente configurada con search_criteria=ALL.
-        unread_only = (str(self.config.search_criteria or 'UNSEEN').upper() != 'ALL')
+        effective_search_criteria = str(search_criteria_override or self.config.search_criteria or 'UNSEEN').upper()
+        unread_only = (effective_search_criteria != 'ALL')
         logger.info(
             "Criterio IMAP aplicado: %s (%s)",
             "UNSEEN" if unread_only else "ALL",
@@ -320,7 +320,10 @@ class EmailProcessor:
                        end_date: Optional[datetime] = None,
                        fan_out: bool = False,
                        ignore_date_filter: bool = False,
-                       max_discovery_emails: Optional[int] = None) -> ProcessResult:
+                       max_discovery_emails: Optional[int] = None,
+                       search_criteria_override: Optional[str] = None,
+                       respect_fanout_account_cap: bool = True,
+                       discovery_batch_size_override: Optional[int] = None) -> ProcessResult:
         """
         Punto de entrada principal para procesar correos de la cuenta.
         - fan_out=True: Descubrimiento rápido y encolado a RQ (High Performance).
@@ -341,7 +344,8 @@ class EmailProcessor:
             email_info = self.search_emails(
                 ignore_date_filter=ignore_date_filter,
                 start_date=start_date,
-                end_date=end_date
+                end_date=end_date,
+                search_criteria_override=search_criteria_override
             )
             if not email_info:
                 self.disconnect()
@@ -351,9 +355,10 @@ class EmailProcessor:
 
             # Caps para discovery de fan-out: por cuenta y/o por llamada (global restante).
             discovery_cap_candidates = []
-            fanout_account_cap = int(getattr(settings, "FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN", 0) or 0)
-            if fanout_account_cap > 0:
-                discovery_cap_candidates.append(fanout_account_cap)
+            if respect_fanout_account_cap:
+                fanout_account_cap = int(getattr(settings, "FANOUT_MAX_UIDS_PER_ACCOUNT_PER_RUN", 0) or 0)
+                if fanout_account_cap > 0:
+                    discovery_cap_candidates.append(fanout_account_cap)
 
             if max_discovery_emails is not None:
                 try:
@@ -399,9 +404,12 @@ class EmailProcessor:
                     from app.worker.jobs import process_single_email_from_uid_job
                     
                     # Batch configurable para discovery masivo
-                    discovery_batch_size = max(
-                        1, int(getattr(settings, "FANOUT_DISCOVERY_BATCH_SIZE", 250) or 250)
+                    effective_discovery_batch_size = (
+                        discovery_batch_size_override
+                        if discovery_batch_size_override is not None
+                        else getattr(settings, "FANOUT_DISCOVERY_BATCH_SIZE", 250)
                     )
+                    discovery_batch_size = max(1, int(effective_discovery_batch_size or 250))
 
                     # Estados existentes que NO deben reencolarse automáticamente
                     non_requeueable_statuses = {

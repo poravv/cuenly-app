@@ -199,7 +199,13 @@ def process_emails_range_task(user_email: str, start_date=None, end_date=None):
             
         mp = MultiEmailProcessor(email_configs=email_configs, owner_email=user_email)
         logger.info(f"🚀 Iniciando job por rango para {user_email}: {start_date} - {end_date}")
-        return mp.process_all_emails(start_date=start_date, end_date=end_date)
+        return mp.process_all_emails(
+            start_date=start_date,
+            end_date=end_date,
+            force_search_criteria_all=True,
+            fanout_batch_size=50,
+            disable_fanout_account_cap=True
+        )
         
     except Exception as e:
         logger.error(f"❌ Error en process_emails_range_task para {user_email}: {e}")
@@ -873,7 +879,13 @@ async def process_range_job(
             email_configs = [MultiEmailConfig(**{**c, 'owner_email': owner_email}) for c in configs]
             mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
             
-            result = mp.process_all_emails(start_date=s_date, end_date=e_date)
+            result = mp.process_all_emails(
+                start_date=s_date,
+                end_date=e_date,
+                force_search_criteria_all=True,
+                fanout_batch_size=50,
+                disable_fanout_account_cap=True
+            )
             return result
         except Exception as e:
             logger.error(f"Error range sync: {e}")

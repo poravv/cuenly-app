@@ -39,6 +39,10 @@ def decode_mime_header(header_value: str) -> str:
 _ATTACHMENT_PARAM_RE = re.compile(rb'"(?:NAME|FILENAME)\*?"\s+"([^"]+)"', re.IGNORECASE)
 _ATTACHMENT_EXT_RE = re.compile(r'"([^"]+\.(?:xml|pdf|zip|jpg|jpeg|png))"', re.IGNORECASE)
 _XML_URL_RE = re.compile(r'https?://[^\s<>"\']+\.xml(?:[?#][^\s<>"\']*)?', re.IGNORECASE)
+_INVOICE_FILE_URL_RE = re.compile(
+    r'https?://[^\s<>"\']+\.(?:xml|pdf|jpg|jpeg|png)(?:[?#][^\s<>"\']*)?',
+    re.IGNORECASE
+)
 
 
 def _extract_attachment_names_from_fetch_meta(fetch_meta: Any) -> List[str]:
@@ -92,6 +96,29 @@ def _has_xml_url_hint(text: str) -> bool:
     )
 
 
+def _has_invoice_url_hint(text: str) -> bool:
+    """Detecta enlaces a archivos de factura (xml/pdf/imagen) o frases comunes."""
+    if not text:
+        return False
+    lowered = text.lower()
+    if _INVOICE_FILE_URL_RE.search(lowered):
+        return True
+    return any(
+        marker in lowered
+        for marker in (
+            "descargar xml",
+            "descargar pdf",
+            "adjunto xml",
+            "adjunto pdf",
+            "archivo xml",
+            "archivo pdf",
+            "comprobante",
+            "factura electronica",
+            "factura electrónica",
+        )
+    )
+
+
 def _has_xml_attachment_hint(fetch_meta: Any, attachment_names: List[str]) -> bool:
     """Determina si la metadata IMAP indica presencia de XML adjunto."""
     for name in attachment_names or []:
@@ -120,6 +147,45 @@ def _has_xml_attachment_hint(fetch_meta: Any, attachment_names: List[str]) -> bo
         return True
 
     return bool(_XML_URL_RE.search(raw_text))
+
+
+def _has_invoice_attachment_hint(fetch_meta: Any, attachment_names: List[str]) -> bool:
+    """Determina si la metadata IMAP indica adjuntos de factura (xml/pdf/imagen)."""
+    allowed_exts = (".xml", ".pdf", ".jpg", ".jpeg", ".png")
+    for name in attachment_names or []:
+        lname = (name or "").lower()
+        if any(ext in lname for ext in allowed_exts):
+            return True
+
+    raw_text = (
+        fetch_meta.decode("utf-8", errors="ignore")
+        if isinstance(fetch_meta, (bytes, bytearray))
+        else str(fetch_meta or "")
+    ).lower()
+    if not raw_text:
+        return False
+
+    if any(
+        marker in raw_text
+        for marker in (
+            '"application" "xml"',
+            '"text" "xml"',
+            "application/xml",
+            "text/xml",
+            "+xml",
+            '"application" "pdf"',
+            "application/pdf",
+            '"image" "jpeg"',
+            '"image" "jpg"',
+            '"image" "png"',
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+        )
+    ):
+        return True
+
+    return bool(_INVOICE_FILE_URL_RE.search(raw_text))
 
 
 def _decode_snippet_bytes(payload: bytes) -> str:
@@ -159,9 +225,9 @@ class IMAPClient:
         self.conn: Optional[imaplib.IMAP4_SSL] = None
         self.is_gmail: bool = False
 
-    def _has_xml_url_in_body_snippet(self, email_uid: str, max_bytes: int = 8192) -> bool:
+    def _has_invoice_url_in_body_snippet(self, email_uid: str, max_bytes: int = 8192) -> bool:
         """
-        Detecta URLs .xml en el cuerpo sin descargar el correo completo.
+        Detecta URLs de archivo de factura (xml/pdf/imagen) en el cuerpo sin descargar el correo completo.
         Hace un FETCH parcial de texto (primeros bytes).
         """
         if not self.conn:
@@ -180,9 +246,13 @@ class IMAPClient:
                 return False
 
             snippet_text = "\n".join(parts)
-            return _has_xml_url_hint(snippet_text)
+            return _has_invoice_url_hint(snippet_text)
         except Exception:
             return False
+
+    def _has_xml_url_in_body_snippet(self, email_uid: str, max_bytes: int = 8192) -> bool:
+        """Compatibilidad retroactiva."""
+        return self._has_invoice_url_in_body_snippet(email_uid=email_uid, max_bytes=max_bytes)
 
     def _xoauth2_callback(self, challenge: bytes) -> bytes:
         """
@@ -399,8 +469,8 @@ class IMAPClient:
             source_counts = {"subject": 0, "sender": 0, "attachment": 0}
             uid_regex = re.compile(rb'UID (\d+)')
             compiled_terms_debug = [term.normalized for term in compiled_terms]
-            xml_candidate_count = 0
-            xml_filtered_out = 0
+            invoice_candidate_count = 0
+            invoice_filtered_out = 0
             body_probe_count = 0
             body_probe_hits = 0
             body_probe_budget = 1500
@@ -418,7 +488,7 @@ class IMAPClient:
                 batch_uids = candidate_uids[start_idx : start_idx + 500]
                 uid_str = ",".join(batch_uids)
 
-                # Siempre traer BODYSTRUCTURE para aplicar filtro inicial obligatorio por XML.
+                # Siempre traer BODYSTRUCTURE para aplicar filtro inicial por señal de factura.
                 fetch_query = '(BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])'
 
                 status, fetch_data = self.conn.uid('FETCH', uid_str, fetch_query)
@@ -458,23 +528,23 @@ class IMAPClient:
                                 if isinstance(msg_header, (bytes, bytearray))
                                 else str(msg_header)
                             )
-                            has_xml_attachment = _has_xml_attachment_hint(msg_header, attachment_names)
-                            has_xml_url = _has_xml_url_hint(subject_text) or _has_xml_url_hint(fetch_meta_text)
-                            has_xml_signal = has_xml_attachment or has_xml_url
+                            has_invoice_attachment = _has_invoice_attachment_hint(msg_header, attachment_names)
+                            has_invoice_url = _has_invoice_url_hint(subject_text) or _has_invoice_url_hint(fetch_meta_text)
+                            has_invoice_signal = has_invoice_attachment or has_invoice_url
 
-                            # Fallback: detectar URL .xml en el cuerpo del correo con FETCH parcial.
-                            if not has_xml_signal and body_probe_count < body_probe_budget:
+                            # Fallback: detectar URL de archivo en cuerpo con FETCH parcial.
+                            if not has_invoice_signal and body_probe_count < body_probe_budget:
                                 body_probe_count += 1
-                                if self._has_xml_url_in_body_snippet(uid):
-                                    has_xml_signal = True
+                                if self._has_invoice_url_in_body_snippet(uid):
+                                    has_invoice_signal = True
                                     body_probe_hits += 1
 
-                            # Requisito inicial: solo procesar candidatos con señal XML.
-                            if not has_xml_signal:
-                                xml_filtered_out += 1
+                            # Requisito inicial: solo procesar candidatos con señal de adjunto/archivo de factura.
+                            if not has_invoice_signal:
+                                invoice_filtered_out += 1
                                 continue
 
-                            xml_candidate_count += 1
+                            invoice_candidate_count += 1
 
                             matched, matched_source, matched_term = match_email_candidate(
                                 subject=subject_text,
@@ -492,7 +562,7 @@ class IMAPClient:
                                     "subject": subject_text,
                                     "sender": sender_text,
                                     "date": email_dt,
-                                    "has_xml_signal": True,
+                                    "has_invoice_signal": True,
                                     "match_source": matched_source,
                                     "matched_term": matched_term,
                                 })
@@ -502,11 +572,11 @@ class IMAPClient:
             uids_with_subjects = matched_items
             logger.info(
                 "✅ Filtrado local completado: %s correos | términos=%s | "
-                "xml_candidates=%s no_xml=%s body_probe=%s body_hits=%s | subject=%s sender=%s attachment=%s",
+                "invoice_candidates=%s no_invoice_signal=%s body_probe=%s body_hits=%s | subject=%s sender=%s attachment=%s",
                 len(uids_with_subjects),
                 compiled_terms_debug,
-                xml_candidate_count,
-                xml_filtered_out,
+                invoice_candidate_count,
+                invoice_filtered_out,
                 body_probe_count,
                 body_probe_hits,
                 source_counts["subject"],
