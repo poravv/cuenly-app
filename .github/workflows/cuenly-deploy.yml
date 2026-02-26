@@ -504,6 +504,8 @@ jobs:
             --from-literal=LOG_LEVEL="${{ secrets.LOG_LEVEL }}" \
             --from-literal=TEMP_PDF_DIR="${{ secrets.TEMP_PDF_DIR }}" \
             --from-literal=JOB_INTERVAL_MINUTES="${{ secrets.JOB_INTERVAL_MINUTES }}" \
+            --from-literal=JOB_RESTORE_ON_BOOT="${{ secrets.JOB_RESTORE_ON_BOOT || 'false' }}" \
+            --from-literal=JOB_OWNER_TTL_SECONDS="${{ secrets.JOB_OWNER_TTL_SECONDS || '120' }}" \
             --from-literal=AUTH_REQUIRE="${{ secrets.AUTH_REQUIRE }}" \
             --from-literal=FIREBASE_PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID }}" \
             --from-literal=MULTI_TENANT_ENFORCE="${{ secrets.MULTI_TENANT_ENFORCE }}" \
