@@ -307,7 +307,7 @@ def process_single_email_from_uid_job(
         processor = EmailProcessor(email_cfg, owner_email=owner_email)
         
         if not processor.connect():
-            return {"success": False, "message": "No se pudo conectar a la cuenta IMAP"}
+            return {"success": False, "message": processor.get_last_connect_error_message()}
             
         invoice = processor._process_single_email(email_uid, already_claimed=preclaimed)
         

@@ -7,7 +7,7 @@ import logging
 import time
 import threading
 import socket
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Union
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from queue import Queue, Empty
@@ -70,7 +70,8 @@ class IMAPConnectionPool:
         self.connection_timeout = connection_timeout
         self.pools: Dict[str, Queue] = {}
         self.active_connections: Dict[str, List[IMAPConnection]] = {}
-        self.lock = threading.Lock()
+        self.last_error_by_config: Dict[str, str] = {}
+        self.lock = threading.RLock()
         
         # Iniciar thread de limpieza
         self.cleanup_thread = threading.Thread(target=self._cleanup_expired_connections, daemon=True)
@@ -81,11 +82,30 @@ class IMAPConnectionPool:
     def _get_config_key(self, config: EmailConfig) -> str:
         """Genera clave única para la configuración de email."""
         return f"{config.host}:{config.port}:{config.username}"
+
+    def _set_last_error(self, config_key: str, message: str) -> None:
+        with self.lock:
+            self.last_error_by_config[config_key] = str(message or "").strip()
+
+    def _clear_last_error(self, config_key: str) -> None:
+        with self.lock:
+            self.last_error_by_config.pop(config_key, None)
+
+    def get_last_error(self, config_or_key: Union[EmailConfig, str]) -> Optional[str]:
+        """Obtiene la última causa conocida de fallo de conexión para una configuración."""
+        if isinstance(config_or_key, EmailConfig):
+            config_key = self._get_config_key(config_or_key)
+        else:
+            config_key = str(config_or_key)
+        with self.lock:
+            value = self.last_error_by_config.get(config_key)
+        return value or None
     
     def _create_connection(self, config: EmailConfig) -> Optional[IMAPConnection]:
         """Crea una nueva conexión IMAP con retry automático. Soporta OAuth2 XOAUTH2."""
         max_retries = 3
         retry_delay = 2  # segundos
+        config_key = self._get_config_key(config)
         
         # Detectar tipo de autenticación
         auth_type = getattr(config, 'auth_type', 'password')
@@ -123,6 +143,18 @@ class IMAPConnectionPool:
                         conn.login(config.username, config.password)
                 except (socket.timeout, socket.error, imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
                     logger.warning(f"Error de autenticación IMAP (intento {attempt + 1}/{max_retries}): {e}")
+                    err_raw = str(e)
+                    if "AUTHENTICATIONFAILED" in err_raw or "Invalid credentials" in err_raw:
+                        self._set_last_error(
+                            config_key,
+                            f"IMAP_AUTH_FAILED: Credenciales inválidas para {config.username} (AUTHENTICATIONFAILED). "
+                            "Verifica usuario y App Password.",
+                        )
+                    else:
+                        self._set_last_error(
+                            config_key,
+                            f"IMAP_AUTH_ERROR: Error autenticando {config.username}: {err_raw}",
+                        )
                     try:
                         conn.close()
                         conn.logout()
@@ -134,13 +166,13 @@ class IMAPConnectionPool:
                     continue
                 
                 connection_time = time.time() - start_time
-                config_key = self._get_config_key(config)
                 
                 imap_conn = IMAPConnection(
                     connection=conn,
                     config_key=config_key,
                     last_used=datetime.now()
                 )
+                self._clear_last_error(config_key)
                 
                 auth_method = "XOAUTH2" if auth_type == "oauth2" else "password"
                 logger.info(f"✅ Nueva conexión IMAP creada para {config.username} en {connection_time:.2f}s (intento {attempt + 1}, auth={auth_method})")
@@ -148,6 +180,10 @@ class IMAPConnectionPool:
                 
             except (socket.timeout, socket.error, socket.gaierror, OSError) as e:
                 logger.warning(f"Error de red IMAP (intento {attempt + 1}/{max_retries}) para {config.username}: {e}")
+                self._set_last_error(
+                    config_key,
+                    f"IMAP_NETWORK_ERROR: Error de red/conectividad IMAP para {config.username}: {e}",
+                )
                 if attempt == max_retries - 1:
                     logger.error(f"❌ Falló conexión IMAP después de {max_retries} intentos para {config.username}")
                     return None
@@ -155,6 +191,10 @@ class IMAPConnectionPool:
                 
             except (imaplib.IMAP4.abort, imaplib.IMAP4.error) as e:
                 logger.warning(f"Error IMAP (intento {attempt + 1}/{max_retries}) para {config.username}: {e}")
+                self._set_last_error(
+                    config_key,
+                    f"IMAP_PROTOCOL_ERROR: Error de protocolo IMAP para {config.username}: {e}",
+                )
                 if attempt == max_retries - 1:
                     logger.error(f"❌ Error IMAP después de {max_retries} intentos para {config.username}")
                     return None
@@ -162,6 +202,10 @@ class IMAPConnectionPool:
                 
             except Exception as e:
                 logger.error(f"❌ Error inesperado creando conexión IMAP para {config.username}: {e}")
+                self._set_last_error(
+                    config_key,
+                    f"IMAP_UNEXPECTED_ERROR: Error inesperado conectando {config.username}: {e}",
+                )
                 return None
         
         return None
@@ -222,6 +266,14 @@ class IMAPConnectionPool:
                     self.active_connections[config_key].append(imap_conn)
                     return imap_conn
             
+            if len(self.active_connections[config_key]) >= self.max_connections:
+                self._set_last_error(
+                    config_key,
+                    (
+                        f"IMAP_POOL_EXHAUSTED: Pool de conexiones IMAP lleno para {config.username} "
+                        f"({len(self.active_connections[config_key])}/{self.max_connections})"
+                    ),
+                )
             logger.warning(f"⚠️ No se pudo obtener conexión IMAP para {config.username} (pool lleno)")
             return None
     

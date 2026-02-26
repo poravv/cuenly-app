@@ -155,7 +155,7 @@ class MultiEmailProcessor:
                 
                 # Conectar y buscar correos
                 if not single.connect():
-                    errors.append(f"Error conectando a {cfg.username}")
+                    errors.append(single.get_last_connect_error_message())
                     continue
                 
                 # Si fan_out está activo, usamos el nuevo método de SingleProcessor

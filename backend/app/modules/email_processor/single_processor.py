@@ -81,6 +81,7 @@ class EmailProcessor:
         # Usar pool de conexiones en lugar de cliente directo
         self.connection_pool = get_imap_pool()
         self.current_connection = None
+        self.last_connect_error: str = ""
         
         # Detectar tipo de autenticación OAuth vs password
         auth_type = getattr(self.config, 'auth_type', 'password')
@@ -107,6 +108,7 @@ class EmailProcessor:
     # --------- IMAP high-level con pool ---------
     def connect(self) -> bool:
         """Obtiene conexión del pool o crea una nueva."""
+        self.last_connect_error = ""
         if self.current_connection and self.current_connection.test_connection():
             return True
         
@@ -130,8 +132,50 @@ class EmailProcessor:
             logger.info(f"🔄 Conexión IMAP obtenida del pool para {self.config.username} en {elapsed_conn:.2f}s")
             return True
         
-        logger.error(f"❌ No se pudo obtener conexión IMAP para {self.config.username} (espera {elapsed_conn:.2f}s)")
+        pool_reason = None
+        try:
+            pool_reason = self.connection_pool.get_last_error(self.config)
+        except Exception:
+            pool_reason = None
+        if pool_reason:
+            self.last_connect_error = pool_reason
+            logger.error(
+                "❌ No se pudo obtener conexión IMAP para %s (espera %.2fs). Motivo: %s",
+                self.config.username,
+                elapsed_conn,
+                pool_reason,
+            )
+        else:
+            logger.error(f"❌ No se pudo obtener conexión IMAP para {self.config.username} (espera {elapsed_conn:.2f}s)")
         return False
+
+    def get_last_connect_error_message(self) -> str:
+        """
+        Devuelve un mensaje claro y accionable para UI/API cuando falla connect().
+        """
+        account = self.config.username
+        base = f"No se pudo conectar a la cuenta {account}"
+        reason = (self.last_connect_error or "").strip()
+        if not reason:
+            return base
+
+        if reason.startswith("IMAP_AUTH_FAILED:"):
+            return (
+                f"{base}. Credenciales IMAP inválidas (AUTHENTICATIONFAILED). "
+                "Verifica usuario y App Password."
+            )
+        if reason.startswith("IMAP_NETWORK_ERROR:"):
+            return (
+                f"{base}. Error de red hacia el servidor IMAP "
+                "(timeout/DNS/firewall)."
+            )
+        if reason.startswith("IMAP_POOL_EXHAUSTED:"):
+            return f"{base}. El pool IMAP está saturado temporalmente; reintenta."
+        if reason.startswith("IMAP_PROTOCOL_ERROR:"):
+            return f"{base}. Error de protocolo IMAP: {reason.split(':', 1)[1].strip()}"
+        if reason.startswith("IMAP_AUTH_ERROR:"):
+            return f"{base}. Error de autenticación IMAP: {reason.split(':', 1)[1].strip()}"
+        return f"{base}. Detalle: {reason}"
 
     def disconnect(self):
         """Devuelve conexión al pool en lugar de cerrarla."""
@@ -343,7 +387,7 @@ class EmailProcessor:
         result = ProcessResult(success=False, message="", invoice_count=0, invoices=[])
         
         if not self.client.conn and not self.connect():
-            result.message = f"No se pudo conectar a la cuenta {self.config.username}"
+            result.message = self.get_last_connect_error_message()
             return result
 
         try:
