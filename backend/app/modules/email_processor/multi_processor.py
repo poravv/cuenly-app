@@ -235,14 +235,19 @@ class MultiEmailProcessor:
         # Preparar mensaje de resultado
         if fan_out:
             account_count = len([v for v in queued_accounts.values() if v > 0])
-            message_parts = [
-                (
-                    f"Fan-out manual completado: {total_processed}/{limit} correos encolados "
-                    f"en {account_count} cuenta(s)"
-                )
-            ]
+            if total_processed > 0:
+                message_parts = [
+                    (
+                        f"Proceso iniciado: {total_processed} de {limit} correos quedaron listos "
+                        f"para procesarse en {account_count} cuenta(s)"
+                    )
+                ]
+            else:
+                message_parts = ["No se encontraron correos nuevos para procesar en este momento"]
             if fanout_per_account_cap > 0:
-                message_parts.append(f"Cap por cuenta aplicado: {fanout_per_account_cap}")
+                message_parts.append(
+                    "Se aplicó un límite por cuenta para mantener un rendimiento estable"
+                )
         else:
             message_parts = [f"Procesamiento manual completado: {total_processed} facturas procesadas"]
         if remaining_emails > 0:

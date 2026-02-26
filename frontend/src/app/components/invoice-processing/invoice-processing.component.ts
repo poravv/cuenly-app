@@ -9,7 +9,7 @@ import {
   EmailConfig,
   EmailTestResult,
 } from '../../models/invoice.model';
-import { interval, Subscription } from 'rxjs';
+import { interval, Subscription, startWith, switchMap } from 'rxjs';
 import { ObservabilityService } from '../../services/observability.service';
 
 @Component({
@@ -226,43 +226,113 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.processingResult = null;
     this.error = null;
+    this.processingJobId = null;
+    this.clearProcessingPolling();
 
     // Log user action
     this.observability.logUserAction('process_emails_started', 'InvoiceProcessingComponent', {
       async_mode: async
     });
 
-    this.apiService.processEmailsDirect().subscribe({
-      next: (result) => {
-        // Verificar si es un error de trial expirado
-        if (!result.success && result.message?.includes('TRIAL_EXPIRED')) {
-          this.showTrialExpiredError(result.message.replace('TRIAL_EXPIRED: ', ''));
+    // Asíncrono real: encolar job y poll de estado
+    this.apiService.submitTask().subscribe({
+      next: (task) => {
+        if (!task?.job_id) {
+          this.error = 'No se recibió un identificador de tarea válido.';
           this.loading = false;
           return;
         }
-
-        this.processingResult = result;
-        this.loading = false;
-
-        setTimeout(() => {
-          this.getSystemStatus();
-          this.getJobStatus();
-        }, 1000);
+        this.processingJobId = task.job_id;
+        this.startProcessingTaskPolling(task.job_id);
       },
       error: (err) => {
-        // Verificar si el error del backend es trial expirado
-        if (err.error?.message?.includes('TRIAL_EXPIRED')) {
-          this.showTrialExpiredError(err.error.message.replace('TRIAL_EXPIRED: ', ''));
-        } else {
-          this.error = err.error?.detail || err.error?.message || 'Error al procesar correos';
-        }
+        this.error = err.error?.detail || err.error?.message || 'No se pudo encolar el procesamiento';
         this.loading = false;
+        this.processingJobId = null;
         this.observability.error('Error processing emails', err, 'InvoiceProcessingComponent', {
-          action: 'processEmails',
-          endpoint: '/process-emails'
+          action: 'enqueueProcessEmails',
+          endpoint: '/tasks/process'
         });
       }
     });
+  }
+
+  private startProcessingTaskPolling(jobId: string): void {
+    this.clearProcessingPolling();
+
+    this.processingPolling = interval(2000).pipe(
+      startWith(0),
+      switchMap(() => this.apiService.getTaskStatus(jobId))
+    ).subscribe({
+      next: (job: TaskStatusResponse | any) => {
+        const status = String(job?.status || '').toLowerCase();
+        const hasResult = job?.result !== undefined && job?.result !== null;
+        const hasFinished = !!job?.finished_at;
+        const looksFinished = hasResult || hasFinished;
+        if ((status === 'queued' || status === 'running' || status === 'started') && !looksFinished) {
+          return;
+        }
+
+        if (status === 'done' || status === 'finished' || looksFinished) {
+          const normalizedResult = this.normalizeTaskProcessResult(job?.result, job?.message);
+          if (!normalizedResult.success && normalizedResult.message?.includes('TRIAL_EXPIRED')) {
+            this.showTrialExpiredError(normalizedResult.message.replace('TRIAL_EXPIRED: ', ''));
+            this.processingResult = null;
+          } else {
+            this.processingResult = normalizedResult;
+          }
+
+          this.loading = false;
+          this.processingJobId = null;
+          this.clearProcessingPolling();
+
+          setTimeout(() => {
+            this.getSystemStatus();
+            this.getJobStatus();
+          }, 1000);
+          return;
+        }
+
+        // failed / error / fallback
+        this.error = job?.message || job?.error || 'Error al procesar correos';
+        this.loading = false;
+        this.processingJobId = null;
+        this.clearProcessingPolling();
+        this.getJobStatus();
+      },
+      error: (err) => {
+        this.error = err?.error?.detail || err?.error?.message || 'No se pudo consultar el estado de la tarea';
+        this.loading = false;
+        this.processingJobId = null;
+        this.clearProcessingPolling();
+        this.observability.error('Error polling processing task', err, 'InvoiceProcessingComponent', {
+          action: 'pollProcessTask',
+          endpoint: `/tasks/${jobId}`
+        });
+      }
+    });
+  }
+
+  private normalizeTaskProcessResult(rawResult: any, fallbackMessage?: string): ProcessResult {
+    const resultObj = rawResult && typeof rawResult === 'object' ? rawResult : {};
+    const success = !!resultObj.success;
+    const message = resultObj.message || fallbackMessage || (success ? 'Proceso completado' : 'Proceso finalizado con error');
+    const invoiceCount = Number(resultObj.invoice_count || 0);
+    const invoices = Array.isArray(resultObj.invoices) ? resultObj.invoices : [];
+
+    return {
+      success,
+      message,
+      invoice_count: invoiceCount,
+      invoices
+    };
+  }
+
+  private clearProcessingPolling(): void {
+    if (this.processingPolling) {
+      this.processingPolling.unsubscribe();
+      this.processingPolling = null;
+    }
   }
 
   createQuickConfig(): EmailConfig {
@@ -443,6 +513,11 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   }
 
   startJob(): void {
+    if (this.loading) {
+      this.jobError = 'Espera a que termine el procesamiento manual actual antes de activar la automatización.';
+      return;
+    }
+
     if (!this.hasConfiguredEmail) {
       this.jobError = 'Configura al menos una cuenta de correo para activar la automatización.';
       return;
@@ -510,6 +585,11 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   }
 
   stopJob(): void {
+    if (this.loading) {
+      this.jobError = 'Espera a que termine el procesamiento manual actual antes de cambiar el estado de automatización.';
+      return;
+    }
+
     this.jobLoading = true;
 
     this.apiService.stopJob().subscribe({
@@ -566,6 +646,11 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   }
 
   applyJobInterval(): void {
+    if (this.loading) {
+      this.jobError = 'No puedes cambiar el intervalo mientras hay un procesamiento manual en curso.';
+      return;
+    }
+
     const target = this.getValidInterval(this.jobIntervalInput);
     this.jobIntervalInput = target;
     this.jobLoading = true;

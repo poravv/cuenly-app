@@ -610,32 +610,94 @@ async def enqueue_process_emails(
         }
         return {"job_id": job_id}
     
-    def _runner():
-        from app.modules.email_processor.config_store import get_enabled_configs
-        from app.modules.email_processor.email_processor import MultiEmailProcessor
-        owner_email = (user.get('email') or '').lower()
-        configs = get_enabled_configs(include_password=True, owner_email=owner_email) if owner_email else []
-        
-        # Crear configs con owner_email agregado
-        email_configs = []
-        for c in configs:
-            config_data = dict(c)
-            config_data['owner_email'] = owner_email
-            email_configs.append(MultiEmailConfig(**config_data))
-            
-        mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
-        return mp.process_all_emails()
+    try:
+        from app.worker.queues import enqueue_job
+        from app.worker.jobs import process_emails_job
 
-    job_id = task_queue.enqueue("process_emails", _runner)
-    return {"job_id": job_id}
+        owner_email = (user.get('email') or '').lower()
+        job = enqueue_job(
+            process_emails_job,
+            owner_email=owner_email,
+            priority='high',
+            timeout='30m'
+        )
+        return {"job_id": job.id}
+    except Exception as e:
+        logger.error(f"Error encolando /tasks/process en RQ: {e}")
+        raise HTTPException(status_code=500, detail="No se pudo encolar el procesamiento")
 
 @app.get("/tasks/{job_id}")
 async def get_task_status(job_id: str):
     """Consulta el estado de un job enviado a la cola."""
+    # 1) Compatibilidad con cola local (uploads/range/legacy)
     job = task_queue.get(job_id)
-    if not job:
+    if job:
+        return job
+
+    # 2) Cola RQ distribuida (manual async multiusuario)
+    from app.worker.queues import get_job_status as get_rq_job_status
+
+    rq_job = get_rq_job_status(job_id)
+    raw_status = str(rq_job.get("status", "")).lower().strip()
+    if "." in raw_status:
+        raw_status = raw_status.split(".")[-1]
+    if raw_status in {"", "not_found"}:
         raise HTTPException(status_code=404, detail="Job no encontrado")
-    return job
+
+    def _map_status(value: str) -> str:
+        if value in {"queued", "deferred", "scheduled"}:
+            return "queued"
+        if value in {"started", "running", "busy"}:
+            return "running"
+        if value in {"finished", "done"}:
+            return "done"
+        if value in {"failed", "stopped", "canceled", "cancelled"}:
+            return "error"
+        return "queued"
+
+    def _to_ts(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, datetime):
+            return value.timestamp()
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                return None
+        return None
+
+    raw_result = rq_job.get("result")
+    raw_error = rq_job.get("error")
+    ended_ts = _to_ts(rq_job.get("ended_at"))
+
+    mapped_status = _map_status(raw_status)
+    # Fallback robusto: si ya terminó (ended_at/result), no dejar estado en queued.
+    if mapped_status == "queued" and (ended_ts is not None or raw_result is not None):
+        mapped_status = "error" if raw_error else "done"
+    elif mapped_status == "queued" and raw_error:
+        mapped_status = "error"
+    message = None
+    if mapped_status == "done":
+        if isinstance(raw_result, dict):
+            message = raw_result.get("message") or "Completado"
+        else:
+            message = "Completado"
+    elif mapped_status == "error":
+        message = raw_error or "Error en procesamiento"
+
+    return {
+        "job_id": job_id,
+        "action": "process_emails",
+        "status": mapped_status,
+        "created_at": _to_ts(rq_job.get("created_at")),
+        "started_at": _to_ts(rq_job.get("started_at")),
+        "finished_at": ended_ts,
+        "message": message,
+        "result": raw_result,
+    }
 
 @app.delete("/tasks/cleanup")
 async def cleanup_old_tasks():

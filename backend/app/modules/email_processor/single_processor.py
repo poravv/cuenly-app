@@ -104,7 +104,10 @@ class EmailProcessor:
         if self.current_connection and self.current_connection.test_connection():
             return True
         
+        start_conn = time.time()
+        logger.info(f"⏱️ Solicitando conexión IMAP al pool para {self.config.username}")
         self.current_connection = self.connection_pool.get_connection(self.config)
+        elapsed_conn = time.time() - start_conn
         if self.current_connection:
             # IMPORTANT: Sincronizar la conexión real con el cliente IMAP interno
             self.client.conn = self.current_connection.connection
@@ -118,10 +121,10 @@ class EmailProcessor:
                 # Si falla select, la conexión podría estar corrupta, mejor no usarla
                 # Pero por ahora lo dejamos pasar o el pool la marcará muerta después
                 
-            logger.info(f"🔄 Conexión IMAP obtenida del pool para {self.config.username}")
+            logger.info(f"🔄 Conexión IMAP obtenida del pool para {self.config.username} en {elapsed_conn:.2f}s")
             return True
         
-        logger.error(f"❌ No se pudo obtener conexión IMAP para {self.config.username}")
+        logger.error(f"❌ No se pudo obtener conexión IMAP para {self.config.username} (espera {elapsed_conn:.2f}s)")
         return False
 
     def disconnect(self):

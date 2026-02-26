@@ -123,9 +123,9 @@ class IMAPClient:
 
                 self.is_gmail = "imap.gmail.com" in (self.host or "").lower()
                 
-                # Crear conexión con timeout de socket más agresivo
+                # Crear conexión con timeout real en handshake para evitar bloqueos prolongados
                 try:
-                    self.conn = imaplib.IMAP4_SSL(self.host, self.port)
+                    self.conn = imaplib.IMAP4_SSL(self.host, self.port, timeout=30)
                 except (socket.timeout, socket.gaierror, socket.error, OSError) as e:
                     logger.warning(f"Error de conexión de red (intento {attempt + 1}): {e}")
                     if attempt == max_retries - 1:

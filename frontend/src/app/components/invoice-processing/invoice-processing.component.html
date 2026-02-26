@@ -449,14 +449,14 @@
                 <!-- Controles principales -->
                 <div class="d-grid gap-2">
                   <button *ngIf="!jobStatus.running" class="btn btn-success py-2"
-                    [disabled]="!hasConfiguredEmail || jobLoading || jobStatus.is_processing"
+                    [disabled]="!hasConfiguredEmail || loading || jobLoading || jobStatus.is_processing"
                     [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para activar la automatización' : null"
                     (click)="startJob()">
                     <i class="bi bi-play-fill me-2"></i>
                     Activar Automatización
                   </button>
                   <button *ngIf="jobStatus.running" class="btn btn-danger py-2"
-                    [disabled]="jobLoading || jobStatus.is_processing" (click)="stopJob()">
+                    [disabled]="loading || jobLoading || jobStatus.is_processing" (click)="stopJob()">
                     <i class="bi bi-stop-fill me-2"></i>
                     Detener Automatización
                   </button>
@@ -481,7 +481,7 @@
                       <option *ngFor="let opt of intervalOptions" [ngValue]="opt">{{ opt }} minutos</option>
                     </select>
                     <button class="btn btn-outline-primary" (click)="applyJobInterval()"
-                      [disabled]="jobLoading || jobStatus.is_processing">
+                      [disabled]="loading || jobLoading || jobStatus.is_processing">
                       <i class="bi bi-check"></i>
                     </button>
                   </div>
