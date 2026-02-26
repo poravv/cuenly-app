@@ -158,6 +158,10 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     }
   }
 
+  get hasConfiguredEmail(): boolean {
+    return !!this.status?.email_configured;
+  }
+
   getSystemStatus(): void {
     this.loading = true;
     this.apiService.getStatus().subscribe({
@@ -214,6 +218,11 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   }
 
   processEmails(async: boolean = true): void {
+    if (!this.hasConfiguredEmail) {
+      this.error = 'Configura al menos una cuenta de correo para procesar.';
+      return;
+    }
+
     this.loading = true;
     this.processingResult = null;
     this.error = null;
@@ -264,7 +273,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       username: '',
       password: '',
       use_ssl: true,
-      search_terms: ['factura', 'invoice', 'comprobante'],
+      search_terms: ['factura', 'invoice', 'comprobante', 'electronico'],
       search_criteria: 'UNSEEN',
       provider: 'other',
       enabled: true,
@@ -434,6 +443,11 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   }
 
   startJob(): void {
+    if (!this.hasConfiguredEmail) {
+      this.jobError = 'Configura al menos una cuenta de correo para activar la automatización.';
+      return;
+    }
+
     this.jobLoading = true;
 
     // Verificar trial antes de iniciar automatización
@@ -569,6 +583,11 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
 
   // Procesar correos en un rango de fechas específico
   processDateRange(): void {
+    if (!this.hasConfiguredEmail) {
+      this.dateRangeError = 'Configura al menos una cuenta de correo para procesar por rango.';
+      return;
+    }
+
     if (!this.dateRangeStart || !this.dateRangeEnd) {
       this.dateRangeError = 'Por favor selecciona ambas fechas';
       return;

@@ -3,11 +3,6 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { EmailConfig, EmailTestResult, EmailConfigsResponse } from '../../models/invoice.model';
 
-interface SynonymEntry {
-  base: string;
-  synonymsText: string;
-}
-
 interface SearchTermPreset {
   id: string;
   label: string;
@@ -21,8 +16,10 @@ interface SearchTermPreset {
 })
 export class EmailConfigComponent implements OnInit, OnDestroy {
   emailConfigs: EmailConfig[] = [];
-  newSynonymEntries: SynonymEntry[] = [];
   newConfig: EmailConfig = this.createEmptyConfig();
+  newSynonymsText = '';
+  newAdvancedOpen = false;
+  savingNew = false;
   showAddForm = false;
   testResults: { [key: string]: EmailTestResult;[key: number]: EmailTestResult } = {} as any;
   testing: { [key: string]: boolean;[key: number]: boolean } = {} as any;
@@ -152,8 +149,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         this.emailConfigs = (resp.configs || []).map((cfg: EmailConfig) => ({
           ...cfg,
           search_synonyms: cfg.search_synonyms || {},
-          fallback_sender_match: !!cfg.fallback_sender_match,
-          fallback_attachment_match: !!cfg.fallback_attachment_match
+          fallback_sender_match: cfg.fallback_sender_match !== undefined ? !!cfg.fallback_sender_match : true,
+          fallback_attachment_match: cfg.fallback_attachment_match !== undefined ? !!cfg.fallback_attachment_match : true
         }));
         this.maxEmailAccounts = resp.max_allowed || 1;
         this.canAddMore = resp.can_add_more !== undefined ? resp.can_add_more : true;
@@ -180,7 +177,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   }
 
   createEmptyConfig(): EmailConfig {
-    const cfg: EmailConfig = {
+    return {
       id: undefined,
       name: '',
       host: '',
@@ -188,17 +185,15 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       username: '',
       password: '',
       use_ssl: true,
-      search_terms: ['factura', 'invoice', 'comprobante'],
+      search_terms: ['factura', 'invoice', 'comprobante', 'electronico'],
       search_synonyms: {},
-      fallback_sender_match: false,
-      fallback_attachment_match: false,
+      fallback_sender_match: true,
+      fallback_attachment_match: true,
       search_criteria: 'UNSEEN',
       provider: 'other',
       enabled: true,
       auth_type: 'password'
     };
-    this.newSynonymEntries = this.synonymsToEntries(cfg.search_synonyms);
-    return cfg;
   }
 
   selectProvider(provider: any): void {
@@ -207,6 +202,13 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.newConfig.port = provider.port;
     this.newConfig.use_ssl = provider.use_ssl;
     this.newConfig.provider = provider.id;
+  }
+
+  selectProviderById(providerId: string): void {
+    const provider = this.providers.find((p) => p.id === providerId) || this.providers.find((p) => p.id === 'other');
+    if (provider) {
+      this.selectProvider(provider);
+    }
   }
 
   startQuickAdd(providerId: 'other' | 'gmail' | 'outlook'): void {
@@ -219,6 +221,11 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       return;
     }
 
+    this.newConfig = this.createEmptyConfig();
+    this.newSynonymsText = '';
+    this.newAdvancedOpen = false;
+    this.savingNew = false;
+    this.pendingOAuthData = null;
     this.showAddForm = true;
     const provider = this.providers.find((p) => p.id === providerId) || this.providers.find((p) => p.id === 'other');
     if (provider) {
@@ -302,7 +309,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       refresh_token: oauthData.refresh_token,
       token_expiry: oauthData.token_expiry,
       name: `Gmail - ${oauthData.gmail_address}`,
-      search_terms: ['factura', 'invoice', 'comprobante', 'documento electronico']
+      search_terms: ['factura', 'invoice', 'comprobante', 'electronico']
     }).subscribe({
       next: (response) => {
         this.pendingOAuthData = null;
@@ -360,14 +367,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.newConfig.search_terms = this.mergeSearchTerms(this.newConfig.search_terms || [], preset.terms);
   }
 
-  addNewSynonymEntry(): void {
-    this.newSynonymEntries.push({ base: '', synonymsText: '' });
-  }
-
-  removeNewSynonymEntry(index: number): void {
-    this.newSynonymEntries.splice(index, 1);
-  }
-
   trackByIndex(index: number): number {
     return index;
   }
@@ -382,7 +381,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       : (() => {
         const temp = this.cloneConfig(config);
         temp.search_terms = (temp.search_terms || []).filter((t: string) => (t || '').trim() !== '');
-        temp.search_synonyms = this.entriesToSynonyms(this.newSynonymEntries || []);
+        temp.search_synonyms = this.parseSynonymsByLine(this.newSynonymsText);
         temp.fallback_sender_match = !!temp.fallback_sender_match;
         temp.fallback_attachment_match = !!temp.fallback_attachment_match;
         return this.apiService.testEmailConfig(temp);
@@ -422,7 +421,11 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     });
   }
 
-  addEmailConfig(): void {
+  addEmailConfig(processAfterSave: boolean = false): void {
+    if (this.savingNew) {
+      return;
+    }
+
     // Validar límite de cuentas ANTES de intentar crear
     if (!this.canAddMore) {
       const limit = this.maxEmailAccounts === -1 ? 'ilimitadas' : this.maxEmailAccounts;
@@ -439,23 +442,68 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Filtrar términos de búsqueda vacíos
-    this.newConfig.search_terms = this.newConfig.search_terms.filter(term => term.trim() !== '');
-    this.newConfig.search_synonyms = this.entriesToSynonyms(this.newSynonymEntries);
-    this.newConfig.fallback_sender_match = !!this.newConfig.fallback_sender_match;
-    this.newConfig.fallback_attachment_match = !!this.newConfig.fallback_attachment_match;
+    const payload = this.cloneConfig(this.newConfig);
+    payload.search_terms = (payload.search_terms || []).filter(term => (term || '').trim() !== '');
+    payload.search_synonyms = this.parseSynonymsByLine(this.newSynonymsText);
+    payload.fallback_sender_match = !!payload.fallback_sender_match;
+    payload.fallback_attachment_match = !!payload.fallback_attachment_match;
+    this.savingNew = true;
 
     // Guardar en backend
-    this.apiService.createEmailConfig(this.newConfig).subscribe({
+    this.apiService.createEmailConfig(payload).subscribe({
       next: () => {
         this.newConfig = this.createEmptyConfig();
+        this.newSynonymsText = '';
+        this.newAdvancedOpen = false;
         this.showAddForm = false;
+        this.selectedProvider = '';
         this.loadConfigs();
         this.notificationService.success('Configuración de correo agregada exitosamente', 'Cuenta agregada');
+
+        if (!processAfterSave) {
+          this.savingNew = false;
+          return;
+        }
+
+        this.notificationService.info('Procesando correos en este momento...', 'Procesamiento');
+        this.apiService.processEmails(false).subscribe({
+          next: (result: any) => {
+            if (!result?.success) {
+              this.notificationService.warning(
+                result?.message || 'La cuenta se guardó, pero no se pudo iniciar el procesamiento',
+                'Procesamiento'
+              );
+              this.savingNew = false;
+              return;
+            }
+
+            const processedInvoices = result.invoice_count ?? result.invoices?.length ?? 0;
+            if (processedInvoices > 0) {
+              this.notificationService.success(
+                `Se procesaron ${processedInvoices} factura(s)`,
+                'Procesamiento Completado'
+              );
+            } else {
+              this.notificationService.info(
+                'Cuenta guardada. No se encontraron facturas nuevas.',
+                'Sin Novedades'
+              );
+            }
+            this.savingNew = false;
+          },
+          error: () => {
+            this.notificationService.warning(
+              'La cuenta se guardó, pero hubo un problema al iniciar el procesamiento',
+              'Advertencia'
+            );
+            this.savingNew = false;
+          }
+        });
       },
       error: (err) => {
         const errorMsg = err?.error?.detail || 'No se pudo guardar la configuración';
         this.notificationService.error(errorMsg, 'Error al guardar');
+        this.savingNew = false;
       }
     });
   }
@@ -494,8 +542,13 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   }
 
   cancelAdd(): void {
+    if (this.savingNew) {
+      return;
+    }
     this.newConfig = this.createEmptyConfig();
-    this.newSynonymEntries = [];
+    this.newSynonymsText = '';
+    this.newAdvancedOpen = false;
+    this.savingNew = false;
     this.showAddForm = false;
     this.selectedProvider = '';
     this.pendingOAuthData = null;
@@ -539,54 +592,67 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       .filter((v: string) => !!v);
   }
 
-  private synonymsToEntries(
-    value: EmailConfig['search_synonyms']
-  ): SynonymEntry[] {
-    if (!value) return [];
-
-    if (Array.isArray(value)) {
-      const synonyms = value
-        .map((v: string) => (v || '').trim())
-        .filter((v: string) => !!v);
-      if (!synonyms.length) return [];
-      return [{ base: '', synonymsText: synonyms.join(', ') }];
-    }
-
-    const entries: SynonymEntry[] = [];
-    Object.keys(value).forEach((base) => {
-      const cleanBase = (base || '').trim();
-      const variants = (value as { [key: string]: string[] })[base] || [];
-      const cleanVariants = variants
-        .map((v: string) => (v || '').trim())
-        .filter((v: string) => !!v);
-      entries.push({
-        base: cleanBase,
-        synonymsText: cleanVariants.join(', ')
-      });
-    });
-    return entries;
-  }
-
-  private entriesToSynonyms(entries: SynonymEntry[]): { [key: string]: string[] } {
+  private parseSynonymsByLine(raw: string): { [key: string]: string[] } {
     const result: { [key: string]: string[] } = {};
-    (entries || []).forEach((entry: SynonymEntry) => {
-      const base = (entry?.base || '').trim();
-      const variants = this.parseSynonymsText(entry?.synonymsText || '');
+    const lines = (raw || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => !!line);
+
+    lines.forEach((line) => {
+      const parts = line.split(':');
+      if (parts.length < 2) return;
+
+      const base = (parts.shift() || '').trim();
+      const variants = this.parseSynonymsText(parts.join(':'));
       if (!base || !variants.length) return;
-      result[base] = Array.from(new Set(variants));
+
+      const uniqueVariants: string[] = [];
+      const seen = new Set<string>();
+      variants.forEach((variant) => {
+        const key = variant.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        uniqueVariants.push(variant);
+      });
+
+      if (uniqueVariants.length) {
+        result[base] = uniqueVariants;
+      }
     });
+
     return result;
   }
 
-  getSynonymSummary(config: EmailConfig): string {
-    const entries = this.synonymsToEntries(config.search_synonyms);
-    if (!entries.length) return 'Sin grupos configurados';
-    return `${entries.length} grupo(s)`;
+  private synonymsToText(value: EmailConfig['search_synonyms']): string {
+    if (!value || Array.isArray(value)) return '';
+
+    const lines = Object.keys(value)
+      .map((base) => {
+        const cleanBase = (base || '').trim();
+        const variants = ((value as { [key: string]: string[] })[base] || [])
+          .map((variant) => (variant || '').trim())
+          .filter((variant) => !!variant);
+        if (!cleanBase || !variants.length) return '';
+        return `${cleanBase}: ${variants.join(', ')}`;
+      })
+      .filter((line) => !!line);
+
+    return lines.join('\n');
   }
 
-  getSynonymEntriesForEdit(key: string): SynonymEntry[] {
-    return this.editSynonymEntries[key] || [];
+  getSynonymSummary(config: EmailConfig): string {
+    if (!config.search_synonyms || Array.isArray(config.search_synonyms)) {
+      return 'Sin grupos configurados';
+    }
+    const groups = Object.keys(config.search_synonyms)
+      .filter((base) => !!(base || '').trim());
+    if (!groups.length) return 'Sin grupos configurados';
+    return `${groups.length} grupo(s)`;
   }
+
+  editSynonymsText: { [key: string]: string } = {};
+  editAdvancedOpen: { [key: string]: boolean } = {};
 
   startEdit(i: number): void {
     const cfg = this.emailConfigs[i];
@@ -599,7 +665,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     copy.fallback_sender_match = !!copy.fallback_sender_match;
     copy.fallback_attachment_match = !!copy.fallback_attachment_match;
     this.editData[key] = copy;
-    this.editSynonymEntries[key] = this.synonymsToEntries(copy.search_synonyms);
+    this.editSynonymsText[key] = this.synonymsToText(copy.search_synonyms);
+    this.editAdvancedOpen[key] = !!this.editSynonymsText[key];
     delete this.testResults[key];
     delete this.testing[key];
   }
@@ -610,7 +677,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const key = this.keyFor(i, cfg);
     delete this.editing[key];
     delete this.editData[key];
-    delete this.editSynonymEntries[key];
+    delete this.editSynonymsText[key];
+    delete this.editAdvancedOpen[key];
     delete this.testing[key];
     delete this.testResults[key];
   }
@@ -621,7 +689,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const id = cfg.id;
     const key = this.keyFor(i, cfg);
     const editedData = this.editData[key];
-    const normalizedSynonyms = this.entriesToSynonyms(this.editSynonymEntries[key] || []);
+    const normalizedSynonyms = this.parseSynonymsByLine(this.editSynonymsText[key] || '');
 
     this.saving[key] = true;
 
@@ -686,24 +754,12 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.editData[key].search_terms = this.mergeSearchTerms(this.editData[key].search_terms || [], preset.terms);
   }
 
-  editSynonymEntries: { [key: string]: SynonymEntry[] } = {};
-
-  addEditSynonymEntry(key: string): void {
-    if (!this.editSynonymEntries[key]) this.editSynonymEntries[key] = [];
-    this.editSynonymEntries[key].push({ base: '', synonymsText: '' });
-  }
-
-  removeEditSynonymEntry(key: string, idx: number): void {
-    if (!this.editSynonymEntries[key]) return;
-    this.editSynonymEntries[key].splice(idx, 1);
-  }
-
   testEditedConfiguration(key: string): void {
     const cfg = this.editData[key];
     if (!cfg) return;
     this.testing[key] = true;
     cfg.search_terms = (cfg.search_terms || []).filter(t => (t || '').trim() !== '');
-    cfg.search_synonyms = this.entriesToSynonyms(this.editSynonymEntries[key] || []);
+    cfg.search_synonyms = this.parseSynonymsByLine(this.editSynonymsText[key] || '');
     cfg.fallback_sender_match = !!cfg.fallback_sender_match;
     cfg.fallback_attachment_match = !!cfg.fallback_attachment_match;
     this.apiService.testEmailConfig(cfg).subscribe({

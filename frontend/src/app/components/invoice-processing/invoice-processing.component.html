@@ -36,11 +36,11 @@
             <div>
               <h5 class="mb-1 fw-bold d-flex align-items-center">
                 <i class="bi bi-magic text-primary me-2"></i>
-                Configuración Rápida en 3 pasos
+                Configuración Rápida de correo
               </h5>
-              <p class="text-muted small mb-0">
+              <!-- <p class="text-muted small mb-0">
                 1) Proveedor y credencial, 2) Nomenclaturas, 3) Guardar y procesar.
-              </p>
+              </p> -->
             </div>
             <button class="btn btn-sm btn-outline-secondary" (click)="dismissQuickSetup()">
               <i class="bi bi-x-lg me-1"></i>Cerrar
@@ -114,10 +114,10 @@
                 <div class="col-lg-6">
                   <label class="form-label">Sinónimos por línea</label>
                   <textarea class="form-control" rows="4" [(ngModel)]="quickSynonymsText"
-                    placeholder="factura electronica: facturación, documento electrónico&#10;comprobante: cpe, comprobante de pago"></textarea>
+                    placeholder="factura electronica: facturación, documento electrónico&#10;comprobante: comprobante de pago"></textarea>
                 </div>
                 <div class="col-lg-6">
-                  <label class="form-label">Fallback</label>
+                  <label class="form-label">Adicional</label>
                   <div class="form-check mb-2">
                     <input class="form-check-input" type="checkbox" id="quick_fallback_sender"
                       [(ngModel)]="quickConfig.fallback_sender_match">
@@ -238,7 +238,8 @@
             <div class="col-md-6">
               <div class="d-grid">
                 <button class="btn btn-success btn-lg py-3"
-                  [disabled]="loading || (jobStatus?.running === true) || jobStatus?.is_processing"
+                  [disabled]="!hasConfiguredEmail || loading || (jobStatus?.running === true) || jobStatus?.is_processing"
+                  [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para habilitar esta acción' : null"
                   (click)="processEmails(true)">
                   <div class="d-flex align-items-center justify-content-center">
                     <i class="bi bi-envelope-check fs-6 me-2"></i>
@@ -268,6 +269,13 @@
                   <i class="bi bi-file-code me-2"></i>
                   <div>Subir XML</div>
                 </a>
+              </div>
+            </div>
+
+            <div class="col-12" *ngIf="!hasConfiguredEmail">
+              <div class="alert alert-warning border-0 mb-0 py-2 px-3 small">
+                <i class="bi bi-info-circle me-1"></i>
+                Configura una cuenta de correo para habilitar el procesamiento manual.
               </div>
             </div>
           </div>
@@ -300,11 +308,9 @@
           <!-- Success/Error State -->
           <div *ngIf="!loading && processingResult" class="text-center py-2">
             <div class="mb-3">
-              <div [ngClass]="processingResult.success ? 'bg-success' : 'bg-danger'"
-                class="bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center"
-                style="width: 60px; height: 60px;">
-                <i [ngClass]="processingResult.success ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger'"
-                  class="fs-4"></i>
+              <div class="process-status-icon"
+                [ngClass]="processingResult.success ? 'process-status-icon--success' : 'process-status-icon--error'">
+                <i class="bi" [ngClass]="processingResult.success ? 'bi-check-lg' : 'bi-exclamation-lg'"></i>
               </div>
             </div>
             <h6 class="fw-semibold mb-2" [ngClass]="processingResult.success ? 'text-success' : 'text-danger'">
@@ -443,7 +449,9 @@
                 <!-- Controles principales -->
                 <div class="d-grid gap-2">
                   <button *ngIf="!jobStatus.running" class="btn btn-success py-2"
-                    [disabled]="jobLoading || jobStatus.is_processing" (click)="startJob()">
+                    [disabled]="!hasConfiguredEmail || jobLoading || jobStatus.is_processing"
+                    [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para activar la automatización' : null"
+                    (click)="startJob()">
                     <i class="bi bi-play-fill me-2"></i>
                     Activar Automatización
                   </button>
@@ -513,79 +521,6 @@
             </div>
           </div>
 
-          <!-- Procesamiento por Rango de Fechas -->
-          <div *ngIf="!jobLoading && jobStatus" class="row g-4 mt-2">
-            <div class="col-12">
-              <div class="bg-gradient rounded-3 p-4"
-                style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                <h6 class="fw-bold mb-3 d-flex align-items-center text-white">
-                  <i class="bi bi-calendar-range me-2"></i>
-                  Procesar Rango de Fechas
-                </h6>
-                <p class="text-white-50 small mb-3">
-                  Procesa correos de un período específico. Útil para reprocesar facturas antiguas.
-                </p>
-
-                <div class="row g-3 align-items-end">
-                  <div class="col-md-4">
-                    <label class="form-label text-white small fw-semibold">Fecha Inicio</label>
-                    <input type="date" class="form-control" [(ngModel)]="dateRangeStart"
-                      (ngModelChange)="onDateRangeStartChange($event)"
-                      [disabled]="dateRangeLoading || jobStatus.is_processing">
-                  </div>
-                  <div class="col-md-4">
-                    <label class="form-label text-white small fw-semibold">Fecha Fin</label>
-                    <input type="date" class="form-control" [(ngModel)]="dateRangeEnd"
-                      (ngModelChange)="onDateRangeEndChange($event)"
-                      [disabled]="dateRangeLoading || jobStatus.is_processing">
-                  </div>
-                  <div class="col-md-4">
-                    <button class="btn btn-light w-100 fw-semibold" (click)="processDateRange()"
-                      [disabled]="dateRangeLoading || !dateRangeStart || !dateRangeEnd || jobStatus.is_processing">
-                      <span *ngIf="!dateRangeLoading">
-                        <i class="bi bi-play-circle me-2"></i>Procesar Rango
-                      </span>
-                      <span *ngIf="dateRangeLoading">
-                        <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Resultado del procesamiento -->
-                <div *ngIf="dateRangeResult" class="alert alert-light mt-3 mb-0">
-                  <div class="d-flex align-items-center justify-content-between">
-                    <div>
-                      <i class="bi bi-check-circle-fill text-success me-2"></i>
-                      <strong *ngIf="dateRangeResult.job_id">Tarea encolada:</strong>
-                      <span *ngIf="dateRangeResult.job_id">El proceso histórico ha iniciado. Puedes ver el progreso en
-                        <a routerLink="/automatizacion/cola" class="alert-link">Cola de Eventos</a>.</span>
-                      <strong *ngIf="!dateRangeResult.job_id">Procesamiento completado:</strong>
-                      <span *ngIf="!dateRangeResult.job_id">{{ dateRangeResult.invoice_count || 0 }} facturas
-                        procesadas</span>
-                    </div>
-                    <button class="btn btn-sm btn-outline-secondary" (click)="clearDateRangeResult()">
-                      <i class="bi bi-x"></i>
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Error -->
-                <div *ngIf="dateRangeError" class="alert alert-danger mt-3 mb-0">
-                  <div class="d-flex align-items-center justify-content-between">
-                    <div>
-                      <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                      {{ dateRangeError }}
-                    </div>
-                    <button class="btn btn-sm btn-outline-danger" (click)="dateRangeError = null">
-                      <i class="bi bi-x"></i>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Error de automatización - Trial Expirado -->
           <div *ngIf="jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción')"
             class="alert alert-warning border-0 mt-3">
@@ -612,6 +547,86 @@
             class="alert alert-danger border-0 mt-3">
             <i class="bi bi-exclamation-triangle me-2"></i>
             {{ jobError }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Procesamiento por Rango -->
+  <div *ngIf="!jobLoading && jobStatus" class="row mt-4">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-0 pb-0">
+          <div class="d-flex align-items-center">
+            <i class="bi bi-calendar-range text-primary fs-5 me-3"></i>
+            <div>
+              <h5 class="card-title mb-1 fw-bold">Procesamiento por Rango</h5>
+              <p class="text-muted mb-0 small">Procesa tus correos leídos y no leídos por rango de fechas.</p>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Fecha Inicio</label>
+              <input type="date" class="form-control" [(ngModel)]="dateRangeStart"
+                (ngModelChange)="onDateRangeStartChange($event)"
+                [disabled]="!hasConfiguredEmail || dateRangeLoading || jobStatus.is_processing">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Fecha Fin</label>
+              <input type="date" class="form-control" [(ngModel)]="dateRangeEnd"
+                (ngModelChange)="onDateRangeEndChange($event)"
+                [disabled]="!hasConfiguredEmail || dateRangeLoading || jobStatus.is_processing">
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-primary w-100 fw-semibold" (click)="processDateRange()"
+                [disabled]="!hasConfiguredEmail || dateRangeLoading || !dateRangeStart || !dateRangeEnd || jobStatus.is_processing"
+                [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para habilitar este procesamiento' : null">
+                <span *ngIf="!dateRangeLoading">
+                  <i class="bi bi-play-circle me-2"></i>Procesar Rango
+                </span>
+                <span *ngIf="dateRangeLoading">
+                  <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div class="alert alert-warning border-0 mt-3 mb-0 py-2 px-3 small" *ngIf="!hasConfiguredEmail">
+            <i class="bi bi-info-circle me-1"></i>
+            Debes configurar una cuenta de correo para procesar por rango.
+          </div>
+
+          <!-- Resultado del procesamiento -->
+          <div *ngIf="dateRangeResult" class="alert alert-light mt-3 mb-0">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <i class="bi bi-check-circle-fill text-success me-2"></i>
+                <strong *ngIf="dateRangeResult.job_id">Tarea encolada:</strong>
+                <span *ngIf="dateRangeResult.job_id">El proceso histórico ha iniciado. Puedes ver el progreso en
+                  <a routerLink="/automatizacion/cola" class="alert-link">Cola de Eventos</a>.</span>
+                <strong *ngIf="!dateRangeResult.job_id">Procesamiento completado:</strong>
+                <span *ngIf="!dateRangeResult.job_id">{{ dateRangeResult.invoice_count || 0 }} facturas procesadas</span>
+              </div>
+              <button class="btn btn-sm btn-outline-secondary" (click)="clearDateRangeResult()">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Error -->
+          <div *ngIf="dateRangeError" class="alert alert-danger mt-3 mb-0">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                {{ dateRangeError }}
+              </div>
+              <button class="btn btn-sm btn-outline-danger" (click)="dateRangeError = null">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>

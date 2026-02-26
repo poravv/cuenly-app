@@ -543,6 +543,15 @@ h1 i {
   }
 }
 
+.quick-actions-grid .quick-action-subtitle {
+  transition: color 0.2s ease;
+}
+
+.quick-actions-grid .quick-action-btn:hover .quick-action-subtitle,
+.quick-actions-grid .quick-action-btn:focus .quick-action-subtitle {
+  color: #ffffff !important;
+}
+
 /* ====== RESPONSIVE ADJUSTMENTS ====== */
 @media (max-width: 991px) {
   .quick-actions-bar {
