@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from typing import Tuple, List, Optional
 from datetime import datetime
 
@@ -16,6 +17,28 @@ def _split_numero(numero: Optional[str]) -> Tuple[str, str, str, str]:
     return "", "", numero, numero
 
 
+def _normalize_identifier(value: str) -> str:
+    cleaned = (value or "").strip().lower()
+    if not cleaned:
+        return ""
+    return re.sub(r"[^a-z0-9._@-]+", "_", cleaned)
+
+
+def _build_header_id(invoice: InvoiceData, full: str, fecha: Optional[datetime]) -> str:
+    cdc = str(getattr(invoice, "cdc", "") or "").strip()
+    if cdc:
+        return cdc
+
+    message_id = _normalize_identifier(str(getattr(invoice, "message_id", "") or ""))
+    if message_id:
+        return f"msgid_{message_id}"
+
+    ruc = str(getattr(invoice, "ruc_emisor", "SINRUC") or "SINRUC").strip() or "SINRUC"
+    numero = str(full or getattr(invoice, "numero_factura", "") or "SINNUMERO").strip() or "SINNUMERO"
+    fecha_token = fecha.date().isoformat() if fecha else "nodate"
+    return f"{ruc}_{numero}_{fecha_token}"
+
+
 def map_invoice(invoice: InvoiceData, fuente: str = "", minio_key: str = "") -> InvoiceDocument:
     est, pto, num, full = _split_numero(getattr(invoice, "numero_factura", ""))
     fecha: Optional[datetime] = getattr(invoice, "fecha", None)
@@ -25,7 +48,9 @@ def map_invoice(invoice: InvoiceData, fuente: str = "", minio_key: str = "") -> 
         except Exception:
             fecha = None
 
-    header_id = (getattr(invoice, "cdc", None) or f"{getattr(invoice, 'ruc_emisor', 'SINRUC')}_{full}_{(fecha or datetime.utcnow()).date().isoformat()}")
+    header_id = _build_header_id(invoice, full, fecha)
+
+    resolved_minio_key = (minio_key or getattr(invoice, "minio_key", "") or "").strip()
 
     header = InvoiceHeader(
         id=str(header_id),
@@ -35,6 +60,7 @@ def map_invoice(invoice: InvoiceData, fuente: str = "", minio_key: str = "") -> 
         punto=pto,
         numero=num,
         numero_documento=full,
+        message_id=getattr(invoice, "message_id", "") or "",
         fecha_emision=fecha,
         condicion_venta=(getattr(invoice, "condicion_venta", "CONTADO") or "CONTADO").upper(),
         moneda=(getattr(invoice, "moneda", "GS") or "GS").upper(),
@@ -68,12 +94,43 @@ def map_invoice(invoice: InvoiceData, fuente: str = "", minio_key: str = "") -> 
             exonerado=float(getattr(invoice, "exonerado", 0) or 0),
             total_iva=float(getattr(invoice, "total_iva", 0) or 0),
             total_descuento=float(getattr(invoice, "total_descuento", 0) or 0),
-            anticipo=float(getattr(invoice, "anticipo", 0) or 0)
+            anticipo=float(getattr(invoice, "anticipo", 0) or 0),
+            total_base_gravada=float(
+                getattr(invoice, "total_base_gravada", 0)
+                or (
+                    float(getattr(invoice, "gravado_5", 0) or getattr(invoice, "subtotal_5", 0) or 0)
+                    + float(getattr(invoice, "gravado_10", 0) or getattr(invoice, "subtotal_10", 0) or 0)
+                )
+            ),
+            # ISC
+            isc_total=float(getattr(invoice, "isc_total", 0) or 0),
+            isc_base_imponible=float(getattr(invoice, "isc_base_imponible", 0) or 0),
+            isc_subtotal_gravado=float(getattr(invoice, "isc_subtotal_gravado", 0) or 0),
         ),
+        # === Estado de procesamiento ===
+        status=getattr(invoice, "status", "DONE") or "DONE",
+        processing_error=getattr(invoice, "processing_error", None),
+        # === Campos nuevos XSD SIFEN v150 ===
+        qr_url=getattr(invoice, "qr_url", "") or "",
+        info_adicional=getattr(invoice, "info_adicional", "") or "",
+        tipo_documento_electronico=getattr(invoice, "tipo_documento_electronico", "") or "",
+        tipo_de_codigo=getattr(invoice, "tipo_de_codigo", "") or "",
+        ind_presencia=getattr(invoice, "ind_presencia", "") or "",
+        ind_presencia_codigo=getattr(invoice, "ind_presencia_codigo", "") or "",
+        cond_credito=getattr(invoice, "cond_credito", "") or "",
+        cond_credito_codigo=getattr(invoice, "cond_credito_codigo", "") or "",
+        plazo_credito_dias=int(getattr(invoice, "plazo_credito_dias", 0) or 0),
+        ciclo_facturacion=getattr(invoice, "ciclo_facturacion", "") or "",
+        ciclo_fecha_inicio=getattr(invoice, "ciclo_fecha_inicio", "") or "",
+        ciclo_fecha_fin=getattr(invoice, "ciclo_fecha_fin", "") or "",
+        transporte_modalidad=getattr(invoice, "transporte_modalidad", "") or "",
+        transporte_modalidad_codigo=getattr(invoice, "transporte_modalidad_codigo", "") or "",
+        transporte_resp_flete_codigo=getattr(invoice, "transporte_resp_flete_codigo", "") or "",
+        transporte_nro_despacho=getattr(invoice, "transporte_nro_despacho", "") or "",
         email_origen=getattr(invoice, "email_origen", ""),
         mes_proceso=getattr(invoice, "mes_proceso", ""),
         fuente=fuente,
-        minio_key=minio_key
+        minio_key=resolved_minio_key
     )
 
     items: List[InvoiceDetail] = []

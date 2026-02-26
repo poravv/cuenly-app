@@ -36,7 +36,8 @@ def _init_queues():
         from rq import Queue
         from app.core.redis_client import get_redis_client
         
-        redis_conn = get_redis_client()
+        # RQ necesita conexión RAW para manejar datos binarios (pickle) exitosamente
+        redis_conn = get_redis_client(decode_responses=False)
         
         _high_queue = Queue('high', connection=redis_conn, default_timeout='30m')
         _default_queue = Queue('default', connection=redis_conn, default_timeout='2h')
@@ -132,11 +133,28 @@ def get_job_status(job_id: str) -> dict:
         from rq.job import Job
         from app.core.redis_client import get_redis_client
         
-        job = Job.fetch(job_id, connection=get_redis_client())
+        # Usar RAW para fetch de jobs (datos binarios)
+        job = Job.fetch(job_id, connection=get_redis_client(decode_responses=False))
         
+        # Forzar refresh y derivar estado real para evitar falsos "queued"
+        # cuando el job ya terminó pero el campo status quedó desfasado.
+        raw_status = str(job.get_status(refresh=True) or "").lower().strip()
+        if "." in raw_status:
+            raw_status = raw_status.split(".")[-1]
+        if job.is_finished:
+            final_status = "finished"
+        elif job.is_failed:
+            final_status = "failed"
+        elif raw_status in {"started", "running", "busy"}:
+            final_status = "started"
+        elif raw_status in {"queued", "deferred", "scheduled"}:
+            final_status = raw_status
+        else:
+            final_status = raw_status or "queued"
+
         return {
             "id": job.id,
-            "status": job.get_status(),
+            "status": final_status,
             "result": job.result if job.is_finished else None,
             "error": str(job.exc_info) if job.is_failed else None,
             "created_at": job.created_at.isoformat() if job.created_at else None,

@@ -301,7 +301,7 @@ class UserRepository:
     def update_user_profile(self, email: str, profile_data: Dict[str, Any]) -> bool:
         """Actualiza la información del perfil del usuario."""
         # Filtrar campos permitidos para actualización
-        allowed_fields = ['name', 'phone', 'ruc', 'address', 'city', 'document_type']
+        allowed_fields = ['name', 'phone', 'ruc', 'address', 'city', 'document_type', 'webhook_url', 'webhook_secret']
         update_payload = {k: v for k, v in profile_data.items() if k in allowed_fields}
         
         if not update_payload:

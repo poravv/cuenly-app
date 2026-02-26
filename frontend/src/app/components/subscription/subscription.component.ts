@@ -172,8 +172,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
               price: plan.amount,
               currency: plan.currency,
               features: this.extractFeatures(plan.description, plan.features),
-              monthly_ai_limit: plan.features?.ai_invoices_limit || 0,
-              description: plan.description.split('\n')[0],
+              monthly_ai_limit: plan.features ? plan.features.ai_invoices_limit : (plan.ai_invoices_limit || 0),
+              description: plan.description ? plan.description.split('\n')[0] : '',
               is_active: plan.active,
               is_popular: plan.is_popular || false
             }));
@@ -339,7 +339,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   // DEPRECATED: Ya no se usa - mantenido para compatibilidad
   goToAddCard(): void {
-    this.router.navigate(['/payment-methods'], { queryParams: { return: '/subscription' } });
+    this.router.navigate(['/cuenta/pagos'], { queryParams: { return: '/cuenta/suscripcion' } });
   }
 
   closeNoCardModal(): void {
@@ -352,7 +352,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   goToProfileAndComplete(): void {
     this.showIncompleteProfileModal = false;
-    this.router.navigate(['/profile'], {
+    this.router.navigate(['/cuenta/perfil'], {
       queryParams: {
         returnUrl: this.router.url,
         missingFields: this.missingProfileFields.join(',')
@@ -482,7 +482,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
     // Agregar características del backend
     if (backendFeatures) {
-      if (backendFeatures.ai_invoices_limit) {
+      if (backendFeatures.ai_invoices_limit !== undefined && backendFeatures.ai_invoices_limit !== null) {
         if (backendFeatures.ai_invoices_limit === -1) {
           features.push('Procesamiento IA ilimitado');
         } else {
@@ -513,9 +513,8 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       }
 
       if (backendFeatures.retention_days) {
-        features.push(`Retención de archivos: ${Math.floor(backendFeatures.retention_days / 30)} meses`);
-      } else {
-        features.push('Retención de archivos: 1 año');
+        const years = Math.max(1, Math.floor(backendFeatures.retention_days / 365));
+        features.push(`Retención de archivos: ${years} año${years > 1 ? 's' : ''}`);
       }
 
       if (backendFeatures.allowed_export_formats && Array.isArray(backendFeatures.allowed_export_formats)) {

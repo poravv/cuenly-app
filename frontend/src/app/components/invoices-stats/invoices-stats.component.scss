@@ -1,0 +1,52 @@
+.invoices-stats {
+  .metric-card {
+    background: linear-gradient(145deg, #ffffff, #f8fafc);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    padding: 1rem;
+    height: 100%;
+  }
+
+  .metric-label {
+    font-size: 0.8rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
+
+  .metric-value {
+    font-size: 1.35rem;
+    line-height: 1.25;
+    color: #0f172a;
+    font-weight: 700;
+    margin-top: 0.4rem;
+    word-break: break-word;
+  }
+
+  .progress-thin {
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.22);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .invoices-stats {
+    .metric-card {
+      padding: 0.8rem;
+      border-radius: 12px;
+    }
+
+    .metric-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.03em;
+    }
+
+    .metric-value {
+      font-size: 1.12rem;
+      margin-top: 0.25rem;
+    }
+  }
+}

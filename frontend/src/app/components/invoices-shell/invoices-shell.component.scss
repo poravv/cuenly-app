@@ -1,0 +1,91 @@
+.facturas-shell {
+  .facturas-actions-bar {
+    .btn {
+      white-space: nowrap;
+    }
+  }
+
+  .tabs-card {
+    background: #ffffff;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    padding: 0.5rem;
+  }
+
+  .facturas-tabs-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  }
+
+  .facturas-tabs-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .facturas-tabs-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.55);
+    border-radius: 999px;
+  }
+
+  .facturas-tabs {
+    gap: 0.4rem;
+    width: max-content;
+  }
+
+  .facturas-tabs .nav-item {
+    flex: 0 0 auto;
+  }
+
+  .facturas-tabs .nav-link {
+    color: #475569;
+    font-weight: 600;
+    border-radius: 10px;
+    padding: 0.55rem 0.95rem;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  .facturas-tabs .nav-link:hover {
+    background: rgba(37, 99, 235, 0.08);
+    color: #1d4ed8;
+  }
+
+  .facturas-tabs .nav-link.active {
+    background: rgba(37, 99, 235, 0.14);
+    color: #1d4ed8;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .facturas-shell {
+    margin-top: 1rem !important;
+
+    .facturas-actions-bar {
+      position: sticky;
+      top: 64px;
+      z-index: 1020;
+      background: rgba(248, 250, 252, 0.92);
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      border-radius: 12px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      padding: 0.5rem;
+    }
+
+    .facturas-actions-bar .btn {
+      flex: 1 1 auto;
+      justify-content: center;
+    }
+  }
+}
+
+@media (max-width: 400px) {
+  .facturas-shell .facturas-actions-bar {
+    top: 56px;
+  }
+}

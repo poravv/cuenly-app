@@ -13,7 +13,7 @@ import { Component } from '@angular/core';
           <p>Cuenly recolecta información necesaria para la gestión de sus facturas:</p>
           <ul>
             <li>Información de contacto (Nombre, Email).</li>
-            <li>Configuración de cuentas de correo (vía OAuth o cifrado).</li>
+            <li>Configuración de cuentas de correo (cifrado).</li>
             <li>Contenido de facturas procesadas.</li>
           </ul>
         </section>
@@ -28,7 +28,7 @@ import { Component } from '@angular/core';
           <p>Implementamos medidas de seguridad robustas:</p>
           <ul>
             <li>Cifrado de credenciales sensibles.</li>
-            <li>Almacenamiento seguro de archivos en MinIO (S3).</li>
+            <li>Almacenamiento seguro de archivos.</li>
             <li>Uso de tokens seguros para comunicación Frontend-Backend.</li>
           </ul>
         </section>

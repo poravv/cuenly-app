@@ -91,14 +91,7 @@ export interface TemplatesListResponse {
 
 export interface AvailableFieldsResponse {
   fields: { [key: string]: AvailableField };
-  categories: {
-    basic: string[];
-    emisor: string[];
-    cliente: string[];
-    montos: string[];
-    productos: string[];
-    metadata: string[];
-  };
+  categories: { [category: string]: string[] };
 }
 
 // Interfaces para Templates Inteligentes

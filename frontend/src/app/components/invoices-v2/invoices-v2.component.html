@@ -1,35 +1,25 @@
-<div class="container-fluid mt-4 px-4 px-lg-5">
-  <div class="row mb-3">
-    <div class="col-12 d-flex align-items-center justify-content-between flex-wrap">
-      <div>
-        <nav aria-label="breadcrumb" class="mb-2">
-          <ol class="breadcrumb mb-0">
-            <li class="breadcrumb-item"><a routerLink="/" class="text-decoration-none">Inicio</a></li>
-            <li class="breadcrumb-item active">Lista de Facturas</li>
-          </ol>
-        </nav>
-        <h1 class="h3 fw-bold mb-0 d-flex align-items-center">
-          <i class="bi bi-journals text-primary me-2"></i>
-          Cabeceras de Facturas
-        </h1>
-      </div>
-      <div class="d-flex gap-2 mt-2 mt-md-0">
-        <button class="btn btn-danger" (click)="deleteSelected()" [disabled]="!hasSelection || deleteLoading"
-          *ngIf="hasSelection">
-          <i class="bi bi-trash me-1"></i>
-          Eliminar ({{ selectedHeaders.size }})
-        </button>
-        <button class="btn btn-outline-primary" (click)="refresh()" [disabled]="loading">
-          <i class="bi bi-arrow-repeat"></i> Actualizar
-        </button>
-      </div>
+<div class="container-fluid px-4 px-lg-5 pb-4 facturas-tab-content">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 facturas-list-actions">
+    <div class="small text-muted">
+      Filtra, revisa y descarga tus facturas en un solo flujo.
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-danger" (click)="deleteSelected()" [disabled]="!hasSelection || deleteLoading"
+        *ngIf="hasSelection">
+        <i class="bi bi-trash me-1"></i>
+        Eliminar ({{ selectedHeaders.size }})
+      </button>
+      <button class="btn btn-outline-primary" (click)="refresh()" [disabled]="loading">
+        <i class="bi bi-arrow-repeat"></i> Actualizar
+      </button>
     </div>
   </div>
 
   <!-- Filtros -->
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
-      <div class="row g-3 align-items-end">
+      <div class="row g-3 align-items-end filters-grid"
+        [class.mobile-advanced-collapsed]="!showMobileAdvancedFilters">
         <div class="col-12 col-md-3">
           <label class="form-label small fw-semibold">Mes</label>
           <input type="month" class="form-control" [(ngModel)]="month" (change)="refresh()">
@@ -39,20 +29,35 @@
           <input type="text" class="form-control" placeholder="Texto (emisor/receptor/nro)" [(ngModel)]="search"
             (keyup.enter)="refresh()">
         </div>
-        <div class="col-12 col-md-3">
+        <div class="col-12 d-md-none">
+          <button type="button" class="btn btn-outline-secondary w-100 advanced-toggle-btn"
+            (click)="toggleMobileAdvancedFilters()" [attr.aria-expanded]="showMobileAdvancedFilters">
+            <span class="d-inline-flex align-items-center gap-2">
+              <i class="bi bi-sliders"></i>
+              {{ showMobileAdvancedFilters ? 'Ocultar filtros avanzados' : 'Mostrar filtros avanzados' }}
+            </span>
+            <span class="d-inline-flex align-items-center gap-2">
+              <span class="advanced-active-count" *ngIf="activeAdvancedFiltersCount">
+                {{ activeAdvancedFiltersCount }} activos
+              </span>
+              <i class="bi" [ngClass]="showMobileAdvancedFilters ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+            </span>
+          </button>
+        </div>
+        <div class="col-12 col-md-3 advanced-filter">
           <label class="form-label small fw-semibold">Nombre Emisor</label>
           <input type="text" class="form-control" placeholder="Ej: FARMACIA..." [(ngModel)]="emisorNombre"
             (keyup.enter)="refresh()">
         </div>
-        <div class="col-12 col-md-2">
+        <div class="col-12 col-md-2 advanced-filter">
           <label class="form-label small fw-semibold">RUC Emisor</label>
           <input type="text" class="form-control" [(ngModel)]="rucEmisor" (keyup.enter)="refresh()">
         </div>
-        <div class="col-12 col-md-2">
+        <div class="col-12 col-md-2 advanced-filter">
           <label class="form-label small fw-semibold">RUC Receptor</label>
           <input type="text" class="form-control" [(ngModel)]="rucReceptor" (keyup.enter)="refresh()">
         </div>
-        <div class="col-12 col-md-2">
+        <div class="col-12 col-md-2 advanced-filter">
           <label class="form-label small fw-semibold">Ordenar por</label>
           <select class="form-select" [(ngModel)]="sortBy" (change)="refresh()">
             <option value="fecha_emision">Fecha Emisión</option>
@@ -136,6 +141,9 @@
                       <span class="badge" [ngClass]="condBadgeClass(h.condicion_venta)">{{ h.condicion_venta ||
                         'CONTADO' }}</span>
                     </div>
+                    <div class="small text-muted mt-1" *ngIf="h.tipo_documento_electronico">
+                      {{ h.tipo_documento_electronico }}
+                    </div>
                   </td>
                   <td>{{ h.emisor?.nombre }}</td>
                   <td>{{ h.receptor?.nombre }}</td>
@@ -170,6 +178,10 @@
                             <span class="badge bg-info text-dark" *ngIf="h.cdc">CDC: {{ (h.cdc || '').slice(0,8)
                               }}…</span>
                             <span class="badge bg-secondary" *ngIf="h.timbrado">Timbrado: {{ h.timbrado }}</span>
+                            <span class="badge bg-light text-dark border" *ngIf="h.tipo_de_codigo">TiDE: {{
+                              h.tipo_de_codigo }}</span>
+                            <span class="badge bg-light text-dark border" *ngIf="h.ind_presencia_codigo">Presencia: {{
+                              h.ind_presencia_codigo }}</span>
                             <span class="badge bg-light text-dark border">Ítems: {{ h.item_count || (itemsCache[h.id] &&
                               itemsCache[h.id].length || 0) }}</span>
                             <span class="badge bg-light text-dark border" *ngIf="h.fuente">Fuente: {{ h.fuente }}</span>
@@ -200,6 +212,74 @@
                           <div class="bg-white rounded-2 p-2 border">
                             <div class="text-muted">Total</div>
                             <div class="fw-bold text-primary">{{ toCurrency(h.totales?.total || 0) }}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="row g-2 mb-2 small">
+                        <div class="col-6 col-md-3">
+                          <div class="bg-white rounded-2 p-2 border">
+                            <div class="text-muted">Total IVA</div>
+                            <div class="fw-semibold">{{ toCurrency(h.totales?.total_iva || 0) }}</div>
+                          </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <div class="bg-white rounded-2 p-2 border">
+                            <div class="text-muted">Base Gravada</div>
+                            <div class="fw-semibold">{{ toCurrency(h.totales?.total_base_gravada || 0) }}</div>
+                          </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <div class="bg-white rounded-2 p-2 border">
+                            <div class="text-muted">Descuento</div>
+                            <div class="fw-semibold">{{ toCurrency(h.totales?.total_descuento || 0) }}</div>
+                          </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <div class="bg-white rounded-2 p-2 border">
+                            <div class="text-muted">Anticipo</div>
+                            <div class="fw-semibold">{{ toCurrency(h.totales?.anticipo || 0) }}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="bg-white rounded-3 border p-2 mb-2 small" *ngIf="hasExtendedSifenFields(h)">
+                        <div class="fw-semibold mb-2 text-primary">Campos SIFEN mapeados</div>
+                        <div class="row g-2">
+                          <div class="col-12 col-lg-4" *ngIf="h.ind_presencia">
+                            <span class="text-muted">Indicador de presencia:</span>
+                            <span class="fw-semibold ms-1">{{ h.ind_presencia }}</span>
+                          </div>
+                          <div class="col-12 col-lg-4" *ngIf="h.cond_credito">
+                            <span class="text-muted">Condición de crédito:</span>
+                            <span class="fw-semibold ms-1">{{ h.cond_credito }}</span>
+                          </div>
+                          <div class="col-12 col-lg-4" *ngIf="h.plazo_credito_dias">
+                            <span class="text-muted">Plazo:</span>
+                            <span class="fw-semibold ms-1">{{ h.plazo_credito_dias }} días</span>
+                          </div>
+                          <div class="col-12 col-lg-4" *ngIf="h.ciclo_facturacion">
+                            <span class="text-muted">Ciclo:</span>
+                            <span class="fw-semibold ms-1">{{ h.ciclo_facturacion }}</span>
+                          </div>
+                          <div class="col-12 col-lg-4" *ngIf="h.ciclo_fecha_inicio || h.ciclo_fecha_fin">
+                            <span class="text-muted">Rango ciclo:</span>
+                            <span class="fw-semibold ms-1">{{ h.ciclo_fecha_inicio || '-' }} → {{ h.ciclo_fecha_fin || '-'
+                              }}</span>
+                          </div>
+                          <div class="col-12 col-lg-4" *ngIf="h.transporte_modalidad">
+                            <span class="text-muted">Transporte:</span>
+                            <span class="fw-semibold ms-1">{{ h.transporte_modalidad }}</span>
+                          </div>
+                          <div class="col-12 col-lg-4" *ngIf="h.transporte_nro_despacho">
+                            <span class="text-muted">Nro despacho:</span>
+                            <span class="fw-semibold ms-1">{{ h.transporte_nro_despacho }}</span>
+                          </div>
+                          <div class="col-12 col-lg-8" *ngIf="h.qr_url">
+                            <span class="text-muted">QR URL:</span>
+                            <a class="ms-1 small" [href]="h.qr_url" target="_blank" rel="noopener noreferrer">Abrir enlace</a>
+                          </div>
+                          <div class="col-12" *ngIf="h.info_adicional">
+                            <span class="text-muted">Info adicional:</span>
+                            <span class="fw-semibold ms-1">{{ h.info_adicional }}</span>
                           </div>
                         </div>
                       </div>

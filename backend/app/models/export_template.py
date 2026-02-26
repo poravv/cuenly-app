@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable
-from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Set
+
+from pydantic import BaseModel, ConfigDict, Field
 import logging
 
 logger = logging.getLogger(__name__)
@@ -79,11 +80,22 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     # === INFORMACIÓN BÁSICA ===
     "fecha": {"description": "Fecha de emisión", "field_type": FieldType.DATE},
     "numero_factura": {"description": "Número de factura", "field_type": FieldType.TEXT},
+    "cdc": {"description": "Código CDC", "field_type": FieldType.TEXT},
+    "timbrado": {"description": "Número de timbrado", "field_type": FieldType.TEXT},
     "tipo_documento": {"description": "Tipo de documento", "field_type": FieldType.TEXT},
+    "tipo_documento_electronico": {"description": "Tipo de documento electrónico", "field_type": FieldType.TEXT},
+    "tipo_de_codigo": {"description": "Código del tipo de documento electrónico", "field_type": FieldType.TEXT},
     "condicion_venta": {"description": "Condición de venta", "field_type": FieldType.TEXT},
+    "cond_credito": {"description": "Condición de crédito", "field_type": FieldType.TEXT},
+    "cond_credito_codigo": {"description": "Código de condición de crédito", "field_type": FieldType.TEXT},
+    "plazo_credito_dias": {"description": "Plazo de crédito (días)", "field_type": FieldType.NUMBER},
     "moneda": {"description": "Tipo de moneda", "field_type": FieldType.TEXT},
     "tipo_cambio": {"description": "Tipo de cambio", "field_type": FieldType.NUMBER},
-    
+    "ind_presencia": {"description": "Indicador de presencia", "field_type": FieldType.TEXT},
+    "ind_presencia_codigo": {"description": "Código de indicador de presencia", "field_type": FieldType.TEXT},
+    "qr_url": {"description": "URL de consulta QR SET", "field_type": FieldType.TEXT},
+    "info_adicional": {"description": "Información adicional SIFEN", "field_type": FieldType.TEXT},
+
     # === EMISOR ===
     "ruc_emisor": {"description": "RUC del emisor", "field_type": FieldType.TEXT},
     "nombre_emisor": {"description": "Nombre del emisor", "field_type": FieldType.TEXT},
@@ -105,21 +117,28 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "gravado_10": {"description": "Base gravada 10%", "field_type": FieldType.CURRENCY},
     "iva_10": {"description": "IVA 10%", "field_type": FieldType.CURRENCY},
     "monto_exento": {"description": "Monto exento", "field_type": FieldType.CURRENCY},
-    # "exento" eliminado por redundancia con "monto_exento"
     "exonerado": {"description": "Exonerado", "field_type": FieldType.CURRENCY},
     "total_iva": {"description": "Total IVA", "field_type": FieldType.CURRENCY},
+    "total_operacion": {"description": "Total operación", "field_type": FieldType.CURRENCY},
     "monto_total": {"description": "Monto total final", "field_type": FieldType.CURRENCY},
-    
+
     # === TOTALES DEL XML ===
-    # "total_operacion" eliminado por redundancia con "monto_total"
     "total_descuento": {"description": "Total descuento", "field_type": FieldType.CURRENCY},
     "total_base_gravada": {"description": "Total base gravada", "field_type": FieldType.CURRENCY},
     "anticipo": {"description": "Anticipo recibido", "field_type": FieldType.CURRENCY},
-    
-    # === IDENTIFICADORES ===
-    "timbrado": {"description": "Número de timbrado", "field_type": FieldType.TEXT},
-    "cdc": {"description": "Código CDC", "field_type": FieldType.TEXT},
-    
+    "isc_total": {"description": "Total ISC", "field_type": FieldType.CURRENCY},
+    "isc_base_imponible": {"description": "Base imponible ISC", "field_type": FieldType.CURRENCY},
+    "isc_subtotal_gravado": {"description": "Subtotal gravado ISC", "field_type": FieldType.CURRENCY},
+
+    # === OPERACIÓN Y LOGÍSTICA (SIFEN v150) ===
+    "ciclo_facturacion": {"description": "Ciclo de facturación", "field_type": FieldType.TEXT},
+    "ciclo_fecha_inicio": {"description": "Fecha inicio ciclo", "field_type": FieldType.DATE},
+    "ciclo_fecha_fin": {"description": "Fecha fin ciclo", "field_type": FieldType.DATE},
+    "transporte_modalidad": {"description": "Modalidad de transporte", "field_type": FieldType.TEXT},
+    "transporte_modalidad_codigo": {"description": "Código modalidad transporte", "field_type": FieldType.TEXT},
+    "transporte_resp_flete_codigo": {"description": "Código responsable de flete", "field_type": FieldType.TEXT},
+    "transporte_nro_despacho": {"description": "Número de despacho/importación", "field_type": FieldType.TEXT},
+
     # === PRODUCTOS (agrupados) ===
     "productos": {"description": "Productos (todos juntos)", "field_type": FieldType.ARRAY},
     
@@ -136,11 +155,111 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "productos.monto_iva": {"description": "Monto IVA productos", "field_type": FieldType.ARRAY},
     
     # === METADATOS ===
+    "fuente": {"description": "Fuente de procesamiento", "field_type": FieldType.TEXT},
+    "email_origen": {"description": "Email origen", "field_type": FieldType.TEXT},
     "mes_proceso": {"description": "Mes de proceso", "field_type": FieldType.TEXT},
     "created_at": {"description": "Fecha de creación", "field_type": FieldType.DATE},
-    "updated_at": {"description": "Fecha de actualización", "field_type": FieldType.DATE},
-    "owner_email": {"description": "Email propietario", "field_type": FieldType.TEXT},
 }
+
+AVAILABLE_FIELD_CATEGORIES: Dict[str, List[str]] = {
+    "basic": [
+        "numero_factura",
+        "fecha",
+        "cdc",
+        "timbrado",
+        "tipo_documento",
+        "tipo_documento_electronico",
+        "tipo_de_codigo",
+        "condicion_venta",
+        "cond_credito",
+        "cond_credito_codigo",
+        "plazo_credito_dias",
+        "moneda",
+        "tipo_cambio",
+        "ind_presencia",
+        "ind_presencia_codigo",
+        "qr_url",
+        "info_adicional",
+    ],
+    "emisor": [
+        "ruc_emisor",
+        "nombre_emisor",
+        "direccion_emisor",
+        "telefono_emisor",
+        "email_emisor",
+        "actividad_economica",
+    ],
+    "cliente": [
+        "ruc_cliente",
+        "nombre_cliente",
+        "direccion_cliente",
+        "telefono_cliente",
+        "email_cliente",
+    ],
+    "montos": [
+        "gravado_5",
+        "iva_5",
+        "gravado_10",
+        "iva_10",
+        "monto_exento",
+        "exonerado",
+        "total_base_gravada",
+        "total_iva",
+        "total_descuento",
+        "anticipo",
+        "total_operacion",
+        "monto_total",
+        "isc_total",
+        "isc_base_imponible",
+        "isc_subtotal_gravado",
+    ],
+    "operacion": [
+        "ciclo_facturacion",
+        "ciclo_fecha_inicio",
+        "ciclo_fecha_fin",
+        "transporte_modalidad",
+        "transporte_modalidad_codigo",
+        "transporte_resp_flete_codigo",
+        "transporte_nro_despacho",
+    ],
+    "productos": [
+        "productos",
+        "productos.codigo",
+        "productos.nombre",
+        "productos.descripcion",
+        "productos.cantidad",
+        "productos.unidad",
+        "productos.precio_unitario",
+        "productos.total",
+        "productos.iva",
+        "productos.base_gravada",
+        "productos.monto_iva",
+    ],
+    "metadata": [
+        "fuente",
+        "email_origen",
+        "mes_proceso",
+        "created_at",
+    ],
+}
+
+
+def get_available_field_keys() -> Set[str]:
+    return set(AVAILABLE_FIELDS.keys())
+
+
+def get_available_field_categories() -> Dict[str, List[str]]:
+    return {category: list(keys) for category, keys in AVAILABLE_FIELD_CATEGORIES.items()}
+
+
+def get_invalid_template_field_keys(fields: List[ExportField]) -> List[str]:
+    allowed = get_available_field_keys()
+    invalid = {
+        field.field_key
+        for field in fields
+        if field.field_key not in allowed
+    }
+    return sorted(invalid)
 
 # === SIN CAMPOS CALCULADOS ===
 CALCULATION_FUNCTIONS: Dict[CalculatedFieldType, Callable[[Dict[str, Any]], Any]] = {}

@@ -1,0 +1,27 @@
+.process-status-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid transparent;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+
+  i {
+    color: #fff;
+    font-size: 1.85rem;
+    line-height: 1;
+    font-weight: 700;
+  }
+}
+
+.process-status-icon--success {
+  background: linear-gradient(135deg, #198754 0%, #20c997 100%);
+  border-color: rgba(25, 135, 84, 0.35);
+}
+
+.process-status-icon--error {
+  background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+  border-color: rgba(220, 53, 69, 0.35);
+}

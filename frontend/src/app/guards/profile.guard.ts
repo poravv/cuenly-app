@@ -30,7 +30,7 @@ export class ProfileGuard implements CanActivate {
                     this.notificationService.warning(`Por favor completa tu perfil para continuar: ${missing}`);
 
                     // Redirigir a perfil con query params para volver después
-                    this.router.navigate(['/profile'], {
+                    this.router.navigate(['/cuenta/perfil'], {
                         queryParams: {
                             returnUrl: state.url,
                             missingFields: status.missing_fields.join(',')

@@ -210,7 +210,7 @@ export class UserService {
   }
 
   checkProfileCompleteness(): Observable<ProfileStatus> {
-    const url = `/api/user/profile/status`;
+    const url = `/api/user/status`;
     this.observability.debug('Checking profile completeness', 'UserService');
     return this.http.get<ProfileStatus>(url).pipe(
       tap({
@@ -219,6 +219,36 @@ export class UserService {
         },
         error: (error) => {
           this.observability.error('Error checking profile status', error, 'UserService');
+        }
+      })
+    );
+  }
+
+  getQueueEvents(page: number = 1, pageSize: number = 50, status: string = 'all'): Observable<any> {
+    const url = `/api/user/queue-events?page=${page}&page_size=${pageSize}&status=${status}`;
+    this.observability.debug('Fetching queue events', 'UserService', { page, pageSize, status });
+    return this.http.get<any>(url).pipe(
+      tap({
+        next: (response) => {
+          this.observability.debug('Queue events loaded', 'UserService', { count: response?.events?.length });
+        },
+        error: (error) => {
+          this.observability.error('Error fetching queue events', error, 'UserService');
+        }
+      })
+    );
+  }
+
+  retryQueueEvent(eventId: string): Observable<any> {
+    const url = `/api/user/queue-events/${eventId}/retry`;
+    this.observability.debug('Retrying queue event', 'UserService', { eventId });
+    return this.http.post<any>(url, {}).pipe(
+      tap({
+        next: (response) => {
+          this.observability.info('Queue event retry queued', 'UserService', { eventId });
+        },
+        error: (error) => {
+          this.observability.error('Error retrying queue event', error, 'UserService');
         }
       })
     );

@@ -25,6 +25,7 @@ export interface SystemStatus {
   openai_configured: boolean;
   job?: {
     running: boolean;
+    is_processing?: boolean;
     interval_minutes: number;
     next_run?: string;
     last_run?: string;
@@ -33,6 +34,7 @@ export interface SystemStatus {
 
 export interface JobStatus {
   running: boolean;
+  is_processing: boolean;
   interval_minutes: number;
   next_run?: string;
   last_run?: string;
@@ -67,6 +69,9 @@ export interface EmailConfig {
   password: string;
   use_ssl: boolean;
   search_terms: string[];
+  search_synonyms?: { [key: string]: string[] } | string[];
+  fallback_sender_match?: boolean;
+  fallback_attachment_match?: boolean;
   search_criteria?: string;
   provider?: string;  // 'gmail', 'outlook', 'yahoo', 'other'
   enabled?: boolean;

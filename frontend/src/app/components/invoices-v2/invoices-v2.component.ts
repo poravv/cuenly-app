@@ -18,6 +18,7 @@ export class InvoicesV2Component implements OnInit {
   rucReceptor: string = '';
   emisorNombre: string = '';
   sortBy: string = 'fecha_emision';
+  showMobileAdvancedFilters = false;
 
   // Paginación
   page = 1;
@@ -101,6 +102,19 @@ export class InvoicesV2Component implements OnInit {
   }
 
   refresh(): void { this.page = 1; this.loadHeaders(); }
+
+  toggleMobileAdvancedFilters(): void {
+    this.showMobileAdvancedFilters = !this.showMobileAdvancedFilters;
+  }
+
+  get activeAdvancedFiltersCount(): number {
+    let count = 0;
+    if (this.emisorNombre.trim()) count++;
+    if (this.rucEmisor.trim()) count++;
+    if (this.rucReceptor.trim()) count++;
+    if (this.sortBy !== 'fecha_emision') count++;
+    return count;
+  }
 
   prevPage(): void {
     if (this.page <= 1) return;
@@ -192,6 +206,32 @@ export class InvoicesV2Component implements OnInit {
   condBadgeClass(cond: any): string {
     const c = String(cond || '').toUpperCase();
     return c.includes('CRED') ? 'badge bg-warning text-dark' : 'badge bg-success';
+  }
+
+  hasExtendedSifenFields(header: any): boolean {
+    if (!header) return false;
+    const keys = [
+      'tipo_documento_electronico',
+      'tipo_de_codigo',
+      'ind_presencia',
+      'ind_presencia_codigo',
+      'cond_credito',
+      'cond_credito_codigo',
+      'plazo_credito_dias',
+      'ciclo_facturacion',
+      'ciclo_fecha_inicio',
+      'ciclo_fecha_fin',
+      'transporte_modalidad',
+      'transporte_modalidad_codigo',
+      'transporte_resp_flete_codigo',
+      'transporte_nro_despacho',
+      'qr_url',
+      'info_adicional'
+    ];
+    return keys.some((key) => {
+      const value = header[key];
+      return value !== null && value !== undefined && String(value).trim() !== '';
+    });
   }
 
   updateChips(): void {

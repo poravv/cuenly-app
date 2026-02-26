@@ -14,7 +14,7 @@
         </h1>
       </div>
       <div>
-        <button class="btn btn-outline-primary mt-2 mt-md-0" (click)="showAddForm = true" *ngIf="!showAddForm"
+        <button class="btn btn-outline-primary mt-2 mt-md-0" (click)="startQuickAdd('other')" *ngIf="!showAddForm"
           [disabled]="loading || !canAddMore"
           [title]="!canAddMore ? 'Has alcanzado el límite de cuentas de correo de tu plan' : 'Agregar nueva cuenta de correo'">
           <i class="bi bi-plus-circle"></i> Agregar Correo
@@ -43,10 +43,51 @@
         </div>
       </div>
 
+      <div class="card border-0 shadow-sm mb-3 quick-add-card" *ngIf="!showAddForm">
+        <div class="card-body py-2 px-3 d-flex align-items-center flex-wrap gap-2">
+          <span class="text-muted small fw-semibold text-uppercase me-1">Agregar:</span>
+          <button class="btn btn-sm btn-outline-primary quick-add-provider-btn" type="button" (click)="startQuickAdd('other')"
+            [disabled]="loading || !canAddMore"
+            [title]="!canAddMore ? 'Has alcanzado el límite de cuentas de correo de tu plan' : 'Agregar cuenta personalizada'">
+            <span class="quick-add-provider-content">
+              <span class="quick-add-provider-stack" aria-hidden="true">
+                <img src="assets/google.svg" width="12" height="12" alt="" class="quick-add-provider-icon">
+                <i class="bi bi-microsoft quick-add-provider-ms-icon"></i>
+                <i class="bi bi-envelope-at quick-add-provider-custom-icon"></i>
+              </span>
+              <span>Personalizado (IMAP)</span>
+            </span>
+          </button>
+          <button class="btn btn-sm btn-outline-secondary quick-add-provider-btn" type="button" disabled>
+            Gmail (Próximamente)
+          </button>
+          <button class="btn btn-sm btn-outline-secondary quick-add-provider-btn" type="button" disabled>
+            Outlook (Próximamente)
+          </button>
+          <small class="text-muted ms-auto" *ngIf="maxEmailAccounts !== -1">
+            {{ emailConfigs.length }}/{{ maxEmailAccounts }} cuentas
+          </small>
+        </div>
+      </div>
+
       <!-- Formulario para agregar nueva configuración -->
       <div *ngIf="showAddForm" class="card mb-4">
-        <div class="card-header header-primary">
-          <h5 class="card-title mb-0">Nueva Configuración de Correo</h5>
+        <div class="card-header bg-white border-0 pb-2">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+              <h5 class="mb-1 fw-bold d-flex align-items-center">
+                <i class="bi bi-magic text-primary me-2"></i>
+                Configuración de correo
+              </h5>
+              <p class="text-muted small mb-0">
+                1) Proveedor y credencial, 2) Nomenclaturas, 3) Guardar y procesar.
+              </p>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" type="button" (click)="cancelAdd()"
+              [disabled]="savingNew">
+              <i class="bi bi-x-lg me-1"></i>Cerrar
+            </button>
+          </div>
         </div>
         <div class="card-body">
           <!-- Alerta de límite -->
@@ -57,158 +98,142 @@
             Actualmente tienes {{ emailConfigs.length }} configurada(s).
           </div>
 
-          <!-- Selector de proveedor mejorado -->
-          <div class="mb-4" *ngIf="!selectedProvider">
-            <label class="form-label fw-semibold">Selecciona tu proveedor de correo</label>
+          <form (ngSubmit)="addEmailConfig(false)" #emailForm="ngForm" class="email-setup-form">
             <div class="row g-3">
-              <div class="col-md-3 col-6" *ngFor="let provider of providers">
-                <div class="card h-100 provider-card" [class.border-primary]="selectedProvider === provider.id"
-                  [class.opacity-75]="provider.comingSoon" (click)="!provider.comingSoon && selectProvider(provider)"
-                  [style.cursor]="provider.comingSoon ? 'not-allowed' : 'pointer'">
-                  <div class="card-body text-center py-4">
-                    <img *ngIf="provider.id === 'gmail'" src="assets/google.svg" width="40" height="40" alt="Gmail"
-                      class="mb-2">
-                    <i *ngIf="provider.id === 'outlook'" class="bi bi-microsoft fs-1 text-primary mb-2 d-block"></i>
-                    <div *ngIf="provider.id === 'other'"
-                      class="d-flex justify-content-center align-items-center gap-3 mb-2">
-                      <img src="assets/google.svg" width="32" height="32" alt="Gmail">
-                      <i class="bi bi-microsoft text-primary fs-2"></i>
-                      <i class="bi bi-envelope-at-fill text-secondary fs-2" title="Otro"></i>
-                    </div>
-                    <div class="fw-semibold">{{ provider.name }}</div>
-                    <small *ngIf="provider.supportsOAuth" class="text-success d-block mt-1">
-                      <i class="bi bi-shield-check"></i> OAuth disponible
-                    </small>
-                    <small *ngIf="provider.comingSoon" class="text-muted d-block mt-1">
-                      <i class="bi bi-clock"></i> Próximamente
-                    </small>
-                  </div>
+              <div class="col-lg-4">
+                <label class="form-label fw-semibold">Proveedor</label>
+                <select class="form-select" [ngModel]="selectedProvider || 'other'"
+                  (ngModelChange)="selectProviderById($event)" name="provider_id">
+                  <option value="other">Personalizado (IMAP)</option>
+                  <option value="gmail">Gmail</option>
+                  <option value="outlook">Outlook / Hotmail</option>
+                </select>
+                <small class="text-muted">Puedes cambiar servidor y puerto manualmente.</small>
+              </div>
+
+              <div class="col-lg-5">
+                <label for="host" class="form-label fw-semibold">Servidor IMAP</label>
+                <input type="text" class="form-control" id="host" [(ngModel)]="newConfig.host" name="host"
+                  placeholder="ej: imap.ejemplo.com" required>
+              </div>
+
+              <div class="col-lg-3">
+                <label for="port" class="form-label fw-semibold">Puerto</label>
+                <input type="number" class="form-control" id="port" [(ngModel)]="newConfig.port" name="port" min="1"
+                  required>
+              </div>
+
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="use_ssl" [(ngModel)]="newConfig.use_ssl"
+                    name="use_ssl">
+                  <label class="form-check-label" for="use_ssl">
+                    Usar conexión segura SSL/TLS
+                  </label>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <!-- Gmail Coming Soon -->
-          <div *ngIf="selectedProvider === 'gmail'" class="text-center py-5">
-            <img src="assets/google.svg" width="60" height="60" alt="Gmail" class="mb-3 d-block mx-auto">
-            <h5>Gmail - Próximamente</h5>
-            <p class="text-muted">La conexión con cuenta de Google estará disponible pronto.</p>
-            <p class="text-muted small">Por ahora, puedes configurar tu cuenta manualmente mediante contraseña de
-              aplicación en la opción "Otro".</p>
-            <button class="btn btn-outline-secondary mt-3" (click)="selectedProvider = ''">
-              <i class="bi bi-arrow-left"></i> Volver a proveedores
-            </button>
-          </div>
+              <div class="col-md-6">
+                <label for="username" class="form-label fw-semibold">Usuario / Email</label>
+                <input type="email" class="form-control" id="username" [(ngModel)]="newConfig.username" name="username"
+                  required placeholder="tu-email@ejemplo.com">
+              </div>
 
-          <!-- Outlook Coming Soon -->
-          <div *ngIf="selectedProvider === 'outlook'" class="text-center py-5">
-            <i class="bi bi-microsoft fs-1 text-primary mb-3 d-block"></i>
-            <h5>Outlook - Próximamente</h5>
-            <p class="text-muted">La integración con Outlook/Hotmail estará disponible pronto.</p>
-            <p class="text-muted small">Por ahora, puedes configurarlo manualmente usando contraseña de aplicación.</p>
-            <button class="btn btn-outline-secondary" (click)="selectedProvider = ''">
-              <i class="bi bi-arrow-left"></i> Volver
-            </button>
-          </div>
+              <div class="col-md-6">
+                <label for="password" class="form-label fw-semibold">Contraseña o app password</label>
+                <input type="password" class="form-control" id="password" [(ngModel)]="newConfig.password" name="password"
+                  required>
+              </div>
 
-          <!-- Custom Provider - Manual Config -->
-          <div *ngIf="selectedProvider === 'other'">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h6 class="mb-0">
-                <i class="bi bi-gear me-2"></i>
-                Configuración Personalizada
-              </h6>
-              <button class="btn btn-sm btn-outline-secondary" (click)="selectedProvider = ''">
-                <i class="bi bi-arrow-left"></i> Cambiar proveedor
-              </button>
-            </div>
+              <div class="col-12">
+                <label class="form-label fw-semibold">Nomenclaturas de asunto</label>
+                <p class="text-muted small mb-2">
+                  Buscaremos por asunto y también puedes activar remitente/adjunto para mayor cobertura.
+                </p>
 
-            <form (ngSubmit)="addEmailConfig()" #emailForm="ngForm">
-              <div class="row">
-                <!-- Configuración del servidor -->
-                <div class="col-md-6">
-                  <h6>Configuración del Servidor</h6>
-                  <div class="mb-3">
-                    <label for="host" class="form-label">Servidor IMAP *</label>
-                    <input type="text" class="form-control" id="host" [(ngModel)]="newConfig.host" name="host" required
-                      placeholder="ej: imap.ejemplo.com">
+                <div class="row g-2">
+                  <div class="col-md-4" *ngFor="let term of newConfig.search_terms; let i = index; trackBy: trackByIndex">
+                    <div class="input-group">
+                      <input type="text" class="form-control" [(ngModel)]="newConfig.search_terms[i]"
+                        [name]="'search_term_' + i" placeholder="ej: factura">
+                      <button class="btn btn-outline-danger" type="button" (click)="removeSearchTerm(i)"
+                        [disabled]="newConfig.search_terms.length <= 1">
+                        <i class="bi bi-x"></i>
+                      </button>
+                    </div>
                   </div>
-                  <div class="mb-3">
-                    <label for="port" class="form-label">Puerto *</label>
-                    <input type="number" class="form-control" id="port" [(ngModel)]="newConfig.port" name="port"
-                      required>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary mt-2" (click)="addSearchTerm()">
+                  <i class="bi bi-plus me-1"></i>Agregar término
+                </button>
+                <div class="d-flex flex-wrap gap-2 mb-0 mt-2">
+                  <button type="button" class="btn btn-outline-secondary btn-sm preset-term-btn"
+                    *ngFor="let preset of searchTermPresets" (click)="applySearchPresetToNew(preset.id)">
+                    + {{ preset.label }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="col-12">
+                <button type="button" class="btn btn-link p-0 text-decoration-none"
+                  (click)="newAdvancedOpen = !newAdvancedOpen">
+                  <i class="bi" [ngClass]="newAdvancedOpen ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+                  Configuración avanzada (sinónimos y fallback)
+                </button>
+              </div>
+
+              <div class="col-12" *ngIf="newAdvancedOpen">
+                <div class="row g-3">
+                  <div class="col-lg-6">
+                    <label class="form-label">Sinónimos por línea</label>
+                    <textarea class="form-control" rows="4" [(ngModel)]="newSynonymsText" name="new_synonyms_text"
+                      placeholder="factura electronica: facturación, documento electronico&#10;comprobante: comprobante de pago"></textarea>
                   </div>
-                  <div class="mb-3">
+                  <div class="col-lg-6">
+                    <label class="form-label">Adicional</label>
+                    <div class="form-check mb-2">
+                      <input class="form-check-input" type="checkbox" id="fallback_sender_new"
+                        [(ngModel)]="newConfig.fallback_sender_match" name="fallback_sender_new">
+                      <label class="form-check-label" for="fallback_sender_new">
+                        Buscar en remitente si asunto no coincide
+                      </label>
+                    </div>
                     <div class="form-check">
-                      <input class="form-check-input" type="checkbox" id="use_ssl" [(ngModel)]="newConfig.use_ssl"
-                        name="use_ssl">
-                      <label class="form-check-label" for="use_ssl">
-                        Usar SSL/TLS
+                      <input class="form-check-input" type="checkbox" id="fallback_attachment_new"
+                        [(ngModel)]="newConfig.fallback_attachment_match" name="fallback_attachment_new">
+                      <label class="form-check-label" for="fallback_attachment_new">
+                        Buscar en nombre de adjunto si asunto no coincide
                       </label>
                     </div>
                   </div>
                 </div>
-
-                <!-- Credenciales -->
-                <div class="col-md-6">
-                  <h6>Credenciales</h6>
-                  <div class="mb-3">
-                    <label for="username" class="form-label">Usuario/Email *</label>
-                    <input type="email" class="form-control" id="username" [(ngModel)]="newConfig.username"
-                      name="username" required placeholder="tu-email@ejemplo.com">
-                  </div>
-                  <div class="mb-3">
-                    <label for="password" class="form-label">Contraseña *</label>
-                    <input type="password" class="form-control" id="password" [(ngModel)]="newConfig.password"
-                      name="password" required>
-                  </div>
-                </div>
               </div>
+            </div>
 
-              <!-- Términos de búsqueda -->
-              <div class="mb-3">
-                <label class="form-label">Términos de Búsqueda</label>
-                <div class="mb-2" *ngFor="let term of newConfig.search_terms; let i = index; trackBy: trackByIndex">
-                  <div class="input-group">
-                    <input type="text" class="form-control" [(ngModel)]="newConfig.search_terms[i]"
-                      [name]="'search_term_' + i" placeholder="ej: factura, invoice">
-                    <button class="btn btn-outline-danger" type="button" (click)="removeSearchTerm(i)"
-                      [disabled]="newConfig.search_terms.length <= 1">
-                      <i class="bi bi-trash"></i>
-                    </button>
-                  </div>
-                </div>
-                <button type="button" class="btn btn-outline-primary btn-sm" (click)="addSearchTerm()">
-                  <i class="bi bi-plus"></i> Agregar término
-                </button>
-              </div>
+            <div class="alert mt-3 mb-0" *ngIf="testResults[-1]"
+              [ngClass]="testResults[-1].success ? 'alert-success' : 'alert-danger'">
+              {{ testResults[-1].message }}
+            </div>
 
-              <!-- Botones de acción -->
-              <div class="d-flex justify-content-between">
-                <div>
-                  <button type="button" class="btn btn-outline-primary me-2" (click)="testConfiguration(newConfig, -1)"
-                    [disabled]="testing[-1] || !newConfig.host || !newConfig.username || !newConfig.password">
-                    <span *ngIf="testing[-1]" class="spinner-border spinner-border-sm me-1"></span>
-                    <i *ngIf="!testing[-1]" class="bi bi-check-circle"></i>
-                    Probar Conexión
-                  </button>
-                  <div *ngIf="testResults[-1]" class="mt-2">
-                    <div class="alert" [ngClass]="testResults[-1].success ? 'alert-success' : 'alert-danger'">
-                      {{ testResults[-1].message }}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <button type="button" class="btn btn-soft-primary me-2" (click)="cancelAdd()">
-                    Cancelar
-                  </button>
-                  <button type="submit" class="btn btn-primary" [disabled]="!emailForm.form.valid">
-                    <i class="bi bi-save"></i> Guardar
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
+            <div class="d-flex justify-content-end gap-2 mt-3">
+              <button class="btn btn-outline-primary" type="button" (click)="testConfiguration(newConfig, -1)"
+                [disabled]="testing[-1] || savingNew || !newConfig.host || !newConfig.username || !newConfig.password">
+                <span *ngIf="testing[-1]" class="spinner-border spinner-border-sm me-1"></span>
+                <i *ngIf="!testing[-1]" class="bi bi-plug me-1"></i>
+                Probar conexión
+              </button>
+              <button class="btn btn-primary" type="button" (click)="addEmailConfig(false)"
+                [disabled]="savingNew || !newConfig.host || !newConfig.username || !newConfig.password">
+                <span *ngIf="savingNew" class="spinner-border spinner-border-sm me-1"></span>
+                Guardar configuración
+              </button>
+              <button class="btn btn-success" type="button" (click)="addEmailConfig(true)"
+                [disabled]="savingNew || !newConfig.host || !newConfig.username || !newConfig.password">
+                <span *ngIf="savingNew" class="spinner-border spinner-border-sm me-1"></span>
+                Guardar y procesar ahora
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -239,8 +264,8 @@
           <div class="mb-2"><i class="bi bi-envelope-slash fs-3 text-muted"></i></div>
           <p class="mt-2 text-muted mb-1">No hay configuraciones de correo</p>
           <p class="text-muted">Agrega al menos una configuración para comenzar a procesar correos</p>
-          <button class="btn btn-primary mt-2" (click)="showAddForm = true"><i class="bi bi-plus-circle me-1"></i>
-            Agregar correo</button>
+          <!-- <button class="btn btn-primary mt-2" (click)="showAddForm = true"><i class="bi bi-plus-circle me-1"></i>
+            Agregar correo</button> -->
         </div>
       </div>
 
@@ -310,6 +335,22 @@
                     *ngFor="let term of config.search_terms">{{ term }}</span>
                 </div>
               </div>
+              <div class="mb-2" *ngIf="!editing[keyFor(i, config)]">
+                <div class="text-muted mb-1">Si no coincide el asunto, buscar también en:</div>
+                <div class="d-flex flex-wrap gap-1">
+                  <span class="badge rounded-pill border"
+                    [ngClass]="config.fallback_sender_match ? 'bg-success-subtle text-success border-success-subtle' : 'bg-light text-muted'">
+                    Remitente: {{ config.fallback_sender_match ? 'Sí' : 'No' }}
+                  </span>
+                  <span class="badge rounded-pill border"
+                    [ngClass]="config.fallback_attachment_match ? 'bg-success-subtle text-success border-success-subtle' : 'bg-light text-muted'">
+                    Nombre de adjunto: {{ config.fallback_attachment_match ? 'Sí' : 'No' }}
+                  </span>
+                  <span class="badge rounded-pill bg-light border text-muted">
+                    Palabras equivalentes: {{ getSynonymSummary(config) }}
+                  </span>
+                </div>
+              </div>
               <div *ngIf="testResults[i] && !editing[keyFor(i, config)]" class="mt-3">
                 <div class="alert alert-sm" [ngClass]="testResults[i].success ? 'alert-success' : 'alert-danger'">
                   <small>{{ testResults[i].message }}</small>
@@ -352,15 +393,25 @@
 
                   <!-- Mensaje informativo para OAuth2 -->
                   <div class="col-12" *ngIf="isOAuthConfig(config)">
-                    <div class="alert alert-info py-2 mb-2">
+                  <div class="alert alert-info py-2 mb-2">
                       <i class="bi bi-info-circle me-1"></i>
-                      <small>Cuenta OAuth2 - La autenticación es gestionada por Google. Solo puedes editar los términos
-                        de búsqueda.</small>
+                      <small>Cuenta OAuth2 - La autenticación es gestionada por Google. Puedes editar términos de
+                        búsqueda y opciones extra sin tocar credenciales.</small>
                     </div>
                   </div>
 
                   <div class="col-12">
-                    <label class="form-label small">Términos de búsqueda</label>
+                    <label class="form-label small fw-semibold">Cómo encontrar facturas</label>
+                    <p class="text-muted small mb-1">
+                      Se buscará por asunto y, si activas estas opciones, también por remitente y adjuntos.
+                    </p>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                      <button type="button" class="btn btn-outline-secondary btn-sm preset-term-btn"
+                        *ngFor="let preset of searchTermPresets"
+                        (click)="applySearchPresetToEdit(keyFor(i, config), preset.id)">
+                        + {{ preset.label }}
+                      </button>
+                    </div>
                     <div class="mb-1"
                       *ngFor="let term of editData[keyFor(i, config)].search_terms; let ti = index; trackBy: trackByIndex">
                       <div class="input-group input-group-sm">
@@ -372,6 +423,44 @@
                     </div>
                     <button type="button" class="btn btn-outline-primary btn-sm"
                       (click)="addEditSearchTerm(keyFor(i, config))"><i class="bi bi-plus"></i> Agregar término</button>
+
+                    <div class="row g-2 mt-2">
+                      <div class="col-md-6">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox"
+                            [(ngModel)]="editData[keyFor(i, config)].fallback_sender_match"
+                            [name]="'fallback_sender_' + i" [id]="'fallback_sender_' + i">
+                          <label class="form-check-label small" [for]="'fallback_sender_' + i">
+                            Buscar también en el remitente
+                          </label>
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox"
+                            [(ngModel)]="editData[keyFor(i, config)].fallback_attachment_match"
+                            [name]="'fallback_attachment_' + i" [id]="'fallback_attachment_' + i">
+                          <label class="form-check-label small" [for]="'fallback_attachment_' + i">
+                            Buscar también en el nombre del archivo adjunto
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button type="button" class="btn btn-link p-0 mt-2 text-decoration-none"
+                      (click)="editAdvancedOpen[keyFor(i, config)] = !editAdvancedOpen[keyFor(i, config)]">
+                      <i class="bi"
+                        [ngClass]="editAdvancedOpen[keyFor(i, config)] ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+                      Palabras equivalentes (opcional)
+                    </button>
+                    <div class="mt-2" *ngIf="editAdvancedOpen[keyFor(i, config)]">
+                      <textarea class="form-control form-control-sm" rows="4"
+                        [(ngModel)]="editSynonymsText[keyFor(i, config)]" [name]="'edit_synonyms_' + i"
+                        placeholder="factura electronica: facturación, documento electronico&#10;comprobante: comprobante de pago"></textarea>
+                      <small class="text-muted">
+                        Formato por línea: <strong>termino base: sinonimo1, sinonimo2</strong>
+                      </small>
+                    </div>
                   </div>
                 </div>
                 <div class="d-flex justify-content-between mt-3">

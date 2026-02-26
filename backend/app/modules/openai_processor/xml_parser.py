@@ -166,6 +166,12 @@ class ParaguayanXMLParser:
             self._extract_entity_data(de_element, data)
             self._extract_items(de_element, data)
             self._extract_items_and_totals(de_element, data)
+
+            # gCamFuFD está al nivel del root (rDE), no dentro de DE
+            # Resolución del QR URL desde el root si estaba pendiente
+            if data.pop('_qr_search_pending', False):
+                self._extract_root_final_data(root, data)
+
             try:
                 logger.debug(f"XML (raw extract) -> {data}")
             except Exception:
@@ -179,6 +185,46 @@ class ParaguayanXMLParser:
         except Exception as e:
             logger.error(f"Error parseando XML nativamente: {e}")
             return False, {}
+
+    def _extract_root_final_data(self, root: ET.Element, data: Dict[str, Any]):
+        """
+        Extrae gCamFuFD desde el root del documento XML (nivel rDE),
+        ya que este grupo está fuera del elemento <DE>.
+        """
+        try:
+            # Buscar gCamFuFD directamente en el root
+            cam_fu_fd = self._find_element_by_name(root, 'gCamFuFD')
+            if cam_fu_fd is None:
+                # Intentar con namespace
+                try:
+                    cam_fu_fd = root.find(f'.//{{{self.namespaces["sifen"]}}}gCamFuFD')
+                except Exception:
+                    pass
+            if cam_fu_fd is None:
+                # Búsqueda exhaustiva
+                for el in root.iter():
+                    if isinstance(el.tag, str) and el.tag.split('}')[-1] == 'gCamFuFD':
+                        cam_fu_fd = el
+                        break
+
+            if cam_fu_fd is not None:
+                car_qr = self._find_element_by_name(cam_fu_fd, 'dCarQR')
+                inf_adic = self._find_element_by_name(cam_fu_fd, 'dInfAdic')
+                if car_qr is not None and car_qr.text:
+                    data['qr_url'] = car_qr.text.strip()
+                    logger.info(f"✅ QR URL extraído desde gCamFuFD")
+                if inf_adic is not None and inf_adic.text:
+                    data['info_adicional'] = inf_adic.text.strip()
+            else:
+                # Intentar búsqueda directa de dCarQR en todo el árbol
+                for el in root.iter():
+                    if isinstance(el.tag, str) and el.tag.split('}')[-1] == 'dCarQR':
+                        if el.text:
+                            data['qr_url'] = el.text.strip()
+                            logger.info(f"✅ QR URL extraído por búsqueda directa")
+                        break
+        except Exception as e:
+            logger.warning(f"No se pudo extraer gCamFuFD desde root: {e}")
 
     def _extract_basic_data(self, de_element: ET.Element) -> Dict[str, Any]:
         """
@@ -236,6 +282,45 @@ class ParaguayanXMLParser:
                 data['tipo_cambio'] = float(str(ti_cam.text).replace(',', '.'))
             except Exception:
                 pass
+
+        # Indicador de presencia (1=presencial, 2=online, 3=teletrabajo, etc.)
+        ind_pres = self._find_element_by_name_in_de(de_element, 'iIndPres')
+        des_ind_pres = self._find_element_by_name_in_de(de_element, 'dDesIndPres')
+        if ind_pres is not None and ind_pres.text:
+            data['ind_presencia_codigo'] = ind_pres.text
+        if des_ind_pres is not None and des_ind_pres.text:
+            data['ind_presencia'] = des_ind_pres.text
+
+        # Tipo de Documento Electrónico (iTiDE: 1=Factura, 4=Autofactura, 5=Nota crédito, 6=Nota débito, etc.)
+        ti_de = self._find_element_by_name_in_de(de_element, 'iTiDE')
+        des_ti_de = self._find_element_by_name_in_de(de_element, 'dDesTiDE')
+        if ti_de is not None and ti_de.text:
+            data['tipo_de_codigo'] = ti_de.text
+        if des_ti_de is not None and des_ti_de.text:
+            data['tipo_documento_electronico'] = des_ti_de.text
+
+        # Condición de crédito (gPagCred dentro de gCamCond)
+        cond_cred = self._find_element_by_name_in_de(de_element, 'iCondCred')
+        d_cond_cred = self._find_element_by_name_in_de(de_element, 'dDCondCred')
+        plazo_cre = self._find_element_by_name_in_de(de_element, 'dPlazoCre')
+        if cond_cred is not None and cond_cred.text:
+            data['cond_credito_codigo'] = cond_cred.text
+        if d_cond_cred is not None and d_cond_cred.text:
+            data['cond_credito'] = d_cond_cred.text
+        if plazo_cre is not None and plazo_cre.text:
+            try:
+                data['plazo_credito_dias'] = int(plazo_cre.text)
+            except Exception:
+                data['plazo_credito_dias'] = 0
+
+        # Datos de transporte (gTransp)
+        self._extract_transport_data(de_element, data)
+
+        # Datos especiales / ciclo facturación (gCamEsp.gGrupAdi)
+        self._extract_special_fields(de_element, data)
+
+        # Datos adicionales finales (gCamFuFD)
+        self._extract_final_data(de_element, data)
 
     def _extract_entity_data(self, de_element: ET.Element, data: Dict[str, Any]):
         ruc_em = self._find_element_by_name_in_de(de_element, 'dRucEm')
@@ -444,6 +529,7 @@ class ParaguayanXMLParser:
         """
         Extrae información de IVA de un item.
         CRÍTICO: Mapea tasa_iva al campo 'iva' para consistencia con modelo.
+        Incluye dPropIVA (proporción IVA del XSD: 0-100%).
         """
         iva_info = {}
         
@@ -471,6 +557,12 @@ class ParaguayanXMLParser:
             iva_info['base_gravada'] = self._get_float(iva_element, 'dBasGravIVA')
             iva_info['liquidacion_iva'] = self._get_float(iva_element, 'dLiqIVAItem')
             iva_info['base_exenta'] = self._get_float(iva_element, 'dBasExe')
+
+            # dPropIVA: proporción del precio que afecta al IVA (0-100)
+            # Presente en servicios mixtos exentos/gravados
+            prop_iva = self._get_float(iva_element, 'dPropIVA')
+            if prop_iva is not None:
+                iva_info['proporcion_iva'] = prop_iva
         else:
             # Si no hay información de IVA, establecer valores por defecto
             iva_info['iva'] = 0
@@ -481,6 +573,7 @@ class ParaguayanXMLParser:
         """
         Extrae totales con mapeo optimizado para el modelo de datos.
         Prioriza gTotSubGua (guaraníes) sobre gTotSub cuando esté disponible.
+        Incluye campos ISC (Impuesto Selectivo al Consumo) del XSD SIFEN.
         """
         totals = {}
         
@@ -539,12 +632,87 @@ class ParaguayanXMLParser:
             totals['total_descuento'] = self._get_float(totals_element, 'dTotDesc') or 0.0
             totals['anticipo'] = self._get_float(totals_element, 'dAnticipo') or 0.0
             totals['total_base_gravada'] = self._get_float(totals_element, 'dTBasGraIVA') or 0.0
-            
+
+            # === ISC: Impuesto Selectivo al Consumo (XSD: dLtotIsc, dBaseImpISC, dSubVISC) ===
+            # dSubVISC -> subtotal de ítems gravados por ISC
+            totals['isc_subtotal_gravado'] = self._get_float(totals_element, 'dSubVISC') or 0.0
+            # dLtotIsc -> total liquidado de ISC
+            totals['isc_total'] = (
+                self._get_float(totals_element, 'dLtotIsc')
+                or self._get_float(totals_element, 'dLIvc')   # alias en algunas versiones
+                or 0.0
+            )
+            # dBaseImpISC -> base imponible ISC
+            totals['isc_base_imponible'] = self._get_float(totals_element, 'dBaseImpISC') or 0.0
+
             # Log para debug de totales extraídos
             logger.info(f"XML totales extraídos - dSubExe: {exento}, dTotOpe: {totals['total_operacion']}, "
-                       f"dTotGralOpe: {total_general}, dBaseGrav5: {base5}, dBaseGrav10: {base10}")
+                       f"dTotGralOpe: {total_general}, dBaseGrav5: {base5}, dBaseGrav10: {base10}, "
+                       f"ISC: {totals['isc_total']}")
         
         return totals
+
+    def _extract_transport_data(self, de_element: ET.Element, data: Dict[str, Any]):
+        """
+        Extrae datos de transporte (gTransp) del XML SIFEN.
+        iModTrans: 1=Terrestre, 2=Fluvial/Lacustre, 3=Aéreo, 4=Multimodal
+        iRespFlete: 1=Emisor, 2=Receptor, 3=Tercero
+        """
+        mod_trans = self._find_element_by_name_in_de(de_element, 'iModTrans')
+        des_mod_trans = self._find_element_by_name_in_de(de_element, 'dDesModTrans')
+        resp_flete = self._find_element_by_name_in_de(de_element, 'iRespFlete')
+        nu_desp_imp = self._find_element_by_name_in_de(de_element, 'dNuDespImp')
+
+        if mod_trans is not None and mod_trans.text:
+            data['transporte_modalidad_codigo'] = mod_trans.text
+        if des_mod_trans is not None and des_mod_trans.text:
+            data['transporte_modalidad'] = des_mod_trans.text
+        if resp_flete is not None and resp_flete.text:
+            data['transporte_resp_flete_codigo'] = resp_flete.text
+        if nu_desp_imp is not None and nu_desp_imp.text:
+            data['transporte_nro_despacho'] = nu_desp_imp.text
+
+    def _extract_special_fields(self, de_element: ET.Element, data: Dict[str, Any]):
+        """
+        Extrae campos especiales (gCamEsp) como ciclos de facturación de servicios (gGrupAdi).
+        dCiclo: Nombre del ciclo (ej: DICIEMBRE)
+        dFecIniC: Fecha inicio del ciclo
+        dFecFinC: Fecha fin del ciclo
+        """
+        ciclo = self._find_element_by_name_in_de(de_element, 'dCiclo')
+        fec_ini_c = self._find_element_by_name_in_de(de_element, 'dFecIniC')
+        fec_fin_c = self._find_element_by_name_in_de(de_element, 'dFecFinC')
+
+        if ciclo is not None and ciclo.text:
+            data['ciclo_facturacion'] = ciclo.text
+        if fec_ini_c is not None and fec_ini_c.text:
+            data['ciclo_fecha_inicio'] = fec_ini_c.text
+        if fec_fin_c is not None and fec_fin_c.text:
+            data['ciclo_fecha_fin'] = fec_fin_c.text
+
+    def _extract_final_data(self, de_element: ET.Element, data: Dict[str, Any]):
+        """
+        Extrae datos del campo final (gCamFuFD): QR de verificación SET e info adicional.
+        dCarQR: URL completa para verificar el documento en SET
+        dInfAdic: Información adicional del emisor
+        """
+        # Buscar en el root (gCamFuFD está al nivel del rDE, no dentro de DE)
+        # Primero intentar directamente en de_element
+        car_qr = self._find_element_by_name_in_de(de_element, 'dCarQR')
+        inf_adic = self._find_element_by_name_in_de(de_element, 'dInfAdic')
+
+        # Si no está dentro de DE, buscar en el root (nivel rDE)
+        if car_qr is None:
+            # Intentar subiendo al parent — no disponible en ElementTree sin wrapping
+            # Guardar referencia en data para resolución en parse_xml si es necesario
+            data['_qr_search_pending'] = True
+        else:
+            if car_qr.text:
+                data['qr_url'] = car_qr.text.strip()
+            data['_qr_search_pending'] = False
+
+        if inf_adic is not None and inf_adic.text:
+            data['info_adicional'] = inf_adic.text.strip()
 
     def _validate_minimum_data(self, data: Dict[str, Any]) -> bool:
         required_fields = ['fecha', 'numero_factura', 'ruc_emisor']
@@ -560,17 +728,38 @@ class ParaguayanXMLParser:
         Mapea correctamente gravado_5/10 e iva_5/10 desde XML SIFEN al modelo de datos.
         'subtotal_5' y 'subtotal_10' representan la BASE (gravado), sin IVA.
         'gravado_5' y 'gravado_10' son los mismos valores para compatibilidad.
+        Incluye todos los campos nuevos del XSD v150.
         """
         normalized: Dict[str, Any] = {}
 
-        # Copiar campos directos (incluye datos de emisor y receptor)
+        # Copiar campos directos — emisor, receptor, operación, identificación
         for k in [
             'fecha', 'numero_factura',
             'ruc_emisor', 'nombre_emisor', 'direccion_emisor', 'telefono_emisor', 'email_emisor',
             'ruc_cliente', 'nombre_cliente', 'email_cliente', 'direccion_cliente', 'telefono_cliente',
             'condicion_venta', 'moneda', 'tipo_cambio', 'monto_total',
             'timbrado', 'cdc',
-            'total_operacion', 'total_descuento', 'anticipo', 'actividad_economica'
+            'total_operacion', 'total_descuento', 'anticipo', 'actividad_economica',
+            # === Campos nuevos XSD v150 ===
+            'qr_url',                     # gCamFuFD.dCarQR
+            'info_adicional',             # gCamFuFD.dInfAdic
+            'tipo_documento_electronico', # gTimb.dDesTiDE
+            'tipo_de_codigo',             # gTimb.iTiDE
+            'ind_presencia',              # gDtipDE.gCamFE.dDesIndPres
+            'ind_presencia_codigo',       # gDtipDE.gCamFE.iIndPres
+            'cond_credito',               # gCamCond.gPagCred.dDCondCred
+            'cond_credito_codigo',        # gCamCond.gPagCred.iCondCred
+            'plazo_credito_dias',         # gCamCond.gPagCred.dPlazoCre
+            'ciclo_facturacion',          # gCamEsp.gGrupAdi.dCiclo
+            'ciclo_fecha_inicio',         # gCamEsp.gGrupAdi.dFecIniC
+            'ciclo_fecha_fin',            # gCamEsp.gGrupAdi.dFecFinC
+            'transporte_modalidad',       # gTransp.dDesModTrans
+            'transporte_modalidad_codigo',# gTransp.iModTrans
+            'transporte_resp_flete_codigo',# gTransp.iRespFlete
+            'transporte_nro_despacho',    # gTransp.dNuDespImp
+            'isc_total',                  # gTotSub.dLtotIsc
+            'isc_base_imponible',         # gTotSub.dBaseImpISC
+            'isc_subtotal_gravado',       # gTotSub.dSubVISC
         ]:
             if k in data:
                 normalized[k] = data[k]

@@ -21,8 +21,8 @@ import { Component } from '@angular/core';
             <nav class="footer-nav d-flex gap-3 flex-wrap justify-content-center justify-content-md-end">
               <a class="link" routerLink="/">Dashboard</a>
               
-              <a class="link" routerLink="/upload">Subir PDF</a>
-              <a class="link" routerLink="/upload-xml">Subir XML</a>
+              <a class="link" routerLink="/facturas/subir">Subir PDF</a>
+              <a class="link" routerLink="/facturas/subir-xml">Subir XML</a>
               <div class="vr mx-2 text-muted opacity-25 d-none d-md-block"></div>
               <a class="link" routerLink="/terms">Términos</a>
               <a class="link" routerLink="/privacy">Privacidad</a>

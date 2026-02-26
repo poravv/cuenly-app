@@ -121,9 +121,10 @@
   }
 
   .nav-item-content {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    line-height: 1.1;
 
     i {
       font-size: 1rem;
@@ -131,6 +132,71 @@
       text-align: center;
     }
   }
+}
+
+.navbar-nav .nav-item-group {
+  .nav-link.dropdown-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .dropdown-toggle::after {
+    margin-left: 0;
+    vertical-align: middle;
+  }
+
+  .dropdown-menu {
+    min-width: 240px;
+    max-width: min(280px, calc(100vw - 2rem));
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+  }
+}
+
+.account-menu .account-dropdown-menu {
+  left: auto;
+  right: 0;
+}
+
+.account-dropdown-header {
+  padding: 0.35rem 0.45rem;
+}
+
+.account-dropdown-avatar,
+.account-dropdown-avatar-placeholder {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid rgba(43, 78, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.account-dropdown-avatar {
+  object-fit: cover;
+}
+
+.account-dropdown-avatar-placeholder {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.account-dropdown-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.account-dropdown-email {
+  font-size: 0.7rem;
+  color: #64748b;
 }
 
 .dropdown-menu {
@@ -397,6 +463,17 @@
   color: #dc2626;
 }
 
+.admin-mobile-link {
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  color: white !important;
+  border: none;
+}
+
+.admin-mobile-link:hover {
+  color: white !important;
+  transform: translateX(2px);
+}
+
 // Trial Information Styles
 .trial-info {
   display: flex;
@@ -544,6 +621,25 @@
         padding: 1rem;
       }
     }
+
+    .nav-item-group .dropdown-toggle::after {
+      margin-left: auto;
+    }
+
+    .nav-item-group .dropdown-menu {
+      position: static;
+      float: none;
+      transform: none !important;
+      box-shadow: none;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      margin: 0.35rem 0 0.65rem;
+      background: rgba(248, 250, 252, 0.75);
+    }
+  }
+
+  .account-menu .account-dropdown-menu {
+    left: 0;
+    right: auto;
   }
 }
 

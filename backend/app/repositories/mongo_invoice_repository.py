@@ -1,9 +1,10 @@
 from __future__ import annotations
 import logging
+import re
 from typing import List, Optional
 from datetime import datetime
 
-from pymongo import MongoClient, UpdateOne
+from pymongo import MongoClient
 from pymongo.collection import Collection
 
 from app.models.invoice_v2 import InvoiceHeader, InvoiceDetail, InvoiceDocument
@@ -11,6 +12,7 @@ from app.repositories.invoice_repository import InvoiceRepository
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
+_CDC_TOKEN_RE = re.compile(r"\d{44}")
 
 
 class MongoInvoiceRepository(InvoiceRepository):
@@ -35,14 +37,37 @@ class MongoInvoiceRepository(InvoiceRepository):
     def _headers(self) -> Collection:
         coll = self._get_db()[self.headers_collection_name]
         try:
-            coll.create_index("_id", unique=True)
+            # _id ya es único por definición en MongoDB; no forzar opciones evita warnings.
             coll.create_index([("emisor.ruc", 1), ("fecha_emision", -1)])
             coll.create_index("emisor.nombre")
             coll.create_index("receptor.nombre")
             coll.create_index("mes_proceso")
             coll.create_index("owner_email")
-        except Exception:
-            pass
+            coll.create_index("message_id")
+            coll.create_index([("owner_email", 1), ("message_id", 1)])
+
+            desired_partial = {
+                # Evita $ne porque algunos engines Mongo no lo aceptan en partial indexes.
+                # $gt: "" filtra strings no vacíos.
+                "owner_email": {"$exists": True, "$gt": ""},
+                "cdc": {"$exists": True, "$gt": ""},
+            }
+            idx_name = "owner_email_1_cdc_1"
+            idx_info = coll.index_information().get(idx_name)
+            if idx_info:
+                current_partial = idx_info.get("partialFilterExpression")
+                current_unique = bool(idx_info.get("unique"))
+                if (not current_unique) or (current_partial != desired_partial):
+                    coll.drop_index(idx_name)
+
+            coll.create_index(
+                [("owner_email", 1), ("cdc", 1)],
+                name=idx_name,
+                unique=True,
+                partialFilterExpression=desired_partial,
+            )
+        except Exception as e:
+            logger.warning(f"No se pudieron crear/actualizar índices de invoice_headers: {e}")
         return coll
 
     def _items(self) -> Collection:
@@ -50,8 +75,8 @@ class MongoInvoiceRepository(InvoiceRepository):
         try:
             coll.create_index([("header_id", 1), ("linea", 1)], unique=True)
             coll.create_index("owner_email")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"No se pudieron crear/actualizar índices de invoice_items: {e}")
         return coll
 
     def get_invoices_by_user(self, owner_email: str, filters: dict = None) -> List[dict]:
@@ -81,14 +106,14 @@ class MongoInvoiceRepository(InvoiceRepository):
                     query["receptor.ruc"] = filters["ruc_cliente"]
                     
                 if filters.get("monto_minimo"):
-                    if "total_monto" not in query:
-                        query["total_monto"] = {}
-                    query["total_monto"]["$gte"] = float(filters["monto_minimo"])
+                    if "totales.total" not in query:
+                        query["totales.total"] = {}
+                    query["totales.total"]["$gte"] = float(filters["monto_minimo"])
                     
                 if filters.get("monto_maximo"):
-                    if "total_monto" not in query:
-                        query["total_monto"] = {}
-                    query["total_monto"]["$lte"] = float(filters["monto_maximo"])
+                    if "totales.total" not in query:
+                        query["totales.total"] = {}
+                    query["totales.total"]["$lte"] = float(filters["monto_maximo"])
             
             # Obtener headers
             headers = list(self._headers().find(query).sort("fecha_emision", -1))
@@ -100,12 +125,34 @@ class MongoInvoiceRepository(InvoiceRepository):
                 items = list(self._items().find({"header_id": header["_id"]}))
                 
                 # Combinar header e items en estructura de factura compatible
+                totales = header.get("totales", {}) or {}
+                total_iva = totales.get("total_iva", None)
+                if total_iva is None:
+                    total_iva = (totales.get("iva_5", 0) or 0) + (totales.get("iva_10", 0) or 0)
+
                 invoice = {
                     "_id": str(header["_id"]),
                     "numero_factura": header.get("numero_documento", ""),
                     "fecha": header.get("fecha_emision"),
                     "cdc": header.get("cdc", ""),
                     "timbrado": header.get("timbrado", ""),
+                    "tipo_documento": header.get("tipo_documento", ""),
+                    "tipo_documento_electronico": header.get("tipo_documento_electronico", ""),
+                    "tipo_de_codigo": header.get("tipo_de_codigo", ""),
+                    "ind_presencia": header.get("ind_presencia", ""),
+                    "ind_presencia_codigo": header.get("ind_presencia_codigo", ""),
+                    "cond_credito": header.get("cond_credito", ""),
+                    "cond_credito_codigo": header.get("cond_credito_codigo", ""),
+                    "plazo_credito_dias": header.get("plazo_credito_dias", 0),
+                    "ciclo_facturacion": header.get("ciclo_facturacion", ""),
+                    "ciclo_fecha_inicio": header.get("ciclo_fecha_inicio", ""),
+                    "ciclo_fecha_fin": header.get("ciclo_fecha_fin", ""),
+                    "transporte_modalidad": header.get("transporte_modalidad", ""),
+                    "transporte_modalidad_codigo": header.get("transporte_modalidad_codigo", ""),
+                    "transporte_resp_flete_codigo": header.get("transporte_resp_flete_codigo", ""),
+                    "transporte_nro_despacho": header.get("transporte_nro_despacho", ""),
+                    "qr_url": header.get("qr_url", ""),
+                    "info_adicional": header.get("info_adicional", ""),
                     "ruc_emisor": header.get("emisor", {}).get("ruc", ""),
                     "nombre_emisor": header.get("emisor", {}).get("nombre", ""),
                     "direccion_emisor": header.get("emisor", {}).get("direccion", ""),
@@ -118,32 +165,37 @@ class MongoInvoiceRepository(InvoiceRepository):
                     "telefono_cliente": header.get("receptor", {}).get("telefono", ""),
                     "email_cliente": header.get("receptor", {}).get("email", ""),
                     # Mapeo correcto desde modelo v2
-                    "totales": header.get("totales", {}),
-                    "subtotal_exentas": header.get("totales", {}).get("exentas", 0),
-                    "exento": header.get("totales", {}).get("exentas", 0),
-                    "subtotal_5": header.get("totales", {}).get("gravado_5", 0),
-                    "gravado_5": header.get("totales", {}).get("gravado_5", 0),
-                    "iva_5": header.get("totales", {}).get("iva_5", 0),
-                    "subtotal_10": header.get("totales", {}).get("gravado_10", 0),
-                    "gravado_10": header.get("totales", {}).get("gravado_10", 0),
-                    "iva_10": header.get("totales", {}).get("iva_10", 0),
-                    "monto_total": header.get("totales", {}).get("total", 0),
+                    "totales": totales,
+                    "subtotal_exentas": totales.get("exentas", 0),
+                    "exento": totales.get("monto_exento", 0) or totales.get("exentas", 0),
+                    "subtotal_5": totales.get("gravado_5", 0),
+                    "gravado_5": totales.get("gravado_5", 0),
+                    "iva_5": totales.get("iva_5", 0),
+                    "subtotal_10": totales.get("gravado_10", 0),
+                    "gravado_10": totales.get("gravado_10", 0),
+                    "iva_10": totales.get("iva_10", 0),
+                    "monto_total": totales.get("total", 0),
                     # CRÍTICO: Campos faltantes para template export
-                    "total_operacion": header.get("totales", {}).get("total_operacion", 0),
-                    "monto_exento": header.get("totales", {}).get("exentas", 0),  # Usar exentas como fuente principal
-                    "exonerado": header.get("totales", {}).get("exonerado", 0),
-                    "total_iva": header.get("totales", {}).get("total_iva", 0),
-                    "total_descuento": header.get("totales", {}).get("total_descuento", 0),
-                    "anticipo": header.get("totales", {}).get("anticipo", 0),
-                    "base_gravada_5": header.get("totales", {}).get("gravado_5", 0),
-                    "base_gravada_10": header.get("totales", {}).get("gravado_10", 0),
-                    # Calcular total_base_gravada siempre como suma
-                    "total_base_gravada": header.get("totales", {}).get("gravado_5", 0) + header.get("totales", {}).get("gravado_10", 0),
+                    "total_operacion": totales.get("total_operacion", 0) or totales.get("total", 0),
+                    "monto_exento": totales.get("monto_exento", 0) or totales.get("exentas", 0),
+                    "exonerado": totales.get("exonerado", 0),
+                    "total_iva": total_iva,
+                    "total_descuento": totales.get("total_descuento", 0),
+                    "anticipo": totales.get("anticipo", 0),
+                    "base_gravada_5": totales.get("gravado_5", 0),
+                    "base_gravada_10": totales.get("gravado_10", 0),
+                    "total_base_gravada": totales.get(
+                        "total_base_gravada",
+                        (totales.get("gravado_5", 0) or 0) + (totales.get("gravado_10", 0) or 0),
+                    ),
+                    "isc_total": totales.get("isc_total", 0),
+                    "isc_base_imponible": totales.get("isc_base_imponible", 0),
+                    "isc_subtotal_gravado": totales.get("isc_subtotal_gravado", 0),
                     "condicion_venta": header.get("condicion_venta", ""),
                     "moneda": header.get("moneda", "PYG"),
                     "tipo_cambio": header.get("tipo_cambio", 0.0),
                     "fuente": header.get("fuente", ""),
-                    "processing_quality": header.get("processing_quality", ""),
+                    "email_origen": header.get("email_origen", ""),
                     "created_at": header.get("created_at"),
                     "mes_proceso": header.get("mes_proceso", ""),
                     "productos": [],
@@ -207,6 +259,46 @@ class MongoInvoiceRepository(InvoiceRepository):
     def _get_priority(self, fuente: str) -> int:
         return self.PRIORITY_MAP.get(fuente, 0)
 
+    @staticmethod
+    def _is_minio_key_compatible_with_cdc(minio_key: str, cdc: str) -> bool:
+        key = (minio_key or "").strip()
+        if not key:
+            return False
+        cdc = (cdc or "").strip()
+        if not cdc:
+            return True
+        tokens = _CDC_TOKEN_RE.findall(key)
+        if not tokens:
+            # Sin token CDC en nombre no podemos validarlo aquí.
+            return False
+        return cdc in tokens
+
+    def _resolve_canonical_header_id(
+        self,
+        owner: str,
+        current_id: str,
+        cdc: str,
+        message_id: str
+    ) -> str:
+        headers = self._headers()
+        if owner and cdc:
+            existing = headers.find_one(
+                {"owner_email": owner, "cdc": cdc},
+                {"_id": 1}
+            )
+            if existing and existing.get("_id"):
+                return str(existing["_id"])
+
+        if owner and message_id:
+            existing = headers.find_one(
+                {"owner_email": owner, "message_id": message_id},
+                {"_id": 1}
+            )
+            if existing and existing.get("_id"):
+                return str(existing["_id"])
+
+        return f"{owner}:{current_id}" if owner else current_id
+
     # Override: asegurar unicidad por usuario + factura
     def save_document(self, doc: InvoiceDocument) -> None:
         """
@@ -225,9 +317,20 @@ class MongoInvoiceRepository(InvoiceRepository):
             except Exception:
                 owner = ''
 
-        original_id = doc.header.id
-        # Construir ID compuesto solo si hay owner; si no, mantener comportamiento actual
-        combined_id = f"{owner}:{original_id}" if owner else original_id
+        original_id = str(doc.header.id)
+        cdc = str(getattr(doc.header, "cdc", "") or "").strip()
+        message_id = str(getattr(doc.header, "message_id", "") or "").strip()
+        if cdc:
+            doc.header.cdc = cdc
+        if message_id:
+            doc.header.message_id = message_id
+
+        combined_id = self._resolve_canonical_header_id(
+            owner=owner,
+            current_id=original_id,
+            cdc=cdc,
+            message_id=message_id
+        )
 
         # Mutar documento en memoria para mantener consistencia
         doc.header.id = combined_id
@@ -257,6 +360,21 @@ class MongoInvoiceRepository(InvoiceRepository):
             # Si actualizamos, preservamos ciertos campos si la nueva fuente es de menor calidad pero igual prioridad (edge case)
             # Pero la regla es simple: si new >= old, sobreescribimos.
             logger.info(f"🔄 Actualizando factura {combined_id}: Prioridad nueva ({new_fuente}={new_priority}) >= Existente ({existing_fuente}={existing_priority})")
+
+            # No perder referencia al archivo ya subido por reprocesos sin adjunto.
+            existing_minio_key = (existing_header.get("minio_key") or "").strip()
+            new_minio_key = (getattr(doc.header, "minio_key", "") or "").strip()
+            if existing_minio_key and not new_minio_key:
+                header_cdc = str(getattr(doc.header, "cdc", "") or "").strip()
+                if self._is_minio_key_compatible_with_cdc(existing_minio_key, header_cdc):
+                    doc.header.minio_key = existing_minio_key
+                    logger.info(f"♻️ Preservando minio_key existente para factura {combined_id}")
+                else:
+                    logger.warning(
+                        "⚠️ No se preserva minio_key en %s por posible inconsistencia de CDC (%s)",
+                        combined_id,
+                        header_cdc or "sin_cdc",
+                    )
 
         # Upsert de header e items
         self.upsert_header(doc.header)

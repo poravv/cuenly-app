@@ -5,6 +5,7 @@ import uuid
 import hashlib
 import logging
 import io
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Tuple, Optional, Union
 from dataclasses import dataclass
@@ -127,7 +128,22 @@ def validate_file_type(content: bytes, filename: str) -> bool:
     logger.info(f"🔍 Validating file: {filename} (ext={ext}) -> Detected MIME: {mime}")
 
     if ext in valid_mimes:
-        if mime not in valid_mimes[ext]:
+        if ext == '.xml':
+            # Algunos XML reales llegan como text/plain o application/*+xml.
+            xml_plus_mime = isinstance(mime, str) and mime.lower().endswith("+xml")
+            xml_text_fallback = False
+            if mime in ("text/plain", "application/octet-stream"):
+                try:
+                    if (content or b"").lstrip().startswith(b"<"):
+                        ET.fromstring(content)
+                        xml_text_fallback = True
+                except Exception:
+                    xml_text_fallback = False
+
+            if not (mime in valid_mimes[ext] or xml_plus_mime or xml_text_fallback):
+                logger.warning(f"⚠️ Security: File {filename} has extension {ext} but mime {mime}. Rejecting.")
+                return False
+        elif mime not in valid_mimes[ext]:
             logger.warning(f"⚠️ Security: File {filename} has extension {ext} but mime {mime}. Rejecting.")
             return False
             
@@ -275,6 +291,39 @@ def save_binary(
     except Exception as e:
         logger.error(f"❌ Error al guardar archivo {filename}: {e}")
         return StoragePath(local_path="")
+
+
+def delete_local_temp_file(path: str) -> bool:
+    """Elimina un archivo temporal local de forma segura."""
+    if not path:
+        return False
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+            logger.info(f"🧹 Archivo temporal eliminado: {path}")
+            return True
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo eliminar archivo temporal {path}: {e}")
+    return False
+
+
+def cleanup_local_file_if_safe(path: str, minio_key: str = "") -> bool:
+    """
+    Limpia archivo temporal solo cuando es seguro.
+
+    Regla:
+    - Si MinIO está habilitado, solo borrar si existe minio_key.
+    - Si MinIO no está habilitado, permitir borrado local (modo local/dev).
+    """
+    if not path:
+        return False
+    if settings.MINIO_ACCESS_KEY and not (minio_key or "").strip():
+        logger.warning(
+            "⚠️ Conservando temporal local porque MinIO está habilitado pero el minio_key está vacío: %s",
+            path,
+        )
+        return False
+    return delete_local_temp_file(path)
 
 def cleanup_temp_dir(older_than_hours: int = 24) -> int:
     """Elimina archivos en el dir temporal más viejo que X horas."""

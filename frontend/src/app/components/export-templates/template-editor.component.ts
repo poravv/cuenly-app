@@ -37,6 +37,7 @@ export class TemplateEditorComponent implements OnInit {
   // Solo campos disponibles reales de la base de datos
   availableFields: { [key: string]: AvailableField } = {};
   fieldCategories: any = {};
+  categoryOrder: string[] = [];
   
   // Enums para templates
   FieldType = FieldType;
@@ -69,12 +70,21 @@ export class TemplateEditorComponent implements OnInit {
       next: (response: AvailableFieldsResponse) => {
         this.availableFields = response.fields || {};
         // Ya no hay campos calculados
-        this.fieldCategories = response.categories;
+        this.fieldCategories = response.categories || {};
+        this.categoryOrder = this.buildCategoryOrder(this.fieldCategories);
       },
       error: (error: any) => {
         console.error('Error cargando campos disponibles:', error);
       }
     });
+  }
+
+  private buildCategoryOrder(categories: { [key: string]: string[] }): string[] {
+    const preferred = ['basic', 'emisor', 'cliente', 'montos', 'operacion', 'productos', 'metadata'];
+    const present = Object.keys(categories || {});
+    const orderedPreferred = preferred.filter((key) => present.includes(key));
+    const remaining = present.filter((key) => !preferred.includes(key)).sort();
+    return [...orderedPreferred, ...remaining];
   }
 
   loadTemplate(): void {
@@ -315,7 +325,8 @@ export class TemplateEditorComponent implements OnInit {
   }
   
   saveTemplate(): void {
-    const errors = this.exportTemplateService.validateTemplate(this.template);
+    const allowedFieldKeys = new Set(Object.keys(this.availableFields || {}));
+    const errors = this.exportTemplateService.validateTemplate(this.template, allowedFieldKeys);
     if (errors.length > 0) {
       this.notificationService.error(
         'Por favor, corrija los siguientes errores:\n• ' + errors.join('\n• '),
@@ -364,6 +375,7 @@ export class TemplateEditorComponent implements OnInit {
       'emisor': 'Datos del Emisor',
       'cliente': 'Datos del Cliente',
       'montos': 'Montos e Impuestos',
+      'operacion': 'Operación SIFEN',
       'productos': 'Productos',
       'metadata': 'Información Adicional'
     };

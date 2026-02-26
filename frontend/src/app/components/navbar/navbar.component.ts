@@ -27,7 +27,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
   user: User | null = null;
   userProfile: UserProfile | null = null;
   isProfileDropdownOpen = false;
-  
+
   // Control de imagen de perfil
   profileImageFailed = false;
   cachedAvatarUrl: string | null = null;
@@ -46,7 +46,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     // Hacer el componente accesible globalmente para debugging
     (window as any).navbarComponent = this;
-    
+
     // Cargar avatar cacheado si existe
     this.cachedAvatarUrl = this.avatarCache.getCachedAvatar();
 
@@ -81,7 +81,8 @@ export class NavbarComponent implements OnInit, OnDestroy {
   }
 
   private loadStatus(): void {
-    if (this.router.url === '/profile') {
+    const currentPath = this.router.url.split('?')[0];
+    if (currentPath === '/profile' || currentPath === '/cuenta/perfil') {
       return;
     }
     this.api.getStatus().subscribe({
@@ -141,6 +142,27 @@ export class NavbarComponent implements OnInit, OnDestroy {
     this.isProfileDropdownOpen = !this.isProfileDropdownOpen;
   }
 
+  closeNavbar(): void {
+    const navbarCollapse = document.getElementById('navbarNav');
+    if (navbarCollapse && navbarCollapse.classList.contains('show')) {
+      navbarCollapse.classList.remove('show');
+    }
+
+    // Cerrar dropdowns abiertos (desktop/mobile) después de seleccionar opción
+    document.querySelectorAll('.app-navbar .dropdown-menu.show').forEach((menu) => {
+      menu.classList.remove('show');
+    });
+    document.querySelectorAll('.app-navbar .dropdown-toggle.show').forEach((toggle) => {
+      toggle.classList.remove('show');
+      toggle.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  isAnyRouteActive(routes: string[]): boolean {
+    const currentPath = this.router.url.split('?')[0];
+    return routes.some(route => currentPath === route || currentPath.startsWith(`${route}/`));
+  }
+
   // Método para debugging - puede ser llamado desde la consola del navegador
   public debugUserProfile(): void {
     console.log('🔍 DEBUG: Estado actual del navbar');
@@ -153,13 +175,13 @@ export class NavbarComponent implements OnInit, OnDestroy {
   // Métodos para debugging de imágenes
   onImageLoad(location: string, event?: any): void {
     console.log(`✅ Imagen cargada correctamente en: ${location}`);
-    
+
     // Intentar cachear la imagen cuando carga exitosamente
     if (event?.target && !this.avatarCache.hasCachedAvatar()) {
       this.avatarCache.cacheFromImageElement(event.target);
       this.cachedAvatarUrl = this.avatarCache.getCachedAvatar();
     }
-    
+
     // Asegurar que no está marcada como fallida
     this.profileImageFailed = false;
   }
@@ -167,33 +189,36 @@ export class NavbarComponent implements OnInit, OnDestroy {
   onImageError(location: string, event: any): void {
     console.error(`❌ Error cargando imagen en: ${location}`, event);
     console.error('URL de la imagen que falló:', event.target?.src);
-    
+
     // Marcar la URL como fallida y ocultar la imagen rota
     const failedUrl = event.target?.src;
     if (failedUrl) {
       this.avatarCache.markAsFailed(failedUrl);
     }
-    
+
     // Ocultar la imagen rota
     if (event.target) {
       event.target.style.display = 'none';
     }
-    
+
     // Mostrar placeholder
     this.profileImageFailed = true;
   }
-  
+
   /**
    * Obtiene la URL del avatar a mostrar (cacheada o original)
    */
   getAvatarUrl(): string | null {
-    // Prioridad: caché local > perfil API > Firebase
+    // Prioridad: caché local > foto de Google (Firebase) > foto de perfil API
     if (this.cachedAvatarUrl) {
       return this.cachedAvatarUrl;
     }
-    return this.userProfile?.picture || this.user?.photoURL || null;
+
+    const primary = this.user?.photoURL || this.userProfile?.picture || null;
+    const fallback = this.user?.photoURL ? this.userProfile?.picture : this.user?.photoURL;
+    return this.avatarCache.getAvatarUrl(primary) || this.avatarCache.getAvatarUrl(fallback) || null;
   }
-  
+
   /**
    * Determina si se debe mostrar el placeholder en lugar de la imagen
    */
@@ -245,9 +270,9 @@ export class NavbarComponent implements OnInit, OnDestroy {
 
     // Si la mayoría son XML, ir a upload-xml, si no, ir a upload (PDF/Images)
     if (xmlCount > validFiles.length / 2) {
-      this.router.navigate(['/upload-xml']);
+      this.router.navigate(['/facturas/subir-xml']);
     } else {
-      this.router.navigate(['/upload']);
+      this.router.navigate(['/facturas/subir']);
     }
 
     // Reset input
@@ -256,7 +281,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
 
   closeUploadModal(): void {
     if (this.uploadState === 'success' && this.uploadedInvoiceId) {
-      this.router.navigate(['/invoice-explorer']);
+      this.router.navigate(['/facturas/explorador']);
     }
     this.isUploading = false;
     this.uploadState = 'processing';

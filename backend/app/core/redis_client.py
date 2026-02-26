@@ -15,61 +15,79 @@ from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-_redis_client: Optional[redis.Redis] = None
+_redis_client_decoded: Optional[redis.Redis] = None
+_redis_client_raw: Optional[redis.Redis] = None
 
 
-def get_redis_client() -> redis.Redis:
+def get_redis_client(decode_responses: bool = True) -> redis.Redis:
     """
     Obtiene una instancia singleton del cliente Redis.
     
+    Args:
+        decode_responses: Si es True, las respuestas se decodifican como strings (UTF-8).
+                         Si es False, se devuelven como bytes (necesario para RQ/pickle).
+    
     Returns:
         redis.Redis: Cliente Redis conectado.
-        
-    Raises:
-        redis.ConnectionError: Si no se puede conectar a Redis.
     """
-    global _redis_client
+    global _redis_client_decoded, _redis_client_raw
     
-    if _redis_client is None:
+    # Seleccionar el singleton adecuado
+    if decode_responses:
+        client = _redis_client_decoded
+    else:
+        client = _redis_client_raw
+        
+    if client is None:
         try:
-            _redis_client = redis.Redis(
+            client = redis.Redis(
                 host=settings.REDIS_HOST,
                 port=settings.REDIS_PORT,
                 password=settings.REDIS_PASSWORD or None,
                 ssl=settings.REDIS_SSL,
                 db=settings.REDIS_DB,
-                decode_responses=True,
+                decode_responses=decode_responses,
                 socket_connect_timeout=5,
                 socket_timeout=5,
                 retry_on_timeout=True
             )
             
             # Verificar conexión
-            _redis_client.ping()
-            logger.info(f"✅ Conexión Redis establecida: {settings.REDIS_HOST}:{settings.REDIS_PORT}")
+            client.ping()
+            mode = "DECODED" if decode_responses else "RAW"
+            logger.info(f"✅ Conexión Redis ({mode}) establecida: {settings.REDIS_HOST}:{settings.REDIS_PORT}")
             
+            # Guardar en el singleton correspondiente
+            if decode_responses:
+                _redis_client_decoded = client
+            else:
+                _redis_client_raw = client
+                
         except redis.ConnectionError as e:
-            logger.error(f"❌ Error conectando a Redis: {e}")
+            logger.error(f"❌ Error conectando a Redis ({'decoded' if decode_responses else 'raw'}): {e}")
             raise
         except Exception as e:
             logger.error(f"❌ Error inesperado en Redis: {e}")
             raise
     
-    return _redis_client
+    return client
 
 
 def close_redis_client() -> None:
     """Cierra la conexión Redis si existe."""
-    global _redis_client
-    
-    if _redis_client is not None:
+    global _redis_client_decoded, _redis_client_raw
+
+    for mode, client in (("DECODED", _redis_client_decoded), ("RAW", _redis_client_raw)):
+        if client is None:
+            continue
         try:
-            _redis_client.close()
-            logger.info("🔌 Conexión Redis cerrada")
+            client.close()
+            logger.info(f"🔌 Conexión Redis ({mode}) cerrada")
         except Exception as e:
-            logger.warning(f"Error cerrando Redis: {e}")
-        finally:
-            _redis_client = None
+            logger.warning(f"Error cerrando Redis ({mode}): {e}")
+
+    _redis_client_decoded = None
+    _redis_client_raw = None
 
 
 def redis_health_check() -> dict:

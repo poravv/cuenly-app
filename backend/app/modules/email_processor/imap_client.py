@@ -1,31 +1,209 @@
-import imaplib2 as imaplib
+import imaplib
 import email
 import logging
 import socket
 import time
 import re
-from typing import List, Optional, Set
-import unicodedata
+from typing import Any, Callable, Dict, List, Optional, Set
 from email.header import decode_header
 from email.message import Message
-import os  # legacy references removed; kept for compatibility if needed
+from email.utils import parsedate_to_datetime
+
+from .subject_matcher import compile_match_terms, match_email_candidate
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-
-def remove_accents(input_str: str) -> str:
-    """Elimina acentos y caracteres especiales para normalizar a ASCII."""
-    if not input_str:
+def decode_mime_header(header_value: str) -> str:
+    """Decodifica cabeceras MIME (Asunto, De, etc) a un string limpio."""
+    if not header_value:
         return ""
-    # Normalizar unicode caracteres compuestos
-    nfkd_form = unicodedata.normalize('NFKD', input_str)
-    # Filtrar caracteres non-spacing mark y codificar a ASCII
-    return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    try:
+        fragments = decode_header(header_value)
+        decoded_text = ""
+        for fragment, charset in fragments:
+            if isinstance(fragment, bytes):
+                try:
+                    if charset:
+                        decoded_text += fragment.decode(charset, errors='replace')
+                    else:
+                        decoded_text += fragment.decode('utf-8', errors='replace')
+                except LookupError:
+                    decoded_text += fragment.decode('utf-8', errors='replace')
+            else:
+                decoded_text += str(fragment)
+        return decoded_text.strip()
+    except Exception:
+        return str(header_value).strip()
+
+
+_ATTACHMENT_PARAM_RE = re.compile(rb'"(?:NAME|FILENAME)\*?"\s+"([^"]+)"', re.IGNORECASE)
+_ATTACHMENT_EXT_RE = re.compile(r'"([^"]+\.(?:xml|pdf|zip|jpg|jpeg|png))"', re.IGNORECASE)
+_XML_URL_RE = re.compile(r'https?://[^\s<>"\']+\.xml(?:[?#][^\s<>"\']*)?', re.IGNORECASE)
+_INVOICE_FILE_URL_RE = re.compile(
+    r'https?://[^\s<>"\']+\.(?:xml|pdf|jpg|jpeg|png)(?:[?#][^\s<>"\']*)?',
+    re.IGNORECASE
+)
+
+
+def _extract_attachment_names_from_fetch_meta(fetch_meta: Any) -> List[str]:
+    """
+    Extrae nombres de adjuntos desde BODYSTRUCTURE en la metadata IMAP FETCH.
+    No baja el cuerpo completo del correo.
+    """
+    if not fetch_meta:
+        return []
+
+    if isinstance(fetch_meta, bytes):
+        raw = fetch_meta
+    else:
+        raw = str(fetch_meta).encode("utf-8", errors="ignore")
+
+    names: List[str] = []
+
+    for match in _ATTACHMENT_PARAM_RE.findall(raw):
+        text = decode_mime_header(match.decode("utf-8", errors="replace")).strip()
+        if text:
+            names.append(text)
+
+    if not names:
+        raw_text = raw.decode("utf-8", errors="ignore")
+        for candidate in _ATTACHMENT_EXT_RE.findall(raw_text):
+            decoded = decode_mime_header(candidate).strip()
+            if decoded:
+                names.append(decoded)
+
+    deduped: List[str] = []
+    seen: Set[str] = set()
+    for name in names:
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(name)
+    return deduped
+
+
+def _has_xml_url_hint(text: str) -> bool:
+    """Detecta enlaces XML o frases comunes relacionadas en texto libre."""
+    if not text:
+        return False
+    lowered = text.lower()
+    if _XML_URL_RE.search(lowered):
+        return True
+    return any(
+        marker in lowered
+        for marker in ("descargar xml", "adjunto xml", "archivo xml", "comprobante xml")
+    )
+
+
+def _has_invoice_url_hint(text: str) -> bool:
+    """Detecta enlaces a archivos de factura (xml/pdf/imagen) o frases comunes."""
+    if not text:
+        return False
+    lowered = text.lower()
+    if _INVOICE_FILE_URL_RE.search(lowered):
+        return True
+    return any(
+        marker in lowered
+        for marker in (
+            "descargar xml",
+            "descargar pdf",
+            "adjunto xml",
+            "adjunto pdf",
+            "archivo xml",
+            "archivo pdf",
+            "comprobante",
+            "factura electronica",
+            "factura electrónica",
+        )
+    )
+
+
+def _has_xml_attachment_hint(fetch_meta: Any, attachment_names: List[str]) -> bool:
+    """Determina si la metadata IMAP indica presencia de XML adjunto."""
+    for name in attachment_names or []:
+        lname = (name or "").lower()
+        if ".xml" in lname:
+            return True
+
+    raw_text = (
+        fetch_meta.decode("utf-8", errors="ignore")
+        if isinstance(fetch_meta, (bytes, bytearray))
+        else str(fetch_meta or "")
+    ).lower()
+    if not raw_text:
+        return False
+
+    if any(
+        marker in raw_text
+        for marker in (
+            '"application" "xml"',
+            '"text" "xml"',
+            "application/xml",
+            "text/xml",
+            "+xml",
+        )
+    ):
+        return True
+
+    return bool(_XML_URL_RE.search(raw_text))
+
+
+def _has_invoice_attachment_hint(fetch_meta: Any, attachment_names: List[str]) -> bool:
+    """Determina si la metadata IMAP indica adjuntos de factura (xml/pdf/imagen)."""
+    allowed_exts = (".xml", ".pdf", ".jpg", ".jpeg", ".png")
+    for name in attachment_names or []:
+        lname = (name or "").lower()
+        if any(ext in lname for ext in allowed_exts):
+            return True
+
+    raw_text = (
+        fetch_meta.decode("utf-8", errors="ignore")
+        if isinstance(fetch_meta, (bytes, bytearray))
+        else str(fetch_meta or "")
+    ).lower()
+    if not raw_text:
+        return False
+
+    if any(
+        marker in raw_text
+        for marker in (
+            '"application" "xml"',
+            '"text" "xml"',
+            "application/xml",
+            "text/xml",
+            "+xml",
+            '"application" "pdf"',
+            "application/pdf",
+            '"image" "jpeg"',
+            '"image" "jpg"',
+            '"image" "png"',
+            "image/jpeg",
+            "image/jpg",
+            "image/png",
+        )
+    ):
+        return True
+
+    return bool(_INVOICE_FILE_URL_RE.search(raw_text))
+
+
+def _decode_snippet_bytes(payload: bytes) -> str:
+    """Decodifica un fragmento de texto de correo para heurísticas rápidas."""
+    if not payload:
+        return ""
+    for charset in ("utf-8", "latin-1", "windows-1252"):
+        try:
+            return payload.decode(charset, errors="ignore")
+        except Exception:
+            continue
+    return payload.decode("utf-8", errors="ignore")
 
 class IMAPClient:
     """
     Envoltura mínima: conecta, busca por asunto, fetch por UID y marca como leído por UID.
-    Pensado para cPanel y Gmail. (Asumiendo términos SIN acentos en .env)
+    Pensado para cPanel y Gmail.
     Soporta autenticación tradicional (password) y OAuth 2.0 XOAUTH2.
     """
     def __init__(
@@ -48,6 +226,35 @@ class IMAPClient:
         self.conn: Optional[imaplib.IMAP4_SSL] = None
         self.is_gmail: bool = False
 
+    def _has_invoice_url_in_body_snippet(self, email_uid: str, max_bytes: int = 8192) -> bool:
+        """
+        Detecta URLs de archivo de factura (xml/pdf/imagen) en el cuerpo sin descargar el correo completo.
+        Hace un FETCH parcial de texto (primeros bytes).
+        """
+        if not self.conn:
+            return False
+        try:
+            status, data = self.conn.uid('FETCH', email_uid, f'(BODY.PEEK[TEXT]<0.{max_bytes}>)')
+            if status != 'OK' or not data:
+                return False
+
+            parts: List[str] = []
+            for item in data:
+                if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+                    parts.append(_decode_snippet_bytes(item[1]))
+
+            if not parts:
+                return False
+
+            snippet_text = "\n".join(parts)
+            return _has_invoice_url_hint(snippet_text)
+        except Exception:
+            return False
+
+    def _has_xml_url_in_body_snippet(self, email_uid: str, max_bytes: int = 8192) -> bool:
+        """Compatibilidad retroactiva."""
+        return self._has_invoice_url_in_body_snippet(email_uid=email_uid, max_bytes=max_bytes)
+
     def _xoauth2_callback(self, challenge: bytes) -> bytes:
         """
         Callback for IMAP XOAUTH2 authentication.
@@ -68,9 +275,9 @@ class IMAPClient:
 
                 self.is_gmail = "imap.gmail.com" in (self.host or "").lower()
                 
-                # Crear conexión con timeout de socket más agresivo
+                # Crear conexión con timeout real en handshake para evitar bloqueos prolongados
                 try:
-                    self.conn = imaplib.IMAP4_SSL(self.host, self.port)
+                    self.conn = imaplib.IMAP4_SSL(self.host, self.port, timeout=30)
                 except (socket.timeout, socket.gaierror, socket.error, OSError) as e:
                     logger.warning(f"Error de conexión de red (intento {attempt + 1}): {e}")
                     if attempt == max_retries - 1:
@@ -168,12 +375,22 @@ class IMAPClient:
         finally:
             self.conn = None
 
-    def search(self, subject_terms: List[str], unread_only: Optional[bool] = None, since_date=None, before_date=None) -> List[str]:
+    def search(
+        self,
+        subject_terms: List[str],
+        unread_only: Optional[bool] = None,
+        since_date=None,
+        before_date=None,
+        search_synonyms: Optional[Any] = None,
+        fallback_sender_match: bool = False,
+        fallback_attachment_match: bool = False,
+        on_match_batch: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Devuelve UIDs de correos que coincidan con cualquiera de los términos de asunto.
-        El parámetro unread_only controla si buscar solo no leídos (True) o todos (False).
-        El parámetro since_date filtra correos desde una fecha específica.
-        Usa CHARSET UTF-8 para soportar acentos y caracteres especiales correctamente.
+        Busca correos por criterios base IMAP + matcher local robusto:
+        - normalización unicode/acentos/puntuación
+        - sinónimos por tenant
+        - fallback opcional por remitente y/o nombre de adjunto
         """
         if not self.conn and not self.connect():
             return []
@@ -186,13 +403,11 @@ class IMAPClient:
         
         # Filtros de fecha
         if since_date:
-            from datetime import datetime
             date_str = since_date.strftime("%d-%b-%Y")
             base_flag_args.append('SINCE')
             base_flag_args.append(date_str)
         
         if before_date:
-            from datetime import datetime
             date_str = before_date.strftime("%d-%b-%Y")
             base_flag_args.append('BEFORE')
             base_flag_args.append(date_str)
@@ -206,7 +421,9 @@ class IMAPClient:
             payload = first.decode('utf-8', errors='ignore').strip() if isinstance(first, (bytes, bytearray)) else str(first).strip()
             return payload.split() if payload else []
 
-        if not subject_terms:
+        compiled_terms = compile_match_terms(subject_terms or [], search_synonyms=search_synonyms)
+
+        if not compiled_terms:
             # Sin términos: búsqueda simple sin filtrado de asunto
             try:
                 typ, data = self.conn.uid('SEARCH', *base_flag_args)
@@ -214,7 +431,10 @@ class IMAPClient:
                     uids |= set(_decode_ids(data))
             except Exception as e:
                 logger.error(f"UID SEARCH error sin términos: {e}")
-            return sorted(uids, key=lambda x: int(x))
+            
+            # Nota: sin términos no bajamos metadatos en batch aquí para no complicar,
+            # pero devolvemos lista de dicts mínimos para consistencia
+            return [{"uid": uid, "subject": "(Sin términos)"} for uid in sorted(uids, key=lambda x: int(x))]
 
         # Con términos: Estrategia "Traer todo y filtrar en casa"
         # 1. Buscar todos los mensajes que cumplan los criterios base (UNSEEN, fechas)
@@ -239,87 +459,197 @@ class IMAPClient:
             # (aunque process-direct tiene su propio límite, aquí filtramos subjects)
             # Ordenamos descendente (más recientes primero)
             candidate_uids.sort(key=lambda x: int(x), reverse=True)
-            # Analizar un máximo razonable de candidatos (ej. 200) para no colgar el fetch
-            # Si el usuario tiene 5000 correos sin leer, solo miraremos los 200 más recientes.
-            max_candidates = 200
+            # Analizar un máximo generoso para sincronización histórica o deep sync
+            max_candidates = 10000 
             if len(candidate_uids) > max_candidates:
-                 logger.info(f"Limstando análisis de asuntos a los {max_candidates} correos más recientes (de {len(candidate_uids)} encontrados)")
+                 logger.info(f"⚠️ Limitando análisis de asuntos a los {max_candidates} correos más recientes (de {len(candidate_uids)} encontrados)")
                  candidate_uids = candidate_uids[:max_candidates]
             
-            # 2. Fetch SUBJECTS en batch
+            # 2. Fetch SUBJECTS/FROM/DATE en batch (y BODYSTRUCTURE si aplica fallback por adjunto)
             # Convertir lista de UIDs a string separado por comas para el fetch
-            uid_str = ",".join(candidate_uids)
-            # Descargar solo cabeceras SUBJECT
-            status, fetch_data = self.conn.uid('FETCH', uid_str, '(BODY.PEEK[HEADER.FIELDS (SUBJECT)])')
+            matched_items = []  # List of dicts
+            source_counts = {"subject": 0, "sender": 0, "attachment": 0}
+            uid_regex = re.compile(rb'UID (\d+)')
+            compiled_terms_debug = [term.normalized for term in compiled_terms]
+            invoice_candidate_count = 0
+            invoice_filtered_out = 0
+            body_probe_count = 0
+            body_probe_hits = 0
+            # Limitar sondas de cuerpo para no atrasar el time-to-first-queue-event.
+            # Se puede ajustar por env/settings si hace falta más cobertura.
+            body_probe_budget = int(getattr(settings, "IMAP_BODY_PROBE_BUDGET", 600) or 600)
             
-            if status != 'OK':
-                logger.error(f"Error fetching subjects: {status}")
-                return []
-            
-            # 3. Procesar y Filtrar
-            # Normalizar términos de búsqueda
-            normalized_terms = [remove_accents(t).lower() for t in subject_terms if t]
-            
-            matched_uids = set()
-            
-            for response_part in fetch_data:
-                if isinstance(response_part, tuple):
-                    # Estructura típica: (b'UID (BODY[HEADER.FIELDS (SUBJECT)] {len}', b'Subject: ...')
-                    # Necesitamos parsear el UID y el Subject
-                    
-                    try:
-                        # Parsear UID de la cabecera de respuesta
-                        msg_header = response_part[0] # b'123 (UID 456 BODY...)'
-                        # Extraer UID usando regex o split
-                        # imaplib devuelve: b'seq (UID uid BODY...)'
-                        uid_match = re.search(rb'UID (\d+)', msg_header)
-                        if not uid_match:
-                            continue
-                        uid = uid_match.group(1).decode()
-                        
-                        # Extraer Subject cuerpo
-                        raw_subject = response_part[1]
-                        # Decodificar Subject MIME (ej: =?UTF-8?B?...)
-                        subject_obj = email.message_from_bytes(raw_subject)
-                        subject_header = subject_obj.get('Subject', '')
-                        
-                        # Decodificar fragmentos MIME
-                        decoded_fragments = decode_header(subject_header)
-                        subject_text = ""
-                        for fragment, charset in decoded_fragments:
-                            if isinstance(fragment, bytes):
-                                try:
-                                    if charset:
-                                        subject_text += fragment.decode(charset, errors='replace')
-                                    else:
-                                        subject_text += fragment.decode('utf-8', errors='replace')
-                                except LookupError:
-                                    subject_text += fragment.decode('utf-8', errors='replace')
-                            else:
-                                subject_text += str(fragment)
-                        
-                        # Normalizar subject del correo
-                        subject_normalized = remove_accents(subject_text).lower()
-                        
-                        # Verificar coincidencias
-                        for term in normalized_terms:
-                            if term in subject_normalized:
-                                logger.debug(f"✅ Match encontrado! term='{term}' in subject='{subject_normalized}' (UID: {uid})")
-                                matched_uids.add(uid)
-                                break # Basta con que coincida uno
-                                
-                    except Exception as e:
-                        logger.warning(f"Error procesando header de mensaje: {e}")
-                        continue
+            total_candidates = len(candidate_uids)
+            logger.info(
+                "🔍 Analizando %s correos candidatos con matcher robusto | "
+                "fallback_sender=%s fallback_attachment=%s",
+                total_candidates,
+                fallback_sender_match,
+                fallback_attachment_match,
+            )
 
-            uids = matched_uids
-            logger.info(f"Filtrado local completado: {len(uids)} correos coinciden con términos {normalized_terms}")
+            # Batch de FETCH configurable para acelerar "time-to-first-queue-event"
+            # en rangos grandes. Valores más chicos -> feedback más temprano.
+            fetch_batch_size = int(getattr(settings, "IMAP_SEARCH_FETCH_BATCH_SIZE", 100) or 100)
+            fetch_batch_size = max(25, min(fetch_batch_size, 500))
+
+            for start_idx in range(0, total_candidates, fetch_batch_size):
+                batch_uids = candidate_uids[start_idx : start_idx + fetch_batch_size]
+                uid_str = ",".join(batch_uids)
+                batch_matched_items: List[Dict[str, Any]] = []
+
+                # Siempre traer BODYSTRUCTURE para aplicar filtro inicial por señal de factura.
+                fetch_query = '(BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])'
+
+                status, fetch_data = self.conn.uid('FETCH', uid_str, fetch_query)
+                
+                if status != 'OK':
+                    logger.error(f"Error fetching metadata batch: {status}")
+                    continue
+                
+                for response_part in fetch_data:
+                    if isinstance(response_part, tuple):
+                        try:
+                            # Parsear UID
+                            msg_header = response_part[0]
+                            uid_match = uid_regex.search(msg_header)
+                            if not uid_match:
+                                continue
+                            uid = uid_match.group(1).decode()
+                            
+                            # Extraer headers
+                            raw_headers = response_part[1]
+                            msg_obj = email.message_from_bytes(raw_headers)
+                            
+                            subject_text = decode_mime_header(msg_obj.get('Subject', ''))
+                            sender_text = decode_mime_header(msg_obj.get('From', ''))
+                            date_str = msg_obj.get('Date', '')
+                            
+                            email_dt = None
+                            if date_str:
+                                try:
+                                    email_dt = parsedate_to_datetime(date_str)
+                                except Exception:
+                                    pass
+
+                            attachment_names = _extract_attachment_names_from_fetch_meta(msg_header)
+                            fetch_meta_text = (
+                                msg_header.decode("utf-8", errors="ignore")
+                                if isinstance(msg_header, (bytes, bytearray))
+                                else str(msg_header)
+                            )
+                            has_invoice_attachment = _has_invoice_attachment_hint(msg_header, attachment_names)
+                            has_invoice_url = _has_invoice_url_hint(subject_text) or _has_invoice_url_hint(fetch_meta_text)
+                            has_invoice_signal = has_invoice_attachment or has_invoice_url
+
+                            # Fallback: detectar URL de archivo en cuerpo con FETCH parcial.
+                            if not has_invoice_signal and body_probe_count < body_probe_budget:
+                                body_probe_count += 1
+                                if self._has_invoice_url_in_body_snippet(uid):
+                                    has_invoice_signal = True
+                                    body_probe_hits += 1
+
+                            # Requisito inicial: solo procesar candidatos con señal de adjunto/archivo de factura.
+                            if not has_invoice_signal:
+                                invoice_filtered_out += 1
+                                continue
+
+                            invoice_candidate_count += 1
+
+                            matched, matched_source, matched_term = match_email_candidate(
+                                subject=subject_text,
+                                sender=sender_text,
+                                attachment_names=attachment_names,
+                                terms=compiled_terms,
+                                fallback_sender_match=fallback_sender_match,
+                                fallback_attachment_match=fallback_attachment_match,
+                            )
+                            if matched:
+                                if matched_source in source_counts:
+                                    source_counts[matched_source] += 1
+                                matched_doc = {
+                                    "uid": uid,
+                                    "subject": subject_text,
+                                    "sender": sender_text,
+                                    "date": email_dt,
+                                    "has_invoice_signal": True,
+                                    "match_source": matched_source,
+                                    "matched_term": matched_term,
+                                }
+                                matched_items.append(matched_doc)
+                                batch_matched_items.append(matched_doc)
+
+                                # Flush incremental dentro del mismo batch para que
+                                # la capa superior pueda encolar temprano.
+                                if on_match_batch and len(batch_matched_items) >= 10:
+                                    try:
+                                        on_match_batch(batch_matched_items)
+                                        batch_matched_items = []
+                                    except Exception as cb_err:
+                                        logger.error(f"Error en callback on_match_batch: {cb_err}")
+                        except Exception as e:
+                            logger.error(f"Error parseando metadatos de UID en batch: {e}")
+
+                # Envío progresivo: permite que capas superiores encolen sin esperar
+                # a que termine el análisis de TODO el rango.
+                if on_match_batch and batch_matched_items:
+                    try:
+                        on_match_batch(batch_matched_items)
+                    except Exception as cb_err:
+                        logger.error(f"Error en callback on_match_batch: {cb_err}")
+
+                logger.info(
+                    "📊 Progreso matcher robusto: %s/%s candidatos analizados, %s matches acumulados",
+                    min(start_idx + len(batch_uids), total_candidates),
+                    total_candidates,
+                    len(matched_items),
+                )
+
+            uids_with_subjects = matched_items
+            logger.info(
+                "✅ Filtrado local completado: %s correos | términos=%s | "
+                "invoice_candidates=%s no_invoice_signal=%s body_probe=%s body_hits=%s | subject=%s sender=%s attachment=%s",
+                len(uids_with_subjects),
+                compiled_terms_debug,
+                invoice_candidate_count,
+                invoice_filtered_out,
+                body_probe_count,
+                body_probe_hits,
+                source_counts["subject"],
+                source_counts["sender"],
+                source_counts["attachment"],
+            )
 
         except Exception as e:
             logger.error(f"Error en estrategia Fetch-Python: {e}")
             return []
 
-        return sorted(list(uids), key=lambda x: int(x))
+        return sorted(uids_with_subjects, key=lambda x: int(x['uid']), reverse=True)
+
+    def fetch_rfc822_message_id(self, email_uid: str) -> Optional[str]:
+        """
+        Fetch ONLY the Message-ID header for a specific UID.
+        Highly optimized for deduplication checks without downloading full body.
+        """
+        if not self.conn:
+            return None
+        try:
+            status, data = self.conn.uid('FETCH', email_uid, '(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])')
+            if status != 'OK' or not data:
+                return None
+            
+            for item in data:
+                if isinstance(item, tuple) and len(item) >= 2:
+                    raw_header = item[1]
+                    # Parse using email parser for robustness
+                    msg = email.message_from_bytes(raw_header)
+                    msg_id = msg.get('Message-ID', '')
+                    if msg_id:
+                        return msg_id.strip()
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching Message-ID for UID {email_uid}: {e}")
+            return None
 
     def fetch_message(self, email_uid: str) -> Optional[Message]:
         if not self.conn:
@@ -329,13 +659,13 @@ class IMAPClient:
             old_timeout = None
             if hasattr(self.conn, 'sock') and self.conn.sock:
                 old_timeout = self.conn.sock.gettimeout()
-                self.conn.sock.settimeout(20.0)  # 20 segundos para fetch
+                self.conn.sock.settimeout(60.0)  # 60 segundos para fetch (aumentado para adjuntos grandes)
             
             try:
-                status, data = self.conn.uid('FETCH', email_uid, '(RFC822)')
-                # data esperado: [(b'<uid> (RFC822 {<len>}', b'<raw>'), b')']
+                status, data = self.conn.uid('FETCH', email_uid, '(BODY.PEEK[])')
+                # data esperado: [(b'<uid> (BODY[] {<len>}', b'<raw>'), b')']
                 if status != 'OK' or not data:
-                    logger.error(f"❌ Error al obtener el correo UID {email_uid}: {status}")
+                    logger.error(f"❌ Error al obtener el correo UID {email_uid}: {status} - Data: {data}")
                     return None
                 # Busca el tuple con el contenido real
                 for item in data:
@@ -400,19 +730,3 @@ class IMAPClient:
         except Exception as e:
             logger.error(f"❌ Error inesperado al marcar el correo UID {email_uid} como leído: {str(e)}")
             return False
-
-
-def decode_mime_header(header: str) -> str:
-    if not header:
-        return ""
-    try:
-        parts = []
-        for part, enc in decode_header(header):
-            if isinstance(part, bytes):
-                parts.append(part.decode(enc or "utf-8", errors="replace"))
-            else:
-                parts.append(str(part))
-        return "".join(parts)
-    except Exception as e:
-        logger.warning(f"Error al decodificar encabezado '{header}': {str(e)}")
-        return header

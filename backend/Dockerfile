@@ -30,12 +30,7 @@ COPY requirements.txt .
 # Instalar dependencias Python
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir numpy==1.24.3 && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir spacy==3.6.1
-
-# Descargar modelos de spaCy de forma más robusta
-RUN python -c "import spacy; spacy.cli.download('es_core_news_md')" && \
-    python -c "import spacy; spacy.cli.download('en_core_web_md')"
+    pip install --no-cache-dir -r requirements.txt
 
 # Copiar código fuente
 COPY . .

@@ -131,7 +131,7 @@
           <!-- Field Categories -->
           <div class="accordion" id="fieldsAccordion">
             <!-- CAMPOS NORMALES -->
-            <div *ngFor="let category of ['basic', 'emisor', 'cliente', 'montos', 'productos', 'metadata']; let i = index" 
+            <div *ngFor="let category of categoryOrder; let i = index" 
                  class="accordion-item">
               <h2 class="accordion-header">
                 <button class="accordion-button" 

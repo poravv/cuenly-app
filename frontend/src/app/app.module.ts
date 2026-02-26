@@ -33,9 +33,12 @@ import { InvoiceProcessingComponent } from './components/invoice-processing/invo
 import { PaymentMethodsComponent } from './components/payment-methods/payment-methods.component';
 import { BancardIframeModalComponent } from './components/bancard-iframe-modal/bancard-iframe-modal.component';
 import { ProfileComponent } from './components/profile/profile.component';
+import { QueueEventsComponent } from './components/profile/queue-events.component';
 import { TermsConditionsComponent } from './components/legal/terms-conditions.component';
 import { PrivacyPolicyComponent } from './components/legal/privacy-policy.component';
 import { DataRetentionComponent } from './components/legal/data-retention.component';
+import { InvoicesShellComponent } from './components/invoices-shell/invoices-shell.component';
+import { InvoicesStatsComponent } from './components/invoices-stats/invoices-stats.component';
 
 @NgModule({
   declarations: [
@@ -47,6 +50,8 @@ import { DataRetentionComponent } from './components/legal/data-retention.compon
     NavbarComponent,
     FooterComponent,
     HelpComponent,
+    InvoicesShellComponent,
+    InvoicesStatsComponent,
     InvoiceExplorerComponent,
     InvoicesV2Component,
     LoginComponent,
@@ -63,6 +68,7 @@ import { DataRetentionComponent } from './components/legal/data-retention.compon
     PaymentMethodsComponent,
     BancardIframeModalComponent,
     ProfileComponent,
+    QueueEventsComponent,
     TermsConditionsComponent,
     PrivacyPolicyComponent,
     DataRetentionComponent,

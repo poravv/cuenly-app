@@ -265,3 +265,163 @@ async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_
             "firebase_claims": user,
             "error": str(e)
         }
+
+@router.get("/queue-events")
+async def get_queue_events(
+    page: int = 1, 
+    page_size: int = 50, 
+    status: str = "all", 
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
+    """
+    Obtiene los eventos pendientes (procesamientos fallidos o pausados por IA) del usuario.
+    Soporta paginación y filtrado por estado.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+         
+    email = (user.get("email") or "").lower()
+    
+    try:
+        from pymongo import MongoClient, DESCENDING
+        from app.config.settings import settings
+        
+        client = MongoClient(settings.MONGODB_URL)
+        db = client[settings.MONGODB_DATABASE]
+        coll = db.processed_emails
+        
+        # Filtrar por owner_email y status problemáticos o pendientes
+        query = {"owner_email": email}
+        
+        if status and status != "all":
+            query["status"] = status
+        else:
+            # Por defecto mostrar todos los que no son éxitos directos (o todos si se prefiere)
+            # El usuario pidió poder filtrar, así que si es "all" no filtramos por status
+            # pero el comportamiento original filtraba por estos:
+            if status == "all":
+                 query["status"] = {"$in": ["skipped_ai_limit", "skipped_ai_limit_unread", "pending", "processing", "retry_requested", "failed", "error", "missing_metadata"]}
+        
+        # Contar total para paginación
+        total = coll.count_documents(query)
+        
+        skip = (page - 1) * page_size
+        cursor = coll.find(query).sort("processed_at", DESCENDING).skip(skip).limit(page_size)
+        events = []
+        retryable_statuses = {"skipped_ai_limit", "skipped_ai_limit_unread", "failed", "error", "missing_metadata"}
+        for doc in cursor:
+            # Señal explícita para frontend: eventos manuales (uploads) no son reintentables por UID IMAP.
+            is_manual = bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload"
+            retry_supported = doc.get("retry_supported")
+            can_retry = (
+                (doc.get("status") in retryable_statuses)
+                and (not is_manual)
+                and (retry_supported is not False)
+            )
+            doc["can_retry"] = bool(can_retry)
+            if not can_retry and is_manual:
+                doc["retry_disabled_reason"] = "Evento manual: no aplica reintento"
+
+            doc["_id"] = str(doc["_id"])
+            if "processed_at" in doc and hasattr(doc["processed_at"], "isoformat"):
+                doc["processed_at"] = doc["processed_at"].isoformat()
+            if "last_retry_at" in doc and hasattr(doc["last_retry_at"], "isoformat"):
+                doc["last_retry_at"] = doc["last_retry_at"].isoformat()
+            if "email_date" in doc and hasattr(doc["email_date"], "isoformat"):
+                doc["email_date"] = doc["email_date"].isoformat()
+            events.append(doc)
+            
+        return {
+            "success": True, 
+            "events": events,
+            "pagination": {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "pages": (total + page_size - 1) // page_size
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching queue events for {email}: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching queue events")
+
+@router.post("/queue-events/{event_id}/retry")
+async def retry_queue_event(event_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Re-intenta un evento fallido o pausado empujándolo a la cola de RQ nuevamente.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+        
+    email = (user.get("email") or "").lower()
+    
+    try:
+        from pymongo import MongoClient
+        from app.config.settings import settings
+        from app.worker.queues import enqueue_job
+        from app.worker.jobs import process_single_email_from_uid_job
+        from datetime import datetime
+        
+        client = MongoClient(settings.MONGODB_URL)
+        db = client[settings.MONGODB_DATABASE]
+        coll = db.processed_emails
+        
+        # Verificar que el evento pertenezca al usuario
+        doc = coll.find_one({"_id": event_id, "owner_email": email})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Evento no encontrado")
+
+        # Eventos manuales se exponen para visibilidad, pero no son reintentables por UID IMAP.
+        if bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload" or doc.get("retry_supported") is False:
+            raise HTTPException(
+                status_code=400,
+                detail="Este evento manual no admite reintento desde la cola de correos"
+            )
+
+        allowed_statuses = {"skipped_ai_limit", "skipped_ai_limit_unread", "failed", "error", "missing_metadata"}
+        if doc.get("status") not in allowed_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Estado no reintentable: {doc.get('status')}"
+            )
+            
+        owner = doc.get("owner_email")
+        account = doc.get("account_email")
+        uid = doc.get("email_uid")
+        msg_id = doc.get("message_id")
+
+        if not owner or not account or not uid:
+            raise HTTPException(
+                status_code=400,
+                detail="Evento incompleto para reintento (owner/account/uid requeridos)"
+            )
+        
+        # Actualizar estado a retry_requested (estado explícitamente reintentable)
+        coll.update_one(
+            {"_id": event_id},
+            {"$set": {
+                "status": "retry_requested",
+                "reason": "Reintento manual por usuario",
+                "last_retry_at": datetime.utcnow()
+            }}
+        )
+        
+        # Encolar a RQ
+        job = enqueue_job(
+            process_single_email_from_uid_job,
+            account,
+            owner,
+            uid
+        )
+
+        logger.info(
+            f"🔄 Usuario {email} solicitó reintento manual para evento {event_id}. "
+            f"Job {job.id} (account={account}, uid={uid}, msg_id={msg_id})"
+        )
+        return {"success": True, "message": "Evento reencolado exitosamente"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrying queue event {event_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

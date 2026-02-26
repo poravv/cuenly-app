@@ -143,9 +143,10 @@ export class InvoiceExplorerComponent implements OnInit {
     } catch (error) {
       console.error('Error cargando estadísticas:', error);
       this.error = 'Error obteniendo estadísticas del mes';
-      // Cargar headers v2 para el mes seleccionado
-      this.loadV2Headers(yearMonth);
     } finally {
+      // La tabla v2 debe cargarse siempre para el mes seleccionado,
+      // incluso si fallan los KPIs agregados.
+      this.loadV2Headers(yearMonth);
       this.loading = false;
     }
   }
@@ -219,6 +220,32 @@ export class InvoiceExplorerComponent implements OnInit {
     if (percentage >= 80) return 'success';
     if (percentage >= 60) return 'warning';
     return 'danger';
+  }
+
+  hasExtendedSifenFields(header: any): boolean {
+    if (!header) return false;
+    const keys = [
+      'tipo_documento_electronico',
+      'tipo_de_codigo',
+      'ind_presencia',
+      'ind_presencia_codigo',
+      'cond_credito',
+      'cond_credito_codigo',
+      'plazo_credito_dias',
+      'ciclo_facturacion',
+      'ciclo_fecha_inicio',
+      'ciclo_fecha_fin',
+      'transporte_modalidad',
+      'transporte_modalidad_codigo',
+      'transporte_resp_flete_codigo',
+      'transporte_nro_despacho',
+      'qr_url',
+      'info_adicional'
+    ];
+    return keys.some((key) => {
+      const value = header[key];
+      return value !== null && value !== undefined && String(value).trim() !== '';
+    });
   }
 
   refreshData(): void {

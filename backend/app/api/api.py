@@ -1,4 +1,4 @@
-from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -8,6 +8,7 @@ import logging
 import uvicorn
 import uuid
 import time
+import re
 from typing import List, Optional, Dict, Any
 import shutil
 from datetime import datetime
@@ -28,7 +29,8 @@ from app.models.models import InvoiceData, EmailConfig, ProcessResult, JobStatus
 from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
-from app.modules.email_processor.storage import save_binary
+from app.modules.email_processor.storage import save_binary, cleanup_local_file_if_safe
+from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.repositories.user_repository import UserRepository
 from app.modules.mapping.invoice_mapping import map_invoice
@@ -94,6 +96,7 @@ app.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscri
 app.include_router(admin_users.router, prefix="/admin/users", tags=["Admin Users"])
 app.include_router(admin_plans.router, prefix="/admin/plans", tags=["Admin Plans"])
 app.include_router(user_profile.router, prefix="/user", tags=["User Profile"])
+app.include_router(queues.router, prefix="/admin/queues", tags=["Admin Queues"])
 
 
 # Startup event para inicializar servicios
@@ -147,6 +150,8 @@ class UserProfileUpdate(BaseModel):
     address: Optional[str] = None
     city: Optional[str] = None
     document_type: Optional[str] = "CI" # CI, RUC, PASSPORT
+    webhook_url: Optional[str] = None
+    webhook_secret: Optional[str] = None
 
 class ProfileStatusResponse(BaseModel):
     is_complete: bool
@@ -181,11 +186,12 @@ def process_emails_range_task(user_email: str, start_date=None, end_date=None):
     try:
         from app.modules.email_processor.config_store import get_enabled_configs
         from app.modules.email_processor.email_processor import MultiEmailProcessor
+        from app.models.models import ProcessResult
         
         configs = get_enabled_configs(include_password=True, owner_email=user_email) if user_email else []
         if not configs:
             logger.warning(f"ProcessRange: Sin configs para {user_email}")
-            return
+            return ProcessResult(success=False, message="No hay cuentas de correo configuradas", invoice_count=0, invoices=[])
 
         email_configs = []
         for c in configs:
@@ -195,10 +201,18 @@ def process_emails_range_task(user_email: str, start_date=None, end_date=None):
             
         mp = MultiEmailProcessor(email_configs=email_configs, owner_email=user_email)
         logger.info(f"🚀 Iniciando job por rango para {user_email}: {start_date} - {end_date}")
-        mp.process_all_emails(start_date=start_date, end_date=end_date)
+        return mp.process_all_emails(
+            start_date=start_date,
+            end_date=end_date,
+            force_search_criteria_all=True,
+            fanout_batch_size=50,
+            disable_fanout_account_cap=True
+        )
         
     except Exception as e:
         logger.error(f"❌ Error en process_emails_range_task para {user_email}: {e}")
+        from app.models.models import ProcessResult
+        return ProcessResult(success=False, message=str(e), invoice_count=0, invoices=[])
 
 @app.get("/")
 async def root():
@@ -263,7 +277,9 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
         "ruc": db_user.get('ruc', ''),
         "address": db_user.get('address', ''),
         "city": db_user.get('city', ''),
-        "document_type": db_user.get('document_type', 'CI')
+        "document_type": db_user.get('document_type', 'CI'),
+        "webhook_url": db_user.get('webhook_url', ''),
+        "has_webhook_secret": bool(db_user.get('webhook_secret', ''))
     }
 
 @app.put("/user/profile")
@@ -514,20 +530,23 @@ async def process_emails(background_tasks: BackgroundTasks, run_async: bool = Fa
 
 @app.post("/process-direct")
 async def process_emails_direct(
-    limit: Optional[int] = 10,
+    limit: Optional[int] = None,
     # USA _get_current_user_with_trial_check para permitir que llegue al procesador
     # y allí se aplique la lógica "XML allowed"
     user: Dict[str, Any] = Depends(_get_current_user_with_trial_check),
     request: Request = None,
     _frontend_key: bool = Depends(validate_frontend_key)
 ):
-    """Procesa correos directamente con límite (máximo 10 para procesamiento manual)."""
+    """Procesa correos directamente con fan-out a cola y límite configurable."""
     try:
+        default_limit = max(1, int(getattr(settings, "PROCESS_DIRECT_DEFAULT_LIMIT", 50) or 50))
+        max_limit = max(default_limit, int(getattr(settings, "PROCESS_DIRECT_MAX_LIMIT", 200) or 200))
+
         # Validar límite
         if limit is None or limit <= 0:
-            limit = 10
-        if limit > 50:  # Límite máximo de seguridad
-            limit = 50
+            limit = default_limit
+        if limit > max_limit:
+            limit = max_limit
             
         # Ejecutar procesamiento limitado
         from app.modules.email_processor.config_store import get_enabled_configs
@@ -545,14 +564,17 @@ async def process_emails_direct(
             email_configs.append(MultiEmailConfig(**config_data))
             
         mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
-        result = mp.process_limited_emails(limit=limit)
+        # 🚀 ACTIVAR FAN-OUT POR DEFECTO PARA NO BLOQUEAR BACKEND
+        result = mp.process_limited_emails(limit=limit, fan_out=True)
         
         if result and hasattr(result, 'success') and result.success:
             return {
                 "success": True,
                 "message": result.message,
                 "invoice_count": getattr(result, 'invoice_count', 0),
-                "limit_used": limit
+                "limit_used": limit,
+                "default_limit": default_limit,
+                "max_limit": max_limit,
             }
         else:
             return {
@@ -567,7 +589,9 @@ async def process_emails_direct(
 
 @app.post("/tasks/process")
 async def enqueue_process_emails(
-    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check),
+    # Permitir encolado aunque no haya cupo IA: los XML se procesan y
+    # lo que requiera IA quedará en PENDING_AI dentro del pipeline.
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check),
     request: Request = None,
     _frontend_key: bool = Depends(validate_frontend_key)
 ):
@@ -596,32 +620,94 @@ async def enqueue_process_emails(
         }
         return {"job_id": job_id}
     
-    def _runner():
-        from app.modules.email_processor.config_store import get_enabled_configs
-        from app.modules.email_processor.email_processor import MultiEmailProcessor
-        owner_email = (user.get('email') or '').lower()
-        configs = get_enabled_configs(include_password=True, owner_email=owner_email) if owner_email else []
-        
-        # Crear configs con owner_email agregado
-        email_configs = []
-        for c in configs:
-            config_data = dict(c)
-            config_data['owner_email'] = owner_email
-            email_configs.append(MultiEmailConfig(**config_data))
-            
-        mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
-        return mp.process_all_emails()
+    try:
+        from app.worker.queues import enqueue_job
+        from app.worker.jobs import process_emails_job
 
-    job_id = task_queue.enqueue("process_emails", _runner)
-    return {"job_id": job_id}
+        owner_email = (user.get('email') or '').lower()
+        job = enqueue_job(
+            process_emails_job,
+            owner_email=owner_email,
+            priority='high',
+            timeout='30m'
+        )
+        return {"job_id": job.id}
+    except Exception as e:
+        logger.error(f"Error encolando /tasks/process en RQ: {e}")
+        raise HTTPException(status_code=500, detail="No se pudo encolar el procesamiento")
 
 @app.get("/tasks/{job_id}")
 async def get_task_status(job_id: str):
     """Consulta el estado de un job enviado a la cola."""
+    # 1) Compatibilidad con cola local (uploads/range/legacy)
     job = task_queue.get(job_id)
-    if not job:
+    if job:
+        return job
+
+    # 2) Cola RQ distribuida (manual async multiusuario)
+    from app.worker.queues import get_job_status as get_rq_job_status
+
+    rq_job = get_rq_job_status(job_id)
+    raw_status = str(rq_job.get("status", "")).lower().strip()
+    if "." in raw_status:
+        raw_status = raw_status.split(".")[-1]
+    if raw_status in {"", "not_found"}:
         raise HTTPException(status_code=404, detail="Job no encontrado")
-    return job
+
+    def _map_status(value: str) -> str:
+        if value in {"queued", "deferred", "scheduled"}:
+            return "queued"
+        if value in {"started", "running", "busy"}:
+            return "running"
+        if value in {"finished", "done"}:
+            return "done"
+        if value in {"failed", "stopped", "canceled", "cancelled"}:
+            return "error"
+        return "queued"
+
+    def _to_ts(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, datetime):
+            return value.timestamp()
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                return None
+        return None
+
+    raw_result = rq_job.get("result")
+    raw_error = rq_job.get("error")
+    ended_ts = _to_ts(rq_job.get("ended_at"))
+
+    mapped_status = _map_status(raw_status)
+    # Fallback robusto: si ya terminó (ended_at/result), no dejar estado en queued.
+    if mapped_status == "queued" and (ended_ts is not None or raw_result is not None):
+        mapped_status = "error" if raw_error else "done"
+    elif mapped_status == "queued" and raw_error:
+        mapped_status = "error"
+    message = None
+    if mapped_status == "done":
+        if isinstance(raw_result, dict):
+            message = raw_result.get("message") or "Completado"
+        else:
+            message = "Completado"
+    elif mapped_status == "error":
+        message = raw_error or "Error en procesamiento"
+
+    return {
+        "job_id": job_id,
+        "action": "process_emails",
+        "status": mapped_status,
+        "created_at": _to_ts(rq_job.get("created_at")),
+        "started_at": _to_ts(rq_job.get("started_at")),
+        "finished_at": ended_ts,
+        "message": message,
+        "result": raw_result,
+    }
 
 @app.delete("/tasks/cleanup")
 async def cleanup_old_tasks():
@@ -731,7 +817,9 @@ async def trigger_retry_skipped(
 async def process_range_job(
     payload: ProcessRangeRequest,
     background_tasks: BackgroundTasks,
-    user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)
+    # Importante: no bloquear por límite IA a nivel endpoint.
+    # El procesamiento interno ya maneja XML vs IA y deja pendientes cuando corresponde.
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)
 ):
     """
     Inicia un job de procesamiento filtrado por rango de fechas (fecha del correo).
@@ -755,8 +843,35 @@ async def process_range_job(
             raise HTTPException(status_code=400, detail="Formato end_date inválido (Use YYYY-MM-DD)")
 
     if payload.run_async:
-        background_tasks.add_task(process_emails_range_task, owner_email, s_date, e_date)
-        return {"success": True, "message": "Procesamiento por rango iniciado en segundo plano"}
+        # Verificar si el job automático está ejecutándose para omitir si es necesario
+        job_status = invoice_sync.get_job_status()
+        if job_status.running:
+            from app.models.models import ProcessResult
+            import uuid, time
+            job_id = str(uuid.uuid4().hex)
+            task_queue._jobs[job_id] = {
+                'job_id': job_id,
+                'action': 'process_emails_range',
+                'status': 'error',
+                'created_at': time.time(),
+                'started_at': time.time(),
+                'finished_at': time.time(),
+                'message': 'No se puede procesar el historial mientras la automatización esté activa. Detenga la automatización primero.',
+                'result': ProcessResult(
+                    success=False,
+                    message='No se puede procesar el historial mientras la automatización esté activa. Detenga la automatización primero.',
+                    invoice_count=0,
+                    invoices=[]
+                ),
+                '_func': None,
+            }
+            return {"success": False, "message": "Automatización activa. Deténgala primero.", "job_id": job_id}
+            
+        def _runner():
+            return process_emails_range_task(owner_email, s_date, e_date)
+            
+        job_id = task_queue.enqueue("process_emails_range", _runner)
+        return {"success": True, "message": "Procesamiento por rango encolado exitosamente", "job_id": job_id}
     else:
         # Ejecución síncrona (con precaución)
         try:
@@ -770,18 +885,157 @@ async def process_range_job(
             email_configs = [MultiEmailConfig(**{**c, 'owner_email': owner_email}) for c in configs]
             mp = MultiEmailProcessor(email_configs=email_configs, owner_email=owner_email)
             
-            result = mp.process_all_emails(start_date=s_date, end_date=e_date)
+            result = mp.process_all_emails(
+                start_date=s_date,
+                end_date=e_date,
+                force_search_criteria_all=True,
+                fanout_batch_size=50,
+                disable_fanout_account_cap=True
+            )
             return result
         except Exception as e:
             logger.error(f"Error range sync: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+
+def _get_ai_block_reason(owner_email: str) -> Optional[str]:
+    """Retorna razón textual si IA no está disponible para el usuario, o None si sí puede usar IA."""
+    if not owner_email:
+        return "IA_NO_DISPONIBLE: Usuario no identificado"
+    try:
+        ai_check = UserRepository().can_use_ai(owner_email)
+        if ai_check.get("can_use", False):
+            return None
+        reason = str(ai_check.get("reason", "")).strip().lower()
+        message = str(ai_check.get("message", "No disponible")).strip()
+        if reason == "ai_limit_reached":
+            return f"LIMITE_IA: {message}"
+        return f"IA_NO_DISPONIBLE: {message}"
+    except Exception as e:
+        logger.warning(f"⚠️ Error verificando disponibilidad IA para {owner_email}: {e}")
+        return "IA_NO_DISPONIBLE: No fue posible validar disponibilidad de IA"
+
+
+def _get_ai_reason_code(ai_block_reason: Optional[str]) -> Optional[str]:
+    """Mapea razón textual de IA a código estable para frontend."""
+    if not ai_block_reason:
+        return None
+    return "ai_limit_reached" if ai_block_reason.startswith("LIMITE_IA:") else "ai_unavailable"
+
+
+def _store_manual_pending_ai(
+    owner_email: str,
+    sender: str,
+    date_obj: Optional[datetime],
+    minio_key: str,
+    fuente: str,
+    reason: str,
+) -> None:
+    """
+    Registra uploads manuales bloqueados por IA:
+    1) En processed_emails (cola de procesos UI) con status=pending.
+    2) En invoice_headers con status=PENDING_AI (tracking interno).
+    """
+    try:
+        # 1) Cola de procesos (processed_emails) para visibilidad en UI de "Actividad/Cola".
+        try:
+            from app.modules.email_processor.processed_registry import _repo, build_key as build_processed_key
+
+            event_uid = f"manual_ai_pending_{uuid.uuid4().hex}"
+            event_key = build_processed_key(event_uid, "manual_upload", owner_email)
+            base_reason = (reason or "Pendiente por IA").strip()
+            event_reason = f"{base_reason} | Manual: sin reproceso automático"[:500]
+
+            _repo.mark_processed(
+                key=event_key,
+                status="pending",
+                reason=event_reason,
+                owner_email=owner_email,
+                account_email="manual_upload",
+                message_id=f"manual_pending_ai:{event_uid}",
+                subject=f"Carga manual pendiente de IA ({fuente})",
+                sender=(sender or "Carga manual")[:200],
+                email_date=date_obj or datetime.utcnow(),
+            )
+
+            # Metadatos extra útiles para UI/debug.
+            _repo._get_collection().update_one(
+                {"_id": event_key},
+                {"$set": {
+                    "manual_upload": True,
+                    "fuente": fuente,
+                    "minio_key": (minio_key or ""),
+                    "retry_supported": False,
+                }},
+                upsert=False,
+            )
+            logger.info(
+                "🕒 Upload manual registrado en cola (processed_emails) owner=%s fuente=%s",
+                owner_email,
+                fuente,
+            )
+        except Exception as qerr:
+            logger.error(f"❌ Error registrando pending manual en processed_emails: {qerr}")
+
+        # 2) Tracking interno en invoice_headers (PENDING_AI).
+        pending_msg_id = f"manual_pending_ai:{uuid.uuid4().hex}"
+        inv = InvoiceData(
+            numero_factura=f"PENDING_AI_{uuid.uuid4().hex[:10]}",
+            ruc_emisor="UNKNOWN",
+            nombre_emisor=(sender or "Carga manual")[:100],
+            fecha=date_obj or datetime.utcnow(),
+            email_origen=owner_email,
+            message_id=pending_msg_id,
+            status="PENDING_AI",
+            processing_error=(reason or "Pendiente por IA")[:500],
+            fuente=fuente,
+            minio_key=minio_key or "",
+        )
+        doc = map_invoice(inv, fuente=fuente, minio_key=minio_key or "")
+        if owner_email:
+            doc.header.owner_email = owner_email
+            for it in doc.items:
+                it.owner_email = owner_email
+        doc.header.status = "PENDING_AI"
+        doc.header.processing_error = (reason or "Pendiente por IA")[:500]
+        MongoInvoiceRepository().save_document(doc)
+        logger.info(
+            "🕒 Upload manual guardado en PENDING_AI (owner=%s, fuente=%s, minio_key=%s)",
+            owner_email,
+            fuente,
+            minio_key or "",
+        )
+    except Exception as e:
+        logger.error(f"❌ Error guardando PENDING_AI manual: {e}")
+
+
+def _create_completed_task(action: str, result: ProcessResult) -> str:
+    """
+    Crea una tarea finalizada en memoria para mantener contrato async (retorno job_id)
+    cuando el procesamiento se resuelve de forma inmediata.
+    """
+    job_id = uuid.uuid4().hex
+    now = time.time()
+    with task_queue._lock:
+        task_queue._jobs[job_id] = {
+            'job_id': job_id,
+            'action': action,
+            'status': 'done',
+            'created_at': now,
+            'started_at': now,
+            'finished_at': now,
+            'message': result.message,
+            'result': result,
+            '_func': None,
+        }
+    return job_id
+
 
 @app.post("/upload", response_model=ProcessResult)
 async def upload_pdf(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):  # PDFs usan IA
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """
     Sube un archivo PDF para procesarlo directamente.
     
@@ -796,6 +1050,8 @@ async def upload_pdf(
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
     
+    pdf_path = ""
+    minio_key = ""
     try:
         # Leer contenido
         content = await file.read()
@@ -828,12 +1084,51 @@ async def upload_pdf(
         def _process_sync():
             with PROCESSING_LOCK:
                 owner = (user.get('email') or '').lower()
-                invoice_data = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=minio_key,
+                        fuente="OPENAI_VISION",
+                        reason=ai_block_reason,
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="Archivo registrado como PENDING_AI por límite/disponibilidad de IA",
+                        invoice_count=0,
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                        invoices=[],
+                    )
+
+                try:
+                    invoice_data = invoice_sync.openai_processor.extract_invoice_data(
+                        pdf_path,
+                        email_meta,
+                        owner_email=owner,
+                    )
+                except (OpenAIFatalError, OpenAIRetryableError) as e:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=minio_key,
+                        fuente="OPENAI_VISION",
+                        reason=f"IA_NO_DISPONIBLE: {str(e)}",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="Archivo registrado como PENDING_AI por indisponibilidad temporal de IA",
+                        invoice_count=0,
+                        reason_code="ai_unavailable",
+                        invoices=[],
+                    )
+
                 invoices = [invoice_data] if invoice_data else []
                 if invoices:
                     try:
                         repo = MongoInvoiceRepository()
-                        owner = (user.get('email') or '').lower()
                         doc = map_invoice(invoice_data, fuente="OPENAI_VISION", minio_key=minio_key)
                         if owner:
                             try:
@@ -845,25 +1140,23 @@ async def upload_pdf(
                         repo.save_document(doc)
                     except Exception as e:
                         logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
-                return invoices
+                    return ProcessResult(
+                        success=True,
+                        message="Factura procesada y almacenada",
+                        invoice_count=1,
+                        invoices=invoices,
+                    )
+
+                return ProcessResult(
+                    success=False,
+                    message="No se pudo extraer factura del PDF",
+                    invoice_count=0,
+                    reason_code="extraction_failed",
+                    invoices=[],
+                )
 
         # Ejecutar en threadpool para no bloquear el event loop
-        invoices = await run_in_threadpool(_process_sync)
-
-        if not invoices:
-            return ProcessResult(
-                success=False,
-                message="No se pudo extraer factura del PDF",
-                invoice_count=0,
-                invoices=[]
-            )
-
-        return ProcessResult(
-            success=True,
-            message=f"Factura procesada y almacenada",
-            invoice_count=1,
-            invoices=invoices
-        )
+        return await run_in_threadpool(_process_sync)
         
     except Exception as e:
         logger.error(f"Error al procesar el archivo: {str(e)}")
@@ -871,19 +1164,24 @@ async def upload_pdf(
             success=False,
             message=f"Error al procesar el archivo: {str(e)}"
         )
+    finally:
+        if pdf_path:
+            await run_in_threadpool(cleanup_local_file_if_safe, pdf_path, minio_key)
 
 @app.post("/upload-xml", response_model=ProcessResult)
 async def upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """
     Sube un archivo XML SIFEN para procesarlo directamente con el parser nativo (fallback OpenAI).
     """
     if not (file.filename.lower().endswith('.xml')):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
 
+    xml_path = ""
+    minio_key = ""
     try:
         # Leer contenido
         content = await file.read()
@@ -930,25 +1228,42 @@ async def upload_xml(
                         repo.save_document(doc)
                     except Exception as e:
                         logger.error(f"❌ Error persistiendo v2 (upload XML): {e}")
-                return invoices
+                    return ProcessResult(
+                        success=True,
+                        message="Factura XML procesada y almacenada",
+                        invoice_count=1,
+                        invoices=invoices,
+                    )
+
+                # Si no hubo extracción y además no hay IA disponible para fallback, dejar en pendiente.
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=minio_key,
+                        fuente="XML_UPLOAD",
+                        reason=f"{ai_block_reason} | XML requiere fallback de IA",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="XML registrado como PENDING_AI (sin cupo/disponibilidad IA para fallback)",
+                        invoice_count=0,
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                        invoices=[],
+                    )
+
+                return ProcessResult(
+                    success=False,
+                    message="No se pudo extraer información desde el XML",
+                    invoice_count=0,
+                    reason_code="extraction_failed",
+                    invoices=[],
+                )
 
         # Ejecutar en threadpool
-        invoices = await run_in_threadpool(_process_sync)
-
-        if not invoices:
-            return ProcessResult(
-                success=False,
-                message="No se pudo extraer información desde el XML",
-                invoice_count=0,
-                invoices=[]
-            )
-
-        return ProcessResult(
-            success=True,
-            message=f"Factura XML procesada y almacenada",
-            invoice_count=1,
-            invoices=invoices
-        )
+        return await run_in_threadpool(_process_sync)
 
     except Exception as e:
         logger.error(f"Error al procesar el XML: {str(e)}")
@@ -956,17 +1271,22 @@ async def upload_xml(
             success=False,
             message=f"Error al procesar el XML: {str(e)}"
         )
+    finally:
+        if xml_path:
+            await run_in_threadpool(cleanup_local_file_if_safe, xml_path, minio_key)
 
 @app.post("/tasks/upload-pdf")
 async def enqueue_upload_pdf(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):  # PDFs usan IA
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """Encola el procesamiento de un PDF manual y retorna job_id."""
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
 
+    pdf_path = ""
+    pdf_minio_key = ""
     try:
         file_bytes = await file.read()
         # Parsear fecha
@@ -993,37 +1313,111 @@ async def enqueue_upload_pdf(
         if date_obj:
             email_meta["date"] = date_obj
 
-        def _runner():
-            owner = (user.get('email') or '').lower()
-            inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
-            invoices = [inv] if inv else []
-            if invoices:
-                # Asignar minio_key
-                if pdf_minio_key and inv:
-                    inv.minio_key = pdf_minio_key
-                    
-                try:
-                    repo = MongoInvoiceRepository()
-                    owner = (user.get('email') or '').lower()
-                    doc = map_invoice(inv, fuente="OPENAI_VISION")
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
+        # Si no hay cupo/disponibilidad IA, resolver inmediatamente sin pasar por la cola local
+        # para evitar bloqueo detrás de jobs largos de rango.
+        owner = (user.get('email') or '').lower()
+        ai_block_reason = _get_ai_block_reason(owner)
+        if ai_block_reason:
+            _store_manual_pending_ai(
+                owner_email=owner,
+                sender=email_meta.get("sender", "Carga manual"),
+                date_obj=email_meta.get("date"),
+                minio_key=pdf_minio_key,
+                fuente="OPENAI_VISION",
+                reason=ai_block_reason,
+            )
+            immediate_result = ProcessResult(
+                success=True,
+                message="PDF registrado como PENDING_AI por límite/disponibilidad de IA",
+                invoice_count=0,
+                reason_code=_get_ai_reason_code(ai_block_reason),
+                invoices=[],
+            )
+            cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
+            return {"job_id": _create_completed_task("process_pdf_manual", immediate_result)}
 
-            if not invoices:
-                return ProcessResult(success=False, message="No se pudo extraer información del PDF")
-            return ProcessResult(success=True, message="PDF procesado correctamente", invoice_count=1, invoices=invoices)
+        def _runner():
+            try:
+                owner = (user.get('email') or '').lower()
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=pdf_minio_key,
+                        fuente="OPENAI_VISION",
+                        reason=ai_block_reason,
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="PDF registrado como PENDING_AI por límite/disponibilidad de IA",
+                        invoice_count=0,
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                        invoices=[],
+                    )
+
+                try:
+                    inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
+                except (OpenAIFatalError, OpenAIRetryableError) as e:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=pdf_minio_key,
+                        fuente="OPENAI_VISION",
+                        reason=f"IA_NO_DISPONIBLE: {str(e)}",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="PDF registrado como PENDING_AI por indisponibilidad temporal de IA",
+                        invoice_count=0,
+                        reason_code="ai_unavailable",
+                        invoices=[],
+                    )
+
+                invoices = [inv] if inv else []
+                if invoices:
+                    # Asignar minio_key
+                    if pdf_minio_key and inv:
+                        inv.minio_key = pdf_minio_key
+                        
+                    try:
+                        repo = MongoInvoiceRepository()
+                        owner = (user.get('email') or '').lower()
+                        doc = map_invoice(
+                            inv,
+                            fuente="OPENAI_VISION",
+                            minio_key=(getattr(inv, "minio_key", "") or pdf_minio_key or ""),
+                        )
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
+
+                if not invoices:
+                    return ProcessResult(
+                        success=False,
+                        message="No se pudo extraer información del PDF",
+                        invoice_count=0,
+                        reason_code="extraction_failed",
+                        invoices=[],
+                    )
+                return ProcessResult(success=True, message="PDF procesado correctamente", invoice_count=1, invoices=invoices)
+            finally:
+                cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
 
         job_id = task_queue.enqueue("process_pdf_manual", _runner)
         return {"job_id": job_id}
     except Exception as e:
+        if pdf_path:
+            cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
         logger.error(f"Error encolando PDF: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1032,7 +1426,7 @@ async def upload_image(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """
     Sube una imagen (JPG/PNG) para procesarla como factura (vía IA).
     AHORA ASÍNCRONO: Retorna job_id.
@@ -1041,6 +1435,8 @@ async def upload_image(
     if not (file.filename.lower().endswith(allowed_exts)):
         raise HTTPException(status_code=400, detail="Solo se aceptan imágenes (JPG, PNG, WEBP)")
     
+    img_path = ""
+    img_minio_key = ""
     try:
         # Parsear fecha
         date_obj = None
@@ -1071,51 +1467,115 @@ async def upload_image(
         if date_obj:
             email_meta["date"] = date_obj
 
-        def _runner():
-            owner = (user.get('email') or '').lower()
-            # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
-            invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
-            invoices = [invoice_data] if invoice_data else []
-            
-            if invoices:
-                # Asignar minio_key
-                if img_minio_key and invoice_data:
-                    invoice_data.minio_key = img_minio_key
-                    
-                try:
-                    repo = MongoInvoiceRepository()
-                    doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE", minio_key=img_minio_key)
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
-
-            if not invoices:
-                return ProcessResult(
-                    success=False,
-                    message="No se pudo extraer factura de la imagen",
-                    invoice_count=0,
-                    invoices=[]
-                )
-
-            return ProcessResult(
-                success=True,
-                message=f"Imagen procesada y almacenada",
-                invoice_count=1,
-                invoices=invoices
+        # Si IA está bloqueada, resolver inmediato (no encolar) para no quedar detrás
+        # de procesos largos en la cola local serial.
+        owner = (user.get('email') or '').lower()
+        ai_block_reason = _get_ai_block_reason(owner)
+        if ai_block_reason:
+            _store_manual_pending_ai(
+                owner_email=owner,
+                sender=email_meta.get("sender", "Carga manual (Imagen)"),
+                date_obj=email_meta.get("date"),
+                minio_key=img_minio_key,
+                fuente="OPENAI_VISION_IMAGE",
+                reason=ai_block_reason,
             )
+            immediate_result = ProcessResult(
+                success=True,
+                message="Imagen registrada como PENDING_AI por límite/disponibilidad de IA",
+                invoice_count=0,
+                reason_code=_get_ai_reason_code(ai_block_reason),
+                invoices=[],
+            )
+            cleanup_local_file_if_safe(img_path, img_minio_key)
+            return {"job_id": _create_completed_task("process_image_manual", immediate_result)}
+
+        def _runner():
+            try:
+                owner = (user.get('email') or '').lower()
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual (Imagen)"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=img_minio_key,
+                        fuente="OPENAI_VISION_IMAGE",
+                        reason=ai_block_reason,
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="Imagen registrada como PENDING_AI por límite/disponibilidad de IA",
+                        invoice_count=0,
+                        invoices=[],
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                    )
+
+                # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
+                try:
+                    invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
+                except (OpenAIFatalError, OpenAIRetryableError) as e:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual (Imagen)"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=img_minio_key,
+                        fuente="OPENAI_VISION_IMAGE",
+                        reason=f"IA_NO_DISPONIBLE: {str(e)}",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="Imagen registrada como PENDING_AI por indisponibilidad temporal de IA",
+                        invoice_count=0,
+                        invoices=[],
+                        reason_code="ai_unavailable",
+                    )
+                invoices = [invoice_data] if invoice_data else []
+                
+                if invoices:
+                    # Asignar minio_key
+                    if img_minio_key and invoice_data:
+                        invoice_data.minio_key = img_minio_key
+                        
+                    try:
+                        repo = MongoInvoiceRepository()
+                        doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE", minio_key=img_minio_key)
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
+
+                if not invoices:
+                    return ProcessResult(
+                        success=False,
+                        message="No se pudo extraer factura de la imagen",
+                        invoice_count=0,
+                        invoices=[],
+                        reason_code="extraction_failed",
+                    )
+
+                return ProcessResult(
+                    success=True,
+                    message=f"Imagen procesada y almacenada",
+                    invoice_count=1,
+                    invoices=invoices
+                )
+            finally:
+                cleanup_local_file_if_safe(img_path, img_minio_key)
 
         # Encolar tarea en lugar de ejecutar síncronamente
         job_id = task_queue.enqueue("process_image_manual", _runner)
         return {"job_id": job_id}
 
     except Exception as e:
+        if img_path:
+            cleanup_local_file_if_safe(img_path, img_minio_key)
         logger.error(f"Error al procesar imagen: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
@@ -1127,11 +1587,13 @@ async def enqueue_upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """Encola el procesamiento de un XML manual y retorna job_id."""
     if not file.filename.lower().endswith('.xml'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
 
+    xml_path = ""
+    xml_minio_key = ""
     try:
         file_bytes = await file.read()
         
@@ -1159,38 +1621,73 @@ async def enqueue_upload_xml(
             email_meta["date"] = date_obj
 
         def _runner():
-            owner = (user.get('email') or '').lower()
-            inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
-            invoices = [inv] if inv else []
-            if invoices:
-                # Assign minio key
-                if xml_minio_key and inv:
-                    inv.minio_key = xml_minio_key
-                    
-                try:
-                    repo = MongoInvoiceRepository()
-                    owner = (user.get('email') or '').lower()
-                    doc = map_invoice(inv, fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION")
-                    if owner:
-                        try:
-                            doc.header.owner_email = owner
-                            for it in doc.items:
-                                it.owner_email = owner
-                        except Exception:
-                            pass
-                    repo.save_document(doc)
-                except Exception as e:
-                    logger.error(f"❌ Error persistiendo (tasks upload XML): {e}")
-            return ProcessResult(
-                success=bool(invoices),
-                message=("Factura XML procesada y almacenada " if invoices else "No se pudo extraer información desde el XML"),
-                invoice_count=len(invoices), 
-                invoices=invoices
-            )
+            try:
+                owner = (user.get('email') or '').lower()
+                inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
+                invoices = [inv] if inv else []
+                if invoices:
+                    # Assign minio key
+                    if xml_minio_key and inv:
+                        inv.minio_key = xml_minio_key
+                        
+                    try:
+                        repo = MongoInvoiceRepository()
+                        owner = (user.get('email') or '').lower()
+                        doc = map_invoice(
+                            inv,
+                            fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION",
+                            minio_key=(getattr(inv, "minio_key", "") or xml_minio_key or ""),
+                        )
+                        if owner:
+                            try:
+                                doc.header.owner_email = owner
+                                for it in doc.items:
+                                    it.owner_email = owner
+                            except Exception:
+                                pass
+                        repo.save_document(doc)
+                    except Exception as e:
+                        logger.error(f"❌ Error persistiendo (tasks upload XML): {e}")
+                    return ProcessResult(
+                        success=True,
+                        message="Factura XML procesada y almacenada",
+                        invoice_count=len(invoices),
+                        invoices=invoices,
+                    )
+
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=xml_minio_key,
+                        fuente="XML_UPLOAD",
+                        reason=f"{ai_block_reason} | XML requiere fallback de IA",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="XML registrado como PENDING_AI (sin cupo/disponibilidad IA para fallback)",
+                        invoice_count=0,
+                        invoices=[],
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                    )
+
+                return ProcessResult(
+                    success=False,
+                    message="No se pudo extraer información desde el XML",
+                    invoice_count=0,
+                    invoices=[],
+                    reason_code="extraction_failed",
+                )
+            finally:
+                cleanup_local_file_if_safe(xml_path, xml_minio_key)
 
         job_id = task_queue.enqueue("upload_xml", _runner)
         return {"job_id": job_id}
     except Exception as e:
+        if xml_path:
+            cleanup_local_file_if_safe(xml_path, xml_minio_key)
         logger.error(f"Error al encolar XML: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1230,7 +1727,10 @@ async def test_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Dep
             username=config.username,
             password=pwd or "",
             search_criteria=config.search_criteria,
-            search_terms=config.search_terms or []
+            search_terms=config.search_terms or [],
+            search_synonyms=config.search_synonyms or {},
+            fallback_sender_match=bool(config.fallback_sender_match),
+            fallback_attachment_match=bool(config.fallback_attachment_match),
         )
         
         # Crear procesador temporal
@@ -1964,6 +2464,7 @@ async def get_status(user: Dict[str, Any] = Depends(_get_current_user)):
             "openai_configured": bool(settings.OPENAI_API_KEY),
             "job": {
                 "running": job_status.running,
+                "is_processing": job_status.is_processing,
                 "interval_minutes": job_status.interval_minutes,
                 "next_run": job_status.next_run,
                 "last_run": job_status.last_run
@@ -1993,6 +2494,7 @@ async def v2_list_headers(
     search: Optional[str] = None,
     sort_by: str = Query(default="fecha_emision", description="Campo de ordenamiento: fecha_emision | created_at"),
     emisor_nombre: Optional[str] = Query(default=None, description="Filtro por nombre del emisor (regex i)"),
+    include_non_done: bool = Query(default=False, description="Si true, incluye PENDING_AI/FAILED/PROCESSING y ERR_*"),
     user: Dict[str, Any] = Depends(_get_current_user),
 ):
     try:
@@ -2033,6 +2535,12 @@ async def v2_list_headers(
             owner = (user.get('email') or '').lower()
             if owner:
                 q['owner_email'] = owner
+
+        # Por defecto, la lista de facturas muestra solo documentos finales válidos.
+        # Los pendientes/errores van a la cola de procesos.
+        if not include_non_done:
+            q["status"] = {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]}
+            q["numero_documento"] = {"$not": {"$regex": "^ERR_"}}
         
         # Lógica de ordenamiento
         sort_field = "fecha_emision"
@@ -3389,6 +3897,68 @@ async def list_public_plans(
         "count": len(plans)
     }
 
+
+_CDC_TOKEN_RE = re.compile(r"\d{44}")
+
+
+def _minio_key_matches_header_strict(
+    client: "Minio",
+    header: Dict[str, Any],
+    minio_key: str,
+) -> bool:
+    """Validación estricta: solo sirve archivo si evidencia fuerte de correspondencia."""
+    key = str(minio_key or "").strip()
+    if not key:
+        return False
+
+    cdc = str(header.get("cdc") or "").strip()
+    if not cdc:
+        # Sin CDC no se puede validar criptográficamente; confiamos solo en llave persistida.
+        return True
+
+    cdc_tokens = _CDC_TOKEN_RE.findall(key)
+    if cdc_tokens:
+        return cdc in cdc_tokens
+
+    # Si no hay CDC en el nombre, intentamos validar solo para XML por contenido.
+    if not key.lower().endswith(".xml"):
+        return False
+
+    try:
+        obj = client.get_object(settings.MINIO_BUCKET, key)
+        try:
+            content = obj.read().decode("utf-8", errors="ignore")
+        finally:
+            obj.close()
+            obj.release_conn()
+    except Exception as e:
+        logger.warning(f"⚠️ No se pudo validar XML por contenido para {header.get('_id')}: {e}")
+        return False
+
+    cdc_digits = "".join(ch for ch in cdc if ch.isdigit())
+    content_digits = "".join(ch for ch in content if ch.isdigit())
+    return cdc in content or (cdc_digits and cdc_digits in content_digits)
+
+
+def _resolve_minio_key_strict(
+    header: Dict[str, Any],
+    client: "Minio",
+) -> str:
+    """No adivina ni backfillea: solo acepta minio_key persistido y validado."""
+    minio_key = str(header.get("minio_key") or "").strip()
+    if not minio_key:
+        return ""
+
+    if not _minio_key_matches_header_strict(client, header, minio_key):
+        logger.warning(
+            "⚠️ minio_key rechazado por inconsistencia con factura %s: %s",
+            header.get("_id"),
+            minio_key,
+        )
+        return ""
+
+    return minio_key
+
 # Endpoints de suscripciones - TODOS MIGRADOS a admin_subscriptions.py
 # Rutas: /admin/subscriptions/stats, POST /admin/subscriptions, GET /admin/subscriptions/user/{user_email}
 
@@ -3452,10 +4022,6 @@ async def get_invoice_download_url(
                         detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
                     )
 
-        minio_key = header.get("minio_key")
-        if not minio_key:
-            return {"success": False, "message": "Archivo no disponible en el almacenamiento seguro"}
-            
         # Generar Signed URL
         # Re-importar para asegurar acceso si no estamos en scope gol
         try:
@@ -3474,6 +4040,10 @@ async def get_invoice_download_url(
             secure=settings.MINIO_SECURE,
             region=settings.MINIO_REGION
         )
+
+        minio_key = _resolve_minio_key_strict(header, client)
+        if not minio_key:
+            return {"success": False, "message": "Archivo no disponible en el almacenamiento seguro"}
         
         # Determinar Content-Type basado en la extensión del archivo
         filename = minio_key.split("/")[-1]
@@ -3552,10 +4122,6 @@ async def get_invoice_file_direct(
             if not user_repo.is_admin(owner):
                 raise HTTPException(status_code=403, detail="Acceso denegado")
             
-        minio_key = header.get("minio_key")
-        if not minio_key:
-            raise HTTPException(status_code=404, detail="Archivo no disponible")
-            
         try:
             from minio import Minio
         except ImportError:
@@ -3571,6 +4137,10 @@ async def get_invoice_file_direct(
             secure=settings.MINIO_SECURE,
             region=settings.MINIO_REGION
         )
+
+        minio_key = _resolve_minio_key_strict(header, client)
+        if not minio_key:
+            raise HTTPException(status_code=404, detail="Archivo no disponible")
         
         # Obtener el archivo desde MinIO
         response = client.get_object(settings.MINIO_BUCKET, minio_key)
@@ -3864,6 +4434,8 @@ async def get_dashboard_stats(user: Dict[str, Any] = Depends(_get_current_user))
         
         # Filtro base
         q = {"owner_email": owner_email} if owner_email else {}
+        q["status"] = {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]}
+        q["numero_documento"] = {"$not": {"$regex": "^ERR_"}}
         
         # Total facturas
         total_invoices = repo._headers().count_documents(q)
@@ -3890,36 +4462,23 @@ async def get_dashboard_stats(user: Dict[str, Any] = Depends(_get_current_user))
 
 @app.get("/dashboard/monthly-stats")
 async def get_dashboard_monthly(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Obtiene evolución mensual de inversión (usando fecha_emision)."""
+    """Obtiene evolución mensual de inversión con histórico completo."""
     try:
-        repo = MongoInvoiceRepository()
         owner_email = (user.get('email') or '').lower()
-        q = {"owner_email": owner_email} if owner_email else {}
-        
-        # Filter > 12 months ago
-        from datetime import datetime, timedelta
-        start_date = datetime.now() - timedelta(days=365)
-        
-        # Asegurar que fecha_emision existe y es > start_date
-        q["fecha_emision"] = {"$gte": start_date}
+        query_service = get_mongo_query_service()
+        owner = owner_email if settings.MULTI_TENANT_ENFORCE else None
 
-        pipeline = [
-             {"$match": q},
-             {
-                "$group": {
-                    "_id": {"$dateToString": {"format": "%Y-%m", "date": "$fecha_emision"}},
-                    "total_amount": {"$sum": "$totales.total"},
-                    "count": {"$sum": 1}
-                }
-            },
-            {"$sort": {"_id": 1}}
-        ]
-
-        data = list(repo._headers().aggregate(pipeline))
+        months = query_service.get_available_months(owner_email=owner)
         monthly_data = [
-            {"year_month": d["_id"], "total_amount": d["total_amount"], "count": d["count"]}
-            for d in data
+            {
+                "year_month": m.get("year_month"),
+                "total_amount": float(m.get("total_amount", 0)),
+                "count": int(m.get("count", 0))
+            }
+            for m in months
+            if m.get("year_month")
         ]
+        monthly_data.sort(key=lambda item: item["year_month"])
         
         return {"success": True, "monthly_data": monthly_data}
     except Exception as e:
@@ -3932,6 +4491,8 @@ async def get_dashboard_top_emisores(user: Dict[str, Any] = Depends(_get_current
         repo = MongoInvoiceRepository()
         owner_email = (user.get('email') or '').lower()
         q = {"owner_email": owner_email} if owner_email else {}
+        q["status"] = {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]}
+        q["numero_documento"] = {"$not": {"$regex": "^ERR_"}}
         
         pipeline = [
             {"$match": q},
@@ -3961,6 +4522,8 @@ async def get_dashboard_recent(user: Dict[str, Any] = Depends(_get_current_user)
         repo = MongoInvoiceRepository()
         owner_email = (user.get('email') or '').lower()
         q = {"owner_email": owner_email} if owner_email else {}
+        q["status"] = {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]}
+        q["numero_documento"] = {"$not": {"$regex": "^ERR_"}}
         
         cursor = repo._headers().find(q).sort("fecha_emision", -1).limit(5)
         invoices = []
@@ -4210,13 +4773,18 @@ async def search_invoices(
     client_ruc: Optional[str] = Query(default=None, description="RUC del cliente"),
     min_amount: Optional[float] = Query(default=None, description="Monto mínimo"),
     max_amount: Optional[float] = Query(default=None, description="Monto máximo"),
-    limit: int = Query(default=100, description="Límite de resultados")
+    limit: int = Query(default=100, description="Límite de resultados"),
+    user: Dict[str, Any] = Depends(_get_current_user)
 ):
     """
     Búsqueda avanzada de facturas en MongoDB con múltiples filtros.
     """
     try:
         query_service = get_mongo_query_service()
+        owner = (user.get('email') or '').lower()
+        if settings.MULTI_TENANT_ENFORCE and not owner:
+            raise HTTPException(status_code=401, detail="Usuario no autenticado")
+        owner_filter = owner if settings.MULTI_TENANT_ENFORCE else None
         results = query_service.search_invoices(
             query=query,
             start_date=start_date,
@@ -4225,7 +4793,8 @@ async def search_invoices(
             client_ruc=client_ruc,
             min_amount=min_amount,
             max_amount=max_amount,
-            limit=limit
+            limit=limit,
+            owner_email=owner_filter
         )
         
         return {
@@ -4239,13 +4808,20 @@ async def search_invoices(
         raise HTTPException(status_code=500, detail=f"Error en búsqueda: {str(e)}")
 
 @app.get("/invoices/recent-activity")
-async def get_recent_activity(days: int = Query(default=7, description="Días hacia atrás")):
+async def get_recent_activity(
+    days: int = Query(default=7, description="Días hacia atrás"),
+    user: Dict[str, Any] = Depends(_get_current_user)
+):
     """
     Obtiene actividad reciente del sistema desde MongoDB.
     """
     try:
         query_service = get_mongo_query_service()
-        activity = query_service.get_recent_activity(days)
+        owner = (user.get('email') or '').lower()
+        if settings.MULTI_TENANT_ENFORCE and not owner:
+            raise HTTPException(status_code=401, detail="Usuario no autenticado")
+        owner_filter = owner if settings.MULTI_TENANT_ENFORCE else None
+        activity = query_service.get_recent_activity(days, owner_email=owner_filter)
         
         return {
             "success": True,
@@ -4301,29 +4877,43 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
         
         # Obtener totales desde el modelo v2 estructura
         totales_data = doc.get("totales", {})
+        emisor_data = doc.get("emisor", {})
+        receptor_data = doc.get("receptor", {})
+
+        total_iva_v2 = totales_data.get("total_iva", None)
+        if total_iva_v2 is None:
+            total_iva_v2 = (totales_data.get("iva_5", 0) or 0) + (totales_data.get("iva_10", 0) or 0)
         
         invoice = InvoiceData(
             numero_factura=doc.get("numero_factura", "") or doc.get("numero_documento", ""),
             fecha=fecha,
-            ruc_emisor=doc.get("ruc_emisor", ""),
-            nombre_emisor=doc.get("nombre_emisor", ""),
-            ruc_cliente=doc.get("ruc_cliente", ""),
-            nombre_cliente=doc.get("nombre_cliente", ""),
-            email_cliente=doc.get("email_cliente", ""),
+            ruc_emisor=doc.get("ruc_emisor", "") or emisor_data.get("ruc", ""),
+            nombre_emisor=doc.get("nombre_emisor", "") or emisor_data.get("nombre", ""),
+            ruc_cliente=doc.get("ruc_cliente", "") or receptor_data.get("ruc", ""),
+            nombre_cliente=doc.get("nombre_cliente", "") or receptor_data.get("nombre", ""),
+            email_cliente=doc.get("email_cliente", "") or receptor_data.get("email", ""),
             monto_total=doc.get("monto_total", 0) or totales_data.get("total", 0),
             
             # Mapeo correcto desde modelo v2 - NOMBRES CORRECTOS DEL XML
-            monto_exento=totales_data.get("exentas", 0),  # monto_exento en lugar de subtotal_exentas
+            monto_exento=totales_data.get("monto_exento", 0) or totales_data.get("exentas", 0),
             base_gravada_5=totales_data.get("gravado_5", 0),  # base_gravada_5 del XML
             base_gravada_10=totales_data.get("gravado_10", 0),  # base_gravada_10 del XML
             iva_5=totales_data.get("iva_5", 0),
             iva_10=totales_data.get("iva_10", 0),
             
             # Campos adicionales del XML que faltaban
-            total_operacion=doc.get("total_operacion", 0),
-            total_descuento=doc.get("total_descuento", 0),
-            total_iva=totales_data.get("iva_5", 0) + totales_data.get("iva_10", 0),
-            anticipo=doc.get("anticipo", 0),
+            total_operacion=totales_data.get("total_operacion", 0) or doc.get("total_operacion", 0),
+            total_descuento=totales_data.get("total_descuento", 0) or doc.get("total_descuento", 0),
+            total_iva=total_iva_v2 or 0,
+            anticipo=totales_data.get("anticipo", 0) or doc.get("anticipo", 0),
+            exonerado=totales_data.get("exonerado", 0) or doc.get("exonerado", 0),
+            total_base_gravada=totales_data.get(
+                "total_base_gravada",
+                (totales_data.get("gravado_5", 0) or 0) + (totales_data.get("gravado_10", 0) or 0)
+            ),
+            isc_total=totales_data.get("isc_total", 0) or doc.get("isc_total", 0),
+            isc_base_imponible=totales_data.get("isc_base_imponible", 0) or doc.get("isc_base_imponible", 0),
+            isc_subtotal_gravado=totales_data.get("isc_subtotal_gravado", 0) or doc.get("isc_subtotal_gravado", 0),
             
             # Compatibilidad (campos legacy)
             subtotal_exentas=totales_data.get("exentas", 0),
@@ -4335,10 +4925,29 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
             
             productos=[clean_product(p) for p in productos]
         )
-        
+
         # Agregar campos adicionales directamente del documento
         invoice.cdc = doc.get("cdc", "")
         invoice.timbrado = doc.get("timbrado", "")
+        invoice.tipo_documento = doc.get("tipo_documento", "") or invoice.tipo_documento
+        invoice.tipo_documento_electronico = doc.get("tipo_documento_electronico", "")
+        invoice.tipo_de_codigo = doc.get("tipo_de_codigo", "")
+        invoice.ind_presencia = doc.get("ind_presencia", "")
+        invoice.ind_presencia_codigo = doc.get("ind_presencia_codigo", "")
+        invoice.cond_credito = doc.get("cond_credito", "")
+        invoice.cond_credito_codigo = doc.get("cond_credito_codigo", "")
+        invoice.plazo_credito_dias = int(doc.get("plazo_credito_dias", 0) or 0)
+        invoice.ciclo_facturacion = doc.get("ciclo_facturacion", "")
+        invoice.ciclo_fecha_inicio = doc.get("ciclo_fecha_inicio", "")
+        invoice.ciclo_fecha_fin = doc.get("ciclo_fecha_fin", "")
+        invoice.transporte_modalidad = doc.get("transporte_modalidad", "")
+        invoice.transporte_modalidad_codigo = doc.get("transporte_modalidad_codigo", "")
+        invoice.transporte_resp_flete_codigo = doc.get("transporte_resp_flete_codigo", "")
+        invoice.transporte_nro_despacho = doc.get("transporte_nro_despacho", "")
+        invoice.qr_url = doc.get("qr_url", "")
+        invoice.info_adicional = doc.get("info_adicional", "")
+        invoice.fuente = doc.get("fuente", "")
+        invoice.email_origen = doc.get("email_origen", "")
 
         # Normalizar y mapear campos críticos faltantes para exportación
         # Moneda: mapear PYG/GS → GS, USD/DOLAR → USD, default GS
@@ -4373,29 +4982,29 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
 
         # Datos del emisor adicionales
         try:
-            invoice.direccion_emisor = doc.get("direccion_emisor", "")
+            invoice.direccion_emisor = doc.get("direccion_emisor", "") or emisor_data.get("direccion", "")
         except Exception:
             pass
         try:
-            invoice.telefono_emisor = doc.get("telefono_emisor", "")
+            invoice.telefono_emisor = doc.get("telefono_emisor", "") or emisor_data.get("telefono", "")
         except Exception:
             pass
         try:
-            invoice.actividad_economica = doc.get("actividad_economica", "")
+            invoice.actividad_economica = doc.get("actividad_economica", "") or emisor_data.get("actividad_economica", "")
         except Exception:
             pass
         try:
-            invoice.email_emisor = doc.get("email_emisor", "")
+            invoice.email_emisor = doc.get("email_emisor", "") or emisor_data.get("email", "")
         except Exception:
             pass
 
         # Datos del receptor adicionales
         try:
-            invoice.direccion_cliente = doc.get("direccion_cliente", "")
+            invoice.direccion_cliente = doc.get("direccion_cliente", "") or receptor_data.get("direccion", "")
         except Exception:
             pass
         try:
-            invoice.telefono_cliente = doc.get("telefono_cliente", "")
+            invoice.telefono_cliente = doc.get("telefono_cliente", "") or receptor_data.get("telefono", "")
         except Exception:
             pass
 
@@ -4473,37 +5082,11 @@ async def get_export_templates(user: Dict[str, Any] = Depends(_get_current_user)
 async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)):
     """Obtener lista de campos disponibles para templates - SOLO CAMPOS REALES"""
     try:
-        from app.models.export_template import AVAILABLE_FIELDS
+        from app.models.export_template import AVAILABLE_FIELDS, get_available_field_categories
         
-        # Solo devolver campos reales de la base de datos - sin campos calculados
         return {
             "fields": AVAILABLE_FIELDS,
-            "categories": {
-                "basic": [
-                    "numero_factura", "fecha", "cdc", "timbrado", "tipo_documento", 
-                    "condicion_venta", "moneda", "tipo_cambio"
-                ],
-                "emisor": [
-                    "ruc_emisor", "nombre_emisor", "direccion_emisor", "telefono_emisor", 
-                    "email_emisor", "actividad_economica"
-                ],
-                "cliente": [
-                    "ruc_cliente", "nombre_cliente", "direccion_cliente", "email_cliente", "telefono_cliente"
-                ],
-                "montos": [
-                    "gravado_5", "gravado_10", "iva_5", "iva_10", "total_iva",
-                    "monto_exento", "exonerado", "monto_total", 
-                    "total_base_gravada", "total_descuento", "anticipo"
-                ],
-                "productos": [
-                    "productos", "productos.codigo", "productos.nombre", 
-                    "productos.cantidad", "productos.unidad", "productos.precio_unitario", 
-                    "productos.total", "productos.iva", "productos.base_gravada", "productos.monto_iva"
-                ],
-                "metadata": [
-                    "mes_proceso", "created_at"
-                ]
-            }
+            "categories": get_available_field_categories(),
         }
         
     except Exception as e:
@@ -4537,13 +5120,23 @@ async def create_export_template(
     """Crear un nuevo template de exportación"""
     try:
         from app.repositories.export_template_repository import ExportTemplateRepository
-        from app.models.export_template import ExportTemplate
+        from app.models.export_template import ExportTemplate, get_invalid_template_field_keys
         
         # Agregar owner_email
         template_data["owner_email"] = user["email"]
         
         # Crear template
         template = ExportTemplate(**template_data)
+        invalid_fields = get_invalid_template_field_keys(template.fields)
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Template contiene campos no soportados",
+                    "invalid_fields": invalid_fields,
+                },
+            )
+
         repo = ExportTemplateRepository()
         template_id = repo.create_template(template)
         
@@ -4591,13 +5184,23 @@ async def update_export_template(
     """Actualizar un template existente"""
     try:
         from app.repositories.export_template_repository import ExportTemplateRepository
-        from app.models.export_template import ExportTemplate
+        from app.models.export_template import ExportTemplate, get_invalid_template_field_keys
         
         # Agregar owner_email
         template_data["owner_email"] = user["email"]
         
         # Actualizar template
         template = ExportTemplate(**template_data)
+        invalid_fields = get_invalid_template_field_keys(template.fields)
+        if invalid_fields:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Template contiene campos no soportados",
+                    "invalid_fields": invalid_fields,
+                },
+            )
+
         repo = ExportTemplateRepository()
         
         if repo.update_template(template_id, template):

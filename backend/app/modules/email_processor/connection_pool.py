@@ -95,11 +95,11 @@ class IMAPConnectionPool:
             try:
                 start_time = time.time()
                 
-                # Establecer conexión con timeout
+                # Establecer conexión con timeout real en handshake para evitar cuelgues indefinidos
                 if config.port == 993:
-                    conn = imaplib.IMAP4_SSL(config.host, config.port)
+                    conn = imaplib.IMAP4_SSL(config.host, config.port, timeout=30)
                 else:
-                    conn = imaplib.IMAP4(config.host, config.port)
+                    conn = imaplib.IMAP4(config.host, config.port, timeout=30)
                     if hasattr(config, 'use_ssl') and config.use_ssl:
                         conn.starttls()
                 
