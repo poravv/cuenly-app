@@ -30,6 +30,7 @@ from app.main import CuenlyApp
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
 from app.modules.email_processor.storage import save_binary, cleanup_local_file_if_safe
+from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.repositories.user_repository import UserRepository
 from app.modules.mapping.invoice_mapping import map_invoice
@@ -896,12 +897,145 @@ async def process_range_job(
             logger.error(f"Error range sync: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
+def _get_ai_block_reason(owner_email: str) -> Optional[str]:
+    """Retorna razón textual si IA no está disponible para el usuario, o None si sí puede usar IA."""
+    if not owner_email:
+        return "IA_NO_DISPONIBLE: Usuario no identificado"
+    try:
+        ai_check = UserRepository().can_use_ai(owner_email)
+        if ai_check.get("can_use", False):
+            return None
+        reason = str(ai_check.get("reason", "")).strip().lower()
+        message = str(ai_check.get("message", "No disponible")).strip()
+        if reason == "ai_limit_reached":
+            return f"LIMITE_IA: {message}"
+        return f"IA_NO_DISPONIBLE: {message}"
+    except Exception as e:
+        logger.warning(f"⚠️ Error verificando disponibilidad IA para {owner_email}: {e}")
+        return "IA_NO_DISPONIBLE: No fue posible validar disponibilidad de IA"
+
+
+def _get_ai_reason_code(ai_block_reason: Optional[str]) -> Optional[str]:
+    """Mapea razón textual de IA a código estable para frontend."""
+    if not ai_block_reason:
+        return None
+    return "ai_limit_reached" if ai_block_reason.startswith("LIMITE_IA:") else "ai_unavailable"
+
+
+def _store_manual_pending_ai(
+    owner_email: str,
+    sender: str,
+    date_obj: Optional[datetime],
+    minio_key: str,
+    fuente: str,
+    reason: str,
+) -> None:
+    """
+    Registra uploads manuales bloqueados por IA:
+    1) En processed_emails (cola de procesos UI) con status=pending.
+    2) En invoice_headers con status=PENDING_AI (tracking interno).
+    """
+    try:
+        # 1) Cola de procesos (processed_emails) para visibilidad en UI de "Actividad/Cola".
+        try:
+            from app.modules.email_processor.processed_registry import _repo, build_key as build_processed_key
+
+            event_uid = f"manual_ai_pending_{uuid.uuid4().hex}"
+            event_key = build_processed_key(event_uid, "manual_upload", owner_email)
+            base_reason = (reason or "Pendiente por IA").strip()
+            event_reason = f"{base_reason} | Manual: sin reproceso automático"[:500]
+
+            _repo.mark_processed(
+                key=event_key,
+                status="pending",
+                reason=event_reason,
+                owner_email=owner_email,
+                account_email="manual_upload",
+                message_id=f"manual_pending_ai:{event_uid}",
+                subject=f"Carga manual pendiente de IA ({fuente})",
+                sender=(sender or "Carga manual")[:200],
+                email_date=date_obj or datetime.utcnow(),
+            )
+
+            # Metadatos extra útiles para UI/debug.
+            _repo._get_collection().update_one(
+                {"_id": event_key},
+                {"$set": {
+                    "manual_upload": True,
+                    "fuente": fuente,
+                    "minio_key": (minio_key or ""),
+                    "retry_supported": False,
+                }},
+                upsert=False,
+            )
+            logger.info(
+                "🕒 Upload manual registrado en cola (processed_emails) owner=%s fuente=%s",
+                owner_email,
+                fuente,
+            )
+        except Exception as qerr:
+            logger.error(f"❌ Error registrando pending manual en processed_emails: {qerr}")
+
+        # 2) Tracking interno en invoice_headers (PENDING_AI).
+        pending_msg_id = f"manual_pending_ai:{uuid.uuid4().hex}"
+        inv = InvoiceData(
+            numero_factura=f"PENDING_AI_{uuid.uuid4().hex[:10]}",
+            ruc_emisor="UNKNOWN",
+            nombre_emisor=(sender or "Carga manual")[:100],
+            fecha=date_obj or datetime.utcnow(),
+            email_origen=owner_email,
+            message_id=pending_msg_id,
+            status="PENDING_AI",
+            processing_error=(reason or "Pendiente por IA")[:500],
+            fuente=fuente,
+            minio_key=minio_key or "",
+        )
+        doc = map_invoice(inv, fuente=fuente, minio_key=minio_key or "")
+        if owner_email:
+            doc.header.owner_email = owner_email
+            for it in doc.items:
+                it.owner_email = owner_email
+        doc.header.status = "PENDING_AI"
+        doc.header.processing_error = (reason or "Pendiente por IA")[:500]
+        MongoInvoiceRepository().save_document(doc)
+        logger.info(
+            "🕒 Upload manual guardado en PENDING_AI (owner=%s, fuente=%s, minio_key=%s)",
+            owner_email,
+            fuente,
+            minio_key or "",
+        )
+    except Exception as e:
+        logger.error(f"❌ Error guardando PENDING_AI manual: {e}")
+
+
+def _create_completed_task(action: str, result: ProcessResult) -> str:
+    """
+    Crea una tarea finalizada en memoria para mantener contrato async (retorno job_id)
+    cuando el procesamiento se resuelve de forma inmediata.
+    """
+    job_id = uuid.uuid4().hex
+    now = time.time()
+    with task_queue._lock:
+        task_queue._jobs[job_id] = {
+            'job_id': job_id,
+            'action': action,
+            'status': 'done',
+            'created_at': now,
+            'started_at': now,
+            'finished_at': now,
+            'message': result.message,
+            'result': result,
+            '_func': None,
+        }
+    return job_id
+
+
 @app.post("/upload", response_model=ProcessResult)
 async def upload_pdf(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):  # PDFs usan IA
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """
     Sube un archivo PDF para procesarlo directamente.
     
@@ -950,12 +1084,51 @@ async def upload_pdf(
         def _process_sync():
             with PROCESSING_LOCK:
                 owner = (user.get('email') or '').lower()
-                invoice_data = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=minio_key,
+                        fuente="OPENAI_VISION",
+                        reason=ai_block_reason,
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="Archivo registrado como PENDING_AI por límite/disponibilidad de IA",
+                        invoice_count=0,
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                        invoices=[],
+                    )
+
+                try:
+                    invoice_data = invoice_sync.openai_processor.extract_invoice_data(
+                        pdf_path,
+                        email_meta,
+                        owner_email=owner,
+                    )
+                except (OpenAIFatalError, OpenAIRetryableError) as e:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=minio_key,
+                        fuente="OPENAI_VISION",
+                        reason=f"IA_NO_DISPONIBLE: {str(e)}",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="Archivo registrado como PENDING_AI por indisponibilidad temporal de IA",
+                        invoice_count=0,
+                        reason_code="ai_unavailable",
+                        invoices=[],
+                    )
+
                 invoices = [invoice_data] if invoice_data else []
                 if invoices:
                     try:
                         repo = MongoInvoiceRepository()
-                        owner = (user.get('email') or '').lower()
                         doc = map_invoice(invoice_data, fuente="OPENAI_VISION", minio_key=minio_key)
                         if owner:
                             try:
@@ -967,25 +1140,23 @@ async def upload_pdf(
                         repo.save_document(doc)
                     except Exception as e:
                         logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
-                return invoices
+                    return ProcessResult(
+                        success=True,
+                        message="Factura procesada y almacenada",
+                        invoice_count=1,
+                        invoices=invoices,
+                    )
+
+                return ProcessResult(
+                    success=False,
+                    message="No se pudo extraer factura del PDF",
+                    invoice_count=0,
+                    reason_code="extraction_failed",
+                    invoices=[],
+                )
 
         # Ejecutar en threadpool para no bloquear el event loop
-        invoices = await run_in_threadpool(_process_sync)
-
-        if not invoices:
-            return ProcessResult(
-                success=False,
-                message="No se pudo extraer factura del PDF",
-                invoice_count=0,
-                invoices=[]
-            )
-
-        return ProcessResult(
-            success=True,
-            message=f"Factura procesada y almacenada",
-            invoice_count=1,
-            invoices=invoices
-        )
+        return await run_in_threadpool(_process_sync)
         
     except Exception as e:
         logger.error(f"Error al procesar el archivo: {str(e)}")
@@ -1002,7 +1173,7 @@ async def upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """
     Sube un archivo XML SIFEN para procesarlo directamente con el parser nativo (fallback OpenAI).
     """
@@ -1057,25 +1228,42 @@ async def upload_xml(
                         repo.save_document(doc)
                     except Exception as e:
                         logger.error(f"❌ Error persistiendo v2 (upload XML): {e}")
-                return invoices
+                    return ProcessResult(
+                        success=True,
+                        message="Factura XML procesada y almacenada",
+                        invoice_count=1,
+                        invoices=invoices,
+                    )
+
+                # Si no hubo extracción y además no hay IA disponible para fallback, dejar en pendiente.
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=minio_key,
+                        fuente="XML_UPLOAD",
+                        reason=f"{ai_block_reason} | XML requiere fallback de IA",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="XML registrado como PENDING_AI (sin cupo/disponibilidad IA para fallback)",
+                        invoice_count=0,
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                        invoices=[],
+                    )
+
+                return ProcessResult(
+                    success=False,
+                    message="No se pudo extraer información desde el XML",
+                    invoice_count=0,
+                    reason_code="extraction_failed",
+                    invoices=[],
+                )
 
         # Ejecutar en threadpool
-        invoices = await run_in_threadpool(_process_sync)
-
-        if not invoices:
-            return ProcessResult(
-                success=False,
-                message="No se pudo extraer información desde el XML",
-                invoice_count=0,
-                invoices=[]
-            )
-
-        return ProcessResult(
-            success=True,
-            message=f"Factura XML procesada y almacenada",
-            invoice_count=1,
-            invoices=invoices
-        )
+        return await run_in_threadpool(_process_sync)
 
     except Exception as e:
         logger.error(f"Error al procesar el XML: {str(e)}")
@@ -1092,7 +1280,7 @@ async def enqueue_upload_pdf(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):  # PDFs usan IA
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """Encola el procesamiento de un PDF manual y retorna job_id."""
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
@@ -1125,10 +1313,69 @@ async def enqueue_upload_pdf(
         if date_obj:
             email_meta["date"] = date_obj
 
+        # Si no hay cupo/disponibilidad IA, resolver inmediatamente sin pasar por la cola local
+        # para evitar bloqueo detrás de jobs largos de rango.
+        owner = (user.get('email') or '').lower()
+        ai_block_reason = _get_ai_block_reason(owner)
+        if ai_block_reason:
+            _store_manual_pending_ai(
+                owner_email=owner,
+                sender=email_meta.get("sender", "Carga manual"),
+                date_obj=email_meta.get("date"),
+                minio_key=pdf_minio_key,
+                fuente="OPENAI_VISION",
+                reason=ai_block_reason,
+            )
+            immediate_result = ProcessResult(
+                success=True,
+                message="PDF registrado como PENDING_AI por límite/disponibilidad de IA",
+                invoice_count=0,
+                reason_code=_get_ai_reason_code(ai_block_reason),
+                invoices=[],
+            )
+            cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
+            return {"job_id": _create_completed_task("process_pdf_manual", immediate_result)}
+
         def _runner():
             try:
                 owner = (user.get('email') or '').lower()
-                inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=pdf_minio_key,
+                        fuente="OPENAI_VISION",
+                        reason=ai_block_reason,
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="PDF registrado como PENDING_AI por límite/disponibilidad de IA",
+                        invoice_count=0,
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                        invoices=[],
+                    )
+
+                try:
+                    inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
+                except (OpenAIFatalError, OpenAIRetryableError) as e:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=pdf_minio_key,
+                        fuente="OPENAI_VISION",
+                        reason=f"IA_NO_DISPONIBLE: {str(e)}",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="PDF registrado como PENDING_AI por indisponibilidad temporal de IA",
+                        invoice_count=0,
+                        reason_code="ai_unavailable",
+                        invoices=[],
+                    )
+
                 invoices = [inv] if inv else []
                 if invoices:
                     # Asignar minio_key
@@ -1155,7 +1402,13 @@ async def enqueue_upload_pdf(
                         logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
 
                 if not invoices:
-                    return ProcessResult(success=False, message="No se pudo extraer información del PDF")
+                    return ProcessResult(
+                        success=False,
+                        message="No se pudo extraer información del PDF",
+                        invoice_count=0,
+                        reason_code="extraction_failed",
+                        invoices=[],
+                    )
                 return ProcessResult(success=True, message="PDF procesado correctamente", invoice_count=1, invoices=invoices)
             finally:
                 cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
@@ -1173,7 +1426,7 @@ async def upload_image(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """
     Sube una imagen (JPG/PNG) para procesarla como factura (vía IA).
     AHORA ASÍNCRONO: Retorna job_id.
@@ -1214,11 +1467,69 @@ async def upload_image(
         if date_obj:
             email_meta["date"] = date_obj
 
+        # Si IA está bloqueada, resolver inmediato (no encolar) para no quedar detrás
+        # de procesos largos en la cola local serial.
+        owner = (user.get('email') or '').lower()
+        ai_block_reason = _get_ai_block_reason(owner)
+        if ai_block_reason:
+            _store_manual_pending_ai(
+                owner_email=owner,
+                sender=email_meta.get("sender", "Carga manual (Imagen)"),
+                date_obj=email_meta.get("date"),
+                minio_key=img_minio_key,
+                fuente="OPENAI_VISION_IMAGE",
+                reason=ai_block_reason,
+            )
+            immediate_result = ProcessResult(
+                success=True,
+                message="Imagen registrada como PENDING_AI por límite/disponibilidad de IA",
+                invoice_count=0,
+                reason_code=_get_ai_reason_code(ai_block_reason),
+                invoices=[],
+            )
+            cleanup_local_file_if_safe(img_path, img_minio_key)
+            return {"job_id": _create_completed_task("process_image_manual", immediate_result)}
+
         def _runner():
             try:
                 owner = (user.get('email') or '').lower()
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual (Imagen)"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=img_minio_key,
+                        fuente="OPENAI_VISION_IMAGE",
+                        reason=ai_block_reason,
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="Imagen registrada como PENDING_AI por límite/disponibilidad de IA",
+                        invoice_count=0,
+                        invoices=[],
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                    )
+
                 # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
-                invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
+                try:
+                    invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
+                except (OpenAIFatalError, OpenAIRetryableError) as e:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual (Imagen)"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=img_minio_key,
+                        fuente="OPENAI_VISION_IMAGE",
+                        reason=f"IA_NO_DISPONIBLE: {str(e)}",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="Imagen registrada como PENDING_AI por indisponibilidad temporal de IA",
+                        invoice_count=0,
+                        invoices=[],
+                        reason_code="ai_unavailable",
+                    )
                 invoices = [invoice_data] if invoice_data else []
                 
                 if invoices:
@@ -1245,7 +1556,8 @@ async def upload_image(
                         success=False,
                         message="No se pudo extraer factura de la imagen",
                         invoice_count=0,
-                        invoices=[]
+                        invoices=[],
+                        reason_code="extraction_failed",
                     )
 
                 return ProcessResult(
@@ -1275,7 +1587,7 @@ async def enqueue_upload_xml(
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_ai_check)):
+    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """Encola el procesamiento de un XML manual y retorna job_id."""
     if not file.filename.lower().endswith('.xml'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
@@ -1336,11 +1648,37 @@ async def enqueue_upload_xml(
                         repo.save_document(doc)
                     except Exception as e:
                         logger.error(f"❌ Error persistiendo (tasks upload XML): {e}")
+                    return ProcessResult(
+                        success=True,
+                        message="Factura XML procesada y almacenada",
+                        invoice_count=len(invoices),
+                        invoices=invoices,
+                    )
+
+                ai_block_reason = _get_ai_block_reason(owner)
+                if ai_block_reason:
+                    _store_manual_pending_ai(
+                        owner_email=owner,
+                        sender=email_meta.get("sender", "Carga manual"),
+                        date_obj=email_meta.get("date"),
+                        minio_key=xml_minio_key,
+                        fuente="XML_UPLOAD",
+                        reason=f"{ai_block_reason} | XML requiere fallback de IA",
+                    )
+                    return ProcessResult(
+                        success=True,
+                        message="XML registrado como PENDING_AI (sin cupo/disponibilidad IA para fallback)",
+                        invoice_count=0,
+                        invoices=[],
+                        reason_code=_get_ai_reason_code(ai_block_reason),
+                    )
+
                 return ProcessResult(
-                    success=bool(invoices),
-                    message=("Factura XML procesada y almacenada " if invoices else "No se pudo extraer información desde el XML"),
-                    invoice_count=len(invoices), 
-                    invoices=invoices
+                    success=False,
+                    message="No se pudo extraer información desde el XML",
+                    invoice_count=0,
+                    invoices=[],
+                    reason_code="extraction_failed",
                 )
             finally:
                 cleanup_local_file_if_safe(xml_path, xml_minio_key)
@@ -2156,6 +2494,7 @@ async def v2_list_headers(
     search: Optional[str] = None,
     sort_by: str = Query(default="fecha_emision", description="Campo de ordenamiento: fecha_emision | created_at"),
     emisor_nombre: Optional[str] = Query(default=None, description="Filtro por nombre del emisor (regex i)"),
+    include_non_done: bool = Query(default=False, description="Si true, incluye PENDING_AI/FAILED/PROCESSING y ERR_*"),
     user: Dict[str, Any] = Depends(_get_current_user),
 ):
     try:
@@ -2196,6 +2535,12 @@ async def v2_list_headers(
             owner = (user.get('email') or '').lower()
             if owner:
                 q['owner_email'] = owner
+
+        # Por defecto, la lista de facturas muestra solo documentos finales válidos.
+        # Los pendientes/errores van a la cola de procesos.
+        if not include_non_done:
+            q["status"] = {"$nin": ["FAILED", "PENDING_AI", "PROCESSING"]}
+            q["numero_documento"] = {"$not": {"$regex": "^ERR_"}}
         
         # Lógica de ordenamiento
         sort_field = "fecha_emision"

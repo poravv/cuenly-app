@@ -4,12 +4,13 @@ import logging
 import socket
 import time
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 from email.header import decode_header
 from email.message import Message
 from email.utils import parsedate_to_datetime
 
 from .subject_matcher import compile_match_terms, match_email_candidate
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +384,7 @@ class IMAPClient:
         search_synonyms: Optional[Any] = None,
         fallback_sender_match: bool = False,
         fallback_attachment_match: bool = False,
+        on_match_batch: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Busca correos por criterios base IMAP + matcher local robusto:
@@ -473,7 +475,9 @@ class IMAPClient:
             invoice_filtered_out = 0
             body_probe_count = 0
             body_probe_hits = 0
-            body_probe_budget = 1500
+            # Limitar sondas de cuerpo para no atrasar el time-to-first-queue-event.
+            # Se puede ajustar por env/settings si hace falta más cobertura.
+            body_probe_budget = int(getattr(settings, "IMAP_BODY_PROBE_BUDGET", 600) or 600)
             
             total_candidates = len(candidate_uids)
             logger.info(
@@ -483,10 +487,16 @@ class IMAPClient:
                 fallback_sender_match,
                 fallback_attachment_match,
             )
-            
-            for start_idx in range(0, total_candidates, 500):
-                batch_uids = candidate_uids[start_idx : start_idx + 500]
+
+            # Batch de FETCH configurable para acelerar "time-to-first-queue-event"
+            # en rangos grandes. Valores más chicos -> feedback más temprano.
+            fetch_batch_size = int(getattr(settings, "IMAP_SEARCH_FETCH_BATCH_SIZE", 100) or 100)
+            fetch_batch_size = max(25, min(fetch_batch_size, 500))
+
+            for start_idx in range(0, total_candidates, fetch_batch_size):
+                batch_uids = candidate_uids[start_idx : start_idx + fetch_batch_size]
                 uid_str = ",".join(batch_uids)
+                batch_matched_items: List[Dict[str, Any]] = []
 
                 # Siempre traer BODYSTRUCTURE para aplicar filtro inicial por señal de factura.
                 fetch_query = '(BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])'
@@ -557,7 +567,7 @@ class IMAPClient:
                             if matched:
                                 if matched_source in source_counts:
                                     source_counts[matched_source] += 1
-                                matched_items.append({
+                                matched_doc = {
                                     "uid": uid,
                                     "subject": subject_text,
                                     "sender": sender_text,
@@ -565,9 +575,35 @@ class IMAPClient:
                                     "has_invoice_signal": True,
                                     "match_source": matched_source,
                                     "matched_term": matched_term,
-                                })
+                                }
+                                matched_items.append(matched_doc)
+                                batch_matched_items.append(matched_doc)
+
+                                # Flush incremental dentro del mismo batch para que
+                                # la capa superior pueda encolar temprano.
+                                if on_match_batch and len(batch_matched_items) >= 10:
+                                    try:
+                                        on_match_batch(batch_matched_items)
+                                        batch_matched_items = []
+                                    except Exception as cb_err:
+                                        logger.error(f"Error en callback on_match_batch: {cb_err}")
                         except Exception as e:
                             logger.error(f"Error parseando metadatos de UID en batch: {e}")
+
+                # Envío progresivo: permite que capas superiores encolen sin esperar
+                # a que termine el análisis de TODO el rango.
+                if on_match_batch and batch_matched_items:
+                    try:
+                        on_match_batch(batch_matched_items)
+                    except Exception as cb_err:
+                        logger.error(f"Error en callback on_match_batch: {cb_err}")
+
+                logger.info(
+                    "📊 Progreso matcher robusto: %s/%s candidatos analizados, %s matches acumulados",
+                    min(start_idx + len(batch_uids), total_candidates),
+                    total_candidates,
+                    len(matched_items),
+                )
 
             uids_with_subjects = matched_items
             logger.info(

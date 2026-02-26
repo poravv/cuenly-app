@@ -423,6 +423,9 @@ class ProcessResult(BaseModel):
     success: bool
     message: str
     invoice_count: int = 0
+    # Código canónico de motivo para que frontend no dependa de parsear `message`.
+    # Ej: ai_limit_reached, ai_unavailable, extraction_failed
+    reason_code: Optional[str] = None
     invoices: List[InvoiceData] = Field(default_factory=list)  # <- evita lista mutable global
     # Campo de Excel removido
 

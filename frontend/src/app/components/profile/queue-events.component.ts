@@ -74,7 +74,10 @@ export class QueueEventsComponent implements OnInit {
     this.loadEvents();
   }
 
-  getStatusBadgeClass(status: string): string {
+  getStatusBadgeClass(status: string, event?: any): string {
+    if (status === 'pending' && (event?.manual_upload || event?.account_email === 'manual_upload')) {
+      return 'bg-info text-dark';
+    }
     switch (status) {
       case 'pending': return 'bg-warning text-dark';
       case 'skipped_ai_limit':
@@ -86,7 +89,10 @@ export class QueueEventsComponent implements OnInit {
     }
   }
 
-  getStatusText(status: string): string {
+  getStatusText(status: string, event?: any): string {
+    if (status === 'pending' && (event?.manual_upload || event?.account_email === 'manual_upload')) {
+      return 'Pendiente IA (Manual)';
+    }
     switch (status) {
       case 'pending': return 'Pendiente';
       case 'skipped_ai_limit':
@@ -116,5 +122,15 @@ export class QueueEventsComponent implements OnInit {
         alert('Hubo un error al intentar reencolar este evento.');
       }
     });
+  }
+
+  canRetry(event: any): boolean {
+    if (!event) return false;
+    if (typeof event.can_retry === 'boolean') return event.can_retry;
+    // Fallback defensivo para respuestas antiguas
+    const status = String(event.status || '').toLowerCase();
+    const isManual = !!event.manual_upload || event.account_email === 'manual_upload';
+    const retryableStatuses = ['skipped_ai_limit', 'skipped_ai_limit_unread', 'failed', 'error', 'missing_metadata'];
+    return retryableStatuses.includes(status) && !isManual;
   }
 }

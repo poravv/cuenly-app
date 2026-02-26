@@ -6,7 +6,7 @@ import logging
 import queue
 import pickle
 import email.utils
-from typing import List, Tuple, Dict, Any, Optional
+from typing import Callable, List, Tuple, Dict, Any, Optional
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -184,7 +184,8 @@ class EmailProcessor:
     # --------- Search logic ---------
     def search_emails(self, ignore_date_filter: bool = False, 
                       start_date: Optional[datetime] = None, end_date: Optional[datetime] = None,
-                      search_criteria_override: Optional[str] = None) -> List[dict]:
+                      search_criteria_override: Optional[str] = None,
+                      on_match_batch: Optional[Callable[[List[Dict[str, Any]]], None]] = None) -> List[dict]:
         """
         Usa IMAPClient.search(...) con matcher robusto (acentos/sinonimos/fallback opcional).
         Filtra correos por fecha de registro del usuario (o start_date param) y opcionalmente end_date.
@@ -256,6 +257,7 @@ class EmailProcessor:
             search_synonyms=getattr(self.config, "search_synonyms", None),
             fallback_sender_match=bool(getattr(self.config, "fallback_sender_match", False)),
             fallback_attachment_match=bool(getattr(self.config, "fallback_attachment_match", False)),
+            on_match_batch=on_match_batch,
             **extra_criteria,
         )
 
@@ -345,19 +347,13 @@ class EmailProcessor:
             return result
 
         try:
-            # 1. Búsqueda de UIDs y metadatos base
-            # search_emails devuelve una lista de diccionarios: [{"uid": "...", "subject": "...", ...}]
-            email_info = self.search_emails(
-                ignore_date_filter=ignore_date_filter,
-                start_date=start_date,
-                end_date=end_date,
-                search_criteria_override=search_criteria_override
+            fanout_enabled = bool(fan_out or getattr(settings, 'ENABLE_EMAIL_FANOUT', False))
+            streaming_enqueue_enabled = bool(
+                fanout_enabled and getattr(settings, "FANOUT_STREAM_ENQUEUE", True)
             )
-            if not email_info:
-                self.disconnect()
-                result.success = True
-                result.message = f"No hay correos nuevos para procesar en {self.config.username}"
-                return result
+
+            from app.modules.email_processor.processed_registry import _repo
+            coll = _repo._get_collection()
 
             # Caps para discovery de fan-out: por cuenta y/o por llamada (global restante).
             discovery_cap_candidates = []
@@ -372,20 +368,121 @@ class EmailProcessor:
                 except Exception:
                     discovery_cap_candidates.append(0)
 
-            if discovery_cap_candidates:
-                effective_cap = min(discovery_cap_candidates)
-                if effective_cap <= 0:
-                    self.disconnect()
-                    result.success = True
-                    result.message = "Límite de descubrimiento alcanzado; no se encolaron correos."
-                    return result
+            effective_cap = min(discovery_cap_candidates) if discovery_cap_candidates else None
+            if effective_cap is not None and effective_cap <= 0:
+                self.disconnect()
+                result.success = True
+                result.message = "Límite de descubrimiento alcanzado; no se encolaron correos."
+                return result
 
-                if len(email_info) > effective_cap:
-                    logger.info(
-                        f"🔒 Limitando discovery de {len(email_info)} a {effective_cap} "
-                        f"para {self.config.username} (cap por cuenta/global)"
+            # Estado para encolado progresivo (streaming) durante discovery.
+            stream_items_queued = 0
+            stream_skipped_existing = 0
+            stream_requeued_errors = 0
+            stream_seen_uids: set[str] = set()
+            stream_remaining_cap = effective_cap
+
+            def _enqueue_discovery_batch(batch_info: List[Dict[str, Any]]) -> None:
+                nonlocal stream_items_queued, stream_skipped_existing, stream_requeued_errors, stream_remaining_cap
+                if not batch_info:
+                    return
+                if stream_remaining_cap is not None and stream_remaining_cap <= 0:
+                    return
+
+                # Dedup local + aplicación de cap de discovery.
+                candidates: List[Dict[str, Any]] = []
+                for info in batch_info:
+                    eid = str(info.get("uid") or "")
+                    if not eid or eid in stream_seen_uids:
+                        continue
+                    candidates.append(info)
+                    stream_seen_uids.add(eid)
+                    if stream_remaining_cap is not None and len(candidates) >= stream_remaining_cap:
+                        break
+
+                if not candidates:
+                    return
+
+                if stream_remaining_cap is not None:
+                    stream_remaining_cap -= len(candidates)
+
+                batch_ids = [item["uid"] for item in candidates]
+                batch_keys = [self._email_key(eid) for eid in batch_ids]
+                existing_docs = list(coll.find({"_id": {"$in": batch_keys}}, {"_id": 1, "status": 1}))
+                existing_map = {
+                    doc["_id"]: str(doc.get("status", "")).lower()
+                    for doc in existing_docs
+                }
+
+                from app.worker.queues import enqueue_job
+                from app.worker.jobs import process_single_email_from_uid_job
+
+                for info in candidates:
+                    eid = info["uid"]
+                    key = self._email_key(eid)
+
+                    prev_status = existing_map.get(key)
+                    if prev_status and not _repo.is_retryable_status(prev_status):
+                        stream_skipped_existing += 1
+                        continue
+
+                    pending_reason = "Descubierto en escaneo (Pendiente de procesamiento)"
+                    if prev_status:
+                        pending_reason = f"Reencolado automático por fan-out (estado previo: {prev_status})"
+                        stream_requeued_errors += 1
+
+                    claimed = _repo.claim_for_processing(
+                        key=key,
+                        reason=pending_reason,
+                        owner_email=self.owner_email,
+                        account_email=self.config.username,
+                        subject=info.get("subject"),
+                        sender=info.get("sender"),
+                        email_date=info.get("date"),
                     )
-                    email_info = email_info[:effective_cap]
+                    if not claimed:
+                        stream_skipped_existing += 1
+                        continue
+
+                    enqueue_job(
+                        process_single_email_from_uid_job,
+                        self.config.username,
+                        self.owner_email,
+                        eid,
+                        preclaimed=True,
+                        priority='default'
+                    )
+                    stream_items_queued += 1
+
+                logger.info(
+                    "⏳ Progreso Fan-out streaming %s: encolados=%s, omitidos_existentes=%s, reencolados_error=%s",
+                    self.config.username,
+                    stream_items_queued,
+                    stream_skipped_existing,
+                    stream_requeued_errors,
+                )
+
+            # 1. Búsqueda de UIDs y metadatos base
+            # search_emails devuelve una lista de diccionarios: [{"uid": "...", "subject": "...", ...}]
+            email_info = self.search_emails(
+                ignore_date_filter=ignore_date_filter,
+                start_date=start_date,
+                end_date=end_date,
+                search_criteria_override=search_criteria_override,
+                on_match_batch=_enqueue_discovery_batch if streaming_enqueue_enabled else None,
+            )
+            if not email_info:
+                self.disconnect()
+                result.success = True
+                result.message = f"No hay correos nuevos para procesar en {self.config.username}"
+                return result
+
+            if effective_cap is not None and len(email_info) > effective_cap:
+                logger.info(
+                    f"🔒 Limitando discovery de {len(email_info)} a {effective_cap} "
+                    f"para {self.config.username} (cap por cuenta/global)"
+                )
+                email_info = email_info[:effective_cap]
 
             total_emails = len(email_info)
             # Extraer solo los UIDs para el control de flujo
@@ -395,12 +492,21 @@ class EmailProcessor:
             
             logger.info(f"🔍 [Discovery] {total_emails} correos encontrados para {self.config.username}")
 
-            from app.modules.email_processor.processed_registry import _repo
-            coll = _repo._get_collection()
-
             # CASO A: FAN-OUT (Async) - Recomendado para performance
-            if fan_out or getattr(settings, 'ENABLE_EMAIL_FANOUT', False):
+            if fanout_enabled:
                 logger.info(f"🚀 Iniciando Fan-out para {total_emails} correos en {self.config.username}")
+
+                if streaming_enqueue_enabled:
+                    self.disconnect()
+                    result.message = (
+                        f"Fan-out progresivo exitoso: {stream_items_queued} correos encolados "
+                        f"(omitidos existentes: {stream_skipped_existing}, "
+                        f"reencolados por error: {stream_requeued_errors})."
+                    )
+                    result.success = True
+                    result.invoice_count = stream_items_queued
+                    return result
+
                 items_queued = 0
                 skipped_existing = 0
                 requeued_errors = 0
@@ -834,6 +940,11 @@ class EmailProcessor:
                 "se preserva NO LEÍDO para reintento."
             )
             raise SkipEmailKeepUnread(reason)
+        except SkipEmailKeepUnread:
+            # No degradar a error: este flujo ya marcó estado consistente
+            # (p.ej. skipped_ai_limit_unread / pending_ai_unread) y debe
+            # propagarse para que el caller preserve NO LEÍDO.
+            raise
         except Exception as e:
             logger.error(f"❌ Error en _process_single_email para {email_id}: {e}")
             self._mark_email_processed(email_id, "error")

@@ -72,8 +72,8 @@
                                 </div>
                             </td>
                             <td>
-                                <span class="badge rounded-pill {{ getStatusBadgeClass(event.status) }}">
-                                    {{ getStatusText(event.status) }}
+                                <span class="badge rounded-pill {{ getStatusBadgeClass(event.status, event) }}">
+                                    {{ getStatusText(event.status, event) }}
                                 </span>
                             </td>
                             <td>
@@ -90,7 +90,7 @@
                                 </div>
                             </td>
                             <td>
-                                <button *ngIf="event.status !== 'pending' && event.status !== 'success'"
+                                <button *ngIf="canRetry(event)"
                                     class="btn btn-sm btn-outline-primary rounded-pill py-1 px-3 d-flex align-items-center"
                                     (click)="retryEvent(event)" [disabled]="retryingId === event._id">
                                     <span *ngIf="retryingId !== event._id"><i
@@ -101,10 +101,28 @@
                                         ...
                                     </span>
                                 </button>
-                                <span *ngIf="event.status === 'pending'"
+                                <span *ngIf="!canRetry(event) && event.status !== 'pending' && event.status !== 'success'"
+                                    class="badge bg-light text-muted border py-2 px-3"
+                                    [attr.title]="event.retry_disabled_reason || 'Evento no reintentable'">
+                                    <i class="bi bi-slash-circle me-1"></i>No reintentable
+                                </span>
+                                <div *ngIf="!canRetry(event) && event.retry_disabled_reason"
+                                    class="small text-muted mt-1" style="max-width: 220px;">
+                                    {{ event.retry_disabled_reason }}
+                                </div>
+                                <span *ngIf="event.status === 'pending' && !event.manual_upload"
                                     class="badge bg-light text-muted border py-2 px-3">
                                     <i class="bi bi-hourglass-split me-1"></i>En cola
                                 </span>
+                                <span *ngIf="event.status === 'pending' && event.manual_upload"
+                                    class="badge bg-light text-muted border py-2 px-3"
+                                    title="Carga manual pendiente por límite/disponibilidad IA">
+                                    <i class="bi bi-pause-circle me-1"></i>Sin reproceso automático
+                                </span>
+                                <div *ngIf="event.status === 'pending' && event.manual_upload"
+                                    class="small text-muted mt-1" style="max-width: 220px;">
+                                    Carga manual pendiente por IA. Requiere acción manual para reprocesar.
+                                </div>
                             </td>
                         </tr>
                     </tbody>

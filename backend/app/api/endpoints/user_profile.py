@@ -308,7 +308,20 @@ async def get_queue_events(
         skip = (page - 1) * page_size
         cursor = coll.find(query).sort("processed_at", DESCENDING).skip(skip).limit(page_size)
         events = []
+        retryable_statuses = {"skipped_ai_limit", "skipped_ai_limit_unread", "failed", "error", "missing_metadata"}
         for doc in cursor:
+            # Señal explícita para frontend: eventos manuales (uploads) no son reintentables por UID IMAP.
+            is_manual = bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload"
+            retry_supported = doc.get("retry_supported")
+            can_retry = (
+                (doc.get("status") in retryable_statuses)
+                and (not is_manual)
+                and (retry_supported is not False)
+            )
+            doc["can_retry"] = bool(can_retry)
+            if not can_retry and is_manual:
+                doc["retry_disabled_reason"] = "Evento manual: no aplica reintento"
+
             doc["_id"] = str(doc["_id"])
             if "processed_at" in doc and hasattr(doc["processed_at"], "isoformat"):
                 doc["processed_at"] = doc["processed_at"].isoformat()
@@ -357,6 +370,20 @@ async def retry_queue_event(event_id: str, user: Dict[str, Any] = Depends(_get_c
         doc = coll.find_one({"_id": event_id, "owner_email": email})
         if not doc:
             raise HTTPException(status_code=404, detail="Evento no encontrado")
+
+        # Eventos manuales se exponen para visibilidad, pero no son reintentables por UID IMAP.
+        if bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload" or doc.get("retry_supported") is False:
+            raise HTTPException(
+                status_code=400,
+                detail="Este evento manual no admite reintento desde la cola de correos"
+            )
+
+        allowed_statuses = {"skipped_ai_limit", "skipped_ai_limit_unread", "failed", "error", "missing_metadata"}
+        if doc.get("status") not in allowed_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Estado no reintentable: {doc.get('status')}"
+            )
             
         owner = doc.get("owner_email")
         account = doc.get("account_email")

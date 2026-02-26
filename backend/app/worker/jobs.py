@@ -238,9 +238,25 @@ def process_single_email_from_uid_job(
         return {"success": False, "message": "No se extrajo ninguna factura"}
         
     except SkipEmailKeepUnread as e:
-        logger.info(f"🛑 Omitido por límite de IA (UID {email_uid}). Manteniendo en cola de fallidos de RQ para posible reintento.")
-        # Re-raise para que RQ mueva el job a FailedQueue y el usuario pueda verlo/reencolarlo
-        raise e
+        # Flujo esperado (límite IA / OpenAI no disponible): no debe verse como fallo
+        # del job RQ. El estado funcional ya queda reflejado en processed_emails.
+        logger.info(
+            "🕒 UID %s queda pendiente por IA/disponibilidad (%s). "
+            "Job RQ marcado como completado para evitar falso 'fallido'.",
+            email_uid,
+            str(e),
+        )
+        try:
+            processor.disconnect()
+        except Exception:
+            pass
+        return {
+            "success": True,
+            "pending_ai": True,
+            "message": str(e),
+            "email_uid": email_uid,
+            "status": "pending_ai",
+        }
     except Exception as e:
         logger.error(f"❌ Error procesando UID {email_uid}: {e}", exc_info=True)
         return {"success": False, "message": str(e)}
