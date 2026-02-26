@@ -262,6 +262,11 @@ class CuenlyApp:
             redis_enabled = self._redis_bool(redis_client.get(self._job_enabled_key), default=False)
             owner = self._decode_redis_str(redis_client.get(self._job_owner_key))
 
+            # Si globalmente estaba apagado y quedó owner viejo, limpiar para evitar estado atascado.
+            if not redis_enabled and owner:
+                redis_client.delete(self._job_owner_key)
+                owner = None
+
             # Si ya está habilitado globalmente y otro pod es dueño, no iniciar aquí.
             if redis_enabled and owner and owner != self._pod_id:
                 logger.info(
