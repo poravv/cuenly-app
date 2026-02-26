@@ -246,6 +246,14 @@ export class ApiService {
     });
   }
 
+  // Recuperar job de rango activo del usuario (si existe) para UI resiliente en despliegues con réplicas
+  getActiveDateRangeJob(): Observable<{ success: boolean; active: boolean; job: any | null }> {
+    return this.http.get<{ success: boolean; active: boolean; job: any | null }>(
+      `${this.apiUrl}/jobs/process-range/active`,
+      { headers: this.getSecureHeaders() }
+    );
+  }
+
   // Enviar tarea de procesamiento
   submitTask(): Observable<TaskSubmitResponse> {
     return this.http.post<TaskSubmitResponse>(

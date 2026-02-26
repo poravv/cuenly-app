@@ -916,11 +916,24 @@ async def process_range_job(
             )
 
         try:
-            from app.worker.queues import enqueue_job
+            from app.worker.queues import enqueue_job, find_active_range_jobs, cancel_job
             from app.worker.jobs import process_emails_range_job
 
             start_str = payload.start_date if payload.start_date else None
             end_str = payload.end_date if payload.end_date else None
+
+            # Si el usuario dispara de nuevo el proceso por rango, cancelar jobs previos activos
+            # del mismo owner para evitar duplicados en entornos con réplicas.
+            cancelled_previous: List[str] = []
+            previous_jobs = find_active_range_jobs(owner_email)
+            for prev in previous_jobs:
+                prev_id = str(prev.get("id", "")).strip()
+                if not prev_id:
+                    continue
+                cancel_result = cancel_job(prev_id, requester_email=owner_email)
+                if cancel_result.get("cancelled") or str(cancel_result.get("status", "")).lower() in {"stopping", "cancelled"}:
+                    cancelled_previous.append(prev_id)
+
             job = enqueue_job(
                 process_emails_range_job,
                 owner_email=owner_email,
@@ -931,8 +944,13 @@ async def process_range_job(
             )
             return {
                 "success": True,
-                "message": "Procesamiento por rango encolado exitosamente",
-                "job_id": job.id
+                "message": (
+                    "Procesamiento por rango encolado exitosamente"
+                    if not cancelled_previous
+                    else f"Procesamiento por rango encolado. Se cancelaron {len(cancelled_previous)} job(s) previos del mismo usuario."
+                ),
+                "job_id": job.id,
+                "cancelled_previous_job_ids": cancelled_previous,
             }
         except Exception as e:
             logger.error(f"Error encolando /jobs/process-range en RQ: {e}")
@@ -961,6 +979,26 @@ async def process_range_job(
         except Exception as e:
             logger.error(f"Error range sync: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/jobs/process-range/active")
+async def get_active_range_job(
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)
+):
+    """
+    Retorna el job de rango activo más reciente del usuario (si existe).
+    Permite al frontend recuperar estado aunque cambie de réplica/pod.
+    """
+    owner_email = (user.get("email") or "").lower()
+    try:
+        from app.worker.queues import find_active_range_jobs
+        active_jobs = find_active_range_jobs(owner_email)
+        if not active_jobs:
+            return {"success": True, "active": False, "job": None}
+        return {"success": True, "active": True, "job": active_jobs[0]}
+    except Exception as e:
+        logger.error(f"Error consultando job activo de rango para {owner_email}: {e}")
+        raise HTTPException(status_code=500, detail="No se pudo consultar job activo de rango")
 
 def _get_ai_block_reason(owner_email: str) -> Optional[str]:
     """Retorna razón textual si IA no está disponible para el usuario, o None si sí puede usar IA."""

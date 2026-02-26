@@ -17,19 +17,27 @@ spec:
     kind: Deployment
   pollingInterval: 15          # Check every 15 seconds
   cooldownPeriod: 60           # Wait 60s before scaling down
-  minReplicaCount: 1           # Minimum 1 worker always running
-  maxReplicaCount: 3           # Maximum 3 workers during high load
+  minReplicaCount: 3           # Mantener 3 workers siempre activos
+  maxReplicaCount: 6           # Escalar por picos sin bajar de 3
   triggers:
     # Scale based on CPU utilization
     - type: cpu
       metricType: Utilization
       metadata:
         value: "70"            # Scale up when CPU > 70%
-    # Scale based on Redis list length (job queue)
+    # Scale based on Redis list length (default queue)
     - type: redis
       metadata:
         address: cuenly-redis-service.cuenly-backend.svc.cluster.local:6379
         listName: rq:queue:default  # RQ default queue name
         listLength: "5"             # Scale up when >5 pending jobs
+      authenticationRef:
+        name: cuenly-redis-trigger-auth
+    # Scale based on Redis list length (high queue, usado por process-range)
+    - type: redis
+      metadata:
+        address: cuenly-redis-service.cuenly-backend.svc.cluster.local:6379
+        listName: rq:queue:high
+        listLength: "2"             # Escalar cuando cola high tenga >2 pendientes
       authenticationRef:
         name: cuenly-redis-trigger-auth

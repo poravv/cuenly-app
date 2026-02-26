@@ -131,6 +131,8 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
 
     if (this.dateRangeJobId) {
       this.startDateRangeTaskPolling(this.dateRangeJobId, true);
+    } else {
+      this.restoreActiveDateRangeJob();
     }
 
     this.storageHandler = (e: StorageEvent) => {
@@ -918,6 +920,39 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       this.dateRangePolling.unsubscribe();
       this.dateRangePolling = null;
     }
+  }
+
+  private restoreActiveDateRangeJob(): void {
+    this.apiService.getActiveDateRangeJob().subscribe({
+      next: (resp) => {
+        const job = resp?.job;
+        const activeId = String(job?.id || '').trim();
+        if (!resp?.active || !activeId) {
+          return;
+        }
+
+        this.dateRangeJobId = activeId;
+        this.dateRangeTaskStatus = {
+          job_id: activeId,
+          action: 'process_emails_range',
+          status: (String(job?.status || 'queued').toLowerCase() as any),
+          created_at: job?.created_at ? Date.parse(job.created_at) / 1000 : undefined,
+          started_at: job?.started_at ? Date.parse(job.started_at) / 1000 : undefined,
+          message: 'Proceso histórico en ejecución'
+        } as TaskStatusResponse;
+        this.dateRangeResult = {
+          ...(this.dateRangeResult || {}),
+          job_id: activeId,
+          success: true,
+          message: 'Proceso histórico en ejecución'
+        };
+        localStorage.setItem('cuenlyapp:dateRangeResult', JSON.stringify(this.dateRangeResult));
+        this.startDateRangeTaskPolling(activeId, true);
+      },
+      error: () => {
+        // Si falla la consulta, seguimos con comportamiento normal sin romper UI.
+      }
+    });
   }
 
   // Guardar fechas cuando cambien

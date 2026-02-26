@@ -943,6 +943,7 @@ jobs:
           # Aplicar configuración de worker
           echo "📋 Aplicando configuración de worker..."
           kubectl apply -f backend/k8s/worker-deployment.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f backend/k8s/worker-pdb.yaml -n ${{ env.NAMESPACE }}
           
           # Aplicar KEDA ScaledObject para autoscaling
           echo "📋 Aplicando KEDA ScaledObject para worker..."

@@ -13,7 +13,7 @@ Uso:
     print(f"Job enqueued: {job.id}")
 """
 import logging
-from typing import Optional
+from typing import Optional, Any, Dict, List
 from functools import lru_cache
 
 logger = logging.getLogger(__name__)
@@ -289,3 +289,78 @@ def get_queue_stats() -> dict:
             "count": len(_low_queue) if _low_queue else 0,
         }
     }
+
+
+def _iter_active_jobs(queue_names: tuple[str, ...] = ("high", "default", "low")) -> List[Dict[str, Any]]:
+    """
+    Recorre jobs activos (queued/started/deferred/scheduled) en Redis para todas las colas.
+    """
+    try:
+        from rq import Queue
+        from rq.job import Job
+        from rq.registry import StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry
+        from app.core.redis_client import get_redis_client
+
+        conn = get_redis_client(decode_responses=False)
+        seen: set[str] = set()
+        jobs: List[Dict[str, Any]] = []
+
+        for qname in queue_names:
+            q = Queue(qname, connection=conn)
+            candidate_ids: List[str] = []
+            candidate_ids.extend(q.job_ids or [])
+            candidate_ids.extend(StartedJobRegistry(queue=qname, connection=conn).get_job_ids() or [])
+            candidate_ids.extend(DeferredJobRegistry(queue=qname, connection=conn).get_job_ids() or [])
+            candidate_ids.extend(ScheduledJobRegistry(queue=qname, connection=conn).get_job_ids() or [])
+
+            for jid in candidate_ids:
+                if not jid or jid in seen:
+                    continue
+                seen.add(jid)
+                try:
+                    job = Job.fetch(jid, connection=conn)
+                    status = str(job.get_status(refresh=True) or "").lower().strip()
+                    if "." in status:
+                        status = status.split(".")[-1]
+                    if status in {"finished", "failed", "stopped", "canceled", "cancelled"}:
+                        continue
+                    jobs.append(
+                        {
+                            "id": job.id,
+                            "status": status or "queued",
+                            "origin": str(getattr(job, "origin", "") or qname),
+                            "func_name": str(getattr(job, "func_name", "") or ""),
+                            "kwargs": dict(getattr(job, "kwargs", {}) or {}),
+                            "created_at": job.created_at.isoformat() if job.created_at else None,
+                            "started_at": job.started_at.isoformat() if job.started_at else None,
+                        }
+                    )
+                except Exception:
+                    continue
+
+        return jobs
+    except Exception as e:
+        logger.error(f"❌ Error listando jobs activos RQ: {e}")
+        return []
+
+
+def find_active_range_jobs(owner_email: str) -> List[Dict[str, Any]]:
+    """
+    Retorna jobs activos de `process_emails_range_job` para un owner_email.
+    """
+    target_owner = str(owner_email or "").strip().lower()
+    if not target_owner:
+        return []
+
+    active_jobs = _iter_active_jobs()
+    result: List[Dict[str, Any]] = []
+    for item in active_jobs:
+        func_name = str(item.get("func_name", "")).strip()
+        kwargs = item.get("kwargs") or {}
+        kw_owner = str(kwargs.get("owner_email", "")).strip().lower()
+        if "process_emails_range_job" in func_name and kw_owner == target_owner:
+            result.append(item)
+
+    # Más reciente primero (si hay varios por condiciones de carrera/retries)
+    result.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+    return result

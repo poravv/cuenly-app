@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cuenly-worker-pdb
+  namespace: cuenly-backend
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: cuenly-worker
+      tier: worker
