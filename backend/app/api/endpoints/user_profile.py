@@ -368,7 +368,7 @@ async def get_queue_events(
                     pass
                 for registry_cls in (StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry):
                     try:
-                        reg = registry_cls("high", connection=conn)
+                        reg = registry_cls(queue=high_q, connection=conn)
                         candidate_ids.update(reg.get_job_ids() or [])
                     except Exception:
                         continue

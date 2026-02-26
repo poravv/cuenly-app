@@ -252,8 +252,28 @@ class IMAPClient:
             return False
 
     def _has_xml_url_in_body_snippet(self, email_uid: str, max_bytes: int = 8192) -> bool:
-        """Compatibilidad retroactiva."""
-        return self._has_invoice_url_in_body_snippet(email_uid=email_uid, max_bytes=max_bytes)
+        """
+        Detecta específicamente URLs XML en cuerpo (sin descargar correo completo).
+        """
+        if not self.conn:
+            return False
+        try:
+            status, data = self.conn.uid('FETCH', email_uid, f'(BODY.PEEK[TEXT]<0.{max_bytes}>)')
+            if status != 'OK' or not data:
+                return False
+
+            parts: List[str] = []
+            for item in data:
+                if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+                    parts.append(_decode_snippet_bytes(item[1]))
+
+            if not parts:
+                return False
+
+            snippet_text = "\n".join(parts)
+            return _has_xml_url_hint(snippet_text)
+        except Exception:
+            return False
 
     def _xoauth2_callback(self, challenge: bytes) -> bytes:
         """
@@ -552,27 +572,24 @@ class IMAPClient:
                             has_xml_attachment = _has_xml_attachment_hint(msg_header, attachment_names)
                             has_invoice_url = _has_invoice_url_hint(subject_text) or _has_invoice_url_hint(fetch_meta_text)
                             has_invoice_signal = has_invoice_attachment or has_invoice_url
+                            has_xml_url = _has_xml_url_hint(subject_text) or _has_xml_url_hint(fetch_meta_text)
+                            has_xml_signal = has_xml_attachment or has_xml_url
 
-                            # Fallback: detectar URL de archivo en cuerpo con FETCH parcial.
-                            if not has_invoice_signal and body_probe_count < body_probe_budget:
+                            # Fallback XML: detectar URL XML en cuerpo con FETCH parcial.
+                            if not has_xml_signal and body_probe_count < body_probe_budget:
                                 body_probe_count += 1
-                                if self._has_invoice_url_in_body_snippet(uid):
-                                    has_invoice_signal = True
+                                if self._has_xml_url_in_body_snippet(uid):
+                                    has_xml_signal = True
                                     body_probe_hits += 1
 
-                            # Requisito inicial: solo procesar candidatos con señal de adjunto/archivo de factura.
-                            if not has_invoice_signal:
-                                invoice_filtered_out += 1
-                                continue
-
-                            invoice_candidate_count += 1
-
-                            if has_xml_attachment:
-                                # Prioridad XML nativo: si hay señal de XML adjunto, encolar aunque no
-                                # coincida por términos. Esto reduce falsos negativos históricos.
+                            # Regla de negocio:
+                            # 1) Si hay XML (adjunto o URL), encolar sí o sí.
+                            # 2) Si NO hay XML, validar por términos configurados.
+                            if has_xml_signal:
                                 matched = True
                                 matched_source = "xml_hint"
                                 matched_term = "__xml_native__"
+                                invoice_candidate_count += 1
                             else:
                                 matched, matched_source, matched_term = match_email_candidate(
                                     subject=subject_text,
@@ -582,6 +599,9 @@ class IMAPClient:
                                     fallback_sender_match=fallback_sender_match,
                                     fallback_attachment_match=fallback_attachment_match,
                                 )
+                                if not matched:
+                                    invoice_filtered_out += 1
+                                    continue
                             if matched:
                                 if matched_source in source_counts:
                                     source_counts[matched_source] += 1
@@ -590,7 +610,8 @@ class IMAPClient:
                                     "subject": subject_text,
                                     "sender": sender_text,
                                     "date": email_dt,
-                                    "has_invoice_signal": True,
+                                    "has_invoice_signal": bool(has_invoice_signal),
+                                    "has_xml_signal": bool(has_xml_signal),
                                     "match_source": matched_source,
                                     "matched_term": matched_term,
                                 }
@@ -626,7 +647,7 @@ class IMAPClient:
             uids_with_subjects = matched_items
             logger.info(
                 "✅ Filtrado local completado: %s correos | términos=%s | "
-                "invoice_candidates=%s no_invoice_signal=%s body_probe=%s body_hits=%s | "
+                "xml_candidates=%s filtered_out=%s body_probe=%s body_hits=%s | "
                 "xml_hint=%s subject=%s sender=%s attachment=%s",
                 len(uids_with_subjects),
                 compiled_terms_debug,
