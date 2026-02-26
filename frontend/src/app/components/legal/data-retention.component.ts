@@ -22,14 +22,14 @@ import { Component } from '@angular/core';
             </div>
             <div class="info-item">
               <span class="label">Archivos Originales:</span>
-              <span class="value">1 Año (365 días)</span>
+              <span class="value">5 Año</span>
             </div>
           </div>
         </div>
 
         <section>
           <h2>2. Purga de Archivos Físicos</h2>
-          <p>Para optimizar el almacenamiento y cumplir con estándares de privacidad, Cuenly elimina automáticamente los archivos adjuntos originales que tengan más de **un año** de antigüedad.</p>
+          <p>Para optimizar el almacenamiento y cumplir con estándares de privacidad, Cuenly elimina automáticamente los archivos adjuntos originales que tengan más de **cinco años** de antigüedad.</p>
           <p><strong>Importante:</strong> La información ya extraída (montos, RUC, conceptos) permanecerá en su panel de control; solo el archivo original para descarga dejará de estar disponible.</p>
         </section>
 

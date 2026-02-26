@@ -38,6 +38,7 @@ def decode_mime_header(header_value: str) -> str:
 
 _ATTACHMENT_PARAM_RE = re.compile(rb'"(?:NAME|FILENAME)\*?"\s+"([^"]+)"', re.IGNORECASE)
 _ATTACHMENT_EXT_RE = re.compile(r'"([^"]+\.(?:xml|pdf|zip|jpg|jpeg|png))"', re.IGNORECASE)
+_XML_URL_RE = re.compile(r'https?://[^\s<>"\']+\.xml(?:[?#][^\s<>"\']*)?', re.IGNORECASE)
 
 
 def _extract_attachment_names_from_fetch_meta(fetch_meta: Any) -> List[str]:
@@ -77,6 +78,61 @@ def _extract_attachment_names_from_fetch_meta(fetch_meta: Any) -> List[str]:
         deduped.append(name)
     return deduped
 
+
+def _has_xml_url_hint(text: str) -> bool:
+    """Detecta enlaces XML o frases comunes relacionadas en texto libre."""
+    if not text:
+        return False
+    lowered = text.lower()
+    if _XML_URL_RE.search(lowered):
+        return True
+    return any(
+        marker in lowered
+        for marker in ("descargar xml", "adjunto xml", "archivo xml", "comprobante xml")
+    )
+
+
+def _has_xml_attachment_hint(fetch_meta: Any, attachment_names: List[str]) -> bool:
+    """Determina si la metadata IMAP indica presencia de XML adjunto."""
+    for name in attachment_names or []:
+        lname = (name or "").lower()
+        if ".xml" in lname:
+            return True
+
+    raw_text = (
+        fetch_meta.decode("utf-8", errors="ignore")
+        if isinstance(fetch_meta, (bytes, bytearray))
+        else str(fetch_meta or "")
+    ).lower()
+    if not raw_text:
+        return False
+
+    if any(
+        marker in raw_text
+        for marker in (
+            '"application" "xml"',
+            '"text" "xml"',
+            "application/xml",
+            "text/xml",
+            "+xml",
+        )
+    ):
+        return True
+
+    return bool(_XML_URL_RE.search(raw_text))
+
+
+def _decode_snippet_bytes(payload: bytes) -> str:
+    """Decodifica un fragmento de texto de correo para heurísticas rápidas."""
+    if not payload:
+        return ""
+    for charset in ("utf-8", "latin-1", "windows-1252"):
+        try:
+            return payload.decode(charset, errors="ignore")
+        except Exception:
+            continue
+    return payload.decode("utf-8", errors="ignore")
+
 class IMAPClient:
     """
     Envoltura mínima: conecta, busca por asunto, fetch por UID y marca como leído por UID.
@@ -102,6 +158,31 @@ class IMAPClient:
         self.access_token = access_token  # For OAuth2 XOAUTH2
         self.conn: Optional[imaplib.IMAP4_SSL] = None
         self.is_gmail: bool = False
+
+    def _has_xml_url_in_body_snippet(self, email_uid: str, max_bytes: int = 8192) -> bool:
+        """
+        Detecta URLs .xml en el cuerpo sin descargar el correo completo.
+        Hace un FETCH parcial de texto (primeros bytes).
+        """
+        if not self.conn:
+            return False
+        try:
+            status, data = self.conn.uid('FETCH', email_uid, f'(BODY.PEEK[TEXT]<0.{max_bytes}>)')
+            if status != 'OK' or not data:
+                return False
+
+            parts: List[str] = []
+            for item in data:
+                if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+                    parts.append(_decode_snippet_bytes(item[1]))
+
+            if not parts:
+                return False
+
+            snippet_text = "\n".join(parts)
+            return _has_xml_url_hint(snippet_text)
+        except Exception:
+            return False
 
     def _xoauth2_callback(self, challenge: bytes) -> bytes:
         """
@@ -318,6 +399,11 @@ class IMAPClient:
             source_counts = {"subject": 0, "sender": 0, "attachment": 0}
             uid_regex = re.compile(rb'UID (\d+)')
             compiled_terms_debug = [term.normalized for term in compiled_terms]
+            xml_candidate_count = 0
+            xml_filtered_out = 0
+            body_probe_count = 0
+            body_probe_hits = 0
+            body_probe_budget = 1500
             
             total_candidates = len(candidate_uids)
             logger.info(
@@ -332,9 +418,8 @@ class IMAPClient:
                 batch_uids = candidate_uids[start_idx : start_idx + 500]
                 uid_str = ",".join(batch_uids)
 
+                # Siempre traer BODYSTRUCTURE para aplicar filtro inicial obligatorio por XML.
                 fetch_query = '(BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])'
-                if not fallback_attachment_match:
-                    fetch_query = '(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])'
 
                 status, fetch_data = self.conn.uid('FETCH', uid_str, fetch_query)
                 
@@ -367,9 +452,29 @@ class IMAPClient:
                                 except Exception:
                                     pass
 
-                            attachment_names = []
-                            if fallback_attachment_match:
-                                attachment_names = _extract_attachment_names_from_fetch_meta(msg_header)
+                            attachment_names = _extract_attachment_names_from_fetch_meta(msg_header)
+                            fetch_meta_text = (
+                                msg_header.decode("utf-8", errors="ignore")
+                                if isinstance(msg_header, (bytes, bytearray))
+                                else str(msg_header)
+                            )
+                            has_xml_attachment = _has_xml_attachment_hint(msg_header, attachment_names)
+                            has_xml_url = _has_xml_url_hint(subject_text) or _has_xml_url_hint(fetch_meta_text)
+                            has_xml_signal = has_xml_attachment or has_xml_url
+
+                            # Fallback: detectar URL .xml en el cuerpo del correo con FETCH parcial.
+                            if not has_xml_signal and body_probe_count < body_probe_budget:
+                                body_probe_count += 1
+                                if self._has_xml_url_in_body_snippet(uid):
+                                    has_xml_signal = True
+                                    body_probe_hits += 1
+
+                            # Requisito inicial: solo procesar candidatos con señal XML.
+                            if not has_xml_signal:
+                                xml_filtered_out += 1
+                                continue
+
+                            xml_candidate_count += 1
 
                             matched, matched_source, matched_term = match_email_candidate(
                                 subject=subject_text,
@@ -387,6 +492,7 @@ class IMAPClient:
                                     "subject": subject_text,
                                     "sender": sender_text,
                                     "date": email_dt,
+                                    "has_xml_signal": True,
                                     "match_source": matched_source,
                                     "matched_term": matched_term,
                                 })
@@ -396,9 +502,13 @@ class IMAPClient:
             uids_with_subjects = matched_items
             logger.info(
                 "✅ Filtrado local completado: %s correos | términos=%s | "
-                "subject=%s sender=%s attachment=%s",
+                "xml_candidates=%s no_xml=%s body_probe=%s body_hits=%s | subject=%s sender=%s attachment=%s",
                 len(uids_with_subjects),
                 compiled_terms_debug,
+                xml_candidate_count,
+                xml_filtered_out,
+                body_probe_count,
+                body_probe_hits,
                 source_counts["subject"],
                 source_counts["sender"],
                 source_counts["attachment"],
