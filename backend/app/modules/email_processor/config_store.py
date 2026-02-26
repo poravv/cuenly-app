@@ -2,6 +2,7 @@ import logging
 import uuid
 import base64
 import hashlib
+import os
 from typing import List, Dict, Any, Optional
 
 from pymongo import MongoClient
@@ -17,6 +18,28 @@ SENSITIVE_FIELDS = ("password", "access_token", "refresh_token")
 ENCRYPTION_PREFIX = "enc:v1:"
 _FERNET: Optional[Fernet] = None
 _WARNED_FALLBACK_KEY = False
+_FALLBACK_WARN_SENTINEL = "/tmp/cuenly_email_config_key_warning_logged"
+
+
+def _should_emit_fallback_key_warning() -> bool:
+    """
+    Evita spam del warning en workers RQ (cada job corre en proceso hijo).
+    Se emite 1 vez por proceso y, cuando es posible, 1 vez por contenedor.
+    """
+    global _WARNED_FALLBACK_KEY
+    if _WARNED_FALLBACK_KEY:
+        return False
+    _WARNED_FALLBACK_KEY = True
+
+    try:
+        if os.path.exists(_FALLBACK_WARN_SENTINEL):
+            return False
+        with open(_FALLBACK_WARN_SENTINEL, "w", encoding="utf-8") as fh:
+            fh.write("1")
+        return True
+    except Exception:
+        # Si /tmp no está disponible, al menos mantener "una vez por proceso".
+        return True
 
 
 def _build_fernet() -> Fernet:
@@ -24,8 +47,6 @@ def _build_fernet() -> Fernet:
     Construye el cifrador para secretos de configuraciones de correo.
     Prioriza EMAIL_CONFIG_ENCRYPTION_KEY; usa fallback derivado con warning.
     """
-    global _WARNED_FALLBACK_KEY
-
     raw_key = (getattr(settings, "EMAIL_CONFIG_ENCRYPTION_KEY", "") or "").strip()
     if raw_key:
         # Si ya es una Fernet key válida, usarla directamente.
@@ -43,12 +64,11 @@ def _build_fernet() -> Fernet:
         f"{getattr(settings, 'FIREBASE_PROJECT_ID', '')}|"
         f"{getattr(settings, 'MONGODB_DATABASE', '')}"
     )
-    if not _WARNED_FALLBACK_KEY:
+    if _should_emit_fallback_key_warning():
         logger.warning(
             "⚠️ EMAIL_CONFIG_ENCRYPTION_KEY no configurada; usando clave derivada de fallback. "
             "Configure EMAIL_CONFIG_ENCRYPTION_KEY para seguridad fuerte en producción."
         )
-        _WARNED_FALLBACK_KEY = True
     derived = base64.urlsafe_b64encode(hashlib.sha256(fallback_material.encode("utf-8")).digest())
     return Fernet(derived)
 

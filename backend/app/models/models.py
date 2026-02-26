@@ -428,6 +428,8 @@ class ProcessResult(BaseModel):
     success: bool
     message: str
     invoice_count: int = 0
+    # Para flujos fan-out/rango: cantidad de correos/eventos encolados.
+    queued_count: int = 0
     # Código canónico de motivo para que frontend no dependa de parsear `message`.
     # Ej: ai_limit_reached, ai_unavailable, extraction_failed
     reason_code: Optional[str] = None

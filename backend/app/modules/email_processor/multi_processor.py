@@ -83,6 +83,7 @@ class MultiEmailProcessor:
             except: dt_end = None
 
         all_invoices: List[InvoiceData] = []
+        total_queued = 0
         success_count = 0
         errors: List[str] = []
         total_processed = 0  # Global cap real de encolado/procesamiento manual
@@ -327,6 +328,7 @@ class MultiEmailProcessor:
         self.email_configs = filtered_configs
         
         all_invoices: List[InvoiceData] = []
+        total_queued = 0
         success_count = 0
         errors: List[str] = []
         
@@ -418,7 +420,15 @@ class MultiEmailProcessor:
                                     continue
                             
                             all_invoices.extend(valid_invoices)
-                            logger.info(f"✅ Cuenta {username}: {len(valid_invoices)} facturas válidas procesadas")
+                            queued_in_account = int(getattr(result, "queued_count", 0) or 0)
+                            if queued_in_account == 0 and len(valid_invoices) == 0:
+                                # Compatibilidad con respuestas antiguas fan-out
+                                queued_in_account = int(getattr(result, "invoice_count", 0) or 0)
+                            total_queued += max(0, queued_in_account)
+                            logger.info(
+                                f"✅ Cuenta {username}: {len(valid_invoices)} facturas válidas procesadas, "
+                                f"{max(0, queued_in_account)} correos encolados"
+                            )
                         else:
                             err_str = str(result.message)
                             if "AUTHENTICATIONFAILED" in err_str or "Invalid credentials" in err_str:
@@ -470,7 +480,14 @@ class MultiEmailProcessor:
                         success_count += 1
                         valid_invoices = [inv for inv in r.invoices if hasattr(inv, '__dict__')]
                         all_invoices.extend(valid_invoices)
-                        logger.info(f"✅ Cuenta {cfg.username}: {len(valid_invoices)} facturas")
+                        queued_in_account = int(getattr(r, "queued_count", 0) or 0)
+                        if queued_in_account == 0 and len(valid_invoices) == 0:
+                            queued_in_account = int(getattr(r, "invoice_count", 0) or 0)
+                        total_queued += max(0, queued_in_account)
+                        logger.info(
+                            f"✅ Cuenta {cfg.username}: {len(valid_invoices)} facturas, "
+                            f"{max(0, queued_in_account)} correos encolados"
+                        )
                     else:
                         errors.append(f"Error en {cfg.username}: {r.message}")
                         logger.error(f"❌ {cfg.username}: {r.message}")
@@ -486,9 +503,15 @@ class MultiEmailProcessor:
             all_invoices = unique
 
         if success_count == len(self.email_configs):
-            message = f"Procesamiento exitoso de {len(self.email_configs)} cuentas. {len(all_invoices)} facturas encontradas."
+            message = (
+                f"Procesamiento exitoso de {len(self.email_configs)} cuentas. "
+                f"{len(all_invoices)} facturas procesadas y {total_queued} correos encolados."
+            )
         elif success_count > 0:
-            message = f"Procesamiento parcial: {success_count}/{len(self.email_configs)} cuentas exitosas. {len(all_invoices)} facturas encontradas."
+            message = (
+                f"Procesamiento parcial: {success_count}/{len(self.email_configs)} cuentas exitosas. "
+                f"{len(all_invoices)} facturas procesadas y {total_queued} correos encolados."
+            )
         else:
             message = f"Fallo en todas las cuentas. Errores: {'; '.join(errors)}"
 
@@ -505,6 +528,7 @@ class MultiEmailProcessor:
             success=success_count > 0,
             message=message,
             invoice_count=len(all_invoices),
+            queued_count=total_queued,
             invoices=all_invoices
         )
 

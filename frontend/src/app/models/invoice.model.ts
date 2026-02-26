@@ -14,6 +14,7 @@ export interface ProcessResult {
   success: boolean;
   message: string;
   invoice_count?: number;
+  queued_count?: number;
   invoices?: Invoice[];
 }
 

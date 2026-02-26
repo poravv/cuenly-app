@@ -406,7 +406,7 @@ def _convert_v2_to_v1_dict(v2: Dict[str, Any]) -> Dict[str, Any]:
     items = v2.get("items") or []
 
     # Debug: Log de totales para diagnosticar problemas de mapeo
-    logger.info(f"DEBUG v2_to_v1 totales: {t}")
+    logger.debug(f"v2_to_v1 totales: {t}")
 
     numero_doc = h.get("numero_documento") or ""
     fecha = h.get("fecha_emision") or ""

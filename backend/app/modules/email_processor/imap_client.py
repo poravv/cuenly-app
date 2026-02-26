@@ -468,7 +468,7 @@ class IMAPClient:
             # 2. Fetch SUBJECTS/FROM/DATE en batch (y BODYSTRUCTURE si aplica fallback por adjunto)
             # Convertir lista de UIDs a string separado por comas para el fetch
             matched_items = []  # List of dicts
-            source_counts = {"subject": 0, "sender": 0, "attachment": 0}
+            source_counts = {"xml_hint": 0, "subject": 0, "sender": 0, "attachment": 0}
             uid_regex = re.compile(rb'UID (\d+)')
             compiled_terms_debug = [term.normalized for term in compiled_terms]
             invoice_candidate_count = 0
@@ -539,6 +539,7 @@ class IMAPClient:
                                 else str(msg_header)
                             )
                             has_invoice_attachment = _has_invoice_attachment_hint(msg_header, attachment_names)
+                            has_xml_attachment = _has_xml_attachment_hint(msg_header, attachment_names)
                             has_invoice_url = _has_invoice_url_hint(subject_text) or _has_invoice_url_hint(fetch_meta_text)
                             has_invoice_signal = has_invoice_attachment or has_invoice_url
 
@@ -556,14 +557,21 @@ class IMAPClient:
 
                             invoice_candidate_count += 1
 
-                            matched, matched_source, matched_term = match_email_candidate(
-                                subject=subject_text,
-                                sender=sender_text,
-                                attachment_names=attachment_names,
-                                terms=compiled_terms,
-                                fallback_sender_match=fallback_sender_match,
-                                fallback_attachment_match=fallback_attachment_match,
-                            )
+                            if has_xml_attachment:
+                                # Prioridad XML nativo: si hay señal de XML adjunto, encolar aunque no
+                                # coincida por términos. Esto reduce falsos negativos históricos.
+                                matched = True
+                                matched_source = "xml_hint"
+                                matched_term = "__xml_native__"
+                            else:
+                                matched, matched_source, matched_term = match_email_candidate(
+                                    subject=subject_text,
+                                    sender=sender_text,
+                                    attachment_names=attachment_names,
+                                    terms=compiled_terms,
+                                    fallback_sender_match=fallback_sender_match,
+                                    fallback_attachment_match=fallback_attachment_match,
+                                )
                             if matched:
                                 if matched_source in source_counts:
                                     source_counts[matched_source] += 1
@@ -608,13 +616,15 @@ class IMAPClient:
             uids_with_subjects = matched_items
             logger.info(
                 "✅ Filtrado local completado: %s correos | términos=%s | "
-                "invoice_candidates=%s no_invoice_signal=%s body_probe=%s body_hits=%s | subject=%s sender=%s attachment=%s",
+                "invoice_candidates=%s no_invoice_signal=%s body_probe=%s body_hits=%s | "
+                "xml_hint=%s subject=%s sender=%s attachment=%s",
                 len(uids_with_subjects),
                 compiled_terms_debug,
                 invoice_candidate_count,
                 invoice_filtered_out,
                 body_probe_count,
                 body_probe_hits,
+                source_counts["xml_hint"],
                 source_counts["subject"],
                 source_counts["sender"],
                 source_counts["attachment"],

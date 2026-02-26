@@ -335,12 +335,14 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     const success = !!resultObj.success;
     const message = resultObj.message || fallbackMessage || (success ? 'Proceso completado' : 'Proceso finalizado con error');
     const invoiceCount = Number(resultObj.invoice_count || 0);
+    const queuedCount = Number(resultObj.queued_count || 0);
     const invoices = Array.isArray(resultObj.invoices) ? resultObj.invoices : [];
 
     return {
       success,
       message,
       invoice_count: invoiceCount,
+      queued_count: queuedCount,
       invoices
     };
   }
@@ -872,6 +874,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
             success: normalized.success,
             message: normalized.message,
             invoice_count: normalized.invoice_count || 0,
+            queued_count: normalized.queued_count || 0,
             invoices: normalized.invoices || [],
             job_id: jobId
           };

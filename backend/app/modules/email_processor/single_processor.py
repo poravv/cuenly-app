@@ -549,6 +549,7 @@ class EmailProcessor:
                     )
                     result.success = True
                     result.invoice_count = stream_items_queued
+                    result.queued_count = stream_items_queued
                     return result
 
                 items_queued = 0
@@ -633,6 +634,7 @@ class EmailProcessor:
                     )
                     result.success = True
                     result.invoice_count = items_queued
+                    result.queued_count = items_queued
                     return result
                     
                 except Exception as fanout_err:
@@ -802,6 +804,7 @@ class EmailProcessor:
                 self._mark_email_processed(email_id, "skipped_duplicate_msgid", message_id=real_msg_id, reason="Correo duplicado detectado por Message-ID")
                 return None
 
+            metadata_fallback_used = False
             metadata, attachments = self.get_email_content(email_id)
             if not metadata:
                 # FALLBACK: Intentar recuperar metadatos capturados en el discovery phase de la DB
@@ -817,17 +820,18 @@ class EmailProcessor:
                         "rfc822_message_id": real_msg_id or db_meta.get("message_id")
                     }
                     attachments = [] # Obviamente no hay adjuntos si el fetch falló
+                    metadata_fallback_used = True
                 else:
                     logger.error(f"❌ Falló fallback de metadatos para UID {email_id}. Marcar como error de metadatos.")
                     self._mark_email_processed(email_id, "missing_metadata", reason="No se pudieron extraer metadatos del correo ni del historial.")
                     return None
 
-            # Si llegamos aquí con metadata de fallback pero sin adjuntos (porque falló el fetch)
-            if not attachments:
-                 logger.error(f"❌ Correo UID {email_id} ({metadata.get('subject')}) no pudo bajarse (FETCH error).")
-                 self._mark_email_processed(email_id, "error", message_id=real_msg_id, reason="Error de conexión al bajar contenido del correo (FETCH)")
-                 self._store_failed_invoice(email_id, "Error de comunicación IMAP al bajar el contenido", metadata)
-                 return None
+            # Si el FETCH falló y solo pudimos recuperar metadata histórica, no hay cuerpo/adjuntos para procesar.
+            if metadata_fallback_used and not attachments and not metadata.get("links"):
+                logger.error(f"❌ Correo UID {email_id} ({metadata.get('subject')}) no pudo bajarse (FETCH error).")
+                self._mark_email_processed(email_id, "error", message_id=real_msg_id, reason="Error de conexión al bajar contenido del correo (FETCH)")
+                self._store_failed_invoice(email_id, "Error de comunicación IMAP al bajar el contenido", metadata)
+                return None
 
             # ✅ VALIDACIÓN INTELIGENTE DE LÍMITE IA
             if self.owner_email:
@@ -951,11 +955,20 @@ class EmailProcessor:
                     except Exception as e:
                         logger.warning(f"⚠️ Error procesando link PDF de {email_id}: {e}")
 
-            # Si llega aquí, significa que falló de todos los métodos posibles
-            logger.error(f"❌ Correo UID {email_id} carece de datos válidos (solo contenía links rotos o adjuntos inservibles)")
-            self._mark_email_processed(email_id, "error", message_id=real_msg_id, reason="No se encontraron adjuntos válidos ni enlaces procesables")
+            # Si llega aquí, significa que no se pudo extraer factura por ninguna vía.
+            if not attachments and not metadata.get("links"):
+                reason = "Correo sin adjuntos ni enlaces procesables"
+                logger.info(f"ℹ️ Correo UID {email_id} no tiene adjuntos ni enlaces para extraer factura.")
+            elif metadata.get("links"):
+                reason = "No se encontraron adjuntos válidos ni enlaces procesables"
+                logger.error(f"❌ Correo UID {email_id} carece de datos válidos (links/adjuntos no procesables)")
+            else:
+                reason = "No se pudieron extraer datos de adjuntos del correo"
+                logger.error(f"❌ Correo UID {email_id} tiene adjuntos, pero no se pudo extraer una factura válida")
+
+            self._mark_email_processed(email_id, "error", message_id=real_msg_id, reason=reason)
             # Guardar registro en MongoDB con status FAILED para poder ver en dashboard
-            self._store_failed_invoice(email_id, "No se pudo extraer factura del correo", metadata)
+            self._store_failed_invoice(email_id, reason, metadata)
             return None
 
         except OpenAIFatalError as e:

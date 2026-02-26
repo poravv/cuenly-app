@@ -632,10 +632,22 @@
                 </span>
                 <strong *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">Procesamiento finalizado:</strong>
                 <span *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">
-                  {{ dateRangeResult.invoice_count || 0 }} facturas procesadas.
+                  <ng-container *ngIf="(dateRangeResult.queued_count || 0) > 0; else completedInvoicesRange">
+                    {{ dateRangeResult.queued_count || 0 }} correos encolados para procesamiento.
+                  </ng-container>
+                  <ng-template #completedInvoicesRange>
+                    {{ dateRangeResult.invoice_count || 0 }} facturas procesadas.
+                  </ng-template>
                 </span>
                 <strong *ngIf="!dateRangeResult.job_id">Procesamiento completado:</strong>
-                <span *ngIf="!dateRangeResult.job_id">{{ dateRangeResult.invoice_count || 0 }} facturas procesadas</span>
+                <span *ngIf="!dateRangeResult.job_id">
+                  <ng-container *ngIf="(dateRangeResult.queued_count || 0) > 0; else completedInvoicesDirect">
+                    {{ dateRangeResult.queued_count || 0 }} correos encolados para procesamiento.
+                  </ng-container>
+                  <ng-template #completedInvoicesDirect>
+                    {{ dateRangeResult.invoice_count || 0 }} facturas procesadas
+                  </ng-template>
+                </span>
               </div>
               <button class="btn btn-sm btn-outline-secondary" (click)="clearDateRangeResult()">
                 <i class="bi bi-x"></i>
