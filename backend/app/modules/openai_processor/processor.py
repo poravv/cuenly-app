@@ -36,14 +36,12 @@ class OpenAIProcessor:
         self.cfg = cfg
         self.client = make_openai_client(cfg.api_key)
         
-        # Inicializar Redis Cache (con fallback graceful si no está disponible)
-        self._redis = None
+        # Inicializar Redis Cache para respuestas OpenAI (con fallback graceful)
         try:
             from .redis_cache import get_openai_cache
             self.cache = get_openai_cache()
             if self.cache.is_available:
                 logger.info("✅ OpenAI Redis Cache habilitado")
-                self._redis = self.cache._redis  # reusar la misma conexión para cuota cache
             else:
                 logger.warning("⚠️ Redis no disponible, cache deshabilitado")
                 self.cache = None
@@ -63,65 +61,66 @@ class OpenAIProcessor:
         """
         from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
         
+        ai_slot_reserved = False
         try:
-            # 0. CHECK DE SEGURIDAD: Validar límite de IA antes de consumir tokens
-            # El resultado se cachea en Redis (TTL 30s) para evitar una query MongoDB por cada PDF.
+            # 0. RESERVA ATÓMICA: Reservar slot de IA ANTES de procesar.
+            # findOneAndUpdate con condición processed < limit — evita race conditions.
             if owner_email:
                 try:
-                    ai_check = self._check_ai_quota(owner_email)
-                    if not ai_check['can_use']:
-                        logger.warning(f"🛑 AI limit reached for {owner_email}: {ai_check['message']}. Aborting extraction.")
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    reservation = user_repo.reserve_ai_slot(owner_email)
+                    if not reservation.get('reserved'):
+                        logger.warning(f"🛑 AI slot NOT reserved for {owner_email}: {reservation.get('message')}. Aborting extraction.")
                         extended_metrics.record_ai_limit_hit(owner_email)
                         return None
+                    ai_slot_reserved = True
+                    logger.info(f"🔒 AI slot reserved for {owner_email}: {reservation.get('ai_invoices_processed')}/{reservation.get('ai_invoices_limit')}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Error verifying AI limit for {owner_email}: {e}")
+                    logger.warning(f"⚠️ Error reserving AI slot for {owner_email}: {e}")
 
             # 1. Verificar cache primero
             if self.cache:
                 cached_result = self.cache.get(pdf_path)
                 if cached_result:
                     logger.info(f"🚀 Cache HIT - Resultado instantáneo para {pdf_path}")
-                    # Asegurar que el resultado cacheado sea procesado correctamente
+                    # Cache hit = no se usó IA real, liberar slot reservado
+                    if ai_slot_reserved and owner_email:
+                        try:
+                            user_repo.release_ai_slot(owner_email)
+                            ai_slot_reserved = False
+                        except Exception:
+                            pass
                     if isinstance(cached_result, dict):
-                        # Re-procesar el dict cacheado a través de _coerce_invoice_model
                         return _coerce_invoice_model(cached_result, email_metadata)
                     else:
-                        # Si ya es un objeto válido, devolverlo directamente
                         return cached_result
-            
+
             # 2. Estrategia por imagen (Vision/OCR)
             result = self._process_as_image(pdf_path, email_metadata)
             
-            # Si el procesamiento fue exitoso y usó IA, incrementar contador e invalidar cache
-            if result and owner_email:
+            # Si falló, liberar el slot reservado
+            if not result and ai_slot_reserved and owner_email:
                 try:
-                    from app.repositories.user_repository import UserRepository
-                    user_repo = UserRepository()
-                    updated_info = user_repo.increment_ai_usage(owner_email, 1)
-                    logger.info(f"📊 IA usage incremented for {owner_email}: {updated_info.get('ai_invoices_processed', 0)}/{updated_info.get('ai_invoices_limit', 50)}")
-                    # Invalidar cache de cuota para que el próximo check refleje el contador actualizado
-                    self._invalidate_ai_quota_cache(owner_email)
-                except Exception as e:
-                    logger.warning(f"Error updating AI usage counter: {e}")
-            
+                    user_repo.release_ai_slot(owner_email)
+                    ai_slot_reserved = False
+                    logger.info(f"🔄 AI slot released (processing failed) for {owner_email}")
+                except Exception:
+                    pass
+
             # Cachear el resultado si existe (como diccionario para serialización)
             if result and self.cache:
-                # Si result es un objeto InvoiceData, convertirlo a dict para cache
                 if hasattr(result, '__dict__') and not isinstance(result, dict):
-                    # Es un objeto, extraer sus datos como dict
                     cache_data = vars(result) if hasattr(result, '__dict__') else result
                 else:
-                    # Ya es un dict
                     cache_data = result
                 self.cache.set(pdf_path, cache_data, source="openai_vision")
-            
+
             if result:
-                # Marcar que se usó IA para control en bucle (intentar seguro)
                 try:
                     if isinstance(result, dict):
                         result['ai_used'] = True
                     else:
-                         # Pydantic v1/v2 compat
                         object.__setattr__(result, 'ai_used', True)
                 except Exception:
                     pass
@@ -129,8 +128,15 @@ class OpenAIProcessor:
 
             logger.warning("Ambas estrategias fallaron")
             return None
-            
+
         except Exception as e:
+            # Liberar slot en caso de excepción
+            if ai_slot_reserved and owner_email:
+                try:
+                    from app.repositories.user_repository import UserRepository
+                    UserRepository().release_ai_slot(owner_email)
+                except Exception:
+                    pass
             error_msg = str(e).lower()
             
             # Detectar errores fatales de OpenAI
@@ -241,42 +247,46 @@ class OpenAIProcessor:
                 logger.warning("Parser nativo falló: %s. Se usa OpenAI como fallback", e)
 
             # 2) Fallback: usar OpenAI con prompt XML
-            # CHECK DE SEGURIDAD: usar el mismo método cacheado
+            # RESERVA ATÓMICA antes de usar IA
+            xml_ai_slot_reserved = False
             if owner_email:
                 try:
-                    ai_check = self._check_ai_quota(owner_email)
-                    if not ai_check['can_use']:
-                        logger.warning(f"🛑 AI limit reached for {owner_email} during XML fallback: {ai_check['message']}. Aborting AI fallback.")
+                    from app.repositories.user_repository import UserRepository
+                    user_repo = UserRepository()
+                    reservation = user_repo.reserve_ai_slot(owner_email)
+                    if not reservation.get('reserved'):
+                        logger.warning(f"🛑 AI slot NOT reserved for {owner_email} during XML fallback: {reservation.get('message')}. Aborting AI fallback.")
                         extended_metrics.record_ai_limit_hit(owner_email)
                         if 'native' in locals() and native:
                             logger.info("Returning partial native result instead of AI fallback due to limit.")
                             invoice = _coerce_invoice_model(native, email_metadata)
                             return validate_and_enhance_with_cdc(invoice)
                         return None
+                    xml_ai_slot_reserved = True
                 except Exception as e:
-                    logger.warning(f"⚠️ Error verifying AI limit for {owner_email}: {e}")
+                    logger.warning(f"⚠️ Error reserving AI slot for {owner_email}: {e}")
 
             prompt = build_xml_prompt(xml_content)
             messages = messages_user_only(prompt)
 
-            raw = self.client.chat_json(
-                model=self.cfg.model,
-                messages=messages,
-                temperature=self.cfg.temperature,
-                max_tokens=self.cfg.max_tokens,
-            )
+            try:
+                raw = self.client.chat_json(
+                    model=self.cfg.model,
+                    messages=messages,
+                    temperature=self.cfg.temperature,
+                    max_tokens=self.cfg.max_tokens,
+                )
+            except Exception as openai_err:
+                # Liberar slot si OpenAI falla
+                if xml_ai_slot_reserved and owner_email:
+                    try:
+                        user_repo.release_ai_slot(owner_email)
+                    except Exception:
+                        pass
+                raise openai_err
+
             data = extract_and_normalize_json(raw)
             logger.info("Datos extraídos del XML (OpenAI): %s", data)
-            
-            # Incrementar contador de IA ya que usamos OpenAI como fallback e invalidar cache
-            if owner_email:
-                try:
-                    from app.repositories.user_repository import UserRepository
-                    updated_info = UserRepository().increment_ai_usage(owner_email, 1)
-                    logger.info(f"📊 IA usage incremented for XML fallback {owner_email}: {updated_info.get('ai_invoices_processed', 0)}/{updated_info.get('ai_invoices_limit', 50)}")
-                    self._invalidate_ai_quota_cache(owner_email)
-                except Exception as e:
-                    logger.warning(f"Error updating AI usage counter for XML: {e}")
             
             # Forzar CDC desde atributo Id si está presente
             cdc_id = _extract_cdc_id(xml_content)
@@ -299,47 +309,6 @@ class OpenAIProcessor:
         except Exception as e:
             logger.exception("Error procesando XML: %s", e)
             return None
-
-    # ------------------------------------------------- AI quota cache (Redis) --
-
-    _AI_QUOTA_CACHE_KEY = "cuenly:user:ai_quota:{}"
-    _AI_QUOTA_TTL = 30  # segundos — balance entre frescura y ahorro de queries
-
-    def _check_ai_quota(self, owner_email: str) -> dict:
-        """
-        Verifica si el usuario puede usar IA.
-        Cachea el resultado en Redis por 30 segundos para reducir queries a MongoDB.
-        Se invalida automáticamente después de cada incremento de uso.
-        """
-        import json
-        cache_key = self._AI_QUOTA_CACHE_KEY.format(owner_email)
-
-        if self._redis:
-            try:
-                cached = self._redis.get(cache_key)
-                if cached:
-                    return json.loads(cached)
-            except Exception:
-                pass
-
-        from app.repositories.user_repository import UserRepository
-        result = UserRepository().can_use_ai(owner_email)
-
-        if self._redis:
-            try:
-                self._redis.setex(cache_key, self._AI_QUOTA_TTL, json.dumps(result))
-            except Exception:
-                pass
-
-        return result
-
-    def _invalidate_ai_quota_cache(self, owner_email: str) -> None:
-        """Invalida el cache de cuota de IA para que el próximo check lea MongoDB fresco."""
-        if self._redis:
-            try:
-                self._redis.delete(self._AI_QUOTA_CACHE_KEY.format(owner_email))
-            except Exception:
-                pass
 
     # ----------------------------------------------------------- Estrategias --
     def _process_as_text(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None):

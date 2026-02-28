@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 from pymongo.collection import Collection
 from app.config.settings import settings
 from app.repositories.subscription_repository import SubscriptionRepository
@@ -195,6 +195,79 @@ class UserRepository:
         )
         return result.modified_count > 0
 
+    def reserve_ai_slot(self, email: str) -> Dict[str, Any]:
+        """
+        Reserva atómicamente un slot de IA (incrementa ai_invoices_processed si < ai_invoices_limit).
+        Usa findOneAndUpdate con condición para evitar race conditions.
+
+        Returns:
+            {'reserved': True, ...} si se reservó exitosamente
+            {'reserved': False, 'reason': ...} si no se pudo reservar
+        """
+        email = email.lower()
+
+        # Primero verificar condiciones previas (trial expirado, suscripción, etc.)
+        pre_check = self.can_use_ai(email)
+        if not pre_check['can_use']:
+            return {'reserved': False, **pre_check}
+
+        # Reserva atómica: incrementar SOLO si processed < limit
+        # Soporta ai_invoices_limit == -1 como "ilimitado"
+        result = self._coll().find_one_and_update(
+            {
+                'email': email,
+                '$or': [
+                    {'ai_invoices_limit': -1},  # ilimitado
+                    {'$expr': {'$lt': ['$ai_invoices_processed', '$ai_invoices_limit']}}
+                ]
+            },
+            {'$inc': {'ai_invoices_processed': 1}},
+            return_document=ReturnDocument.AFTER
+        )
+
+        if result:
+            processed = result.get('ai_invoices_processed', 0)
+            limit = result.get('ai_invoices_limit', 50)
+            logger.info(f"✅ AI slot reserved for {email}: {processed}/{limit}")
+            return {
+                'reserved': True,
+                'can_use': True,
+                'ai_invoices_processed': processed,
+                'ai_invoices_limit': limit
+            }
+        else:
+            # No se pudo reservar — límite alcanzado o usuario no encontrado
+            user = self.get_by_email(email)
+            if not user:
+                return {'reserved': False, 'can_use': False, 'reason': 'user_not_found', 'message': 'Usuario no encontrado'}
+
+            processed = user.get('ai_invoices_processed', 0)
+            limit = user.get('ai_invoices_limit', 50)
+            logger.warning(f"🛑 AI slot NOT reserved for {email}: {processed}/{limit} (limit reached)")
+            return {
+                'reserved': False,
+                'can_use': False,
+                'reason': 'ai_limit_reached',
+                'message': f'Has alcanzado el límite de {limit} facturas con IA',
+                'ai_invoices_processed': processed,
+                'ai_invoices_limit': limit
+            }
+
+    def release_ai_slot(self, email: str) -> bool:
+        """
+        Libera un slot de IA previamente reservado (decrementa ai_invoices_processed).
+        Usar cuando el procesamiento falla después de reservar.
+        """
+        email = email.lower()
+        result = self._coll().update_one(
+            {'email': email, 'ai_invoices_processed': {'$gt': 0}},
+            {'$inc': {'ai_invoices_processed': -1}}
+        )
+        if result.modified_count > 0:
+            logger.info(f"🔄 AI slot released for {email}")
+            return True
+        return False
+
     def increment_ai_usage(self, email: str, count: int = 1) -> Dict[str, Any]:
         """Incrementa el contador de facturas procesadas con IA"""
         email = email.lower()
@@ -202,7 +275,7 @@ class UserRepository:
             {'email': email},
             {'$inc': {'ai_invoices_processed': count}}
         )
-        
+
         if result.modified_count > 0:
             # Retornar información actualizada
             return self.get_trial_info(email)
@@ -268,7 +341,19 @@ class UserRepository:
             'message': f'Puedes procesar {trial_info["ai_invoices_limit"] - trial_info["ai_invoices_processed"]} facturas más con IA'
         }
 
-# Fin UserRepository
+    def reset_user_ai_limits(self, email: str, ai_limit: int = 50) -> bool:
+        """Resetea el contador de IA para un nuevo período de facturación."""
+        result = self._coll().update_one(
+            {'email': email.lower()},
+            {'$set': {
+                'ai_invoices_processed': 0,
+                'ai_invoices_limit': ai_limit,
+                'ai_last_reset': datetime.utcnow()
+            }}
+        )
+        if result.modified_count > 0:
+            logger.info(f"🔄 AI limits reset for {email}: limit={ai_limit}")
+        return result.modified_count > 0
 
     def get_email_processing_start_date(self, email: str) -> Optional[datetime]:
         """Obtiene la fecha desde la cual debe procesar correos para este usuario"""

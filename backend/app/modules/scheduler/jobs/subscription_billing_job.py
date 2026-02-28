@@ -18,6 +18,7 @@ from typing import Dict, Any, List, Optional
 from bson import ObjectId
 
 from app.repositories.subscription_repository import SubscriptionRepository
+from app.repositories.user_repository import UserRepository
 from app.services.pagopar_service import PagoparService
 from app.services.email_notification_service import EmailNotificationService
 
@@ -55,6 +56,7 @@ class SubscriptionBillingJob:
     
     def __init__(self):
         self.repo = SubscriptionRepository()
+        self.user_repo = UserRepository()
         self.pagopar = PagoparService()
         self.email = EmailNotificationService()
         self.retry_schedule = [1, 3, 7]  # Días para reintentar
@@ -193,16 +195,26 @@ class SubscriptionBillingJob:
             return False
     
     def _handle_payment_success(self, sub: Dict[str, Any], transaction_id: str):
-        """Manejar pago exitoso."""
+        """Manejar pago exitoso: actualizar fecha, resetear AI, notificar."""
         sub_id = str(sub.get("_id"))
+        user_email = sub.get("user_email", "")
         amount = sub.get("plan_price", 0)
-        
-        # Calcular próxima fecha de cobro (+30 días)
-        next_billing_date = datetime.utcnow() + timedelta(days=30)
-        
+
+        # Calcular próxima fecha de cobro usando día de aniversario (no +30 días)
+        billing_day = sub.get("billing_day_of_month")
+        if not billing_day:
+            # Fallback: usar día de started_at, o día actual
+            started_at = sub.get("started_at", sub.get("created_at", datetime.utcnow()))
+            billing_day = started_at.day
+        next_billing_date = self.repo.calculate_next_billing_date(datetime.utcnow(), billing_day)
+
         # Actualizar fecha de cobro
         self.repo.update_billing_date(sub_id, next_billing_date)
-        
+
+        # Resetear contador de IA para el nuevo período
+        ai_limit = sub.get("plan_features", {}).get("ai_invoices_limit", 50)
+        self.user_repo.reset_user_ai_limits(user_email, ai_limit)
+
         # Registrar transacción exitosa
         self.repo.record_subscription_payment(
             sub_id=sub_id,
@@ -210,11 +222,11 @@ class SubscriptionBillingJob:
             transaction_id=transaction_id,
             status="success"
         )
-        
-        logger.info(f"✅ Suscripción actualizada. Próximo cobro: {next_billing_date.strftime('%Y-%m-%d')}")
+
+        logger.info(f"✅ Suscripción actualizada. Próximo cobro: {next_billing_date.strftime('%Y-%m-%d')}. AI reseteado para {user_email}")
 
         self.email.send_payment_success(
-            to_email=sub.get("user_email", ""),
+            to_email=user_email,
             plan_name=sub.get("plan_name", "Plan"),
             amount=amount,
             next_billing_date=next_billing_date.strftime('%d/%m/%Y')

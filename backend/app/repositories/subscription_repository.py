@@ -2,6 +2,7 @@
 Repository para gestión de planes de suscripción y suscripciones de usuarios.
 """
 
+import calendar
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from pymongo import MongoClient
@@ -66,6 +67,25 @@ class SubscriptionRepository:
             logger.info("Índices de suscripciones creados/verificados")
         except Exception as e:
             logger.warning(f"Error creando índices: {e}")
+
+    # =====================================
+    # CÁLCULO DE FECHA DE COBRO POR ANIVERSARIO
+    # =====================================
+
+    @staticmethod
+    def calculate_next_billing_date(from_date: datetime, billing_day: int) -> datetime:
+        """
+        Calcula la próxima fecha de cobro basada en el día de aniversario.
+        Si billing_day=31 y el mes tiene 28 días, usa día 28.
+        Ej: suscrito el 31 → ene31, feb28, mar31, abr30...
+        """
+        if from_date.month == 12:
+            next_month, next_year = 1, from_date.year + 1
+        else:
+            next_month, next_year = from_date.month + 1, from_date.year
+        max_day = calendar.monthrange(next_year, next_month)[1]
+        actual_day = min(billing_day, max_day)
+        return datetime(next_year, next_month, actual_day, 0, 0, 0)
 
     # =====================================
     # RESOLUCIÓN DE PAGOPAR USER ID
@@ -480,6 +500,14 @@ class SubscriptionRepository:
             logger.error(f"Error verificando suscripción activa de {user_email}: {e}")
             return False
     
+    def get_active_subscriptions(self) -> List[Dict[str, Any]]:
+        """Obtener todas las suscripciones activas."""
+        try:
+            return list(self.subscriptions_collection.find({"status": "active"}))
+        except Exception as e:
+            logger.error(f"Error obteniendo suscripciones activas: {e}")
+            return []
+
     async def create_subscription(self, subscription_data: Dict[str, Any]) -> Optional[str]:
         """
         Crear una nueva suscripción INDEFINIDA (mes a mes).
@@ -494,14 +522,17 @@ class SubscriptionRepository:
             
             subscription_data["created_at"] = datetime.utcnow()
             subscription_data["updated_at"] = datetime.utcnow()
-            
-            # SUSCRIPCIÓN INDEFINIDA: mes a mes, sin fecha de expiración
-            # Solo calcular next_billing_date para el próximo cobro
-            if "next_billing_date" not in subscription_data:
-                # Próximo cobro en 30 días
-                subscription_data["next_billing_date"] = datetime.utcnow() + timedelta(days=30)
-            
             subscription_data["started_at"] = datetime.utcnow()
+
+            # Guardar día de aniversario para cobros futuros
+            if "billing_day_of_month" not in subscription_data:
+                subscription_data["billing_day_of_month"] = datetime.utcnow().day
+
+            # Calcular próximo cobro usando aniversario (no +30 días fijos)
+            if "next_billing_date" not in subscription_data:
+                subscription_data["next_billing_date"] = self.calculate_next_billing_date(
+                    datetime.utcnow(), subscription_data["billing_day_of_month"]
+                )
             
             # No establecer expires_at - la suscripción es indefinida
             # Se mantendrá activa hasta que el usuario o admin la cancele
