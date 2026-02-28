@@ -475,7 +475,7 @@ async def confirm_card(
             "currency": plan.get("currency", "PYG"),
             "billing_period": plan.get("billing_period", "monthly"),
             "plan_features": plan.get("features", {}),
-            "status": "ACTIVE",
+            "status": "active",
             "next_billing_date": datetime.utcnow() + timedelta(days=30),
             "payment_method": "pagopar_recurring"
         }

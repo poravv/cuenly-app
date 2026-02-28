@@ -250,7 +250,7 @@ class SubscriptionBillingJob:
                 {"_id": ObjectId(sub_id)},
                 {
                     "$set": {
-                        "status": "CANCELLED",
+                        "status": "cancelled",
                         "cancelled_at": datetime.utcnow(),
                         "cancellation_reason": f"Múltiples fallos de pago: {reason}",
                         "updated_at": datetime.utcnow()
