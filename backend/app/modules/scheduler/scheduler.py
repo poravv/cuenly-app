@@ -29,8 +29,8 @@ class ScheduledTasks:
     def start_background_scheduler(self):
         """Inicia el scheduler en un hilo de background"""
         try:
-            # Programar el reseteo para ejecutarse diariamente a las 00:01
-            # pero solo se ejecutará el día 1 de cada mes (lógica interna)
+            # Reseteo de límites IA por aniversario: ejecuta diario,
+            # el servicio filtra internamente por billing_day de cada usuario
             schedule.every().day.at("00:01").do(self._check_and_execute_monthly_reset)
             
             # Programar cobros recurrentes de suscripciones diariamente a las 00:00
@@ -49,7 +49,7 @@ class ScheduledTasks:
             self.running = True
             
             logger.info("✅ Scheduler iniciado correctamente")
-            logger.info("📅 Reseteo mensual de límites IA a las 00:01 (día 1 de cada mes)")
+            logger.info("📅 Reseteo de límites IA a las 00:01 (diario, filtra por aniversario)")
             logger.info("💳 Cobros recurrentes de suscripciones a las 00:00 (diario)")
             logger.info("🧹 Purga de archivos antiguos a las 03:00 (diario)")
             
@@ -72,24 +72,27 @@ class ScheduledTasks:
                 time.sleep(300)  # Esperar 5 minutos antes de reintentar
     
     def _check_and_execute_monthly_reset(self):
-        """Verifica si es día 1 del mes y ejecuta el reseteo mensual"""
+        """
+        Ejecuta el reseteo de límites IA como fallback diario.
+        El servicio filtra internamente: solo resetea usuarios cuyo
+        billing_day coincide con hoy y que no fueron reseteados ya
+        por el billing job.
+        """
         try:
-            # Solo ejecutar el día 1 de cada mes
-            if not self.should_run_today():
-                logger.debug(f"📅 Verificación diaria: No es día 1, saltando reseteo (día {datetime.now().day})")
-                return
-            
-            logger.info("🚀 Es día 1 del mes - Iniciando reseteo mensual automático de límites IA")
-            
+            logger.info(f"🔄 Ejecutando reseteo fallback por aniversario (día {datetime.now().day})")
+
             result = self.monthly_reset_service.reset_monthly_limits()
-            
+
             if result["success"]:
-                logger.info(f"✅ Reseteo mensual completado: {result['users_reset']} usuarios reseteados")
+                logger.info(
+                    f"✅ Reseteo fallback: {result.get('users_reset', 0)} reseteados, "
+                    f"{result.get('skipped', 0)} ya reseteados por billing"
+                )
             else:
-                logger.error(f"❌ Error en reseteo mensual: {result.get('error', 'Error desconocido')}")
-                
+                logger.error(f"❌ Error en reseteo fallback: {result.get('error', 'Error desconocido')}")
+
         except Exception as e:
-            logger.error(f"❌ Excepción durante reseteo mensual: {str(e)}")
+            logger.error(f"❌ Excepción durante reseteo fallback: {str(e)}")
     
     def get_status(self):
         """Obtiene el estado actual del scheduler"""
@@ -119,10 +122,8 @@ class ScheduledTasks:
             }
     
     def should_run_today(self):
-        """Verifica si el reseteo debería ejecutarse hoy"""
-        today = datetime.now()
-        # El reseteo se ejecuta el día 1 de cada mes
-        return today.day == 1
+        """Siempre True — el filtro por aniversario es interno al servicio."""
+        return True
     
     def execute_manual_reset(self):
         """Ejecuta el reseteo mensual manualmente (sin verificar fecha)"""

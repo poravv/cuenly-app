@@ -300,7 +300,7 @@ async def subscribe(
                 )
 
         # 3. Iniciar catastro de tarjeta (Si no hay existentes o no se solicitó usar)
-        redirect_url = settings.PAGOPAR_REDIRECT_URL  # TODO: Obtener de config
+        redirect_url = settings.PAGOPAR_REDIRECT_URL
         
         provider_to_use = request.provider if request.provider else "Bancard"
         
