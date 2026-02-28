@@ -102,6 +102,7 @@ Reglas:
 - Moneda: "GS" para Guaraníes, "USD" para Dólares. No conviertas.
 - condicion_venta: CONTADO o CREDITO. tipo_documento: CO (CONTADO) o CR (CREDITO).
 - **IMPORTANTE**: En items, el campo `iva` debe ser el TIPO de IVA (0, 5 o 10), NO el monto del IVA.
+- **FACTURAS EXTRANJERAS**: Si el emisor NO tiene RUC paraguayo (ej: empresas de USA, Europa, etc.), NO tiene timbrado ni CDC, y la moneda es USD u otra extranjera: el monto total va en `exentas`, con `gravado_5=0`, `iva_5=0`, `gravado_10=0`, `iva_10=0`. Las compras internacionales no tienen IVA paraguayo. En items, usar `iva: 0`.
 - **FECHAS**:
   - Prioriza siempre el formato `DD/MM/YYYY`.
   - Si el año tiene 2 dígitos (ej: "26"), asume `2026` (siglo XXI).
@@ -134,6 +135,7 @@ Devuelve **solo** un JSON válido y completo (sin explicaciones) con esta estruc
 - **IMPORTANTE**: Para productos, el campo `iva` debe ser el TIPO de IVA (0, 5 o 10), NO el monto del IVA.
 - Si hay columna de IVA por ítem, úsala como fuente de verdad; si no hay, aplica el IVA único del resumen; si tampoco hay, asume exento.
 - Nunca infieras IVA por nombre del producto.
+- **FACTURAS EXTRANJERAS**: Si el emisor NO tiene RUC paraguayo (ej: empresas de USA, Europa, etc.), no tiene timbrado ni CDC, y la moneda es USD u otra extranjera: el monto total va en `subtotal_exentas`, con `subtotal_5=0`, `iva_5=0`, `subtotal_10=0`, `iva_10=0`. Las compras internacionales no tienen IVA paraguayo. En productos, usar `iva: 0`.
 - Moneda: si la factura está en USD, usa "USD" y agrega "tipo_cambio" si está impreso. No conviertas a PYG.
 - El campo `moneda` debe ser:
   - "GS" si la factura está en Guaraníes (PYG).
@@ -163,6 +165,7 @@ Analiza con extrema atención la imagen de una factura paraguaya y devuelve **so
 - El campo `condicion_venta` debe ser exactamente `"CONTADO"` o `"CREDITO"`.
 - El campo `tipo_documento` debe ser `"CO"` si es CONTADO, o `"CR"` si es CREDITO.
 - **Moneda**: "GS" para Guaraníes, "USD" para Dólares (mantener decimales para USD).
+- **FACTURAS EXTRANJERAS**: Si el emisor NO tiene RUC paraguayo (ej: empresas de USA, Europa, etc.), no tiene timbrado ni CDC, y la moneda es USD u otra extranjera: el monto total va en `subtotal_exentas`, con `subtotal_5=0`, `iva_5=0`, `subtotal_10=0`, `iva_10=0`. Las compras internacionales no tienen IVA paraguayo. En productos, usar `iva: 0`.
 - **FECHAS**: Prioriza formato `DD/MM/YYYY`. Si año es 2 dígitos ("26"), asume `2026`. Si hay ambigüedad (`04/01/26`), es `04-Ene-2026`.
 """.strip()
 
@@ -213,6 +216,7 @@ Analiza este XML de factura electrónica paraguaya y devuelve **solo** un JSON v
 - **CRÍTICO**: En productos, el campo `iva` debe ser el TIPO de IVA (0, 5 o 10), NO el monto del IVA
 - Moneda: "GS" para Guaraníes, "USD" para Dólares
 - No convertir monedas, usar valores exactos del XML
+- **FACTURAS EXTRANJERAS**: Si el emisor no tiene RUC paraguayo, no tiene timbrado ni CDC, y la moneda es USD: monto total va en `subtotal_exentas`, IVA en 0. Las compras internacionales no tienen IVA paraguayo.
 
 XML:
 ```xml
