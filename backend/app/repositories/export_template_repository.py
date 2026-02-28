@@ -12,27 +12,24 @@ logger = logging.getLogger(__name__)
 
 class ExportTemplateRepository:
     """Repository para gestionar templates de exportación"""
-    
+    _indexes_ensured: bool = False
+
     def __init__(self):
         self.db_config = get_mongodb_config()
         self.db = self.db_config["client"][self.db_config["database"]]
         self.collection: Collection = self.db["export_templates"]
-        
-        # Crear índices
+
         self._create_indexes()
-    
+
     def _create_indexes(self):
-        """Crear índices necesarios"""
+        """Crear índices una sola vez por proceso."""
+        if ExportTemplateRepository._indexes_ensured:
+            return
         try:
-            # Índice compuesto para owner_email y nombre único
             self.collection.create_index([("owner_email", 1), ("name", 1)], unique=True)
-            
-            # Índice para buscar templates por usuario
             self.collection.create_index([("owner_email", 1), ("created_at", -1)])
-            
-            # Índice para template por defecto
             self.collection.create_index([("owner_email", 1), ("is_default", 1)])
-            
+            ExportTemplateRepository._indexes_ensured = True
             logger.debug("Índices de export_templates creados correctamente")
         except Exception as e:
             logger.warning(f"Error creando índices de export_templates: {e}")

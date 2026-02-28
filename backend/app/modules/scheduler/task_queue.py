@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
 from typing import Callable, Dict, Optional, Any
 
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
+
+logger = logging.getLogger(__name__)
 
 
 class TaskQueue:
@@ -73,35 +76,35 @@ class TaskQueue:
                 func = job.get('_func')
             # run outside lock but serialized with PROCESSING_LOCK
             try:
-                print(f"[TaskQueue] Intentando adquirir PROCESSING_LOCK para job {job_id}")
+                logger.debug(f"[TaskQueue] Intentando adquirir PROCESSING_LOCK para job {job_id}")
                 # Intentar adquirir el lock con timeout de 30 segundos
                 lock_acquired = PROCESSING_LOCK.acquire(timeout=30)
-                print(f"[TaskQueue] Lock adquirido: {lock_acquired} para job {job_id}")
-                
+                logger.debug(f"[TaskQueue] Lock adquirido: {lock_acquired} para job {job_id}")
+
                 if not lock_acquired:
                     # Si no se pudo adquirir el lock, marcar como error
-                    print(f"[TaskQueue] Timeout del lock para job {job_id}")
+                    logger.warning(f"[TaskQueue] Timeout del lock para job {job_id}")
                     with self._lock:
                         job['status'] = 'error'
                         job['message'] = 'No se pudo adquirir el lock de procesamiento (timeout de 30 segundos). Otro proceso puede estar ejecutándose.'
                         job['finished_at'] = time.time()
                     continue
-                
+
                 try:
-                    print(f"[TaskQueue] Ejecutando función para job {job_id}")
+                    logger.debug(f"[TaskQueue] Ejecutando función para job {job_id}")
                     result = func() if callable(func) else None
-                    print(f"[TaskQueue] Función completada para job {job_id}")
+                    logger.debug(f"[TaskQueue] Función completada para job {job_id}")
                     with self._lock:
                         job['result'] = result
                         job['status'] = 'done'
                         job['message'] = getattr(result, 'message', 'Completado') if result else 'Completado'
                         job['finished_at'] = time.time()
                 finally:
-                    print(f"[TaskQueue] Liberando lock para job {job_id}")
+                    logger.debug(f"[TaskQueue] Liberando lock para job {job_id}")
                     PROCESSING_LOCK.release()
-                    
+
             except Exception as e:
-                print(f"[TaskQueue] Error en job {job_id}: {e}")
+                logger.error(f"[TaskQueue] Error en job {job_id}: {e}")
                 with self._lock:
                     job['status'] = 'error'
                     job['message'] = str(e)

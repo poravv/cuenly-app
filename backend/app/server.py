@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import logging
 import uvicorn
 import sys
 import os
@@ -16,8 +17,10 @@ sys.path.insert(0, parent_dir)
 
 # Configurar zona horaria global para la aplicación
 paraguay_tz = pytz.timezone('America/Asuncion')
-print(f"[INFO] Zona horaria configurada: America/Asuncion")
-print(f"[INFO] Hora actual en Paraguay: {datetime.now(paraguay_tz).strftime('%Y-%m-%d %H:%M:%S %Z')}")
+logging.basicConfig(level=logging.INFO)
+_startup_logger = logging.getLogger(__name__)
+_startup_logger.info("Zona horaria configurada: America/Asuncion")
+_startup_logger.info(f"Hora actual en Paraguay: {datetime.now(paraguay_tz).strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
 # Ahora importar desde el módulo app
 from app.api.api import app

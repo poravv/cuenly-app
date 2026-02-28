@@ -177,6 +177,13 @@
   color: #2c3e50;
 }
 
+.stat-content small {
+  display: block;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
 .stat-content p {
   margin: 0;
   color: #6c757d;
@@ -259,6 +266,30 @@
   font-weight: 600;
   color: #2c3e50;
   margin-top: 8px;
+}
+
+.bar-source-mini {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+
+  .src-xml {
+    color: #16a34a;
+    background: rgba(34, 197, 94, 0.1);
+    border-radius: 4px;
+    padding: 1px 4px;
+    cursor: default;
+  }
+
+  .src-ai {
+    color: #7c3aed;
+    background: rgba(139, 92, 246, 0.1);
+    border-radius: 4px;
+    padding: 1px 4px;
+    cursor: default;
+  }
 }
 
 /* User Stats List */
@@ -1063,4 +1094,68 @@ app-plans-management .header {
     padding: 10px 20px;
     font-size: 0.9rem;
   }
+}
+
+// =====================================
+// RQ Queue Stats Row
+// =====================================
+.rq-stats-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f8f9fc;
+  border-radius: 12px;
+  border: 1px solid #e8eaf0;
+}
+
+.rq-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e8eaf0;
+  min-width: 120px;
+
+  i {
+    font-size: 1.2rem;
+  }
+
+  strong {
+    font-size: 1.1rem;
+    display: block;
+  }
+
+  &--alert {
+    border-color: #ef4444;
+    background: #fef2f2;
+  }
+}
+
+.rq-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+  display: block;
+}
+
+.rq-detail {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+
+.rq-q-name {
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.rq-q-val {
+  color: #6b7280;
+  margin-right: 4px;
 }

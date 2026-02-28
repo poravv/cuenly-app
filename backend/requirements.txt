@@ -33,3 +33,4 @@ tenacity>=8.2.0
 rq>=1.15.0
 python-magic>=0.4.27
 cryptography>=42.0.0
+slowapi>=0.1.9

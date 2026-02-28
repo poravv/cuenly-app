@@ -24,15 +24,16 @@ def download_pdf_from_url(url: str) -> Union[StoragePath, str]:
     """
     max_retries = 2
     timeout = 15  # Reducido de 30 a 15 segundos
-    
+
+    # Session creada una sola vez y reutilizada en todos los reintentos
+    # (evita SSL handshake + TCP overhead en cada intento)
+    session = requests.Session()
+    session.headers.update(BROWSER_HEADERS)
+
     for attempt in range(max_retries):
         try:
             logger.info(f"Intentando descargar desde: {url} (intento {attempt + 1}/{max_retries})")
-            
-            # Configurar session con timeouts
-            session = requests.Session()
-            session.headers.update(BROWSER_HEADERS)
-            
+
             r = session.get(
                 url, 
                 timeout=(5, timeout),  # (connect_timeout, read_timeout)
@@ -117,14 +118,14 @@ def _extract_pdf_from_html(html: str, base_url: str) -> Union[StoragePath, str]:
         # Limitar número de candidatos para evitar cuelgues
         candidates = candidates[:5]  # Máximo 5 intentos
         
+        # Session compartida para todos los candidatos de la misma página
+        session = requests.Session()
+        session.headers.update(BROWSER_HEADERS)
+
         for i, url in enumerate(candidates):
             try:
                 logger.info(f"🔗 Probando candidato {i+1}/{len(candidates)}: {url}")
-                
-                # Configurar session con timeouts agresivos
-                session = requests.Session()
-                session.headers.update(BROWSER_HEADERS)
-                
+
                 rr = session.get(
                     url, 
                     timeout=(3, 10),  # timeouts más agresivos para candidatos

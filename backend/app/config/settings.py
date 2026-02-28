@@ -47,6 +47,26 @@ class Settings(BaseSettings):
     # Seguridad de credenciales de correo (cifrado en reposo)
     # Recomendado: clave Fernet urlsafe base64 de 32 bytes.
     EMAIL_CONFIG_ENCRYPTION_KEY: str = os.getenv("EMAIL_CONFIG_ENCRYPTION_KEY", "")
+
+    # Administradores del sistema
+    # El email de andyvercha@gmail.com se mantiene como admin por defecto siempre.
+    # Para agregar más admins usar: ADMIN_EMAILS=["email1@x.com","email2@x.com"]
+    # Los emails en esta lista siempre tienen rol admin al hacer login.
+    # Adicionalmente, cualquier usuario con role='admin' en MongoDB mantiene su rol.
+    @property
+    def ADMIN_EMAILS(self) -> List[str]:
+        raw = os.getenv("ADMIN_EMAILS", "")
+        extra: List[str] = []
+        if raw.strip():
+            try:
+                parsed = json.loads(raw)
+                extra = [e.strip().lower() for e in parsed if isinstance(e, str)]
+            except Exception:
+                # Si no es JSON válido, tratarlo como lista separada por comas
+                extra = [e.strip().lower() for e in raw.split(",") if e.strip()]
+        # andyvercha@gmail.com siempre está en la lista sin importar el env var
+        base = ["andyvercha@gmail.com"]
+        return list(set(base + extra))
     
     # Email Processing
     EMAIL_PROCESS_ALL_DATES: bool = os.getenv("EMAIL_PROCESS_ALL_DATES", "true").lower() in ("1", "true", "yes")

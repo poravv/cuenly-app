@@ -1,17 +1,18 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
-import { Subscription, interval } from 'rxjs';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { UserService } from '../../services/user.service';
 
 @Component({
   selector: 'app-queue-events',
   templateUrl: './queue-events.component.html',
-  styleUrls: []
+  styleUrls: [],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class QueueEventsComponent implements OnInit {
   events: any[] = [];
-  loading: boolean = true;
+  loading: boolean = false;
   error: string | null = null;
   retryingId: string | null = null;
+  lastRefresh: Date | null = null;
 
   // Pagination and filtering
   currentPage: number = 1;
@@ -19,8 +20,6 @@ export class QueueEventsComponent implements OnInit {
   totalItems: number = 0;
   totalPages: number = 0;
   selectedStatus: string = 'all';
-  private autoRefreshSub: Subscription | null = null;
-  private readonly autoRefreshMs: number = 5000;
 
   statusOptions = [
     { value: 'all', label: 'Todos' },
@@ -33,20 +32,21 @@ export class QueueEventsComponent implements OnInit {
     { value: 'missing_metadata', label: 'Sin Metadatos' }
   ];
 
-  constructor(private userService: UserService) { }
+  constructor(
+    private userService: UserService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.loadEvents();
-    this.startAutoRefresh();
-  }
-
-  ngOnDestroy(): void {
-    this.stopAutoRefresh();
+    // Sin auto-refresh: el usuario controla cuándo actualizar con el botón.
   }
 
   loadEvents(): void {
     this.loading = true;
     this.error = null;
+    this.cdr.markForCheck();
+
     this.userService.getQueueEvents(this.currentPage, this.pageSize, this.selectedStatus).subscribe({
       next: (response) => {
         if (response && response.success) {
@@ -59,11 +59,15 @@ export class QueueEventsComponent implements OnInit {
           this.error = 'No se pudieron cargar los eventos de la cola.';
         }
         this.loading = false;
+        this.lastRefresh = new Date();
+        this.cdr.markForCheck();
       },
       error: (err) => {
         console.error('Error fetching queue events:', err);
         this.error = 'Ocurrió un error al cargar la cola de procesamiento.';
         this.loading = false;
+        this.lastRefresh = new Date();
+        this.cdr.markForCheck();
       }
     });
   }
@@ -77,27 +81,17 @@ export class QueueEventsComponent implements OnInit {
 
   onStatusChange(status: string): void {
     this.selectedStatus = status;
-    this.currentPage = 1; // Reset to first page
+    this.currentPage = 1;
     this.loadEvents();
   }
+
   refresh(): void {
     this.loadEvents();
   }
 
-  private startAutoRefresh(): void {
-    this.stopAutoRefresh();
-    this.autoRefreshSub = interval(this.autoRefreshMs).subscribe(() => {
-      if (!this.loading) {
-        this.loadEvents();
-      }
-    });
-  }
-
-  private stopAutoRefresh(): void {
-    if (this.autoRefreshSub) {
-      this.autoRefreshSub.unsubscribe();
-      this.autoRefreshSub = null;
-    }
+  /** trackBy para evitar que Angular destruya y reconstruya filas existentes */
+  trackByEventId(_: number, event: any): string {
+    return event._id || String(_);
   }
 
   getStatusBadgeClass(status: string, event?: any): string {
@@ -141,14 +135,15 @@ export class QueueEventsComponent implements OnInit {
       next: (res) => {
         this.retryingId = null;
         if (res.success) {
-          // Actualizar estado localmente hasta el próximo reload
           event.status = 'pending';
           event.reason = 'Reintento manual encolado';
         }
+        this.cdr.markForCheck();
       },
       error: (err) => {
         console.error('Error al reintentar:', err);
         this.retryingId = null;
+        this.cdr.markForCheck();
         alert('Hubo un error al intentar reencolar este evento.');
       }
     });
@@ -157,7 +152,6 @@ export class QueueEventsComponent implements OnInit {
   canRetry(event: any): boolean {
     if (!event) return false;
     if (typeof event.can_retry === 'boolean') return event.can_retry;
-    // Fallback defensivo para respuestas antiguas
     const status = String(event.status || '').toLowerCase();
     const isManual = !!event.manual_upload || event.account_email === 'manual_upload';
     const retryableStatuses = ['skipped_ai_limit', 'skipped_ai_limit_unread', 'pending_ai_unread', 'failed', 'error', 'missing_metadata'];

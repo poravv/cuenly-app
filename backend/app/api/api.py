@@ -1,4 +1,4 @@
-from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues, admin_ai_limits, admin_scheduler
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -63,12 +63,56 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Rate limiter basado en Redis (cae a memoria si Redis no está disponible)
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+
+    def _get_user_or_ip(request: Request) -> str:
+        """Clave de rate limit: email del usuario autenticado o IP como fallback."""
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            try:
+                from app.utils.firebase_auth import verify_firebase_token
+                token = auth.split(" ", 1)[1]
+                payload = verify_firebase_token(token)
+                return payload.get("email") or get_remote_address(request)
+            except Exception:
+                pass
+        return get_remote_address(request)
+
+    _limiter_storage = f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}"
+    limiter = Limiter(key_func=_get_user_or_ip, storage_uri=_limiter_storage)
+    _RATE_LIMITING_ENABLED = True
+    logger.info("✅ Rate limiting habilitado (slowapi + Redis)")
+except Exception as _rl_err:
+    limiter = None
+    _RATE_LIMITING_ENABLED = False
+    logger.warning(f"⚠️ Rate limiting deshabilitado: {_rl_err}")
+
+
+def _rate_limit(limit_string: str):
+    """Decorador de rate limit seguro — no-op si slowapi no está disponible."""
+    def decorator(func):
+        if _RATE_LIMITING_ENABLED and limiter:
+            return limiter.limit(limit_string)(func)
+        return func
+    return decorator
+
+
 # Crear la aplicación FastAPI
 app = FastAPI(
     title="CuenlyApp API",
     description="API para procesar facturas desde correo electrónico y almacenarlas en MongoDB",
     version="2.0.0"
 )
+
+# Configurar rate limiter en la app si está habilitado
+if _RATE_LIMITING_ENABLED and limiter:
+    app.state.limiter = limiter
+    from slowapi.errors import RateLimitExceeded
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configurar middleware de observabilidad
 app.add_middleware(ObservabilityMiddleware)
@@ -78,7 +122,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://app.cuenly.com",
-        "http://localhost:4200", 
+        "http://localhost:4200",
         "http://localhost",
         "http://127.0.0.1"
     ],
@@ -97,6 +141,8 @@ app.include_router(admin_users.router, prefix="/admin/users", tags=["Admin Users
 app.include_router(admin_plans.router, prefix="/admin/plans", tags=["Admin Plans"])
 app.include_router(user_profile.router, prefix="/user", tags=["User Profile"])
 app.include_router(queues.router, prefix="/admin/queues", tags=["Admin Queues"])
+app.include_router(admin_ai_limits.router, prefix="/admin/ai-limits", tags=["Admin AI Limits"])
+app.include_router(admin_scheduler.router, prefix="/admin/scheduler", tags=["Admin Scheduler"])
 
 
 # Startup event para inicializar servicios
@@ -911,7 +957,9 @@ async def trigger_retry_skipped(
         raise HTTPException(status_code=500, detail="Error interno")
 
 @app.post("/jobs/process-range")
+@_rate_limit("5/hour")
 async def process_range_job(
+    request: Request,
     payload: ProcessRangeRequest,
     # Importante: no bloquear por límite IA a nivel endpoint.
     # El procesamiento interno ya maneja XML vs IA y deja pendientes cuando corresponde.
@@ -1166,11 +1214,13 @@ def _create_completed_task(action: str, result: ProcessResult) -> str:
 
 
 @app.post("/upload", response_model=ProcessResult)
+@_rate_limit("20/minute")
 async def upload_pdf(
+    request: Request,
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
-    date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
+    date: Optional[str] = Form(None),
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """
     Sube un archivo PDF para procesarlo directamente.
     

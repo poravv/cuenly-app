@@ -47,16 +47,7 @@
           <div class="stat-content">
             <h3>{{formatNumber(userStats.total_users)}}</h3>
             <p>Total Usuarios</p>
-          </div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-icon active">
-            <i class="bi bi-person-check"></i>
-          </div>
-          <div class="stat-content">
-            <h3>{{formatNumber(userStats.active_users)}}</h3>
-            <p>Usuarios Activos</p>
+            <small class="text-muted">{{formatNumber(userStats.active_users)}} activos · {{formatNumber(userStats.trial_users)}} trial</small>
           </div>
         </div>
 
@@ -67,18 +58,70 @@
           <div class="stat-content">
             <h3>{{formatNumber(invoiceStats.total_invoices)}}</h3>
             <p>Total Facturas</p>
+            <small class="text-muted">{{formatNumber(invoiceStats.total_items)}} ítems</small>
           </div>
         </div>
 
         <div class="stat-card">
-          <div class="stat-icon items">
-            <i class="bi bi-list-check"></i>
+          <div class="stat-icon" style="background: rgba(34,197,94,0.12); color: #16a34a;">
+            <i class="bi bi-file-earmark-code"></i>
           </div>
           <div class="stat-content">
-            <h3>{{formatNumber(invoiceStats.total_items)}}</h3>
-            <p>Ítems Procesados</p>
+            <h3>{{formatNumber(invoiceStats.source_totals?.xml_nativo || 0)}}</h3>
+            <p>XML Nativo</p>
+            <small class="text-muted">{{getSourcePercent(invoiceStats.source_totals?.xml_nativo || 0)}}% del total</small>
           </div>
         </div>
+
+        <div class="stat-card">
+          <div class="stat-icon" style="background: rgba(139,92,246,0.12); color: #7c3aed;">
+            <i class="bi bi-robot"></i>
+          </div>
+          <div class="stat-content">
+            <h3>{{formatNumber(invoiceStats.source_totals?.openai_vision || 0)}}</h3>
+            <p>OpenAI Vision</p>
+            <small class="text-muted">{{getSourcePercent(invoiceStats.source_totals?.openai_vision || 0)}}% del total</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cola RQ en tiempo real -->
+      <div class="rq-stats-row" *ngIf="queueStats || loadingQueueStats">
+        <div class="rq-card" *ngIf="loadingQueueStats">
+          <span class="spinner-border spinner-border-sm text-muted"></span>
+          <span class="ms-2 text-muted small">Cargando colas...</span>
+        </div>
+        <ng-container *ngIf="!loadingQueueStats && queueStats">
+          <div class="rq-card">
+            <i class="bi bi-cpu text-primary"></i>
+            <div>
+              <strong>{{queueStats.workers_online}}</strong>
+              <span class="rq-label">Workers activos</span>
+            </div>
+          </div>
+          <div class="rq-card">
+            <i class="bi bi-hourglass-split text-warning"></i>
+            <div>
+              <strong>{{formatNumber(getTotalQueued())}}</strong>
+              <span class="rq-label">En cola</span>
+            </div>
+          </div>
+          <div class="rq-card" [class.rq-card--alert]="getTotalFailed() > 0">
+            <i class="bi bi-exclamation-circle" [class.text-danger]="getTotalFailed() > 0" [class.text-muted]="getTotalFailed() === 0"></i>
+            <div>
+              <strong [class.text-danger]="getTotalFailed() > 0">{{formatNumber(getTotalFailed())}}</strong>
+              <span class="rq-label">Fallidos</span>
+            </div>
+          </div>
+          <div class="rq-card rq-detail">
+            <span class="rq-q-name">High</span>
+            <span class="rq-q-val">{{queueStats.queues.high?.queued || 0}} pendientes</span>
+            <span class="rq-q-name ms-2">Default</span>
+            <span class="rq-q-val">{{queueStats.queues.default?.queued || 0}} pendientes</span>
+            <span class="rq-q-name ms-2">Low</span>
+            <span class="rq-q-val">{{queueStats.queues.low?.queued || 0}} pendientes</span>
+          </div>
+        </ng-container>
       </div>
 
       <div class="charts-section">
@@ -89,13 +132,18 @@
               No hay datos disponibles
             </div>
             <div *ngIf="getRecentMonths().length > 0" class="simple-chart">
-              <div *ngFor="let month of getRecentMonths()" class="chart-bar">
+              <div *ngFor="let month of getRecentMonths()" class="chart-bar"
+                [title]="month.month + ': ' + month.count + ' facturas (XML: ' + month.xml_nativo + ' | IA: ' + month.openai_vision + ')'">
                 <div class="bar-label">{{month.month}}</div>
                 <div class="bar-container">
-                  <div class="bar" [style.height.%]="(month.count / getRecentMonths()[0].count) * 100">
+                  <div class="bar" [style.height.%]="(month.count / getMaxMonthCount()) * 100">
                   </div>
                 </div>
                 <div class="bar-value">{{month.count}}</div>
+                <div class="bar-source-mini">
+                  <span class="src-xml" [title]="'XML: ' + month.xml_nativo">{{month.xml_nativo}}</span>
+                  <span class="src-ai" [title]="'IA: ' + month.openai_vision">{{month.openai_vision}}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -139,7 +187,7 @@
               <label>Usuario:</label>
               <select [(ngModel)]="statsFilters.user_email" class="form-control">
                 <option value="">Todos los usuarios</option>
-                <option *ngFor="let user of users" [value]="user.email">
+                <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
                   {{user.name || user.email}}
                 </option>
               </select>
@@ -250,7 +298,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let user of users">
+              <tr *ngFor="let user of users; trackBy: trackByEmail">
                 <td class="user-info">
                   <div class="user-details">
                     <strong>{{user.name || 'Sin nombre'}}</strong>
@@ -280,21 +328,21 @@
                 </td>
                 <td class="actions">
                   <div class="action-buttons">
-                    <button *ngIf="user.email !== 'andyvercha@gmail.com'" class="btn-action"
+                    <button *ngIf="!isProtectedAdmin(user)" class="btn-action"
                       [class.btn-promote]="user.role === 'user'" [class.btn-demote]="user.role === 'admin'"
                       (click)="updateUserRole(user, user.role === 'admin' ? 'user' : 'admin')"
                       [title]="user.role === 'admin' ? 'Quitar admin' : 'Hacer admin'">
                       <i [class]="user.role === 'admin' ? 'bi bi-person-dash' : 'bi bi-person-plus'"></i>
                     </button>
 
-                    <button *ngIf="user.email !== 'andyvercha@gmail.com'" class="btn-action"
+                    <button *ngIf="!isProtectedAdmin(user)" class="btn-action"
                       [class.btn-suspend]="user.status === 'active'" [class.btn-activate]="user.status === 'suspended'"
                       (click)="updateUserStatus(user, user.status === 'active' ? 'suspended' : 'active')"
                       [title]="user.status === 'active' ? 'Suspender' : 'Activar'">
                       <i [class]="user.status === 'active' ? 'bi bi-person-slash' : 'bi bi-person-check'"></i>
                     </button>
 
-                    <span *ngIf="user.email === 'andyvercha@gmail.com'" class="protected-admin">
+                    <span *ngIf="isProtectedAdmin(user)" class="protected-admin">
                       <i class="bi bi-shield-check" title="Administrador protegido"></i>
                     </span>
                   </div>
@@ -354,7 +402,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let sub of subscriptions">
+              <tr *ngFor="let sub of subscriptions; trackBy: trackBySub">
                 <td>
                   <div class="user-details">
                     <strong>{{sub.user_email}}</strong>
@@ -503,7 +551,7 @@
                 <label>Usuario:</label>
                 <select [(ngModel)]="selectedUserForReset" class="form-control">
                   <option value="">Seleccionar usuario...</option>
-                  <option *ngFor="let user of users" [value]="user.email">
+                  <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
                     {{user.name || user.email}} ({{user.email}})
                   </option>
                 </select>

@@ -389,6 +389,10 @@ export class ApiService {
     return this.http.get<any>(`${this.apiUrl}/admin/stats`);
   }
 
+  getQueueStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/queues/stats`, { headers: this.getSecureHeaders() });
+  }
+
   // =====================================
   // PLANES Y SUSCRIPCIONES
   // =====================================

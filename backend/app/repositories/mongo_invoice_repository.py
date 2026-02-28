@@ -16,6 +16,8 @@ _CDC_TOKEN_RE = re.compile(r"\d{44}")
 
 
 class MongoInvoiceRepository(InvoiceRepository):
+    _indexes_ensured: bool = False
+
     def __init__(self,
                  connection_string: Optional[str] = None,
                  database_name: Optional[str] = None,
@@ -34,50 +36,58 @@ class MongoInvoiceRepository(InvoiceRepository):
             logger.info("✅ Conectado a MongoDB (repo)")
         return self._client[self.db_name]
 
-    def _headers(self) -> Collection:
-        coll = self._get_db()[self.headers_collection_name]
+    def _ensure_indexes(self) -> None:
+        """Crea índices una sola vez por proceso."""
+        if MongoInvoiceRepository._indexes_ensured:
+            return
         try:
-            # _id ya es único por definición en MongoDB; no forzar opciones evita warnings.
-            coll.create_index([("emisor.ruc", 1), ("fecha_emision", -1)])
-            coll.create_index("emisor.nombre")
-            coll.create_index("receptor.nombre")
-            coll.create_index("mes_proceso")
-            coll.create_index("owner_email")
-            coll.create_index("message_id")
-            coll.create_index([("owner_email", 1), ("message_id", 1)])
+            hdr = self._get_db()[self.headers_collection_name]
+            hdr.create_index([("emisor.ruc", 1), ("fecha_emision", -1)])
+            hdr.create_index("emisor.nombre")
+            hdr.create_index("receptor.nombre")
+            hdr.create_index("mes_proceso")
+            hdr.create_index("owner_email")
+            hdr.create_index("message_id")
+            hdr.create_index([("owner_email", 1), ("message_id", 1)])
+            hdr.create_index("fecha_emision")
+            hdr.create_index("fuente")
+            hdr.create_index([("owner_email", 1), ("fecha_emision", -1)])
 
             desired_partial = {
-                # Evita $ne porque algunos engines Mongo no lo aceptan en partial indexes.
-                # $gt: "" filtra strings no vacíos.
                 "owner_email": {"$exists": True, "$gt": ""},
                 "cdc": {"$exists": True, "$gt": ""},
             }
             idx_name = "owner_email_1_cdc_1"
-            idx_info = coll.index_information().get(idx_name)
+            idx_info = hdr.index_information().get(idx_name)
             if idx_info:
                 current_partial = idx_info.get("partialFilterExpression")
                 current_unique = bool(idx_info.get("unique"))
                 if (not current_unique) or (current_partial != desired_partial):
-                    coll.drop_index(idx_name)
+                    hdr.drop_index(idx_name)
 
-            coll.create_index(
+            hdr.create_index(
                 [("owner_email", 1), ("cdc", 1)],
                 name=idx_name,
                 unique=True,
                 partialFilterExpression=desired_partial,
             )
+
+            itm = self._get_db()[self.items_collection_name]
+            itm.create_index([("header_id", 1), ("linea", 1)], unique=True)
+            itm.create_index("owner_email")
+
+            MongoInvoiceRepository._indexes_ensured = True
+            logger.info("Índices de invoice_headers/items asegurados")
         except Exception as e:
-            logger.warning(f"No se pudieron crear/actualizar índices de invoice_headers: {e}")
-        return coll
+            logger.warning(f"No se pudieron crear/actualizar índices: {e}")
+
+    def _headers(self) -> Collection:
+        self._ensure_indexes()
+        return self._get_db()[self.headers_collection_name]
 
     def _items(self) -> Collection:
-        coll = self._get_db()[self.items_collection_name]
-        try:
-            coll.create_index([("header_id", 1), ("linea", 1)], unique=True)
-            coll.create_index("owner_email")
-        except Exception as e:
-            logger.warning(f"No se pudieron crear/actualizar índices de invoice_items: {e}")
-        return coll
+        self._ensure_indexes()
+        return self._get_db()[self.items_collection_name]
 
     def get_invoices_by_user(self, owner_email: str, filters: dict = None) -> List[dict]:
         """

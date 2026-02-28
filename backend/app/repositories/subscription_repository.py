@@ -12,6 +12,8 @@ from app.config.settings import settings
 logger = logging.getLogger(__name__)
 
 class SubscriptionRepository:
+    _indexes_ensured: bool = False
+
     def __init__(self, conn_str: Optional[str] = None, db_name: Optional[str] = None):
         self.conn_str = conn_str or settings.MONGODB_URL
         self.db_name = db_name or settings.MONGODB_DATABASE
@@ -45,23 +47,23 @@ class SubscriptionRepository:
         return self._get_db().subscription_transactions
 
     def _ensure_indexes(self):
-        """Crear índices para optimizar consultas."""
+        """Crear índices una sola vez por proceso."""
+        if SubscriptionRepository._indexes_ensured:
+            return
         try:
-            # Índices para subscriptions
             self.subscriptions_collection.create_index([("user_email", 1)])
             self.subscriptions_collection.create_index([("status", 1), ("next_billing_date", 1)])
             self.subscriptions_collection.create_index([("pagopar_user_id", 1)])
-            
-            # Índices para payment_methods
+
             self.payment_methods_collection.create_index([("user_email", 1)], unique=True)
             self.payment_methods_collection.create_index([("pagopar_user_id", 1)])
-            
-            # Índices para transactions
+
             self.transactions_collection.create_index([("subscription_id", 1)])
             self.transactions_collection.create_index([("user_email", 1)])
             self.transactions_collection.create_index([("created_at", -1)])
-            
-            logger.info("✅ Índices de BD creados/verificados")
+
+            SubscriptionRepository._indexes_ensured = True
+            logger.info("Índices de suscripciones creados/verificados")
         except Exception as e:
             logger.warning(f"Error creando índices: {e}")
 

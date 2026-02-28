@@ -28,9 +28,10 @@ interface UserStats {
 interface InvoiceStats {
   total_invoices: number;
   total_items: number;
-  monthly_invoices: Array<{ _id: string; count: number; total_amount: number }>;
+  monthly_invoices: Array<{ _id: string; count: number; total_amount: number; xml_nativo: number; openai_vision: number }>;
   daily_invoices: Array<{ _id: string; count: number }>;
   user_invoices: Array<{ _id: string; count: number; total_amount: number }>;
+  source_totals: { xml_nativo: number; openai_vision: number; total_amount: number };
 }
 
 interface SchedulerStatus {
@@ -47,6 +48,15 @@ interface ResetStats {
   resetted_this_month: number;
 }
 
+interface QueueStats {
+  workers_online: number;
+  queues: {
+    high:    { queued: number; started: number; failed: number };
+    default: { queued: number; started: number; failed: number };
+    low:     { queued: number; started: number; failed: number };
+  };
+}
+
 @Component({
   selector: 'app-admin-panel',
   templateUrl: './admin-panel.component.html',
@@ -57,6 +67,10 @@ export class AdminPanelComponent implements OnInit {
   loading = true;
   loadingUsers = false;
   loadingFilteredStats = false;
+
+  // Queue stats
+  queueStats: QueueStats | null = null;
+  loadingQueueStats = false;
 
   // AI Limits
   loadingSchedulerStatus = false;
@@ -105,7 +119,8 @@ export class AdminPanelComponent implements OnInit {
     total_items: 0,
     monthly_invoices: [],
     daily_invoices: [],
-    user_invoices: []
+    user_invoices: [],
+    source_totals: { xml_nativo: 0, openai_vision: 0, total_amount: 0 }
   };
 
   // Modals
@@ -159,6 +174,34 @@ export class AdminPanelComponent implements OnInit {
         this.showError('Error cargando estadísticas');
       }
     });
+    this.loadQueueStats();
+  }
+
+  loadQueueStats(): void {
+    this.loadingQueueStats = true;
+    this.apiService.getQueueStats().subscribe({
+      next: (response) => {
+        if (response.success) {
+          this.queueStats = response;
+        }
+        this.loadingQueueStats = false;
+      },
+      error: () => { this.loadingQueueStats = false; }
+    });
+  }
+
+  getTotalQueued(): number {
+    if (!this.queueStats) return 0;
+    return (this.queueStats.queues.high?.queued || 0)
+         + (this.queueStats.queues.default?.queued || 0)
+         + (this.queueStats.queues.low?.queued || 0);
+  }
+
+  getTotalFailed(): number {
+    if (!this.queueStats) return 0;
+    return (this.queueStats.queues.high?.failed || 0)
+         + (this.queueStats.queues.default?.failed || 0)
+         + (this.queueStats.queues.low?.failed || 0);
   }
 
   loadUsers(): void {
@@ -323,6 +366,8 @@ export class AdminPanelComponent implements OnInit {
     this.activeTab = tab;
     if (tab === 'subscriptions') {
       this.loadSubscriptions();
+    } else if (tab === 'ai-limits') {
+      this.loadAiLimitsData();
     }
   }
 
@@ -359,6 +404,21 @@ export class AdminPanelComponent implements OnInit {
     }).format(amount);
   }
 
+  // Admin protegido: el usuario logueado actual (no puede auto-degradarse)
+  isProtectedAdmin(user: User): boolean {
+    const currentUser = this.userService.getCurrentProfile();
+    return user.email === currentUser?.email;
+  }
+
+  // trackBy functions para *ngFor
+  trackByEmail(_index: number, user: User): string {
+    return user.email;
+  }
+
+  trackBySub(_index: number, sub: any): string {
+    return sub._id || sub.user_email;
+  }
+
   getRoleClass(role: string): string {
     return role === 'admin' ? 'badge-admin' : 'badge-user';
   }
@@ -376,12 +436,26 @@ export class AdminPanelComponent implements OnInit {
     }));
   }
 
-  getRecentMonths(): Array<{ month: string, count: number, total: number }> {
+  getRecentMonths(): Array<{ month: string, count: number, total: number, xml_nativo: number, openai_vision: number }> {
     return this.invoiceStats.monthly_invoices.slice(-6).map(item => ({
       month: item._id,
       count: item.count,
-      total: item.total_amount
+      total: item.total_amount,
+      xml_nativo: item.xml_nativo || 0,
+      openai_vision: item.openai_vision || 0
     }));
+  }
+
+  getMaxMonthCount(): number {
+    const months = this.getRecentMonths();
+    if (!months.length) return 1;
+    return Math.max(...months.map(m => m.count), 1);
+  }
+
+  getSourcePercent(value: number): number {
+    const total = (this.invoiceStats.source_totals?.xml_nativo || 0) + (this.invoiceStats.source_totals?.openai_vision || 0);
+    if (!total) return 0;
+    return Math.round((value / total) * 100);
   }
 
   // =====================================
