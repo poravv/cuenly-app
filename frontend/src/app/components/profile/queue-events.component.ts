@@ -62,8 +62,7 @@ export class QueueEventsComponent implements OnInit {
         this.lastRefresh = new Date();
         this.cdr.markForCheck();
       },
-      error: (err) => {
-        console.error('Error fetching queue events:', err);
+      error: () => {
         this.error = 'Ocurrió un error al cargar la cola de procesamiento.';
         this.loading = false;
         this.lastRefresh = new Date();
@@ -140,8 +139,7 @@ export class QueueEventsComponent implements OnInit {
         }
         this.cdr.markForCheck();
       },
-      error: (err) => {
-        console.error('Error al reintentar:', err);
+      error: () => {
         this.retryingId = null;
         this.cdr.markForCheck();
         alert('Hubo un error al intentar reencolar este evento.');

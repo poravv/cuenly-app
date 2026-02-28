@@ -40,7 +40,6 @@ export class ProfileGuard implements CanActivate {
                 }
             }),
             catchError(error => {
-                console.error('Error checking profile completeness in guard:', error);
                 // En caso de error, permitir el paso pero loguear, o bloquear?
                 // Mejor bloquear por seguridad si es un fallo de red, pero si el endpoint no existe...
                 // Asumiremos false para obligar a verificar

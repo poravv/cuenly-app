@@ -47,8 +47,7 @@ export class PagoparResultComponent implements OnInit {
                     }
                 }
             },
-            error: (err) => {
-                console.error('Error validating Pagopar order:', err);
+            error: () => {
                 this.error = 'No pudimos verificar el estado de tu pedido. Por favor, contacta a soporte.';
                 this.loading = false;
             }

@@ -73,8 +73,8 @@ export class TemplateEditorComponent implements OnInit {
         this.fieldCategories = response.categories || {};
         this.categoryOrder = this.buildCategoryOrder(this.fieldCategories);
       },
-      error: (error: any) => {
-        console.error('Error cargando campos disponibles:', error);
+      error: () => {
+        // Error handled silently
       }
     });
   }
@@ -95,8 +95,7 @@ export class TemplateEditorComponent implements OnInit {
         this.template = { ...template };
         this.loading = false;
       },
-      error: (error) => {
-        console.error('Error cargando template:', error);
+      error: () => {
         this.notificationService.error(
           'No se pudo cargar el template solicitado. Verifique que el ID sea correcto.',
           'Error al cargar template'
@@ -349,8 +348,7 @@ export class TemplateEditorComponent implements OnInit {
         );
         this.router.navigate(['/templates-export']);
       },
-      error: (error) => {
-        console.error('Error guardando template:', error);
+      error: () => {
         this.notificationService.error(
           'No se pudo guardar el template. Por favor, intente nuevamente.',
           'Error al guardar'

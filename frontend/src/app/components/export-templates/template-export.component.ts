@@ -63,8 +63,7 @@ export class TemplateExportComponent implements OnInit {
         
         this.loading = false;
       },
-      error: (error) => {
-        console.error('Error cargando templates:', error);
+      error: () => {
         this.notificationService.error(
           'No se pudieron cargar los templates. Por favor, intente nuevamente.',
           'Error al cargar templates'
@@ -119,8 +118,7 @@ export class TemplateExportComponent implements OnInit {
           'Exportación completada'
         );
       },
-      error: (error) => {
-        console.error('Error exportando:', error);
+      error: () => {
         this.notificationService.error(
           'No se pudo completar la exportación. Verifique su conexión e intente nuevamente.',
           'Error en la exportación'

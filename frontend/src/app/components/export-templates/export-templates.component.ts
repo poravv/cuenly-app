@@ -33,8 +33,7 @@ export class ExportTemplatesComponent implements OnInit {
         this.templates = response.templates;
         this.loading = false;
       },
-      error: (error) => {
-        console.error('Error cargando templates:', error);
+      error: () => {
         this.error = 'Error al cargar los templates';
         this.loading = false;
       }
@@ -67,8 +66,7 @@ export class ExportTemplatesComponent implements OnInit {
                 );
                 this.loadTemplates();
               },
-              error: (error) => {
-                console.error('Error duplicando template:', error);
+              error: () => {
                 this.notificationService.error(
                   'No se pudo duplicar el template. Por favor, intente nuevamente.',
                   'Error al duplicar'
@@ -98,8 +96,7 @@ export class ExportTemplatesComponent implements OnInit {
                 );
                 this.loadTemplates();
               },
-              error: (error) => {
-                console.error('Error estableciendo template por defecto:', error);
+              error: () => {
                 this.notificationService.error(
                   'No se pudo establecer el template como predeterminado.',
                   'Error al actualizar'
@@ -129,8 +126,7 @@ export class ExportTemplatesComponent implements OnInit {
                 );
                 this.loadTemplates();
               },
-              error: (error) => {
-                console.error('Error eliminando template:', error);
+              error: () => {
                 this.notificationService.error(
                   'No se pudo eliminar el template. Por favor, intente nuevamente.',
                   'Error al eliminar'

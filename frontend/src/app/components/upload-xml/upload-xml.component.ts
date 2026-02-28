@@ -175,8 +175,8 @@ export class UploadXmlComponent implements OnInit, OnDestroy {
                   item.message = st.message || 'Error en la tarea';
                 }
               },
-              error: (err) => {
-                console.error('Error polling job', err);
+              error: () => {
+                // Error handled silently
               }
             });
           }

@@ -137,7 +137,6 @@ export class UploadComponent implements OnInit, OnDestroy {
         item.message = 'No parece ser una factura. ¿Deseas subirlo de todas formas?';
       }
     } catch (error) {
-      console.error('OCR Error:', error);
       item.status = 'error';
       item.message = 'Error al analizar la imagen.';
     }
@@ -296,8 +295,7 @@ export class UploadComponent implements OnInit, OnDestroy {
             }
           }
         },
-        error: (err) => {
-          console.error('Error polling job', jobId, err);
+        error: () => {
           // If polling fails, mark as error and remove from active jobs
           item.status = 'error';
           item.message = 'Error de conexión al verificar estado.';

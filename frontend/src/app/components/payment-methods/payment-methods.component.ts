@@ -40,8 +40,7 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
                 this.cards = data;
                 this.loading = false;
             },
-            error: (err) => {
-                console.error('Error loading cards:', err);
+            error: () => {
                 // Silent error for now, maybe user has no pagopar account yet
                 this.loading = false;
             }
@@ -97,8 +96,7 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
                     });
                 }
             },
-            error: (err) => {
-                console.error(err);
+            error: () => {
                 this.notificationService.error('Error finalizando catastro de tarjeta');
             }
         });
@@ -123,8 +121,7 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
                 this.showAddModal = true;
                 this.processingAdd = false;
             },
-            error: (err) => {
-                console.error(err);
+            error: () => {
                 this.notificationService.error('Error iniciando proceso de tarjeta');
                 this.processingAdd = false;
             }

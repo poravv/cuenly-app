@@ -182,8 +182,7 @@ export class AdminPanelComponent implements OnInit {
           this.invoiceStats = response.invoice_stats;
         }
       },
-      error: (error) => {
-        console.error('Error loading stats:', error);
+      error: () => {
         this.showError('Error cargando estadísticas');
       }
     });
@@ -229,8 +228,7 @@ export class AdminPanelComponent implements OnInit {
         this.loadingUsers = false;
         this.loading = false;
       },
-      error: (error) => {
-        console.error('Error loading users:', error);
+      error: () => {
         this.showError('Error cargando usuarios');
         this.loadingUsers = false;
         this.loading = false;
@@ -344,8 +342,7 @@ export class AdminPanelComponent implements OnInit {
                   this.loadStats(); // Recargar stats
                 }
               },
-              error: (error) => {
-                console.error('Error updating status:', error);
+              error: () => {
                 this.notificationService.error(
                   'No se pudo actualizar el estado del usuario',
                   'Error actualizando estado'
@@ -534,7 +531,6 @@ export class AdminPanelComponent implements OnInit {
         );
       }
     } catch (error) {
-      console.error('Error loading filtered stats:', error);
       this.notificationService.error(
         'No se pudieron cargar las estadísticas filtradas',
         'Error cargando estadísticas'
@@ -590,7 +586,6 @@ export class AdminPanelComponent implements OnInit {
         this.schedulerStatus = response.data;
       }
     } catch (error) {
-      console.error('Error loading scheduler status:', error);
       this.notificationService.error(
         'No se pudo cargar el estado del scheduler',
         'Error cargando scheduler'
@@ -608,7 +603,6 @@ export class AdminPanelComponent implements OnInit {
         this.resetStats = response.data;
       }
     } catch (error) {
-      console.error('Error loading reset stats:', error);
       this.notificationService.error(
         'No se pudieron cargar las estadísticas de reseteo',
         'Error cargando estadísticas'
@@ -639,7 +633,6 @@ export class AdminPanelComponent implements OnInit {
                 await this.loadResetStats();
               }
             } catch (error) {
-              console.error('Error executing monthly reset:', error);
               this.notificationService.error(
                 'No se pudo ejecutar el reseteo mensual',
                 'Error en reseteo'
@@ -687,7 +680,6 @@ export class AdminPanelComponent implements OnInit {
                 await this.loadUsers();
               }
             } catch (error) {
-              console.error('Error resetting user limits:', error);
               this.notificationService.error(
                 'No se pudieron resetear los límites del usuario',
                 'Error en reseteo'
@@ -716,8 +708,7 @@ export class AdminPanelComponent implements OnInit {
         }
         this.loadingSubscriptions = false;
       },
-      error: (error) => {
-        console.error('Error loading subscriptions:', error);
+      error: () => {
         this.showError('Error cargando suscripciones');
         this.loadingSubscriptions = false;
       }

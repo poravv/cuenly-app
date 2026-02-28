@@ -95,45 +95,29 @@ export class NavbarComponent implements OnInit, OnDestroy {
 
   async signOut(): Promise<void> {
     try {
-      console.log('🔐 Cerrando sesión...');
-
       // Track logout
       this.firebase.trackLogout();
 
       await this.auth.signOut();
-      console.log('✅ Sesión cerrada correctamente');
 
       // Pequeña pausa para asegurar que la limpieza esté completa
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Opcional: Mostrar mensaje al usuario
-      console.log('💡 La próxima vez que inicies sesión podrás seleccionar una cuenta diferente');
-
     } catch (error) {
-      console.error('❌ Error al cerrar sesión:', error);
+      // Error handled silently
     } finally {
       // Siempre redirigir al login, incluso si hay error
-      console.log('🔄 Redirigiendo al login...');
       this.router.navigateByUrl('/login');
     }
   }
 
   private loadUserProfile(): void {
-    console.log('🔍 NavbarComponent: Cargando perfil de usuario...');
     this.userService.getUserProfile().subscribe({
       next: (profile) => {
-        console.log('✅ NavbarComponent: Perfil recibido:', profile);
-        console.log('🔍 Trial info:', {
-          is_trial: profile.is_trial,
-          trial_expired: profile.trial_expired,
-          trial_days_remaining: profile.trial_days_remaining
-        });
-        console.log('🔍 Profile picture from API:', profile.picture);
-        console.log('🔍 Profile picture from Firebase:', this.user?.photoURL);
         this.userProfile = profile;
       },
       error: (error: any) => {
-        console.error('❌ NavbarComponent: Error cargando perfil:', error);
+        // Error handled silently
       }
     });
   }
@@ -165,17 +149,11 @@ export class NavbarComponent implements OnInit, OnDestroy {
 
   // Método para debugging - puede ser llamado desde la consola del navegador
   public debugUserProfile(): void {
-    console.log('🔍 DEBUG: Estado actual del navbar');
-    console.log('Firebase User:', this.user);
-    console.log('UserProfile:', this.userProfile);
-    console.log('Cargando perfil manualmente...');
     this.loadUserProfile();
   }
 
   // Métodos para debugging de imágenes
   onImageLoad(location: string, event?: any): void {
-    console.log(`✅ Imagen cargada correctamente en: ${location}`);
-
     // Intentar cachear la imagen cuando carga exitosamente
     if (event?.target && !this.avatarCache.hasCachedAvatar()) {
       this.avatarCache.cacheFromImageElement(event.target);
@@ -187,9 +165,6 @@ export class NavbarComponent implements OnInit, OnDestroy {
   }
 
   onImageError(location: string, event: any): void {
-    console.error(`❌ Error cargando imagen en: ${location}`, event);
-    console.error('URL de la imagen que falló:', event.target?.src);
-
     // Marcar la URL como fallida y ocultar la imagen rota
     const failedUrl = event.target?.src;
     if (failedUrl) {

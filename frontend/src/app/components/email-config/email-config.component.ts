@@ -122,12 +122,11 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         localStorage.removeItem('cuenly_oauth_result');
         const result = JSON.parse(stored);
         if (result?.success && result?.data) {
-          console.log('OAuth result recovered from localStorage');
           this.handleGoogleOAuthCallback(result);
         }
       }
     } catch (e) {
-      console.error('Error checking localStorage OAuth:', e);
+      // Error handled silently
     }
   }
 
@@ -168,7 +167,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         }
       },
       error: (err) => {
-        console.error('Error cargando configs', err);
         this.emailConfigs = [];
         this.loading = false;
         this.error = 'No se pudieron cargar las configuraciones';
@@ -272,7 +270,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         // OAuth callback will be handled by handleOAuthMessage
       },
       error: (err) => {
-        console.error('Error initiating OAuth', err);
         this.oauthLoading = false;
         const errorMsg = err?.error?.detail || 'No se pudo iniciar la autorización de Google';
         this.notificationService.error(errorMsg, 'Error OAuth');
@@ -322,7 +319,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         );
       },
       error: (err) => {
-        console.error('Error saving OAuth config', err);
         const errorMsg = err?.error?.detail || 'No se pudo guardar la configuración OAuth';
         this.notificationService.error(errorMsg, 'Error al guardar');
       }
@@ -338,7 +334,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         this.loadConfigs();
       },
       error: (err) => {
-        console.error('Error refreshing OAuth token', err);
         this.notificationService.error('No se pudo renovar el token OAuth', 'Error');
       }
     });
@@ -400,7 +395,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
           login_test: false
         };
         this.testing[testIndex] = false;
-        console.error(err);
       }
     });
   }
@@ -709,7 +703,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
           this.cancelEdit(i);
         },
         error: (err) => {
-          console.error('Error guardando configuración OAuth2', err);
           this.saving[key] = false;
           this.testResults[key] = { success: false, message: 'No se pudo guardar', connection_test: false, login_test: false };
         }
@@ -730,7 +723,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
           this.cancelEdit(i);
         },
         error: (err) => {
-          console.error('Error guardando configuración', err);
           this.saving[key] = false;
           this.testResults[key] = { success: false, message: 'No se pudo guardar', connection_test: false, login_test: false };
         }
@@ -765,7 +757,6 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.apiService.testEmailConfig(cfg).subscribe({
       next: (res) => { this.testResults[key] = res; this.testing[key] = false; },
       error: (err) => {
-        console.error('Test edición falló', err);
         this.testResults[key] = { success: false, message: 'Error al conectar', connection_test: false, login_test: false };
         this.testing[key] = false;
       }

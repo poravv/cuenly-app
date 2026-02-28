@@ -93,10 +93,9 @@ export class InvoicesV2Component implements OnInit {
         this.loading = false;
         this.updateSelectAll(); // Actualizar estado del selectAll después de cargar
       },
-      error: (err) => {
+      error: () => {
         this.error = 'Error cargando cabeceras';
         this.loading = false;
-        console.error(err);
       }
     })
   }
@@ -174,10 +173,9 @@ export class InvoicesV2Component implements OnInit {
           this.itemsCache[id] = res?.items || [];
           this.itemsLoading[id] = false;
         },
-        error: (err) => {
+        error: () => {
           this.itemsError[id] = 'Error obteniendo detalle v2';
           this.itemsLoading[id] = false;
-          console.error('Error obteniendo detalle v2', err);
         }
       })
     }
@@ -297,10 +295,9 @@ export class InvoicesV2Component implements OnInit {
           this.showDeleteConfirm = true;
           this.deleteLoading = false;
         },
-        error: (err) => {
+        error: () => {
           this.error = 'Error obteniendo información de eliminación';
           this.deleteLoading = false;
-          console.error(err);
         }
       });
     } else {
@@ -311,10 +308,9 @@ export class InvoicesV2Component implements OnInit {
           this.showDeleteConfirm = true;
           this.deleteLoading = false;
         },
-        error: (err) => {
+        error: () => {
           this.error = 'Error obteniendo información de eliminación en lote';
           this.deleteLoading = false;
-          console.error(err);
         }
       });
     }
@@ -337,10 +333,9 @@ export class InvoicesV2Component implements OnInit {
           this.loadHeaders(); // Recargar lista
           this.error = null;
         },
-        error: (err) => {
+        error: () => {
           this.error = 'Error eliminando factura';
           this.deleteLoading = false;
-          console.error(err);
         }
       });
     } else {
@@ -354,10 +349,9 @@ export class InvoicesV2Component implements OnInit {
           this.loadHeaders(); // Recargar lista
           this.error = null;
         },
-        error: (err) => {
+        error: () => {
           this.error = 'Error eliminando facturas en lote';
           this.deleteLoading = false;
-          console.error(err);
         }
       });
     }
@@ -398,7 +392,6 @@ export class InvoicesV2Component implements OnInit {
         setTimeout(() => window.URL.revokeObjectURL(url), 60000);
       },
       error: (err) => {
-        console.error('Error descarga:', err);
         if (err.status === 404) {
           this.notificationService.error('Archivo no disponible en almacenamiento', 'Error');
         } else {

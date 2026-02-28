@@ -300,8 +300,8 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     if db_user:
         is_admin = db_user.get('role') == 'admin'
     else:
-        # Fallback para el usuario principal si la DB falla
-        is_admin = user.get('email') == 'andyvercha@gmail.com'
+        # Fallback: verificar contra lista de admins configurada
+        is_admin = user.get('email', '').lower() in settings.ADMIN_EMAILS
     
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
@@ -3647,8 +3647,8 @@ async def admin_update_user_role(
         if not target_user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
-        # No permitir cambiar el rol del admin principal
-        if user_email.lower() == 'andyvercha@gmail.com' and request.role != 'admin':
+        # No permitir cambiar el rol de admins protegidos
+        if user_email.lower() in settings.ADMIN_EMAILS and request.role != 'admin':
             raise HTTPException(status_code=400, detail="No se puede cambiar el rol del administrador principal")
         
         success = user_repo.update_user_role(user_email, request.role)
@@ -3680,8 +3680,8 @@ async def admin_update_user_status(
         if not target_user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
-        # No permitir suspender al admin principal
-        if user_email.lower() == 'andyvercha@gmail.com' and request.status == 'suspended':
+        # No permitir suspender admins protegidos
+        if user_email.lower() in settings.ADMIN_EMAILS and request.status == 'suspended':
             raise HTTPException(status_code=400, detail="No se puede suspender al administrador principal")
         
         success = user_repo.update_user_status(user_email, request.status)

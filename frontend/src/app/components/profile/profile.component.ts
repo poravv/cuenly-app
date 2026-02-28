@@ -115,7 +115,6 @@ export class ProfileComponent implements OnInit, OnDestroy {
                 }
             },
             error: (err) => {
-                console.error('Error al guardar perfil:', err);
                 this.notificationService.error(err.error?.detail || 'Error al actualizar el perfil');
                 this.saving = false;
             }

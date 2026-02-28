@@ -59,7 +59,6 @@ export class TrialBannerComponent implements OnInit {
         this.userService.userProfile$.subscribe(p => {
           if (p) {
             this.userProfile = p;
-            console.log('🔄 TrialBanner: Perfil actualizado', p);
           }
         });
       } else {
@@ -71,11 +70,11 @@ export class TrialBannerComponent implements OnInit {
     setInterval(() => {
       if (this.userProfile?.is_trial) {
         this.userService.refreshUserProfile().subscribe({
-          next: (profile) => {
-            console.log('🔄 TrialBanner: Refresh periódico', profile);
+          next: () => {
+            // Refresh completed
           },
-          error: (error) => {
-            console.warn('⚠️ Error en refresh periódico:', error);
+          error: () => {
+            // Error handled silently
           }
         });
       }
@@ -87,8 +86,8 @@ export class TrialBannerComponent implements OnInit {
       next: (profile) => {
         this.userProfile = profile;
       },
-      error: (error) => {
-        console.error('Error cargando perfil de usuario:', error);
+      error: () => {
+        // Error handled silently
       }
     });
   }

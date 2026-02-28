@@ -32,8 +32,7 @@ export class TemplatePresetSelectorComponent implements OnInit {
         this.recommendations = response.recommendations || {};
         this.loading = false;
       },
-      error: (error: any) => {
-        console.error('Error cargando presets:', error);
+      error: () => {
         this.loading = false;
       }
     });
@@ -61,8 +60,7 @@ export class TemplatePresetSelectorComponent implements OnInit {
           this.router.navigate(['/templates-export/edit', response.template_id]);
         }
       },
-      error: (error: any) => {
-        console.error('Error creando template:', error);
+      error: () => {
         this.creating = false;
       }
     });

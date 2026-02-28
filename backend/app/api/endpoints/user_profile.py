@@ -9,6 +9,7 @@ from datetime import datetime
 import logging
 
 from app.api.deps import _get_current_user, _get_current_user_with_trial_info
+from app.config.settings import settings
 from app.repositories.user_repository import UserRepository
 from app.utils.validators import SecurityValidators
 
@@ -73,8 +74,8 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     if db_user:
         is_admin = db_user.get('role') == 'admin'
     else:
-        # Fallback para el usuario principal si la DB falla
-        is_admin = user.get('email') == 'andyvercha@gmail.com'
+        # Fallback: verificar contra lista de admins configurada
+        is_admin = user.get('email', '').lower() in settings.ADMIN_EMAILS
     
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {

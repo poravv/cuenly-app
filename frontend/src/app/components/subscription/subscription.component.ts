@@ -140,7 +140,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.loading = false;
         },
         error: (error: any) => {
-          console.error('Error loading subscription:', error);
           this.notificationService.error('Error al cargar la suscripción');
           this.loading = false;
         }
@@ -154,7 +153,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.subscriptionHistory = response.success ? response.data : [];
         },
         error: (error: any) => {
-          console.error('Error loading subscription history:', error);
+          // Error handled silently
         }
       });
 
@@ -179,7 +178,7 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
             }));
         },
         error: (error: any) => {
-          console.error('Error loading plans:', error);
+          // Error handled silently
         }
       });
   }
@@ -240,7 +239,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
    */
   startCardRegistration(planCode: string): void {
     this.loadingIframe = true;
-    console.log('🎬 Iniciando catastro de tarjeta para plan:', planCode);
 
     // PASO 1: Verificar perfil completo
     this.userService.checkProfileCompleteness()
@@ -248,7 +246,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (status) => {
           if (!status.is_complete) {
-            console.warn('⚠️ Perfil incompleto:', status.missing_fields);
             this.missingProfileFields = status.missing_fields;
             this.showIncompleteProfileModal = true;
             this.loadingIframe = false;
@@ -259,7 +256,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.proceedToSubscribe(planCode);
         },
         error: (err) => {
-          console.error('❌ Error verificando perfil:', err);
           this.notificationService.error('Error verificando estado del perfil');
           this.loadingIframe = false;
         }
@@ -273,7 +269,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
         next: (response) => {
           // NUEVO: Verificar si la suscripción se activó directamente (tarjeta existente)
           if (response.subscription_active) {
-            console.log('✅ Suscripción activada directamente con tarjeta existente');
             this.notificationService.success('¡Suscripción activada exitosamente!');
             this.loadingIframe = false;
             this.loadSubscriptionData(); // Recargar datos
@@ -283,13 +278,11 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           }
 
           // Si no se activó directamente, mostrar formulario de tarjeta
-          console.log('✅ Form ID recibido:', response.form_id);
           this.bancardFormId = response.form_id ?? '';
           this.showBancardIframeModal = true; // Mostrar modal con iframe
           this.loadingIframe = false;
         },
         error: (err) => {
-          console.error('❌ Error iniciando suscripción:', err);
           this.notificationService.error(
             err.error?.detail || 'Error iniciando el proceso de suscripción'
           );
@@ -302,7 +295,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
    * PASO 5: Confirmar tarjeta (llamado cuando el usuario completa el iframe)
    */
   onBancardIframeComplete(): void {
-    console.log('✅ Usuario completó formulario de Bancard');
     this.showBancardIframeModal = false;
     this.confirmingCard = true;
 
@@ -312,7 +304,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response) => {
-          console.log('✅ Suscripción confirmada:', response);
           this.notificationService.success('¡Suscripción activada exitosamente!');
           this.confirmingCard = false;
           this.loadSubscriptionData(); // Recargar datos
@@ -320,7 +311,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.userService.refreshUserProfile().subscribe(); // Refrescar perfil
         },
         error: (err) => {
-          console.error('❌ Error confirmando tarjeta:', err);
           this.notificationService.error(
             err.error?.detail || 'Error confirmando la tarjeta. Por favor, contacta a soporte.'
           );
@@ -370,7 +360,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   // DEPRECATED: Ya no se usa el formulario de datos del comprador
   submitPlanChange(): void {
     // Este método ya no se usa - el flujo ahora va directo al iframe
-    console.warn('submitPlanChange() está deprecated - usar startCardRegistration()');
   }
 
   get selectedPlan(): SubscriptionPlan | undefined {
@@ -551,7 +540,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
           this.userService.refreshUserProfile().subscribe();
         },
         error: (error: any) => {
-          console.error('Error cancelling subscription:', error);
           this.notificationService.error('No se pudo cancelar la suscripción');
           this.cancelling = false;
         }
