@@ -63,6 +63,29 @@ OPENAI_TOKEN_USAGE = Counter(
     ['model', 'token_type']  # token_type: prompt, completion
 )
 
+# Métricas de Pipeline de Procesamiento
+EMAILS_PROCESSED_TOTAL = Counter(
+    'cuenly_emails_processed_total',
+    'Total emails processed',
+    ['method', 'status']  # method: xml_native, openai_vision | status: success, failed
+)
+
+OPENAI_COST_ESTIMATE = Gauge(
+    'cuenly_openai_estimated_cost_usd',
+    'Estimated OpenAI cost in USD'
+)
+
+QUEUE_DEPTH = Gauge(
+    'cuenly_rq_queue_depth',
+    'RQ queue depth',
+    ['queue_name']  # queue_name: high, default, low
+)
+
+AI_LIMIT_HITS = Counter(
+    'cuenly_ai_limit_hits_total',
+    'Times AI limit was reached'
+)
+
 # Métricas de Email Processing
 EMAIL_PROCESSING_DURATION = Histogram(
     'cuenly_email_processing_duration_seconds',
@@ -307,13 +330,65 @@ class ExtendedMetricsCollector:
             BACKGROUND_JOBS.labels(job_type=job_type).set(count)
         except Exception as e:
             self.logger.error(f"Error updating background jobs: {e}")
-    
+
     def set_system_info(self, info_dict: Dict[str, str]):
         """Establece información del sistema"""
         try:
             SYSTEM_INFO.info(info_dict)
         except Exception as e:
             self.logger.error(f"Error setting system info: {e}")
+
+    def record_email_processed(self, method: str, status: str, user_email: str = ""):
+        """Registra procesamiento completado de un correo"""
+        try:
+            EMAILS_PROCESSED_TOTAL.labels(method=method, status=status).inc()
+
+            self.logger.debug(f"Email processed: {method}/{status}", extra={
+                'user_email': user_email,
+                'method': method,
+                'status': status,
+                'metric_type': 'email_processed'
+            })
+        except Exception as e:
+            self.logger.error(f"Error recording email processed: {e}")
+
+    def update_openai_cost_estimate(self, cost_usd: float):
+        """Actualiza estimación de costo de OpenAI"""
+        try:
+            OPENAI_COST_ESTIMATE.inc(cost_usd)
+
+            self.logger.debug(f"OpenAI cost incremented by ${cost_usd}", extra={
+                'cost_usd': cost_usd,
+                'metric_type': 'openai_cost_estimate'
+            })
+        except Exception as e:
+            self.logger.error(f"Error updating OpenAI cost estimate: {e}")
+
+    def update_queue_depth(self, queue_name: str, depth: int):
+        """Actualiza profundidad de la cola RQ"""
+        try:
+            QUEUE_DEPTH.labels(queue_name=queue_name).set(depth)
+
+            self.logger.debug(f"Queue depth updated: {queue_name}={depth}", extra={
+                'queue_name': queue_name,
+                'depth': depth,
+                'metric_type': 'queue_depth'
+            })
+        except Exception as e:
+            self.logger.error(f"Error updating queue depth: {e}")
+
+    def record_ai_limit_hit(self, user_email: str = ""):
+        """Registra cuando se alcanza límite de IA"""
+        try:
+            AI_LIMIT_HITS.inc()
+
+            self.logger.warn(f"AI limit hit for user", extra={
+                'user_email': user_email,
+                'metric_type': 'ai_limit_hit',
+                'business_event': True
+            })
+        except Exception as e:
+            self.logger.error(f"Error recording AI limit hit: {e}")
 
 # Instancia global
 extended_metrics = ExtendedMetricsCollector()

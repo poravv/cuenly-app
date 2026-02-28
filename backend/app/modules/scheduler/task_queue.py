@@ -7,6 +7,7 @@ import uuid
 from typing import Callable, Dict, Optional, Any
 
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
+from app.utils.extended_metrics import extended_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,8 @@ class TaskQueue:
                 '_func': func,
             }
             self._queue.append(job_id)
+            # Actualizar métrica de profundidad de cola
+            extended_metrics.update_queue_depth('task_queue_local', len(self._queue))
             self._cv.notify()
         return job_id
 
@@ -74,6 +77,8 @@ class TaskQueue:
                 job['status'] = 'running'
                 job['started_at'] = time.time()
                 func = job.get('_func')
+                # Actualizar métrica de profundidad de cola tras desencolar
+                extended_metrics.update_queue_depth('task_queue_local', len(self._queue))
             # run outside lock but serialized with PROCESSING_LOCK
             try:
                 logger.debug(f"[TaskQueue] Intentando adquirir PROCESSING_LOCK para job {job_id}")

@@ -1,0 +1,71 @@
+# MongoDB Backup CronJob — Ejecuta diariamente a las 3:00 AM (Paraguay)
+# Uso: kubectl apply -f mongodb-backup-cronjob.yaml
+# Prerequisito: crear PVC 'mongodb-backup-pvc' y secret 'cuenly-secrets' con key MONGODB_URL
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongodb-backup
+  namespace: cuenly
+spec:
+  schedule: "0 7 * * *"  # 07:00 UTC = 03:00 AM Paraguay (UTC-4)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: mongodb-backup
+            image: mongo:7
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              BACKUP_DIR="/backups"
+              RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
+              TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+              BACKUP_PATH="${BACKUP_DIR}/mongodb_${TIMESTAMP}"
+
+              echo "[$(date)] Iniciando backup de MongoDB..."
+
+              if [ -z "${MONGODB_URL:-}" ]; then
+                echo "[ERROR] MONGODB_URL no configurado"
+                exit 1
+              fi
+
+              mkdir -p "${BACKUP_DIR}"
+              mongodump --uri="${MONGODB_URL}" --out="${BACKUP_PATH}" --gzip
+
+              SIZE=$(du -sh "${BACKUP_PATH}" | cut -f1)
+              echo "[OK] Backup completado: ${BACKUP_PATH} (${SIZE})"
+
+              # Limpiar backups antiguos
+              find "${BACKUP_DIR}" -name "mongodb_*" -type d -mtime +${RETENTION_DAYS} -exec rm -rf {} + 2>/dev/null || true
+              REMAINING=$(ls -d "${BACKUP_DIR}"/mongodb_* 2>/dev/null | wc -l)
+              echo "[INFO] Backups disponibles: ${REMAINING}"
+              echo "[$(date)] Backup finalizado exitosamente."
+            env:
+            - name: MONGODB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cuenly-secrets
+                  key: MONGODB_URL
+            - name: BACKUP_RETENTION_DAYS
+              value: "7"
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backups
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+          restartPolicy: OnFailure
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: mongodb-backup-pvc

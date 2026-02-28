@@ -11,6 +11,7 @@ from .prompts import build_text_prompt, build_image_prompt, build_xml_prompt, bu
 from .json_utils import extract_and_normalize_json
 from .cdc import validate_and_enhance_with_cdc
 from .cache import OpenAICache
+from app.utils.extended_metrics import extended_metrics
 import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ class OpenAIProcessor:
                     ai_check = self._check_ai_quota(owner_email)
                     if not ai_check['can_use']:
                         logger.warning(f"🛑 AI limit reached for {owner_email}: {ai_check['message']}. Aborting extraction.")
+                        extended_metrics.record_ai_limit_hit(owner_email)
                         return None
                 except Exception as e:
                     logger.warning(f"⚠️ Error verifying AI limit for {owner_email}: {e}")
@@ -245,6 +247,7 @@ class OpenAIProcessor:
                     ai_check = self._check_ai_quota(owner_email)
                     if not ai_check['can_use']:
                         logger.warning(f"🛑 AI limit reached for {owner_email} during XML fallback: {ai_check['message']}. Aborting AI fallback.")
+                        extended_metrics.record_ai_limit_hit(owner_email)
                         if 'native' in locals() and native:
                             logger.info("Returning partial native result instead of AI fallback due to limit.")
                             invoice = _coerce_invoice_model(native, email_metadata)
@@ -395,6 +398,8 @@ class OpenAIProcessor:
             else:
                 invoice = _coerce_invoice_model(data, email_metadata)
             invoice = validate_and_enhance_with_cdc(invoice)
+            # Estimar costo de OpenAI Vision (~$0.01 por imagen con GPT-4o vision)
+            extended_metrics.update_openai_cost_estimate(0.01)
             return invoice
         except Exception as e:
             logger.warning("Fallo procesando JSON de imagen (v2/v1): %s", e)

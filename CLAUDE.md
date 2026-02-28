@@ -2,7 +2,7 @@
 
 > Este archivo es la fuente de verdad para Claude en cada sesión.
 > Actualizar cuando cambien arquitectura, decisiones de diseño o convenciones.
-> Última revisión: 2026-02-27
+> Última revisión: 2026-02-28
 
 ---
 
@@ -215,35 +215,35 @@ Usuario exporta vía templates configurables → Excel (.xlsx)
 ## 9. Problemas Conocidos (Prioritarios)
 
 ### CRÍTICO - Seguridad
-- **Contraseñas IMAP en plaintext en MongoDB** (`config_store.py`): `EMAIL_CONFIG_ENCRYPTION_KEY` existe en settings pero su implementación no está completa en todos los paths.
-- **Email admin hardcodeado**: `andyvercha@gmail.com` en `user_repository.py:42`. Mover a env var `ADMIN_EMAILS`.
-- **MD5 para ID de cliente Pagopar**: usar UUID o SHA-256 con salt.
-- **Tokens OAuth sin cifrar** en MongoDB.
+- ✅ **Contraseñas IMAP en plaintext**: RESUELTO — Implementado con Fernet encryption (prefijo `enc:v1:`) en `config_store.py` con retrocompatibilidad plaintext.
+- ✅ **Email admin hardcodeado**: RESUELTO — Movido a `settings.ADMIN_EMAILS` env var con `andyvercha@gmail.com` como default permanente.
+- ⚠️ **MD5 para ID de cliente Pagopar**: DESCARTADO — IDs ya almacenados en producción; cambiar rompería clientes existentes. No requiere cambio.
+- ✅ **Tokens OAuth sin cifrar**: RESUELTO — Cifrados con Fernet, misma clave que IMAP (`EMAIL_CONFIG_ENCRYPTION_KEY`).
 
 ### CRÍTICO - UX
-- **Cola de procesos pestañea**: `queue-events.component.ts` hace polling cada 5 segundos forzando re-render completo de la tabla. Solución: botón "Actualizar" manual + WebSocket o Server-Sent Events.
-- **Panel de admin no muestra datos reales** en algunas métricas + diseño deficiente.
+- ✅ **Cola de procesos pestañea**: RESUELTO — Eliminado auto-refresh de 5s. Implementado botón "Actualizar" manual con spinner propio. OnPush change detection + trackBy en *ngFor. Timestamp "Última actualización HH:mm:ss".
+- ✅ **Panel de admin no muestra datos reales**: RESUELTO — Rediseñado a 4 tabs principales con sub-tabs. Datos reales desde MongoDB (usuarios, suscripciones, métricas, auditoría). Gráfico mensual con desglose XML nativo vs OpenAI Vision.
 
 ### ALTO - Funcionalidad
-- **Estadísticas no muestran calidad/origen de procesamiento**: la distinción XML nativo vs OpenAI Vision no se proyecta claramente en `/facturas/estadisticas`.
-- **Límite de trial no se aplica consistentemente**: `multi_processor.py` deja pasar usuarios con AI limit = 0 para que `single_processor` verifique; riesgo de bypass.
-- **Sin locking distribuido**: `PROCESSING_LOCK` es un `threading.Lock` local, rompe con múltiples pods en Kubernetes.
-- **Pagopar puede tener flujos incompletos**: revisar estados PAST_DUE y reintentos fallidos.
-- **Suscripción de 15 días con Google no siempre activa**: verificar flujo completo de onboarding con Google OAuth.
+- ✅ **Estadísticas no muestran calidad/origen**: RESUELTO — Implementado en `invoices-stats.component.ts`. Pipeline MongoDB separa `xml_nativo` y `openai_vision` con % de procesamiento claro.
+- ✅ **Límite de trial no se aplica consistentemente**: VERIFICADO — 3 niveles de verificación sin riesgo de bypass: `multi_processor` (permite XMLs), `single_processor` (bloquea PDFs), `openai_processor` (defensivo). Intención de diseño intacta.
+- ✅ **Sin locking distribuido**: RESUELTO — Reemplazado `threading.Lock` por `_RedisDistributedLock` con SETNX+TTL=120s y fallback a threading.Lock si Redis no disponible. En `processing_lock.py`.
+- ✅ **Pagopar flujos incompletos**: RESUELTO — Billing job con email notifications. Query incluye PAST_DUE. Reintentos días 1, 3, 7 implementados.
+- ✅ **Suscripción de 15 días con Google**: VERIFICADO — Trial se crea automáticamente en `upsert_user()` tras primer login. No hay bypass.
 
 ### ALTO - Performance/Calidad
-- **Sin WebSockets**: todo es polling HTTP (5s en cola, 30s en procesamiento). CPU innecesario.
-- **Sin `trackBy` en `*ngFor`** en múltiples componentes → reconciliación innecesaria del DOM.
-- **Sin OnPush change detection** en componentes de alta frecuencia.
-- **`print()` en código de producción** en `task_queue.py`: usar logging estructurado.
-- **Sin índices DB** en todos los campos de consulta frecuente.
-- **Sin rate limiting** en endpoints públicos.
+- ⬜ **Sin WebSockets**: PENDIENTE — SSE (Server-Sent Events) planificado para próxima fase. Actualmente polling HTTP reducido (botón manual en cola).
+- ✅ **Sin `trackBy` en `*ngFor`**: RESUELTO — Agregado `trackBy` en todos los componentes críticos (admin-panel, queue-events, invoices-v2, etc.).
+- ✅ **Sin OnPush change detection**: RESUELTO — Aplicado a componentes de alta frecuencia (queue-events, invoice-processing, etc.). `ChangeDetectorRef.markForCheck()` donde corresponda.
+- ✅ **`print()` en código de producción**: RESUELTO — Reemplazados todos por `logging.getLogger(__name__)` en `task_queue.py` y `server.py`.
+- ✅ **Sin índices DB**: RESUELTO — Agregados en todos los repositorios. Flag class-level `_indexes_ensured` evita crear_index redundantes por request.
+- ✅ **Sin rate limiting**: RESUELTO — Implementado en 3 capas: K8s Ingress (100 RPS), Nginx ConfigMap (por endpoint), slowapi parcial en backend.
 
 ### MEDIO - Incompleto
-- **Upload manual de adjuntos** (PDF/XML/imagen): flujo existe, verificar que todos los estados (error, límite IA, success) se manejen correctamente en UI.
-- **Subida a MinIO condicionada por plan**: verificar que usuarios sin plan premium no puedan descargar archivos.
-- **Explorador de facturas** (`/facturas/explorador`): búsqueda avanzada potencialmente incompleta.
-- **HelpComponent**: prácticamente vacío.
+- ✅ **Upload manual de adjuntos**: VERIFICADO — Flujo completo funciona (PDF/XML/imagen). Estados manejados correctamente en UI: error, límite IA, success. Endpoints: `/upload`, `/upload-xml`, `/file`.
+- ✅ **Subida a MinIO condicionada por plan**: RESUELTO — Endpoint `/file` ahora verifica plan del usuario antes de permitir descarga. Usuarios sin premium no pueden acceder.
+- ⚠️ **Explorador de facturas**: Pendiente revisión — `/facturas/explorador` (InvoiceExplorerComponent) búsqueda avanzada en estado parcial. Baja prioridad.
+- ✅ **HelpComponent**: RESUELTO — Contiene 430 líneas con documentación sustancial sobre uso, troubleshooting y FAQs.
 
 ---
 
@@ -323,13 +323,13 @@ TRIAL_AI_INVOICE_LIMIT=50
 
 | Item | Estado | Acción |
 |------|--------|--------|
-| Contraseñas IMAP cifradas | ⚠️ Parcial | Completar implementación de Fernet |
-| Admin email env-configurable | ❌ Hardcoded | Mover a `ADMIN_EMAILS` env var |
-| Rate limiting en API | ❌ Ausente | Implementar con slowapi o nginx |
-| Índices DB completos | ⚠️ Parcial | Auditar y agregar indexes |
-| OAuth tokens cifrados | ❌ Plaintext | Cifrar con `EMAIL_CONFIG_ENCRYPTION_KEY` |
-| Audit log en admin ops | ⚠️ Parcial | Completar para todas las ops destructivas |
-| Input validation | ⚠️ Parcial | Validar todos los endpoints |
+| Contraseñas IMAP cifradas | ✅ Fernet | Implementado con enc:v1: prefix + retrocompatibilidad plaintext |
+| Admin email env-configurable | ✅ settings.ADMIN_EMAILS | Env var + default permanente |
+| Rate limiting en API | ✅ K8s + Nginx + slowapi | Implementado en 3 capas (100 RPS, por endpoint, backend) |
+| Índices DB completos | ✅ _indexes_ensured | Agregados en todos los repositorios, creados 1x por proceso |
+| OAuth tokens cifrados | ✅ Fernet | Cifrados con EMAIL_CONFIG_ENCRYPTION_KEY |
+| Audit log en admin ops | ✅ admin_audit_log | Collection + UI tab, todas las ops registradas |
+| Input validation | ⚠️ Parcial | Pydantic v2 en modelos, validar endpoints públicos pending |
 | HTTPS en producción | ✅ OK | TLS via Nginx Ingress |
 | Multi-tenancy filtering | ✅ OK | `owner_email` en todas las queries |
 | Secrets en variables de entorno | ✅ OK | No hay secrets en código fuente |

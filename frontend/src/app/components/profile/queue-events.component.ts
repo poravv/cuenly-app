@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
 import { UserService } from '../../services/user.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-queue-events',
@@ -7,12 +8,16 @@ import { UserService } from '../../services/user.service';
   styleUrls: [],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class QueueEventsComponent implements OnInit {
+export class QueueEventsComponent implements OnInit, OnDestroy {
   events: any[] = [];
   loading: boolean = false;
   error: string | null = null;
   retryingId: string | null = null;
   lastRefresh: Date | null = null;
+
+  // Estado de la conexión SSE
+  sseConnected: boolean = false;
+  sseError: boolean = false;
 
   // Pagination and filtering
   currentPage: number = 1;
@@ -20,6 +25,8 @@ export class QueueEventsComponent implements OnInit {
   totalItems: number = 0;
   totalPages: number = 0;
   selectedStatus: string = 'all';
+
+  private eventSource: EventSource | null = null;
 
   statusOptions = [
     { value: 'all', label: 'Todos' },
@@ -34,12 +41,104 @@ export class QueueEventsComponent implements OnInit {
 
   constructor(
     private userService: UserService,
+    private authService: AuthService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
+    // Carga inicial vía HTTP para respuesta inmediata
     this.loadEvents();
-    // Sin auto-refresh: el usuario controla cuándo actualizar con el botón.
+    // Luego conectar SSE para actualizaciones en tiempo real
+    this.connectSSE();
+  }
+
+  ngOnDestroy(): void {
+    this.disconnectSSE();
+  }
+
+  /** Conecta el EventSource SSE con el token JWT como query param. */
+  private connectSSE(): void {
+    this.disconnectSSE();
+
+    this.authService.getIdToken().then(token => {
+      if (!token) {
+        // Sin token no podemos conectar SSE; el botón manual sirve como fallback
+        return;
+      }
+
+      const params = new URLSearchParams({
+        token: token,
+        status: this.selectedStatus,
+        page_size: String(this.pageSize)
+      });
+
+      const url = `/api/user/queue-events/stream?${params.toString()}`;
+      this.eventSource = new EventSource(url);
+
+      this.eventSource.onopen = () => {
+        this.sseConnected = true;
+        this.sseError = false;
+        this.cdr.markForCheck();
+      };
+
+      this.eventSource.addEventListener('queue-update', (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.success) {
+            // Solo actualizar página 1 desde SSE; otras páginas requieren carga manual
+            if (this.currentPage === 1) {
+              this.events = data.events || [];
+              if (data.pagination) {
+                this.totalItems = data.pagination.total;
+                this.totalPages = data.pagination.pages;
+              }
+              this.lastRefresh = new Date();
+            }
+            this.sseConnected = true;
+            this.sseError = false;
+            this.cdr.markForCheck();
+          }
+        } catch (e) {
+          // Ignorar errores de parseo individuales
+        }
+      });
+
+      this.eventSource.addEventListener('heartbeat', () => {
+        this.sseConnected = true;
+        this.sseError = false;
+        this.cdr.markForCheck();
+      });
+
+      this.eventSource.addEventListener('error', (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.error) {
+            this.error = `Error SSE: ${data.error}`;
+            this.cdr.markForCheck();
+          }
+        } catch (e) {
+          // Ignorar si no es JSON
+        }
+      });
+
+      this.eventSource.onerror = () => {
+        // EventSource auto-reconecta nativamente; solo actualizamos el indicador
+        this.sseConnected = false;
+        this.sseError = true;
+        this.cdr.markForCheck();
+      };
+    }).catch(() => {
+      // No bloquear la UI si no se puede obtener el token
+    });
+  }
+
+  /** Cierra la conexión SSE activa. */
+  private disconnectSSE(): void {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+      this.sseConnected = false;
+    }
   }
 
   loadEvents(): void {
@@ -82,6 +181,8 @@ export class QueueEventsComponent implements OnInit {
     this.selectedStatus = status;
     this.currentPage = 1;
     this.loadEvents();
+    // Reconectar SSE con el nuevo filtro de estado
+    this.connectSSE();
   }
 
   refresh(): void {

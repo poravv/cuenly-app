@@ -394,7 +394,7 @@ db.user_subscriptions.createIndex({ next_billing_date: 1, status: 1 })  // Para 
 
 ---
 
-### 4.4 🟡 Server-Sent Events (SSE) para cola en tiempo real
+### ✅ 4.4 Server-Sent Events (SSE) para cola en tiempo real
 
 **Objetivo:** Reemplazar el polling de 5s en la cola de procesos con actualizaciones push del servidor.
 
@@ -428,7 +428,7 @@ source.onmessage = (event) => {
 
 ## FASE 5 — Infraestructura y Observabilidad
 
-### 5.1 🟢 Completar Prometheus metrics
+### ✅ 5.1 Completar Prometheus metrics
 
 **Métricas faltantes importantes:**
 ```python
@@ -441,7 +441,7 @@ AI_LIMIT_HITS = Counter('ai_limit_hits_total', 'Veces que se alcanzó límite IA
 
 ---
 
-### 5.2 🟢 Backup y recuperación de MongoDB
+### ✅ 5.2 Backup y recuperación de MongoDB
 
 **Problema documentado:** No hay procedimientos de backup/restore documentados.
 
@@ -458,7 +458,7 @@ mongodump --uri="$MONGODB_URL" --out="/backups/mongodb_$DATE"
 
 ---
 
-### 5.3 🟢 Documentar proceso de disaster recovery
+### ✅ 5.3 Documentar proceso de disaster recovery
 
 - Qué hacer si MongoDB se corrompe
 - Cómo restaurar desde backup de MinIO
@@ -490,10 +490,10 @@ mongodump --uri="$MONGODB_URL" --out="/backups/mongodb_$DATE"
 | 17 | Upload manual: verificar flujos | Funcionalidad core | Bajo | 4 | ✅ Verificado |
 | 18 | Descarga MinIO por plan | Funcionalidad negocio | Bajo | 4 | ✅ Fix aplicado |
 | 19 | Página de Ayuda | UX onboarding | Bajo | 4 | ✅ Ya tenía contenido |
-| 20 | SSE para cola en tiempo real | UX avanzado | Alto | 4 | ⬜ PENDIENTE |
-| 21 | Métricas Prometheus completas | Observabilidad | Bajo | 5 | ⬜ PENDIENTE |
-| 22 | Backup MongoDB automatizado | Resiliencia | Bajo | 5 | ⬜ PENDIENTE |
-| 23 | Documentar disaster recovery | Operaciones | Bajo | 5 | ⬜ PENDIENTE |
+| 20 | SSE para cola en tiempo real | UX avanzado | Alto | 4 | ✅ |
+| 21 | Métricas Prometheus completas | Observabilidad | Bajo | 5 | ✅ |
+| 22 | Backup MongoDB automatizado | Resiliencia | Bajo | 5 | ✅ |
+| 23 | Documentar disaster recovery | Operaciones | Bajo | 5 | ✅ |
 
 ---
 
