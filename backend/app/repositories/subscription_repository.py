@@ -134,19 +134,20 @@ class SubscriptionRepository:
     # =====================================
 
     def get_subscriptions_due_for_billing(
-        self, 
+        self,
         target_date: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
         Obtener suscripciones que deben cobrarse.
-        Solo retorna suscripciones ACTIVE con next_billing_date <= target_date.
+        Incluye suscripciones ACTIVE y PAST_DUE cuyo next_billing_date ya venció.
+        PAST_DUE son reintentos programados tras un fallo de pago anterior.
         """
         try:
             if target_date is None:
                 target_date = datetime.utcnow()
-            
+
             query = {
-                "status": "active",  # lowercase per MongoDB schema
+                "status": {"$in": ["active", "PAST_DUE"]},
                 "next_billing_date": {"$lte": target_date, "$ne": None}
             }
             
@@ -162,20 +163,21 @@ class SubscriptionRepository:
             return []
 
     def update_billing_date(
-        self, 
-        sub_id: str, 
+        self,
+        sub_id: str,
         next_billing_date: datetime
     ) -> bool:
-        """Actualizar fecha de próximo cobro."""
+        """Actualizar fecha de próximo cobro y restaurar status a active."""
         try:
             result = self.subscriptions_collection.update_one(
                 {"_id": ObjectId(sub_id)},
                 {
                     "$set": {
+                        "status": "active",  # Restaurar a activo tras cobro exitoso
                         "next_billing_date": next_billing_date,
                         "last_billing_date": datetime.utcnow(),
                         "updated_at": datetime.utcnow(),
-                        "retry_count": 0  # Resetear contador de reintentos
+                        "retry_count": 0
                     }
                 }
             )

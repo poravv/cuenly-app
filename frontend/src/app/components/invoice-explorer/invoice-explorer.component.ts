@@ -103,7 +103,7 @@ export class InvoiceExplorerComponent implements OnInit {
 
       if (response?.success) {
         this.availableMonths = response.months;
-        console.log('📅 Meses disponibles cargados:', this.availableMonths.length);
+        // Meses cargados
       } else {
         this.error = 'No se pudieron cargar los meses disponibles';
       }
@@ -123,6 +123,7 @@ export class InvoiceExplorerComponent implements OnInit {
     this.v2Headers = [];
     this.v2Items = [];
     this.v2Header = null;
+    this.v2Page = 1;
     this.expandedInvoiceId = null;
 
     if (!yearMonth) return;
@@ -136,7 +137,7 @@ export class InvoiceExplorerComponent implements OnInit {
 
       if (response?.success) {
         this.monthStatistics = response.statistics;
-        console.log('📊 Estadísticas del mes cargadas:', this.monthStatistics);
+        // Estadísticas cargadas
       } else {
         this.error = 'No se pudieron cargar las estadísticas del mes';
       }
@@ -246,6 +247,23 @@ export class InvoiceExplorerComponent implements OnInit {
       const value = header[key];
       return value !== null && value !== undefined && String(value).trim() !== '';
     });
+  }
+
+  get v2TotalPages(): number {
+    return Math.ceil(this.v2Total / this.v2PageSize) || 1;
+  }
+
+  goToPage(page: number): void {
+    if (page < 1 || page > this.v2TotalPages || page === this.v2Page) return;
+    this.v2Page = page;
+    this.expandedInvoiceId = null;
+    this.v2Header = null;
+    this.v2Items = [];
+    this.loadV2Headers();
+  }
+
+  trackByHeaderId(index: number, header: any): string {
+    return header._id || header.id || index;
   }
 
   refreshData(): void {

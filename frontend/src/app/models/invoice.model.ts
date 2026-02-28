@@ -16,6 +16,7 @@ export interface ProcessResult {
   invoice_count?: number;
   queued_count?: number;
   invoices?: Invoice[];
+  reason_code?: string;  // 'ai_limit_reached' | 'ai_unavailable' | 'extraction_failed' etc.
 }
 
 export interface SystemStatus {

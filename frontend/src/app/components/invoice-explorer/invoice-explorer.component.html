@@ -278,7 +278,7 @@
                 </tr>
               </thead>
               <tbody>
-                <ng-container *ngFor="let h of v2Headers">
+                <ng-container *ngFor="let h of v2Headers; trackBy: trackByHeaderId">
                   <!-- Main Row -->
                   <tr [class.table-active]="expandedInvoiceId === h.id">
                     <td>{{ formatDate(h.fecha_emision) }}</td>
@@ -438,7 +438,25 @@
               </tbody>
             </table>
           </div>
-          <!-- Removed detached details section -->
+          <!-- Paginación -->
+          <div class="d-flex justify-content-between align-items-center mt-3" *ngIf="v2Total > v2PageSize">
+            <small class="text-muted">
+              Mostrando {{ ((v2Page - 1) * v2PageSize) + 1 }}-{{ v2Page * v2PageSize > v2Total ? v2Total : v2Page * v2PageSize }} de {{ v2Total }}
+            </small>
+            <nav>
+              <ul class="pagination pagination-sm mb-0">
+                <li class="page-item" [class.disabled]="v2Page <= 1">
+                  <a class="page-link" (click)="goToPage(v2Page - 1)">Anterior</a>
+                </li>
+                <li class="page-item active">
+                  <span class="page-link">{{ v2Page }} / {{ v2TotalPages }}</span>
+                </li>
+                <li class="page-item" [class.disabled]="v2Page >= v2TotalPages">
+                  <a class="page-link" (click)="goToPage(v2Page + 1)">Siguiente</a>
+                </li>
+              </ul>
+            </nav>
+          </div>
         </div>
       </div>
     </div>

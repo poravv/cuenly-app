@@ -14,13 +14,14 @@ import { FileTransferService } from '../../services/file-transfer.service';
 
 interface UploadFileItem {
   file: File;
-  status: 'pending' | 'validating' | 'uploading' | 'success' | 'error' | 'skipped' | 'invalid_content';
+  status: 'pending' | 'validating' | 'uploading' | 'success' | 'error' | 'skipped' | 'invalid_content' | 'ai_limit';
   progress: number;
   message?: string;
   invoiceId?: string;
   isImage?: boolean;
-  jobId?: string; // Re-adding jobId for PDF tracking
-  result?: any; // Re-adding result for PDF tracking
+  jobId?: string;
+  result?: any;
+  reasonCode?: string;
 }
 
 @Component({
@@ -256,15 +257,26 @@ export class UploadComponent implements OnInit, OnDestroy {
       this.api.getTaskStatus(jobId).subscribe({
         next: (st: TaskStatusResponse) => {
           if (st.status === 'done') {
-            item.status = st.result?.success ? 'success' : 'error';
-            item.message = st.result?.success ? 'Procesado exitosamente' : (st.result?.message || 'Error en procesamiento');
+            const reasonCode = st.result?.reason_code;
             item.result = st.result;
+            item.reasonCode = reasonCode;
             item.progress = 100;
 
-            if (st.result?.success) {
+            if (reasonCode === 'ai_limit_reached' || reasonCode === 'ai_unavailable') {
+              item.status = 'ai_limit';
+              item.message = reasonCode === 'ai_limit_reached'
+                ? 'Archivo guardado pero pendiente de extracción (límite de IA alcanzado). Actualiza tu plan para procesar.'
+                : 'Archivo guardado pero pendiente de extracción (servicio de IA no disponible temporalmente).';
+            } else if (st.result?.success) {
+              item.status = 'success';
+              item.message = 'Procesado exitosamente';
               this.userService.updateProfileAfterProcessing();
+            } else {
+              item.status = 'error';
+              item.message = st.result?.message || 'Error en procesamiento';
             }
-            this.activeJobs = this.activeJobs.filter(id => id !== jobId); // Remove from active jobs
+
+            this.activeJobs = this.activeJobs.filter(id => id !== jobId);
             this.checkAllFinished();
           } else if (st.status === 'error') {
             item.status = 'error';
@@ -310,6 +322,10 @@ export class UploadComponent implements OnInit, OnDestroy {
         this.pollInterval = null;
       }
     }
+  }
+
+  trackByFile(index: number, item: UploadFileItem): string {
+    return item.file.name;
   }
 
   // Limpiar formulario y lista
