@@ -30,12 +30,13 @@ class UpdateUserStatusRequest(BaseModel):
 async def admin_get_users(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    search: str = Query(default="", max_length=100),
     admin: Dict[str, Any] = Depends(_get_current_admin_user)
 ):
     """Obtiene lista de usuarios (solo para admins)"""
     try:
         user_repo = UserRepository()
-        result = user_repo.get_all_users(page, page_size)
+        result = user_repo.get_all_users(page, page_size, search=search.strip())
         
         # Convertir ObjectId y datetime a string para serialización
         for user in result['users']:

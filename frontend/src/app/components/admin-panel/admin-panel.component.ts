@@ -100,6 +100,8 @@ export class AdminPanelComponent implements OnInit {
   currentPage = 1;
   pageSize = 20;
   totalPages = 0;
+  userSearchTerm = '';
+  private _searchDebounce: any = null;
 
   // Filtros de estadísticas
   statsFilters = {
@@ -206,7 +208,7 @@ export class AdminPanelComponent implements OnInit {
 
   loadUsers(): void {
     this.loadingUsers = true;
-    this.apiService.getAdminUsers(this.currentPage, this.pageSize).subscribe({
+    this.apiService.getAdminUsers(this.currentPage, this.pageSize, this.userSearchTerm).subscribe({
       next: (response) => {
         if (response.success) {
           this.users = response.users;
@@ -425,6 +427,28 @@ export class AdminPanelComponent implements OnInit {
 
   getStatusClass(status: string): string {
     return status === 'active' ? 'badge-active' : 'badge-suspended';
+  }
+
+  getSubscriptionStatusClass(status: string): string {
+    switch (status?.toLowerCase()) {
+      case 'active': return 'badge-active';
+      case 'past_due': return 'badge-warning';
+      case 'cancelled': return 'badge-suspended';
+      default: return 'badge-user';
+    }
+  }
+
+  onUserSearch(): void {
+    clearTimeout(this._searchDebounce);
+    this._searchDebounce = setTimeout(() => {
+      this.currentPage = 1;
+      this.loadUsers();
+    }, 400);
+  }
+
+  onSubscriptionsFilterChange(): void {
+    this.subscriptionsPage = 1;
+    this.loadSubscriptions();
   }
 
   // Métodos para obtener datos para mostrar

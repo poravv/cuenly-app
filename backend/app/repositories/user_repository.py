@@ -363,20 +363,24 @@ class UserRepository:
         user = self.get_by_email(email)
         return user and user.get('role') == 'admin'
 
-    def get_all_users(self, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
-        """Obtiene todos los usuarios con paginación (solo para admins)"""
+    def get_all_users(self, page: int = 1, page_size: int = 20, search: str = "") -> Dict[str, Any]:
+        """Obtiene todos los usuarios con paginación y búsqueda opcional (solo para admins)"""
         skip = (page - 1) * page_size
-        
-        # Contar total de usuarios
-        total = self._coll().count_documents({})
-        
-        # Obtener usuarios con paginación
+
+        query: Dict[str, Any] = {}
+        if search:
+            import re
+            regex = re.compile(re.escape(search), re.IGNORECASE)
+            query = {"$or": [{"email": regex}, {"name": regex}]}
+
+        total = self._coll().count_documents(query)
+
         users = list(
-            self._coll().find({}, {
-                'password': 0  # Excluir campos sensibles
+            self._coll().find(query, {
+                'password': 0
             }).sort('created_at', -1).skip(skip).limit(page_size)
         )
-        
+
         return {
             'users': users,
             'total': total,

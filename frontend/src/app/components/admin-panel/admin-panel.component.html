@@ -275,6 +275,9 @@
         <div class="section-header">
           <h3>Gestión de Usuarios</h3>
           <div class="section-actions">
+            <input type="text" class="form-control form-control-sm" style="width: 220px; display: inline-block; margin-right: 12px;"
+              placeholder="Buscar por email o nombre..."
+              [(ngModel)]="userSearchTerm" (ngModelChange)="onUserSearch()">
             <span class="total-count">Total: {{formatNumber(totalUsers)}} usuarios</span>
           </div>
         </div>
@@ -375,10 +378,17 @@
     </div>
 
     <div *ngIf="activeTab === 'subscriptions'" class="tab-content">
-      <div class="users-section"> <!-- Reusing users-section class for consistent styling -->
+      <div class="users-section">
         <div class="section-header">
           <h3>Gestión de Suscripciones</h3>
           <div class="section-actions">
+            <select class="form-control form-control-sm" style="width: auto; display: inline-block; margin-right: 12px;"
+              [(ngModel)]="subscriptionsStatusFilter" (ngModelChange)="onSubscriptionsFilterChange()">
+              <option value="all">Todos</option>
+              <option value="active">Activas</option>
+              <option value="past_due">Vencidas</option>
+              <option value="cancelled">Canceladas</option>
+            </select>
             <span class="total-count">Total: {{formatNumber(totalSubscriptions)}}</span>
           </div>
         </div>
@@ -410,7 +420,7 @@
                 </td>
                 <td>{{sub.plan_name}}</td>
                 <td>
-                  <span [class]="getStatusClass(sub.status)">{{sub.status}}</span>
+                  <span [class]="getSubscriptionStatusClass(sub.status)">{{sub.status}}</span>
                 </td>
                 <td>{{formatDate(sub.started_at)}}</td>
                 <td>
@@ -423,13 +433,24 @@
                   <span *ngIf="!sub.has_card" class="badge-warning">Sin Tarjeta</span>
                 </td>
                 <td class="actions">
-                  <button class="btn-action btn-promote" (click)="retryCharge(sub)" title="Reintentar Cobro">
+                  <button class="btn-action btn-promote" (click)="retryCharge(sub)" title="Reintentar Cobro"
+                    [disabled]="sub.status === 'cancelled'">
                     <i class="bi bi-currency-dollar"></i>
                   </button>
                 </td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div *ngIf="subscriptionsTotalPages > 1" class="pagination">
+          <button class="btn-page" [disabled]="subscriptionsPage <= 1" (click)="onSubscriptionsPageChange(subscriptionsPage - 1)">
+            <i class="bi bi-chevron-left"></i> Anterior
+          </button>
+          <span class="page-info">Página {{subscriptionsPage}} de {{subscriptionsTotalPages}}</span>
+          <button class="btn-page" [disabled]="subscriptionsPage >= subscriptionsTotalPages" (click)="onSubscriptionsPageChange(subscriptionsPage + 1)">
+            Siguiente <i class="bi bi-chevron-right"></i>
+          </button>
         </div>
       </div>
     </div>
