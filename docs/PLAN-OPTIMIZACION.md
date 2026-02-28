@@ -1,6 +1,6 @@
 # Plan de Optimización — CuenlyApp
 
-> Generado: 2026-02-27
+> Generado: 2026-02-27 | Última actualización: 2026-02-28
 > Basado en: auditoría completa de docs/, backend/ y frontend/
 > Ver también: `CLAUDE.md` en la raíz del proyecto para contexto técnico completo.
 
@@ -70,7 +70,7 @@ is_admin = email in settings.ADMIN_EMAILS
 
 ---
 
-### 1.3 🔴 Contraseñas IMAP en plaintext
+### ✅ 1.3 Contraseñas IMAP en plaintext (YA ESTABA IMPLEMENTADO)
 
 **Problema:** Las contraseñas de cuentas IMAP se guardan en MongoDB sin cifrar. `EMAIL_CONFIG_ENCRYPTION_KEY` existe en settings pero no está completamente implementado en todos los paths de guardado y lectura.
 
@@ -99,11 +99,9 @@ def decrypt_password(encrypted: str, key: str) -> str:
 
 ---
 
-### 1.4 🔴 Tokens OAuth sin cifrar
+### ✅ 1.4 Tokens OAuth sin cifrar (YA ESTABA IMPLEMENTADO)
 
-**Problema:** Los access_token y refresh_token de OAuth2 (Gmail) se guardan en plaintext en MongoDB junto a las email_configs.
-
-**Solución:** Aplicar el mismo Fernet de `EMAIL_CONFIG_ENCRYPTION_KEY` a los tokens OAuth antes de persistirlos.
+**Verificado:** config_store.py usa Fernet con prefijo `enc:v1:` para cifrar tanto contraseñas IMAP como tokens OAuth. Retrocompatibilidad con plaintext existente.
 
 ---
 
@@ -117,7 +115,7 @@ def decrypt_password(encrypted: str, key: str) -> str:
 
 ## FASE 2 — Problemas de Usuario de Alto Impacto
 
-### 2.1 🟠 Panel de Admin: datos reales + rediseño
+### ✅ 2.1 Panel de Admin: datos reales + rediseño
 
 **Problemas:**
 - Algunas métricas del tab "Stats" no muestran datos reales del sistema
@@ -151,7 +149,7 @@ def decrypt_password(encrypted: str, key: str) -> str:
 
 ---
 
-### 2.2 🟠 Estadísticas: agregar calidad y origen del procesamiento
+### ✅ 2.2 Estadísticas: calidad y origen del procesamiento (YA ESTABA IMPLEMENTADO)
 
 **Problema:** `/facturas/estadisticas` no muestra de dónde vienen los datos (XML nativo vs OpenAI Vision) ni la calidad del procesamiento.
 
@@ -184,7 +182,7 @@ def decrypt_password(encrypted: str, key: str) -> str:
 
 ---
 
-### 2.3 🟠 Verificar y completar flujo completo de Pagopar
+### ✅ 2.3 Verificar y completar flujo completo de Pagopar
 
 **Problema declarado por el usuario:** "no sé qué tanto le llegue a faltar"
 
@@ -204,7 +202,7 @@ def decrypt_password(encrypted: str, key: str) -> str:
 
 ---
 
-### 2.4 🟠 Límite de IA: aplicación consistente y tracking visible
+### ✅ 2.4 Límite de IA: aplicación consistente (VERIFICADO — NO HAY BYPASS)
 
 **Problema:** El bypass en `multi_processor.py` deja pasar correos de usuarios con AI limit = 0 hacia `single_processor`, que puede consumir cuota silenciosamente.
 
@@ -223,7 +221,7 @@ if user.ai_invoices_processed >= user.ai_invoices_limit and not has_xml_candidat
 
 ---
 
-### 2.5 🟠 Suscripción de 15 días: verificar flujo completo con Google
+### ✅ 2.5 Suscripción de 15 días: verificar flujo completo con Google
 
 **Problema declarado:** "Inicialmente cuando alguien se registra con Google se le da una suscripción de 15 días" — verificar que esto realmente ocurre.
 
@@ -266,7 +264,7 @@ def distributed_lock(redis_client, key: str, timeout: int = 30):
 
 ---
 
-### 3.2 🟡 Rate limiting en endpoints críticos
+### ✅ 3.2 Rate limiting en endpoints críticos (YA EXISTE)
 
 **Problema:** No hay protección contra abuso en endpoints de procesamiento y admin.
 
@@ -287,7 +285,7 @@ async def process_direct(...):
 
 ---
 
-### 3.3 🟡 Frontend: OnPush + trackBy en componentes críticos
+### ✅ 3.3 Frontend: OnPush + trackBy en componentes críticos
 
 **Componentes a actualizar:**
 1. `queue-events.component.ts` — `changeDetection: ChangeDetectionStrategy.OnPush` + `trackBy`
@@ -306,7 +304,7 @@ export class QueueEventsComponent {
 
 ---
 
-### 3.4 🟡 Índices MongoDB faltantes
+### ✅ 3.4 Índices MongoDB faltantes
 
 **Agregar índices para consultas frecuentes:**
 ```javascript
@@ -325,7 +323,7 @@ db.user_subscriptions.createIndex({ next_billing_date: 1, status: 1 })  // Para 
 
 ---
 
-### 3.5 🟡 Cleanup de código legacy
+### ✅ 3.5 Cleanup de código legacy
 
 **Items a limpiar:**
 1. Exporters comentados en código pero nunca eliminados
@@ -336,7 +334,7 @@ db.user_subscriptions.createIndex({ next_billing_date: 1, status: 1 })  // Para 
 
 ---
 
-### 3.6 🟡 Audit logging completo en operaciones admin
+### ✅ 3.6 Audit logging completo en operaciones admin
 
 **Problema:** Cambios críticos (suspender usuario, cambiar plan, reset AI limits) no tienen audit trail completo.
 
@@ -357,7 +355,7 @@ db.user_subscriptions.createIndex({ next_billing_date: 1, status: 1 })  // Para 
 
 ## FASE 4 — Completar Funcionalidades Faltantes
 
-### 4.1 🟡 Upload manual: verificar todos los flujos
+### ✅ 4.1 Upload manual: verificar todos los flujos (VERIFICADO — CORRECTO)
 
 **El usuario declaró que existe:** Subida manual de PDF, XML e imágenes.
 
@@ -372,7 +370,7 @@ db.user_subscriptions.createIndex({ next_billing_date: 1, status: 1 })  // Para 
 
 ---
 
-### 4.2 🟡 Descarga desde MinIO condicionada por plan
+### ✅ 4.2 Descarga desde MinIO condicionada por plan
 
 **Problema declarado:** "de acuerdo al plan lo pueden descargar o no"
 
@@ -383,7 +381,7 @@ db.user_subscriptions.createIndex({ next_billing_date: 1, status: 1 })  // Para 
 
 ---
 
-### 4.3 🟡 Página de Ayuda (/cuenta/ayuda)
+### ✅ 4.3 Página de Ayuda (/cuenta/ayuda) (YA TENÍA CONTENIDO)
 
 **Estado actual:** Mínima o vacía.
 
@@ -471,31 +469,31 @@ mongodump --uri="$MONGODB_URL" --out="/backups/mongodb_$DATE"
 
 ## Tabla Resumen de Prioridades
 
-| # | Problema | Impacto | Esfuerzo | Fase |
-|---|----------|---------|---------|------|
-| 1 | Cola de procesos pestañea | Usuario bloqueado | Bajo | 1 |
-| 2 | Admin email hardcodeado | Seguridad crítica | Bajo | 1 |
-| 3 | Contraseñas IMAP plaintext | Seguridad crítica | Medio | 1 |
-| 4 | Tokens OAuth plaintext | Seguridad alta | Medio | 1 |
-| 5 | print() en producción | Calidad código | Bajo | 1 |
-| 6 | Panel admin: datos reales + diseño | UX admin | Alto | 2 |
-| 7 | Estadísticas: calidad y origen | Visibilidad negocio | Medio | 2 |
-| 8 | Verificar Pagopar completo | Facturación/ingresos | Medio-Alto | 2 |
-| 9 | Límite IA: bypass y visibilidad | Integridad datos | Medio | 2 |
-| 10 | Trial con Google: flujo completo | Onboarding | Medio | 2 |
-| 11 | Locking distribuido (K8s) | Escalabilidad | Medio | 3 |
-| 12 | Rate limiting en API | Seguridad | Bajo | 3 |
-| 13 | OnPush + trackBy en frontend | Performance frontend | Bajo | 3 |
-| 14 | Índices MongoDB faltantes | Performance DB | Bajo | 3 |
-| 15 | Cleanup código legacy | Mantenibilidad | Medio | 3 |
-| 16 | Audit log admin ops | Compliance | Medio | 3 |
-| 17 | Upload manual: verificar flujos | Funcionalidad core | Bajo | 4 |
-| 18 | Descarga MinIO por plan | Funcionalidad negocio | Bajo | 4 |
-| 19 | Página de Ayuda | UX onboarding | Bajo | 4 |
-| 20 | SSE para cola en tiempo real | UX avanzado | Alto | 4 |
-| 21 | Métricas Prometheus completas | Observabilidad | Bajo | 5 |
-| 22 | Backup MongoDB automatizado | Resiliencia | Bajo | 5 |
-| 23 | Documentar disaster recovery | Operaciones | Bajo | 5 |
+| # | Problema | Impacto | Esfuerzo | Fase | Estado |
+|---|----------|---------|---------|------|--------|
+| 1 | Cola de procesos pestañea | Usuario bloqueado | Bajo | 1 | ✅ |
+| 2 | Admin email hardcodeado | Seguridad crítica | Bajo | 1 | ✅ |
+| 3 | Contraseñas IMAP plaintext | Seguridad crítica | Medio | 1 | ✅ Ya existía |
+| 4 | Tokens OAuth plaintext | Seguridad alta | Medio | 1 | ✅ Ya existía |
+| 5 | print() en producción | Calidad código | Bajo | 1 | ✅ |
+| 6 | Panel admin: datos reales + diseño | UX admin | Alto | 2 | ✅ |
+| 7 | Estadísticas: calidad y origen | Visibilidad negocio | Medio | 2 | ✅ Ya existía |
+| 8 | Verificar Pagopar completo | Facturación/ingresos | Medio-Alto | 2 | ✅ |
+| 9 | Límite IA: bypass y visibilidad | Integridad datos | Medio | 2 | ✅ Verificado |
+| 10 | Trial con Google: flujo completo | Onboarding | Medio | 2 | ✅ Verificado |
+| 11 | Locking distribuido (K8s) | Escalabilidad | Medio | 3 | ✅ |
+| 12 | Rate limiting en API | Seguridad | Bajo | 3 | ✅ Ya existía |
+| 13 | OnPush + trackBy en frontend | Performance frontend | Bajo | 3 | ✅ |
+| 14 | Índices MongoDB faltantes | Performance DB | Bajo | 3 | ✅ |
+| 15 | Cleanup código legacy | Mantenibilidad | Medio | 3 | ✅ |
+| 16 | Audit log admin ops | Compliance | Medio | 3 | ✅ |
+| 17 | Upload manual: verificar flujos | Funcionalidad core | Bajo | 4 | ✅ Verificado |
+| 18 | Descarga MinIO por plan | Funcionalidad negocio | Bajo | 4 | ✅ Fix aplicado |
+| 19 | Página de Ayuda | UX onboarding | Bajo | 4 | ✅ Ya tenía contenido |
+| 20 | SSE para cola en tiempo real | UX avanzado | Alto | 4 | ⬜ PENDIENTE |
+| 21 | Métricas Prometheus completas | Observabilidad | Bajo | 5 | ⬜ PENDIENTE |
+| 22 | Backup MongoDB automatizado | Resiliencia | Bajo | 5 | ⬜ PENDIENTE |
+| 23 | Documentar disaster recovery | Operaciones | Bajo | 5 | ⬜ PENDIENTE |
 
 ---
 

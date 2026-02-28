@@ -1877,8 +1877,6 @@ async def enqueue_upload_xml(
         logger.error(f"Error al encolar XML: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-    # Endpoints legacy de Excel eliminados
-
 @app.post("/email-config/test")
 async def test_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Depends(_get_current_user)):
     """
@@ -3410,8 +3408,6 @@ async def imap_pool_stats():
         logger.error(f"Error obteniendo estadísticas del pool IMAP: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas del pool: {str(e)}")
 
-    # Endpoint legacy /excel/stats eliminado
-
 @app.get("/health/detailed")
 async def detailed_health():
     """
@@ -4433,7 +4429,31 @@ async def get_invoice_file_direct(
             user_repo = UserRepository()
             if not user_repo.is_admin(owner):
                 raise HTTPException(status_code=403, detail="Acceso denegado")
-            
+
+        # Verificar si el plan del usuario permite descarga desde MinIO
+        user_repo = UserRepository()
+        is_admin = user_repo.is_admin(owner)
+
+        if not is_admin:
+            from app.repositories.subscription_repository import SubscriptionRepository
+            sub_repo = SubscriptionRepository()
+            subscription = await sub_repo.get_user_active_subscription(owner)
+
+            if not subscription:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
+                )
+
+            plan_code = subscription.get("plan_code")
+            plan = await sub_repo.get_plan_by_code(plan_code)
+            if plan and plan.get("features"):
+                if not plan["features"].get("minio_storage", True):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
+                    )
+
         try:
             from minio import Minio
         except ImportError:
@@ -4944,8 +4964,6 @@ async def set_auto_refresh(payload: AutoRefreshPayload):
         logger.error(f"Error al guardar preferencia auto-refresh: {e}")
         raise HTTPException(status_code=500, detail="No se pudo guardar preferencia")
 
-# Endpoints legacy de exportación eliminados (Excel/Documental)
-
 @app.get("/export/mongodb/stats")
 async def mongodb_export_stats(user: Dict[str, Any] = Depends(_get_current_user)):
     """Estadísticas básicas de la base de facturas del usuario actual."""
@@ -4981,14 +4999,6 @@ async def mongodb_export_stats(user: Dict[str, Any] = Depends(_get_current_user)
         logger.error(f"Error obteniendo stats MongoDB v2: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas: {str(e)}")
 
-    # Endpoint legacy process-and-export eliminado
-
-# Funciones auxiliares para tareas en segundo plano
-
-    # Tareas legacy de exportación eliminadas
-
-async def _export_completo_month_task(year_month: str):
-    return {"success": False, "message": "Exportación a Excel deshabilitada"}
 
 # -----------------------------
 # Consultas MongoDB y Exports por Fecha
@@ -5142,8 +5152,6 @@ async def get_recent_activity(
     except Exception as e:
         logger.error(f"Error obteniendo actividad reciente: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo actividad: {str(e)}")
-
-    # Endpoint legacy /export/excel-from-mongodb eliminado
 
 def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
     """
@@ -5404,25 +5412,6 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
     except Exception as e:
         logger.error(f"Error obteniendo campos disponibles: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# === RUTA DE CAMPOS CALCULADOS ELIMINADA ===
-# @app.get("/export-templates/calculated-fields/preview")
-# async def preview_calculated_fields(user: Dict[str, Any] = Depends(_get_current_user)):
-#     """Preview de campos calculados - ELIMINADO"""
-#     return {"error": "Campos calculados eliminados"}
-
-# === RUTAS DE TEMPLATES PREDEFINIDOS ELIMINADAS ===
-# Ya no hay templates predefinidos, solo creación personalizada
-
-# @app.post("/export-templates/create-from-preset")
-# async def create_template_from_preset(
-#     preset_request: dict,
-#     user: Dict[str, Any] = Depends(_get_current_user)
-# ):
-#     """Crear template a partir de un preset inteligente - ELIMINADO"""
-#     return {"error": "Templates predefinidos eliminados"}
-
-# === TEMPLATES PREDEFINIDOS ELIMINADOS ===
 
 @app.post("/export-templates")
 async def create_export_template(

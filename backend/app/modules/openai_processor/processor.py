@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from app.config.settings import settings
 from .config import OpenAIConfig
 from .clients import make_openai_client
-from .pdf_text import extract_text_with_fallbacks, has_extractable_text_or_ocr
+from .pdf_text import extract_text_with_fallbacks
 from .image_utils import pdf_to_base64_first_page, ocr_from_base64_image
 from .prompts import build_text_prompt, build_image_prompt, build_xml_prompt, build_image_prompt_v2, messages_user_only, messages_user_with_image
 from .json_utils import extract_and_normalize_json
@@ -87,20 +87,7 @@ class OpenAIProcessor:
                         # Si ya es un objeto válido, devolverlo directamente
                         return cached_result
             
-            # 1.5 Intentar estrategia por texto (más económica y rápida)
-            # NOTA: Se comenta temporalmente porque está causando fallos en el flujo.
-            # if has_extractable_text_or_ocr(pdf_path):
-            #     result = self._process_as_text(pdf_path, email_metadata)
-            #     if result:
-            #         # Marcar que se usó IA (aunque sea texto consume tokens)
-            #         if hasattr(result, '__dict__'):
-            #             result.ai_used = True
-            #         elif isinstance(result, dict):
-            #             result['ai_used'] = True
-            #         return result
-            #     logger.warning("Texto falló o insuficiente → intentamos por imagen")
-
-            # 2. Ir directo a la estrategia por imagen (Vision/OCR)
+            # 2. Estrategia por imagen (Vision/OCR)
             result = self._process_as_image(pdf_path, email_metadata)
             
             # Si el procesamiento fue exitoso y usó IA, incrementar contador e invalidar cache
