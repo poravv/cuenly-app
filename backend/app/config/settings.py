@@ -118,6 +118,7 @@ class Settings(BaseSettings):
     PAGOPAR_PRIVATE_KEY: str = os.getenv("PAGOPAR_PRIVATE_KEY", "")
     # Default to production, override with sandbox URL in dev
     PAGOPAR_BASE_URL: str = os.getenv("PAGOPAR_BASE_URL", "https://api.pagopar.com/api/pago-recurrente/3.0/")
+    PAGOPAR_REDIRECT_URL: str = os.getenv("PAGOPAR_REDIRECT_URL", "https://app.cuenly.com/subscription/confirm")
     
     model_config = {
         "env_file": ".env",

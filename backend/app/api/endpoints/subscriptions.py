@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta
 
 from app.api.deps import _get_current_user
+from app.config.settings import settings
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.repositories.user_repository import UserRepository
 from app.services.pagopar_service import PagoparService
@@ -316,7 +317,7 @@ async def subscribe(
                 )
 
         # 3. Iniciar catastro de tarjeta (Si no hay existentes o no se solicitó usar)
-        redirect_url = "https://app.cuenly.com/subscription/confirm"  # TODO: Obtener de config
+        redirect_url = settings.PAGOPAR_REDIRECT_URL  # TODO: Obtener de config
         
         provider_to_use = request.provider if request.provider else "Bancard"
         
@@ -394,7 +395,7 @@ async def confirm_card(
             )
         
         # Confirmar tarjeta en Pagopar
-        redirect_url = "https://app.cuenly.com/subscription/confirm"
+        redirect_url = settings.PAGOPAR_REDIRECT_URL
         confirmed = await pagopar_service.confirm_card(
             identifier=pagopar_user_id,
             redirect_url=redirect_url
