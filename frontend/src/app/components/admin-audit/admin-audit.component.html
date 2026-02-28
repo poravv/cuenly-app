@@ -1,0 +1,73 @@
+<div class="admin-audit-page">
+  <div class="page-header">
+    <div>
+      <h2>Auditoría</h2>
+      <p class="page-subtitle">Historial de acciones administrativas</p>
+    </div>
+    <div class="header-actions">
+      <select class="filter-select" [(ngModel)]="auditActionFilter" (ngModelChange)="onFilterChange()">
+        <option value="">Todas las acciones</option>
+        <option value="user_role_changed">Cambio de rol</option>
+        <option value="user_suspended">Suspensión</option>
+        <option value="user_activated">Activación</option>
+        <option value="monthly_ai_reset">Reset mensual IA</option>
+        <option value="user_ai_reset">Reset IA individual</option>
+      </select>
+      <span class="total-badge">{{formatNumber(auditTotal)}}</span>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading-state">
+    <div class="spinner"></div>
+    <p>Cargando registros...</p>
+  </div>
+
+  <div *ngIf="!loading" class="table-card">
+    <div *ngIf="auditLogs.length === 0" class="empty-state">
+      <i class="bi bi-journal-text"></i>
+      <p>No hay registros de auditoría</p>
+    </div>
+
+    <div *ngIf="auditLogs.length > 0" class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Acción</th>
+            <th>Admin</th>
+            <th>Usuario</th>
+            <th class="hide-mobile">Detalles</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let log of auditLogs; trackBy: trackByAuditId">
+            <td class="text-muted"><small>{{formatDate(log.timestamp)}}</small></td>
+            <td>
+              <span class="badge" [ngClass]="getActionClass(log.action)">
+                {{getActionLabel(log.action)}}
+              </span>
+            </td>
+            <td><small class="admin-email">{{log.admin_email}}</small></td>
+            <td><small>{{log.target_user || '—'}}</small></td>
+            <td class="hide-mobile">
+              <small *ngIf="log.details && (log.details | json) !== '{}'" class="details-text">
+                {{log.details | json}}
+              </small>
+              <span *ngIf="!log.details || (log.details | json) === '{}'" class="text-muted">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div *ngIf="auditTotalPages > 1" class="pagination">
+      <button class="page-btn" [disabled]="auditPage <= 1" (click)="onPageChange(auditPage - 1)">
+        <i class="bi bi-chevron-left"></i> Anterior
+      </button>
+      <span class="page-info">{{auditPage}} / {{auditTotalPages}}</span>
+      <button class="page-btn" [disabled]="auditPage >= auditTotalPages" (click)="onPageChange(auditPage + 1)">
+        Siguiente <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+</div>

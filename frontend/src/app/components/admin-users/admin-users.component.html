@@ -1,0 +1,111 @@
+<div class="admin-users-page">
+  <div class="page-header">
+    <div>
+      <h2>Usuarios</h2>
+      <p class="page-subtitle">Gestiona roles, estados y permisos</p>
+    </div>
+    <div class="header-actions">
+      <div class="search-wrapper">
+        <i class="bi bi-search"></i>
+        <input type="text" class="search-input" placeholder="Buscar por email o nombre..."
+          [(ngModel)]="userSearchTerm" (ngModelChange)="onUserSearch()">
+      </div>
+      <span class="total-badge">{{formatNumber(totalUsers)}}</span>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading-state">
+    <div class="spinner"></div>
+    <p>Cargando usuarios...</p>
+  </div>
+
+  <div *ngIf="!loading" class="table-card">
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Rol</th>
+            <th>Estado</th>
+            <th class="hide-mobile">Creado</th>
+            <th class="hide-mobile">Último Login</th>
+            <th>Plan / IA</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let user of users; trackBy: trackByEmail">
+            <td class="user-cell">
+              <div class="user-info">
+                <div class="user-avatar">{{(user.name || user.email).charAt(0).toUpperCase()}}</div>
+                <div>
+                  <strong>{{user.name || 'Sin nombre'}}</strong>
+                  <small>{{user.email}}</small>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="badge" [ngClass]="getRoleClass(user.role)">
+                {{user.role === 'admin' ? 'Admin' : 'Usuario'}}
+              </span>
+            </td>
+            <td>
+              <span class="badge" [ngClass]="getStatusClass(user.status)">
+                {{user.status === 'active' ? 'Activo' : 'Suspendido'}}
+              </span>
+            </td>
+            <td class="hide-mobile text-muted">{{formatDate(user.created_at)}}</td>
+            <td class="hide-mobile text-muted">{{formatDate(user.last_login)}}</td>
+            <td>
+              <div class="plan-info">
+                <span *ngIf="user.is_trial_user" class="badge badge-trial">Trial</span>
+                <span *ngIf="!user.is_trial_user" class="badge badge-paid">Pagado</span>
+                <small *ngIf="user.ai_invoices_processed !== undefined" class="ai-usage">
+                  {{user.ai_invoices_processed}}/{{user.ai_invoices_limit === -1 ? '∞' : user.ai_invoices_limit}}
+                </small>
+              </div>
+            </td>
+            <td>
+              <div class="action-buttons">
+                <button *ngIf="!isProtectedAdmin(user)" class="btn-icon"
+                  [class.btn-icon--success]="user.role === 'user'"
+                  [class.btn-icon--muted]="user.role === 'admin'"
+                  (click)="updateUserRole(user, user.role === 'admin' ? 'user' : 'admin')"
+                  [title]="user.role === 'admin' ? 'Quitar admin' : 'Hacer admin'">
+                  <i [class]="user.role === 'admin' ? 'bi bi-person-dash' : 'bi bi-person-plus'"></i>
+                </button>
+
+                <button *ngIf="!isProtectedAdmin(user)" class="btn-icon"
+                  [class.btn-icon--warning]="user.status === 'active'"
+                  [class.btn-icon--info]="user.status === 'suspended'"
+                  (click)="updateUserStatus(user, user.status === 'active' ? 'suspended' : 'active')"
+                  [title]="user.status === 'active' ? 'Suspender' : 'Activar'">
+                  <i [class]="user.status === 'active' ? 'bi bi-person-slash' : 'bi bi-person-check'"></i>
+                </button>
+
+                <span *ngIf="isProtectedAdmin(user)" class="protected-badge" title="Tu cuenta">
+                  <i class="bi bi-shield-check"></i>
+                </span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div *ngIf="users.length === 0 && !loadingUsers" class="empty-state">
+      <i class="bi bi-people"></i>
+      <p>No se encontraron usuarios</p>
+    </div>
+
+    <div *ngIf="totalPages > 1" class="pagination">
+      <button class="page-btn" [disabled]="currentPage <= 1" (click)="prevPage()">
+        <i class="bi bi-chevron-left"></i> Anterior
+      </button>
+      <span class="page-info">{{currentPage}} / {{totalPages}}</span>
+      <button class="page-btn" [disabled]="currentPage >= totalPages" (click)="nextPage()">
+        Siguiente <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+</div>

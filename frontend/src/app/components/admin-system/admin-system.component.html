@@ -1,0 +1,185 @@
+<div class="admin-system-page">
+  <div class="page-header">
+    <div>
+      <h2>Sistema</h2>
+      <p class="page-subtitle">Cola de procesamiento y límites de IA</p>
+    </div>
+    <button class="refresh-btn" (click)="loadQueueStats(); loadAiLimitsData()" title="Actualizar">
+      <i class="bi bi-arrow-clockwise"></i>
+    </button>
+  </div>
+
+  <!-- Queue Stats -->
+  <section class="section">
+    <h3 class="section-title">
+      <i class="bi bi-hdd-stack"></i> Cola de Procesamiento
+    </h3>
+
+    <div *ngIf="loadingQueueStats" class="loading-inline">
+      <span class="spinner-sm"></span> Cargando...
+    </div>
+
+    <div *ngIf="!loadingQueueStats && queueStats" class="queue-grid">
+      <div class="queue-card">
+        <div class="queue-icon icon-primary">
+          <i class="bi bi-cpu"></i>
+        </div>
+        <div>
+          <div class="queue-value">{{queueStats.workers_online}}</div>
+          <div class="queue-label">Workers Online</div>
+        </div>
+      </div>
+
+      <div class="queue-card">
+        <div class="queue-icon icon-amber">
+          <i class="bi bi-hourglass-split"></i>
+        </div>
+        <div>
+          <div class="queue-value">{{formatNumber(getTotalQueued())}}</div>
+          <div class="queue-label">En Cola</div>
+        </div>
+      </div>
+
+      <div class="queue-card">
+        <div class="queue-icon icon-info">
+          <i class="bi bi-play-circle"></i>
+        </div>
+        <div>
+          <div class="queue-value">{{formatNumber(getTotalStarted())}}</div>
+          <div class="queue-label">En Proceso</div>
+        </div>
+      </div>
+
+      <div class="queue-card" [class.queue-card--alert]="getTotalFailed() > 0">
+        <div class="queue-icon" [class.icon-danger]="getTotalFailed() > 0" [class.icon-muted]="getTotalFailed() === 0">
+          <i class="bi bi-exclamation-circle"></i>
+        </div>
+        <div>
+          <div class="queue-value" [class.text-danger]="getTotalFailed() > 0">{{formatNumber(getTotalFailed())}}</div>
+          <div class="queue-label">Fallidos</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Queue detail -->
+    <div *ngIf="!loadingQueueStats && queueStats" class="queue-detail">
+      <div class="detail-row">
+        <span class="detail-label">High</span>
+        <span class="detail-values">
+          <span class="dv" title="En cola">{{queueStats.queues.high?.queued || 0}} en cola</span>
+          <span class="dv" title="Iniciados">{{queueStats.queues.high?.started || 0}} activos</span>
+          <span class="dv" [class.text-danger]="(queueStats.queues.high?.failed || 0) > 0" title="Fallidos">{{queueStats.queues.high?.failed || 0}} fallidos</span>
+        </span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Default</span>
+        <span class="detail-values">
+          <span class="dv">{{queueStats.queues.default?.queued || 0}} en cola</span>
+          <span class="dv">{{queueStats.queues.default?.started || 0}} activos</span>
+          <span class="dv" [class.text-danger]="(queueStats.queues.default?.failed || 0) > 0">{{queueStats.queues.default?.failed || 0}} fallidos</span>
+        </span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Low</span>
+        <span class="detail-values">
+          <span class="dv">{{queueStats.queues.low?.queued || 0}} en cola</span>
+          <span class="dv">{{queueStats.queues.low?.started || 0}} activos</span>
+          <span class="dv" [class.text-danger]="(queueStats.queues.low?.failed || 0) > 0">{{queueStats.queues.low?.failed || 0}} fallidos</span>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- AI Limits -->
+  <section class="section">
+    <h3 class="section-title">
+      <i class="bi bi-robot"></i> Límites de IA
+    </h3>
+
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="info-icon icon-primary"><i class="bi bi-calendar-event"></i></div>
+        <div>
+          <div class="info-label">Próximo Reseteo</div>
+          <div class="info-value" *ngIf="!loadingSchedulerStatus && schedulerStatus">
+            {{formatDate(schedulerStatus.next_reset_date)}}
+          </div>
+          <div class="info-value text-muted" *ngIf="loadingSchedulerStatus">Cargando...</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-icon" [class.icon-green]="schedulerStatus?.scheduler?.running" [class.icon-danger]="!schedulerStatus?.scheduler?.running">
+          <i class="bi" [ngClass]="schedulerStatus?.scheduler?.running ? 'bi-play-circle' : 'bi-pause-circle'"></i>
+        </div>
+        <div>
+          <div class="info-label">Scheduler</div>
+          <div class="info-value" *ngIf="!loadingSchedulerStatus && schedulerStatus">
+            {{schedulerStatus.scheduler.running ? 'Activo' : 'Inactivo'}}
+          </div>
+          <div class="info-value text-muted" *ngIf="loadingSchedulerStatus">Cargando...</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-icon icon-info"><i class="bi bi-people"></i></div>
+        <div>
+          <div class="info-label">Suscripciones Activas</div>
+          <div class="info-value" *ngIf="!loadingResetStats && resetStats">
+            {{formatNumber(resetStats.active_subscriptions)}}
+          </div>
+          <div class="info-value text-muted" *ngIf="loadingResetStats">Cargando...</div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-icon icon-green"><i class="bi bi-arrow-clockwise"></i></div>
+        <div>
+          <div class="info-label">Reseteados Este Mes</div>
+          <div class="info-value" *ngIf="!loadingResetStats && resetStats">
+            {{formatNumber(resetStats.resetted_this_month)}}
+          </div>
+          <div class="info-value text-muted" *ngIf="loadingResetStats">Cargando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual Actions -->
+    <div class="actions-section">
+      <div class="action-card">
+        <div class="action-header">
+          <div>
+            <h4>Reseteo Mensual</h4>
+            <p>Resetea límites de IA de todos los usuarios con planes activos</p>
+          </div>
+          <button class="btn-action btn-warning" (click)="executeMonthlyReset()" [disabled]="loadingMonthlyReset">
+            <i class="bi bi-arrow-repeat"></i>
+            {{loadingMonthlyReset ? 'Ejecutando...' : 'Ejecutar'}}
+          </button>
+        </div>
+      </div>
+
+      <div class="action-card">
+        <div class="action-header">
+          <div>
+            <h4>Reset Individual</h4>
+            <p>Resetea los límites de un usuario específico</p>
+          </div>
+        </div>
+        <div class="reset-form">
+          <select [(ngModel)]="selectedUserForReset" class="form-select">
+            <option value="">Seleccionar usuario...</option>
+            <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
+              {{user.name || user.email}} ({{user.email}})
+            </option>
+          </select>
+          <button class="btn-action btn-info" (click)="resetUserLimits()"
+            [disabled]="!selectedUserForReset || loadingUserReset">
+            <i class="bi bi-person-gear"></i>
+            {{loadingUserReset ? 'Reseteando...' : 'Resetear'}}
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

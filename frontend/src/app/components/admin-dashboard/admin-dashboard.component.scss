@@ -1,0 +1,886 @@
+// ================================================
+// Admin Dashboard — Design Tokens
+// ================================================
+
+$primary:     #4F46E5;
+$primary-light: rgba(79, 70, 229, 0.08);
+
+$green:       #10B981;
+$green-light: rgba(16, 185, 129, 0.10);
+
+$amber:       #F59E0B;
+$amber-light: rgba(245, 158, 11, 0.10);
+
+$danger:      #EF4444;
+$danger-light: rgba(239, 68, 68, 0.08);
+
+$violet:      #8B5CF6;
+$violet-light: rgba(139, 92, 246, 0.10);
+
+$gray-50:   #F9FAFB;
+$gray-100:  #F3F4F6;
+$gray-200:  #E5E7EB;
+$gray-400:  #9CA3AF;
+$gray-500:  #6B7280;
+$gray-700:  #374151;
+$gray-900:  #111827;
+
+$radius-sm: 8px;
+$radius-md: 12px;
+$shadow-sm: 0 1px 4px rgba(0,0,0,0.06);
+$shadow-md: 0 2px 12px rgba(0,0,0,0.08);
+
+$font: 'Inter', system-ui, sans-serif;
+
+// ================================================
+// Base del componente
+// ================================================
+
+.dashboard {
+  font-family: $font;
+  padding: 24px;
+  background: $gray-50;
+  min-height: 100%;
+}
+
+// ================================================
+// Cabecera de página
+// ================================================
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+
+  &__left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: $gray-900;
+    margin: 0;
+    line-height: 1.2;
+  }
+
+  &__subtitle {
+    font-size: 0.875rem;
+    color: $gray-500;
+    margin: 0;
+  }
+}
+
+// Botón de recarga: icono circular, sin fondo llamativo
+.btn-refresh {
+  width: 36px;
+  height: 36px;
+  border: 1px solid $gray-200;
+  background: white;
+  border-radius: 50%;
+  color: $gray-500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+
+  &:hover:not(:disabled) {
+    background: $gray-100;
+    color: $gray-900;
+    border-color: $gray-400;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// ================================================
+// Estado de carga inicial
+// ================================================
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 0;
+  color: $gray-500;
+  gap: 16px;
+
+  p {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+}
+
+// ================================================
+// Spinner
+// ================================================
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid $gray-200;
+  border-top-color: $primary;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner-small {
+  width: 18px;
+  height: 18px;
+  border: 2px solid $gray-200;
+  border-top-color: $primary;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+// ================================================
+// KPI Cards
+// ================================================
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+
+  @media (max-width: 1024px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 576px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kpi-card {
+  background: white;
+  border-radius: $radius-md;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: $shadow-md;
+  border: 1px solid $gray-200;
+  transition: box-shadow 0.2s, transform 0.2s;
+
+  &:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+    transform: translateY(-1px);
+  }
+
+  &__icon {
+    width: 48px;
+    height: 48px;
+    border-radius: $radius-sm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+
+    &--indigo {
+      background: $primary-light;
+      color: $primary;
+    }
+
+    &--amber {
+      background: $amber-light;
+      color: $amber;
+    }
+
+    &--green {
+      background: $green-light;
+      color: $green;
+    }
+
+    &--violet {
+      background: $violet-light;
+      color: $violet;
+    }
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: $gray-900;
+    line-height: 1;
+  }
+
+  &__label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: $gray-500;
+  }
+
+  &__sub {
+    font-size: 0.75rem;
+    color: $gray-400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+// ================================================
+// Colas RQ
+// ================================================
+
+.rq-panel {
+  background: white;
+  border: 1px solid $gray-200;
+  border-radius: $radius-md;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  box-shadow: $shadow-sm;
+
+  &__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: $gray-700;
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__cards {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+
+.rq-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: $gray-50;
+  border: 1px solid $gray-200;
+  border-radius: $radius-sm;
+  min-width: 110px;
+
+  &--alert {
+    border-color: $danger;
+    background: $danger-light;
+  }
+
+  &--detail {
+    flex: 1;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    font-size: 0.8rem;
+    min-width: 130px;
+    padding: 10px 14px;
+  }
+
+  &__icon {
+    font-size: 1.1rem;
+
+    &--primary { color: $primary; }
+    &--amber   { color: $amber;   }
+    &--danger  { color: $danger;  }
+    &--muted   { color: $gray-400; }
+  }
+
+  &__info {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+
+  &__value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: $gray-900;
+  }
+
+  &__label {
+    font-size: 0.72rem;
+    color: $gray-500;
+  }
+}
+
+.rq-queue-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.rq-queue-name {
+  font-weight: 600;
+  color: $gray-700;
+}
+
+.rq-queue-val {
+  color: $gray-500;
+}
+
+// ================================================
+// Gráficos principales
+// ================================================
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-card {
+  background: white;
+  border-radius: $radius-md;
+  padding: 20px;
+  box-shadow: $shadow-md;
+  border: 1px solid $gray-200;
+
+  &__title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: $gray-900;
+    margin: 0 0 16px;
+  }
+
+  &__body {
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.no-data {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: $gray-400;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-style: italic;
+  padding: 32px 0;
+
+  i {
+    font-size: 1.75rem;
+  }
+}
+
+// Gráfico de barras principal
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 180px;
+  gap: 6px;
+
+  &__col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+  }
+
+  &__label {
+    font-size: 0.7rem;
+    color: $gray-500;
+    text-align: center;
+    margin-bottom: 4px;
+    white-space: nowrap;
+  }
+
+  &__track {
+    width: 32px;
+    height: 120px;
+    background: $gray-100;
+    border-radius: 6px 6px 0 0;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+  }
+
+  &__fill {
+    width: 100%;
+    background: linear-gradient(180deg, $primary 0%, darken($primary, 10%) 100%);
+    border-radius: 6px 6px 0 0;
+    min-height: 4px;
+    transition: height 0.6s ease;
+  }
+
+  &__count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: $gray-700;
+    margin-top: 4px;
+  }
+
+  &__source {
+    display: flex;
+    gap: 3px;
+    margin-top: 3px;
+    font-size: 0.62rem;
+    font-weight: 600;
+  }
+}
+
+.source-xml {
+  color: $green;
+  background: $green-light;
+  padding: 1px 3px;
+  border-radius: 3px;
+  cursor: default;
+}
+
+.source-ai {
+  color: $violet;
+  background: $violet-light;
+  padding: 1px 3px;
+  border-radius: 3px;
+  cursor: default;
+}
+
+// Lista de top usuarios
+.top-users {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+
+  &__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid $gray-100;
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__email {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: $gray-700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    padding-right: 12px;
+  }
+
+  &__stats {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  &__count {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: $primary;
+  }
+
+  &__amount {
+    font-size: 0.75rem;
+    color: $green;
+    font-weight: 500;
+  }
+}
+
+// ================================================
+// Sección de estadísticas avanzadas (colapsable)
+// ================================================
+
+.advanced-section {
+  background: white;
+  border-radius: $radius-md;
+  border: 1px solid $gray-200;
+  box-shadow: $shadow-sm;
+  overflow: hidden;
+
+  &__toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+
+    &:hover {
+      background: $gray-50;
+    }
+  }
+
+  &__toggle-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: $gray-700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    i { color: $gray-500; }
+  }
+
+  > .advanced-section__toggle i:last-child {
+    color: $gray-400;
+    font-size: 0.85rem;
+  }
+
+  &__body {
+    padding: 0 20px 20px;
+    border-top: 1px solid $gray-100;
+    animation: fadeSlideIn 0.2s ease;
+  }
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// Barra de filtros
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: flex-end;
+  padding: 16px;
+  background: $gray-50;
+  border-radius: $radius-sm;
+  margin: 16px 0;
+
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    &--action {
+      justify-content: flex-end;
+    }
+  }
+
+  &__label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: $gray-700;
+  }
+}
+
+// Carga inline
+.inline-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: $gray-500;
+  font-size: 0.875rem;
+  justify-content: center;
+}
+
+// Resumen numérico de filtros
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.summary-card {
+  background: $gray-50;
+  border: 1px solid $gray-200;
+  border-left: 4px solid $primary;
+  border-radius: $radius-sm;
+  padding: 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  strong {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: $gray-900;
+  }
+
+  span {
+    font-size: 0.78rem;
+    color: $gray-500;
+    font-weight: 500;
+  }
+}
+
+// Sub-gráficos dentro de la sección avanzada
+.sub-chart-card {
+  background: $gray-50;
+  border: 1px solid $gray-200;
+  border-radius: $radius-sm;
+  padding: 16px;
+  margin-bottom: 16px;
+
+  &__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: $gray-700;
+    margin: 0 0 12px;
+  }
+}
+
+// Micro bar chart (daily/hourly)
+.micro-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 120px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+
+  &__col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 44px;
+  }
+
+  &__track {
+    width: 28px;
+    height: 80px;
+    background: $gray-200;
+    border-radius: 4px 4px 0 0;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+
+  &__fill {
+    width: 100%;
+    background: linear-gradient(180deg, $primary 0%, darken($primary, 12%) 100%);
+    border-radius: 4px 4px 0 0;
+    min-height: 2px;
+    transition: height 0.4s ease;
+  }
+
+  &__label {
+    font-size: 0.65rem;
+    color: $gray-500;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  &__count {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: $gray-700;
+  }
+}
+
+// Breakdown por usuario (sección avanzada)
+.user-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+    border: 1px solid $gray-200;
+    border-left: 4px solid $green;
+    border-radius: $radius-sm;
+    padding: 10px 14px;
+    gap: 12px;
+  }
+
+  &__email {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: $gray-700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  &__metrics {
+    display: flex;
+    gap: 12px;
+    flex-shrink: 0;
+    align-items: center;
+  }
+
+  &__count {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: $primary;
+  }
+
+  &__amount {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: $green;
+  }
+}
+
+// ================================================
+// Botones del sistema de diseño (scope local)
+// ================================================
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: $radius-sm;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  &-primary {
+    background: $primary;
+    color: white;
+
+    &:hover:not(:disabled) {
+      background: darken($primary, 8%);
+      transform: translateY(-1px);
+    }
+  }
+
+  &-sm {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+}
+
+// Overrides Bootstrap form controls
+.form-control {
+  border-radius: $radius-sm;
+  font-size: 0.875rem;
+  border-color: $gray-200;
+
+  &:focus {
+    border-color: $primary;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+  }
+}
+
+// ================================================
+// Responsive general
+// ================================================
+
+@media (max-width: 768px) {
+  .dashboard {
+    padding: 16px;
+  }
+
+  .page-header {
+    margin-bottom: 16px;
+  }
+
+  .kpi-grid {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .charts-grid {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .rq-panel {
+    margin-bottom: 16px;
+  }
+
+  .filter-bar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .kpi-card {
+    padding: 14px;
+
+    &__value {
+      font-size: 1.4rem;
+    }
+
+    &__icon {
+      width: 40px;
+      height: 40px;
+      font-size: 1.1rem;
+    }
+  }
+
+  .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .top-users__amount {
+    display: none;
+  }
+}

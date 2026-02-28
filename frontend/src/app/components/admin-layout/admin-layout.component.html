@@ -1,0 +1,47 @@
+<div class="admin-layout" [class.sidebar-open]="sidebarOpen" [class.is-mobile]="isMobile">
+
+  <!-- Mobile header -->
+  <div class="mobile-header" *ngIf="isMobile">
+    <button class="hamburger-btn" (click)="toggleSidebar()" aria-label="Abrir menú">
+      <i class="bi" [ngClass]="sidebarOpen ? 'bi-x-lg' : 'bi-list'"></i>
+    </button>
+    <span class="mobile-title">
+      <i class="bi bi-shield-lock"></i> Admin
+    </span>
+  </div>
+
+  <!-- Backdrop for mobile -->
+  <div class="sidebar-backdrop" *ngIf="isMobile && sidebarOpen" (click)="closeSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" [class.open]="sidebarOpen">
+    <!-- <div class="sidebar-header">
+      <img src="assets/logo.png" alt="Cuenly" class="sidebar-logo">
+      <div class="sidebar-brand">
+        <span class="brand-name">Cuenly</span>
+        <span class="brand-label">Admin</span>
+      </div>
+    </div> -->
+
+    <nav class="sidebar-nav">
+      <a *ngFor="let item of menuItems; trackBy: trackByPath" [routerLink]="item.path" class="nav-item"
+        [class.active]="isActive(item.path)" (click)="closeSidebar()">
+        <i class="bi" [ngClass]="item.icon"></i>
+        <span>{{ item.label }}</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a routerLink="/" class="nav-item back-link">
+        <i class="bi bi-arrow-left"></i>
+        <span>Volver a la app</span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+    <router-outlet></router-outlet>
+  </main>
+
+</div>
