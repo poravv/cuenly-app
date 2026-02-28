@@ -394,35 +394,13 @@ db.user_subscriptions.createIndex({ next_billing_date: 1, status: 1 })  // Para 
 
 ---
 
-### ✅ 4.4 Server-Sent Events (SSE) para cola en tiempo real
+### ✅ 4.4 Server-Sent Events (SSE) para cola en tiempo real (YA ESTABA IMPLEMENTADO)
 
-**Objetivo:** Reemplazar el polling de 5s en la cola de procesos con actualizaciones push del servidor.
+**Verificado:** SSE ya estaba completamente implementado en backend y frontend:
 
-**Backend — agregar endpoint SSE:**
-```python
-from sse_starlette.sse import EventSourceResponse
-
-@router.get("/queue/stream")
-async def queue_stream(request: Request, current_user = Depends(get_current_user)):
-    async def event_generator():
-        while True:
-            if await request.is_disconnected():
-                break
-            events = await get_recent_queue_events(current_user.email)
-            yield {"data": json.dumps(events)}
-            await asyncio.sleep(3)
-    return EventSourceResponse(event_generator())
-```
-
-**Frontend — usar `EventSource` en lugar de `interval()`:**
-```typescript
-// queue-events.component.ts
-const source = new EventSource(`/api/queue/stream?token=${token}`);
-source.onmessage = (event) => {
-  this.events = JSON.parse(event.data);
-  this.cdr.markForCheck();
-};
-```
+- **Backend:** `GET /user/queue-events/stream` en `user_profile.py:604-856` con `EventSourceResponse` de `sse-starlette`. Async generator con polling 3s a MongoDB + RQ, change detection vía MD5 hash, heartbeat, auth vía JWT query param.
+- **Frontend:** `queue-events.component.ts` usa `EventSource` nativo con listeners para `queue-update`, `heartbeat`, `error`. Indicadores `sseConnected`/`sseError` en UI. Fallback HTTP con botón "Actualizar".
+- **Dependencia:** `sse-starlette==1.6.0` en `requirements.txt`.
 
 ---
 
@@ -490,7 +468,7 @@ mongodump --uri="$MONGODB_URL" --out="/backups/mongodb_$DATE"
 | 17 | Upload manual: verificar flujos | Funcionalidad core | Bajo | 4 | ✅ Verificado |
 | 18 | Descarga MinIO por plan | Funcionalidad negocio | Bajo | 4 | ✅ Fix aplicado |
 | 19 | Página de Ayuda | UX onboarding | Bajo | 4 | ✅ Ya tenía contenido |
-| 20 | SSE para cola en tiempo real | UX avanzado | Alto | 4 | ✅ |
+| 20 | SSE para cola en tiempo real | UX avanzado | Alto | 4 | ✅ Ya existía |
 | 21 | Métricas Prometheus completas | Observabilidad | Bajo | 5 | ✅ |
 | 22 | Backup MongoDB automatizado | Resiliencia | Bajo | 5 | ✅ |
 | 23 | Documentar disaster recovery | Operaciones | Bajo | 5 | ✅ |

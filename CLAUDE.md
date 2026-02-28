@@ -232,7 +232,7 @@ Usuario exporta vía templates configurables → Excel (.xlsx)
 - ✅ **Suscripción de 15 días con Google**: VERIFICADO — Trial se crea automáticamente en `upsert_user()` tras primer login. No hay bypass.
 
 ### ALTO - Performance/Calidad
-- ⬜ **Sin WebSockets**: PENDIENTE — SSE (Server-Sent Events) planificado para próxima fase. Actualmente polling HTTP reducido (botón manual en cola).
+- ✅ **SSE implementado**: RESUELTO — SSE en `GET /user/queue-events/stream` con `sse-starlette`. Frontend usa `EventSource` nativo con fallback HTTP manual.
 - ✅ **Sin `trackBy` en `*ngFor`**: RESUELTO — Agregado `trackBy` en todos los componentes críticos (admin-panel, queue-events, invoices-v2, etc.).
 - ✅ **Sin OnPush change detection**: RESUELTO — Aplicado a componentes de alta frecuencia (queue-events, invoice-processing, etc.). `ChangeDetectorRef.markForCheck()` donde corresponda.
 - ✅ **`print()` en código de producción**: RESUELTO — Reemplazados todos por `logging.getLogger(__name__)` en `task_queue.py` y `server.py`.

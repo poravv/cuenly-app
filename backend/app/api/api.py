@@ -2961,8 +2961,11 @@ async def v2_delete_invoice(header_id: str, user: Dict[str, Any] = Depends(_get_
         if not header:
             raise HTTPException(status_code=404, detail="Factura no encontrada")
         
-        # Eliminar items primero
-        items_result = repo._items().delete_many({"header_id": header_id})
+        # Eliminar items primero (incluye owner_email para defensa en profundidad)
+        item_q = {"header_id": header_id}
+        if settings.MULTI_TENANT_ENFORCE and owner:
+            item_q["owner_email"] = owner
+        items_result = repo._items().delete_many(item_q)
         
         # Eliminar header
         header_result = repo._headers().delete_one({"_id": header_id})
@@ -3041,8 +3044,11 @@ async def v2_bulk_delete_invoices(
                 detail=f"Facturas no encontradas: {list(missing_ids)}"
             )
         
-        # Eliminar items de todas las facturas
-        items_result = repo._items().delete_many({"header_id": {"$in": existing_ids}})
+        # Eliminar items de todas las facturas (incluye owner_email para defensa en profundidad)
+        item_q = {"header_id": {"$in": existing_ids}}
+        if settings.MULTI_TENANT_ENFORCE and owner:
+            item_q["owner_email"] = owner
+        items_result = repo._items().delete_many(item_q)
         
         # Eliminar headers
         headers_result = repo._headers().delete_many({"_id": {"$in": existing_ids}})
