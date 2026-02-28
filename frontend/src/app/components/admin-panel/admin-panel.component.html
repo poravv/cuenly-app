@@ -35,6 +35,10 @@
         <i class="bi bi-robot"></i>
         Límites IA
       </button>
+      <button class="tab-button" [class.active]="activeTab === 'audit'" (click)="setActiveTab('audit')">
+        <i class="bi bi-journal-text"></i>
+        Auditoría
+      </button>
     </div>
 
     <div *ngIf="activeTab === 'stats'" class="tab-content">
@@ -586,6 +590,85 @@
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Log Tab -->
+    <div *ngIf="activeTab === 'audit'" class="tab-content">
+      <div class="users-section">
+        <div class="section-header">
+          <h3>Log de Auditoría</h3>
+          <div class="section-actions">
+            <select class="form-control form-control-sm" style="width: auto; display: inline-block; margin-right: 12px;"
+              [(ngModel)]="auditActionFilter" (ngModelChange)="onAuditFilterChange()">
+              <option value="">Todas las acciones</option>
+              <option value="user_role_changed">Cambio de rol</option>
+              <option value="user_suspended">Suspensión</option>
+              <option value="user_activated">Activación</option>
+              <option value="monthly_ai_reset">Reset mensual IA</option>
+              <option value="user_ai_reset">Reset IA individual</option>
+            </select>
+            <span class="total-count">Total: {{formatNumber(auditTotal)}}</span>
+          </div>
+        </div>
+
+        <div *ngIf="loadingAudit" class="loading-users">
+          <div class="spinner-small"></div>
+          <span>Cargando auditoría...</span>
+        </div>
+
+        <div *ngIf="!loadingAudit && auditLogs.length === 0" class="no-data" style="padding: 40px; text-align: center;">
+          <i class="bi bi-journal-text" style="font-size: 2rem; color: #9ca3af;"></i>
+          <p style="color: #6b7280; margin-top: 12px;">No hay registros de auditoría</p>
+        </div>
+
+        <div *ngIf="!loadingAudit && auditLogs.length > 0" class="users-table-container">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Acción</th>
+                <th>Administrador</th>
+                <th>Usuario afectado</th>
+                <th>Detalles</th>
+                <th>IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let log of auditLogs; trackBy: trackByAuditId">
+                <td>{{formatDate(log.timestamp)}}</td>
+                <td>
+                  <span [class]="getActionClass(log.action)">{{getActionLabel(log.action)}}</span>
+                </td>
+                <td>
+                  <small>{{log.admin_email}}</small>
+                </td>
+                <td>
+                  <small>{{log.target_user || '—'}}</small>
+                </td>
+                <td>
+                  <small *ngIf="log.details && (log.details | json) !== '{}'" class="text-muted">
+                    {{log.details | json}}
+                  </small>
+                  <span *ngIf="!log.details || (log.details | json) === '{}'" class="text-muted">—</span>
+                </td>
+                <td>
+                  <small class="text-muted">{{log.ip_address || '—'}}</small>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div *ngIf="auditTotalPages > 1" class="pagination">
+          <button class="btn-page" [disabled]="auditPage <= 1" (click)="onAuditPageChange(auditPage - 1)">
+            <i class="bi bi-chevron-left"></i> Anterior
+          </button>
+          <span class="page-info">Página {{auditPage}} de {{auditTotalPages}}</span>
+          <button class="btn-page" [disabled]="auditPage >= auditTotalPages" (click)="onAuditPageChange(auditPage + 1)">
+            Siguiente <i class="bi bi-chevron-right"></i>
+          </button>
         </div>
       </div>
     </div>

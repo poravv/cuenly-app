@@ -507,6 +507,13 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
   }
 
+  // Audit log
+  getAuditLogs(page: number = 1, pageSize: number = 30, action?: string): Observable<any> {
+    const params: any = { page: page.toString(), page_size: pageSize.toString() };
+    if (action) params.action = action;
+    return this.http.get<any>(`${this.apiUrl}/admin/audit`, { params });
+  }
+
   // =====================================
   // PAGOPAR / SUSCRIPCIONES
   // =====================================

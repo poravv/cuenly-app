@@ -1,4 +1,4 @@
-from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues, admin_ai_limits, admin_scheduler
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues, admin_ai_limits, admin_scheduler, admin_audit
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -143,6 +143,7 @@ app.include_router(user_profile.router, prefix="/user", tags=["User Profile"])
 app.include_router(queues.router, prefix="/admin/queues", tags=["Admin Queues"])
 app.include_router(admin_ai_limits.router, prefix="/admin/ai-limits", tags=["Admin AI Limits"])
 app.include_router(admin_scheduler.router, prefix="/admin/scheduler", tags=["Admin Scheduler"])
+app.include_router(admin_audit.router, prefix="/admin/audit", tags=["Admin Audit"])
 
 
 # Startup event para inicializar servicios

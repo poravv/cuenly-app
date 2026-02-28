@@ -82,8 +82,16 @@ export class AdminPanelComponent implements OnInit {
   selectedUserForReset = '';
 
   // Tabs
-  // Tabs
-  activeTab = 'stats'; // 'stats', 'users', 'plans', 'ai-limits', 'subscriptions'
+  activeTab = 'stats';
+
+  // Audit log
+  auditLogs: any[] = [];
+  loadingAudit = false;
+  auditPage = 1;
+  auditPageSize = 30;
+  auditTotalPages = 0;
+  auditTotal = 0;
+  auditActionFilter = '';
 
   // Subscriptions
   subscriptions: any[] = [];
@@ -366,7 +374,9 @@ export class AdminPanelComponent implements OnInit {
   // Tabs
   setActiveTab(tab: string): void {
     this.activeTab = tab;
-    if (tab === 'subscriptions') {
+    if (tab === 'audit') {
+      this.loadAuditLogs();
+    } else if (tab === 'subscriptions') {
       this.loadSubscriptions();
     } else if (tab === 'ai-limits') {
       this.loadAiLimitsData();
@@ -709,7 +719,6 @@ export class AdminPanelComponent implements OnInit {
         action: {
           label: 'Cobrar',
           handler: () => {
-            // Show loading indicator?
             this.apiService.retrySubscriptionCharge(sub._id).subscribe({
               next: (res) => {
                 if (res.success) {
@@ -725,5 +734,61 @@ export class AdminPanelComponent implements OnInit {
         }
       }
     );
+  }
+
+  // =====================================
+  // AUDIT LOG
+  // =====================================
+
+  loadAuditLogs(): void {
+    this.loadingAudit = true;
+    this.apiService.getAuditLogs(this.auditPage, this.auditPageSize, this.auditActionFilter || undefined).subscribe({
+      next: (response) => {
+        if (response.success) {
+          this.auditLogs = response.logs;
+          this.auditTotal = response.total;
+          this.auditTotalPages = response.total_pages;
+        }
+        this.loadingAudit = false;
+      },
+      error: () => {
+        this.showError('Error cargando log de auditoría');
+        this.loadingAudit = false;
+      }
+    });
+  }
+
+  onAuditPageChange(page: number): void {
+    if (page >= 1 && page <= this.auditTotalPages) {
+      this.auditPage = page;
+      this.loadAuditLogs();
+    }
+  }
+
+  onAuditFilterChange(): void {
+    this.auditPage = 1;
+    this.loadAuditLogs();
+  }
+
+  trackByAuditId(_index: number, log: any): string {
+    return log.id;
+  }
+
+  getActionLabel(action: string): string {
+    const labels: Record<string, string> = {
+      'user_role_changed': 'Cambio de rol',
+      'user_suspended': 'Usuario suspendido',
+      'user_activated': 'Usuario activado',
+      'monthly_ai_reset': 'Reset mensual IA',
+      'user_ai_reset': 'Reset IA individual',
+    };
+    return labels[action] || action;
+  }
+
+  getActionClass(action: string): string {
+    if (action.includes('suspended') || action.includes('cancelled')) return 'badge-suspended';
+    if (action.includes('activated') || action.includes('reset')) return 'badge-active';
+    if (action.includes('role')) return 'badge-admin';
+    return 'badge-user';
   }
 }

@@ -6,9 +6,10 @@ realizada por un administrador (cambio de rol, suspensión, reset de IA, etc.).
 """
 import logging
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from pymongo import MongoClient, DESCENDING
+from bson import ObjectId
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,43 @@ class AuditRepository:
         except Exception as exc:
             # Nunca interrumpir el flujo principal por un fallo de auditoría
             logger.warning(f"[AUDIT] No se pudo registrar evento '{action}': {exc}")
+
+    def get_logs(
+        self,
+        page: int = 1,
+        page_size: int = 30,
+        action: Optional[str] = None,
+        admin_email: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Consulta paginada del audit log con filtros opcionales."""
+        coll = self._get_collection()
+        query: Dict[str, Any] = {}
+        if action:
+            query["action"] = action
+        if admin_email:
+            query["admin_email"] = admin_email
+
+        total = coll.count_documents(query)
+        skip = (page - 1) * page_size
+        docs = list(
+            coll.find(query)
+            .sort("timestamp", DESCENDING)
+            .skip(skip)
+            .limit(page_size)
+        )
+
+        for doc in docs:
+            doc["id"] = str(doc.pop("_id"))
+            if isinstance(doc.get("timestamp"), datetime):
+                doc["timestamp"] = doc["timestamp"].isoformat()
+
+        return {
+            "logs": docs,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total else 0,
+        }
 
 
 # Singleton ligero — reutiliza conexión MongoDB
