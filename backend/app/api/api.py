@@ -1,4 +1,4 @@
-from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues, admin_ai_limits, admin_scheduler, admin_audit
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -63,12 +63,56 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Rate limiter basado en Redis (cae a memoria si Redis no está disponible)
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+
+    def _get_user_or_ip(request: Request) -> str:
+        """Clave de rate limit: email del usuario autenticado o IP como fallback."""
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            try:
+                from app.utils.firebase_auth import verify_firebase_token
+                token = auth.split(" ", 1)[1]
+                payload = verify_firebase_token(token)
+                return payload.get("email") or get_remote_address(request)
+            except Exception:
+                pass
+        return get_remote_address(request)
+
+    _limiter_storage = f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', '6379')}"
+    limiter = Limiter(key_func=_get_user_or_ip, storage_uri=_limiter_storage)
+    _RATE_LIMITING_ENABLED = True
+    logger.info("✅ Rate limiting habilitado (slowapi + Redis)")
+except Exception as _rl_err:
+    limiter = None
+    _RATE_LIMITING_ENABLED = False
+    logger.warning(f"⚠️ Rate limiting deshabilitado: {_rl_err}")
+
+
+def _rate_limit(limit_string: str):
+    """Decorador de rate limit seguro — no-op si slowapi no está disponible."""
+    def decorator(func):
+        if _RATE_LIMITING_ENABLED and limiter:
+            return limiter.limit(limit_string)(func)
+        return func
+    return decorator
+
+
 # Crear la aplicación FastAPI
 app = FastAPI(
     title="CuenlyApp API",
     description="API para procesar facturas desde correo electrónico y almacenarlas en MongoDB",
     version="2.0.0"
 )
+
+# Configurar rate limiter en la app si está habilitado
+if _RATE_LIMITING_ENABLED and limiter:
+    app.state.limiter = limiter
+    from slowapi.errors import RateLimitExceeded
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configurar middleware de observabilidad
 app.add_middleware(ObservabilityMiddleware)
@@ -78,7 +122,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://app.cuenly.com",
-        "http://localhost:4200", 
+        "http://localhost:4200",
         "http://localhost",
         "http://127.0.0.1"
     ],
@@ -97,6 +141,9 @@ app.include_router(admin_users.router, prefix="/admin/users", tags=["Admin Users
 app.include_router(admin_plans.router, prefix="/admin/plans", tags=["Admin Plans"])
 app.include_router(user_profile.router, prefix="/user", tags=["User Profile"])
 app.include_router(queues.router, prefix="/admin/queues", tags=["Admin Queues"])
+app.include_router(admin_ai_limits.router, prefix="/admin/ai-limits", tags=["Admin AI Limits"])
+app.include_router(admin_scheduler.router, prefix="/admin/scheduler", tags=["Admin Scheduler"])
+app.include_router(admin_audit.router, prefix="/admin/audit", tags=["Admin Audit"])
 
 
 # Startup event para inicializar servicios
@@ -253,8 +300,8 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     if db_user:
         is_admin = db_user.get('role') == 'admin'
     else:
-        # Fallback para el usuario principal si la DB falla
-        is_admin = user.get('email') == 'andyvercha@gmail.com'
+        # Fallback: verificar contra lista de admins configurada
+        is_admin = user.get('email', '').lower() in settings.ADMIN_EMAILS
     
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
@@ -911,7 +958,9 @@ async def trigger_retry_skipped(
         raise HTTPException(status_code=500, detail="Error interno")
 
 @app.post("/jobs/process-range")
+@_rate_limit("5/hour")
 async def process_range_job(
+    request: Request,
     payload: ProcessRangeRequest,
     # Importante: no bloquear por límite IA a nivel endpoint.
     # El procesamiento interno ya maneja XML vs IA y deja pendientes cuando corresponde.
@@ -1166,11 +1215,13 @@ def _create_completed_task(action: str, result: ProcessResult) -> str:
 
 
 @app.post("/upload", response_model=ProcessResult)
+@_rate_limit("20/minute")
 async def upload_pdf(
+    request: Request,
     file: UploadFile = File(...),
     sender: Optional[str] = Form(None),
-    date: Optional[str] = Form(None)
-    , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
+    date: Optional[str] = Form(None),
+    user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
     """
     Sube un archivo PDF para procesarlo directamente.
     
@@ -1825,8 +1876,6 @@ async def enqueue_upload_xml(
             cleanup_local_file_if_safe(xml_path, xml_minio_key)
         logger.error(f"Error al encolar XML: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-    # Endpoints legacy de Excel eliminados
 
 @app.post("/email-config/test")
 async def test_email_config(config: MultiEmailConfig, user: Dict[str, Any] = Depends(_get_current_user)):
@@ -3359,8 +3408,6 @@ async def imap_pool_stats():
         logger.error(f"Error obteniendo estadísticas del pool IMAP: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas del pool: {str(e)}")
 
-    # Endpoint legacy /excel/stats eliminado
-
 @app.get("/health/detailed")
 async def detailed_health():
     """
@@ -3596,8 +3643,8 @@ async def admin_update_user_role(
         if not target_user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
-        # No permitir cambiar el rol del admin principal
-        if user_email.lower() == 'andyvercha@gmail.com' and request.role != 'admin':
+        # No permitir cambiar el rol de admins protegidos
+        if user_email.lower() in settings.ADMIN_EMAILS and request.role != 'admin':
             raise HTTPException(status_code=400, detail="No se puede cambiar el rol del administrador principal")
         
         success = user_repo.update_user_role(user_email, request.role)
@@ -3629,8 +3676,8 @@ async def admin_update_user_status(
         if not target_user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
-        # No permitir suspender al admin principal
-        if user_email.lower() == 'andyvercha@gmail.com' and request.status == 'suspended':
+        # No permitir suspender admins protegidos
+        if user_email.lower() in settings.ADMIN_EMAILS and request.status == 'suspended':
             raise HTTPException(status_code=400, detail="No se puede suspender al administrador principal")
         
         success = user_repo.update_user_status(user_email, request.status)
@@ -4382,7 +4429,31 @@ async def get_invoice_file_direct(
             user_repo = UserRepository()
             if not user_repo.is_admin(owner):
                 raise HTTPException(status_code=403, detail="Acceso denegado")
-            
+
+        # Verificar si el plan del usuario permite descarga desde MinIO
+        user_repo = UserRepository()
+        is_admin = user_repo.is_admin(owner)
+
+        if not is_admin:
+            from app.repositories.subscription_repository import SubscriptionRepository
+            sub_repo = SubscriptionRepository()
+            subscription = await sub_repo.get_user_active_subscription(owner)
+
+            if not subscription:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
+                )
+
+            plan_code = subscription.get("plan_code")
+            plan = await sub_repo.get_plan_by_code(plan_code)
+            if plan and plan.get("features"):
+                if not plan["features"].get("minio_storage", True):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
+                    )
+
         try:
             from minio import Minio
         except ImportError:
@@ -4893,8 +4964,6 @@ async def set_auto_refresh(payload: AutoRefreshPayload):
         logger.error(f"Error al guardar preferencia auto-refresh: {e}")
         raise HTTPException(status_code=500, detail="No se pudo guardar preferencia")
 
-# Endpoints legacy de exportación eliminados (Excel/Documental)
-
 @app.get("/export/mongodb/stats")
 async def mongodb_export_stats(user: Dict[str, Any] = Depends(_get_current_user)):
     """Estadísticas básicas de la base de facturas del usuario actual."""
@@ -4930,14 +4999,6 @@ async def mongodb_export_stats(user: Dict[str, Any] = Depends(_get_current_user)
         logger.error(f"Error obteniendo stats MongoDB v2: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas: {str(e)}")
 
-    # Endpoint legacy process-and-export eliminado
-
-# Funciones auxiliares para tareas en segundo plano
-
-    # Tareas legacy de exportación eliminadas
-
-async def _export_completo_month_task(year_month: str):
-    return {"success": False, "message": "Exportación a Excel deshabilitada"}
 
 # -----------------------------
 # Consultas MongoDB y Exports por Fecha
@@ -5091,8 +5152,6 @@ async def get_recent_activity(
     except Exception as e:
         logger.error(f"Error obteniendo actividad reciente: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error obteniendo actividad: {str(e)}")
-
-    # Endpoint legacy /export/excel-from-mongodb eliminado
 
 def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
     """
@@ -5353,25 +5412,6 @@ async def get_available_fields(user: Dict[str, Any] = Depends(_get_current_user)
     except Exception as e:
         logger.error(f"Error obteniendo campos disponibles: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# === RUTA DE CAMPOS CALCULADOS ELIMINADA ===
-# @app.get("/export-templates/calculated-fields/preview")
-# async def preview_calculated_fields(user: Dict[str, Any] = Depends(_get_current_user)):
-#     """Preview de campos calculados - ELIMINADO"""
-#     return {"error": "Campos calculados eliminados"}
-
-# === RUTAS DE TEMPLATES PREDEFINIDOS ELIMINADAS ===
-# Ya no hay templates predefinidos, solo creación personalizada
-
-# @app.post("/export-templates/create-from-preset")
-# async def create_template_from_preset(
-#     preset_request: dict,
-#     user: Dict[str, Any] = Depends(_get_current_user)
-# ):
-#     """Crear template a partir de un preset inteligente - ELIMINADO"""
-#     return {"error": "Templates predefinidos eliminados"}
-
-# === TEMPLATES PREDEFINIDOS ELIMINADOS ===
 
 @app.post("/export-templates")
 async def create_export_template(

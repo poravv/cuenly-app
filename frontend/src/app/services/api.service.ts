@@ -371,10 +371,10 @@ export class ApiService {
     return this.http.get<{ success: boolean, is_admin: boolean, email: string, message: string }>(`${this.apiUrl}/admin/check`);
   }
 
-  getAdminUsers(page: number = 1, pageSize: number = 20): Observable<any> {
-    return this.http.get<any>(`${this.apiUrl}/admin/users`, {
-      params: { page: page.toString(), page_size: pageSize.toString() }
-    });
+  getAdminUsers(page: number = 1, pageSize: number = 20, search: string = ''): Observable<any> {
+    const params: any = { page: page.toString(), page_size: pageSize.toString() };
+    if (search?.trim()) params.search = search.trim();
+    return this.http.get<any>(`${this.apiUrl}/admin/users`, { params });
   }
 
   updateUserRole(email: string, role: string): Observable<{ success: boolean, message: string }> {
@@ -387,6 +387,10 @@ export class ApiService {
 
   getAdminStats(): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/admin/stats`);
+  }
+
+  getQueueStats(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/queues/stats`, { headers: this.getSecureHeaders() });
   }
 
   // =====================================
@@ -501,6 +505,13 @@ export class ApiService {
   // Ejecutar reseteo mensual manual
   executeMonthlyReset(): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
+  }
+
+  // Audit log
+  getAuditLogs(page: number = 1, pageSize: number = 30, action?: string): Observable<any> {
+    const params: any = { page: page.toString(), page_size: pageSize.toString() };
+    if (action) params.action = action;
+    return this.http.get<any>(`${this.apiUrl}/admin/audit`, { params });
   }
 
   // =====================================

@@ -35,9 +35,9 @@
 
               <div class="list-group">
                 <div class="list-group-item d-flex align-items-center justify-content-between p-3"
-                  *ngFor="let item of files; let i = index" [ngClass]="{'list-group-item-danger': item.status === 'error' || item.status === 'invalid_content', 
+                  *ngFor="let item of files; let i = index; trackBy: trackByFile" [ngClass]="{'list-group-item-danger': item.status === 'error' || item.status === 'invalid_content',
                                  'list-group-item-success': item.status === 'success',
-                                 'list-group-item-warning': item.status === 'validating'}">
+                                 'list-group-item-warning': item.status === 'validating' || item.status === 'ai_limit'}">
 
                   <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
                     <div class="file-icon me-3">
@@ -54,6 +54,10 @@
                         Analizando...
                       </div>
                       <div class="small text-danger fw-bold" *ngIf="item.status === 'invalid_content'">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        {{ item.message }}
+                      </div>
+                      <div class="small text-warning fw-bold" *ngIf="item.status === 'ai_limit'">
                         <i class="bi bi-exclamation-triangle me-1"></i>
                         {{ item.message }}
                       </div>

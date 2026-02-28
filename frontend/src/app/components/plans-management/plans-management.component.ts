@@ -151,7 +151,6 @@ export class PlansManagementComponent implements OnInit {
         this.plans = response.data || [];
       }
     } catch (error) {
-      console.error('Error loading plans:', error);
       this.notificationService.error(
         'No se pudieron cargar los planes',
         'Error cargando datos'
@@ -169,7 +168,6 @@ export class PlansManagementComponent implements OnInit {
         this.subscriptionStats = response.data;
       }
     } catch (error) {
-      console.error('Error loading subscription stats:', error);
       this.notificationService.error(
         'No se pudieron cargar las estadísticas de suscripciones',
         'Error cargando estadísticas'
@@ -251,7 +249,6 @@ export class PlansManagementComponent implements OnInit {
         this.notificationService.success(response.message, 'Plan guardado');
       }
     } catch (error: any) {
-      console.error('Error saving plan:', error);
       this.notificationService.error('Error guardando plan: ' + (error.error?.detail || error.message));
     }
   }
@@ -275,7 +272,6 @@ export class PlansManagementComponent implements OnInit {
                 );
               }
             } catch (error: any) {
-              console.error('Error deleting plan:', error);
               this.notificationService.error(
                 'No se pudo eliminar el plan',
                 'Error eliminando plan'
@@ -324,7 +320,7 @@ export class PlansManagementComponent implements OnInit {
         this.users = response.users || [];
       }
     } catch (error) {
-      console.error('Error loading users:', error);
+      // Error handled silently
     } finally {
       this.loadingUsers = false;
     }
@@ -350,7 +346,6 @@ export class PlansManagementComponent implements OnInit {
         this.loadSubscriptionStats();
       }
     } catch (error: any) {
-      console.error('Error assigning plan:', error);
       this.notificationService.error('Error asignando plan: ' + (error.error?.detail || error.message));
     }
   }

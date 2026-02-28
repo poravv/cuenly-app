@@ -47,6 +47,26 @@ class Settings(BaseSettings):
     # Seguridad de credenciales de correo (cifrado en reposo)
     # Recomendado: clave Fernet urlsafe base64 de 32 bytes.
     EMAIL_CONFIG_ENCRYPTION_KEY: str = os.getenv("EMAIL_CONFIG_ENCRYPTION_KEY", "")
+
+    # Administradores del sistema
+    # El email de andyvercha@gmail.com se mantiene como admin por defecto siempre.
+    # Para agregar más admins usar: ADMIN_EMAILS=["email1@x.com","email2@x.com"]
+    # Los emails en esta lista siempre tienen rol admin al hacer login.
+    # Adicionalmente, cualquier usuario con role='admin' en MongoDB mantiene su rol.
+    @property
+    def ADMIN_EMAILS(self) -> List[str]:
+        raw = os.getenv("ADMIN_EMAILS", "")
+        extra: List[str] = []
+        if raw.strip():
+            try:
+                parsed = json.loads(raw)
+                extra = [e.strip().lower() for e in parsed if isinstance(e, str)]
+            except Exception:
+                # Si no es JSON válido, tratarlo como lista separada por comas
+                extra = [e.strip().lower() for e in raw.split(",") if e.strip()]
+        # andyvercha@gmail.com siempre está en la lista sin importar el env var
+        base = ["andyvercha@gmail.com"]
+        return list(set(base + extra))
     
     # Email Processing
     EMAIL_PROCESS_ALL_DATES: bool = os.getenv("EMAIL_PROCESS_ALL_DATES", "true").lower() in ("1", "true", "yes")
@@ -93,11 +113,21 @@ class Settings(BaseSettings):
     REDIS_SSL: bool = os.getenv("REDIS_SSL", "0").lower() in ("1", "true", "yes")
     REDIS_DB: int = int(os.getenv("REDIS_DB", 0))
 
+    # Email Notifications (SMTP)
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", 587))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "no-reply@cuenly.com")
+    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "CuenlyApp")
+    SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes")
+
     # Pagopar Integration
     PAGOPAR_PUBLIC_KEY: str = os.getenv("PAGOPAR_PUBLIC_KEY", "")
     PAGOPAR_PRIVATE_KEY: str = os.getenv("PAGOPAR_PRIVATE_KEY", "")
     # Default to production, override with sandbox URL in dev
     PAGOPAR_BASE_URL: str = os.getenv("PAGOPAR_BASE_URL", "https://api.pagopar.com/api/pago-recurrente/3.0/")
+    PAGOPAR_REDIRECT_URL: str = os.getenv("PAGOPAR_REDIRECT_URL", "https://app.cuenly.com/subscription/confirm")
     
     model_config = {
         "env_file": ".env",

@@ -58,7 +58,6 @@ export class AuthService {
       this.clearGoogleAuthCookies();
       
     } catch (error) {
-      console.error('Error during sign out:', error);
       // Incluso si hay error, limpiamos todo localmente
       localStorage.clear();
       sessionStorage.clear();

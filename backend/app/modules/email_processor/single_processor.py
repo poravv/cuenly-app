@@ -15,7 +15,7 @@ from app.models.models import EmailConfig, MultiEmailConfig, InvoiceData, Proces
 from app.modules.openai_processor.openai_processor import OpenAIProcessor
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.modules.mapping.invoice_mapping import map_invoice
-
+from app.utils.extended_metrics import extended_metrics
 
 from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError, SkipEmailKeepUnread
 
@@ -1124,7 +1124,17 @@ class EmailProcessor:
             
             repo.save_document(doc)
             logger.info(f"✅ Factura guardada con status={status}")
-            
+
+            # 📊 Registrar métrica de procesamiento completado
+            if status == "DONE":
+                # Determinar método: xml_native o openai_vision
+                method = "xml_native"
+                if hasattr(invoice, 'ai_used') and invoice.ai_used:
+                    method = "openai_vision"
+                extended_metrics.record_email_processed(method=method, status="success", user_email=self.owner_email if hasattr(self, 'owner_email') else "")
+            elif status in ["FAILED", "PENDING_AI"]:
+                extended_metrics.record_email_processed(method="unknown", status="failed", user_email=self.owner_email if hasattr(self, 'owner_email') else "")
+
             # 🚀 FEATURE B2B: Webhooks Outbound
             if status == "DONE" and hasattr(self, 'owner_email') and self.owner_email:
                 try:

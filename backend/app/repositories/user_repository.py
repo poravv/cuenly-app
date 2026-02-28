@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 class UserRepository:
+    _indexes_ensured: bool = False
+
     def __init__(self, conn_str: Optional[str] = None, db_name: Optional[str] = None, collection: str = "auth_users"):
         self.conn_str = conn_str or settings.MONGODB_URL
         self.db_name = db_name or settings.MONGODB_DATABASE
@@ -23,11 +25,13 @@ class UserRepository:
             self._client.admin.command('ping')
         db = self._client[self.db_name]
         coll = db[self.collection]
-        try:
-            coll.create_index('email', unique=True)
-            coll.create_index('uid')
-        except Exception:
-            pass
+        if not UserRepository._indexes_ensured:
+            try:
+                coll.create_index('email', unique=True)
+                coll.create_index('uid')
+                UserRepository._indexes_ensured = True
+            except Exception:
+                pass
         return coll
 
     def upsert_user(self, user: Dict[str, Any]) -> None:
@@ -38,8 +42,13 @@ class UserRepository:
         existing_user = self._coll().find_one({'email': email})
         is_new_user = existing_user is None
         
-        # Determinar rol - andyvercha@gmail.com siempre es admin
-        is_admin = email == 'andyvercha@gmail.com'
+        # Determinar rol:
+        # 1. Si el email está en ADMIN_EMAILS (settings), siempre es admin.
+        # 2. Si ya tiene role='admin' en la DB (asignado por otro admin), se preserva.
+        # 3. En cualquier otro caso, el rol es 'user'.
+        in_admin_list = email in settings.ADMIN_EMAILS
+        existing_role = (existing_user or {}).get('role', 'user')
+        is_admin = in_admin_list or existing_role == 'admin'
         role = 'admin' if is_admin else 'user'
         
         # Datos básicos del usuario que siempre se actualizan
@@ -88,7 +97,7 @@ class UserRepository:
                 
                 # Actualizar con datos básicos + información de trial (preservando 'status')
                 update_payload = {**basic_payload, **trial_payload, 'status': existing_user.get('status', 'active')}
-                print(f"Configurando trial automático para usuario existente: {email}")
+                logger.info(f"Configurando trial automático para usuario existente: {email}")
             else:
                 # Usuario existente con información de trial ya configurada
                 # Solo actualizar datos básicos (preservando 'status')
@@ -354,20 +363,24 @@ class UserRepository:
         user = self.get_by_email(email)
         return user and user.get('role') == 'admin'
 
-    def get_all_users(self, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
-        """Obtiene todos los usuarios con paginación (solo para admins)"""
+    def get_all_users(self, page: int = 1, page_size: int = 20, search: str = "") -> Dict[str, Any]:
+        """Obtiene todos los usuarios con paginación y búsqueda opcional (solo para admins)"""
         skip = (page - 1) * page_size
-        
-        # Contar total de usuarios
-        total = self._coll().count_documents({})
-        
-        # Obtener usuarios con paginación
+
+        query: Dict[str, Any] = {}
+        if search:
+            import re
+            regex = re.compile(re.escape(search), re.IGNORECASE)
+            query = {"$or": [{"email": regex}, {"name": regex}]}
+
+        total = self._coll().count_documents(query)
+
         users = list(
-            self._coll().find({}, {
-                'password': 0  # Excluir campos sensibles
+            self._coll().find(query, {
+                'password': 0
             }).sort('created_at', -1).skip(skip).limit(page_size)
         )
-        
+
         return {
             'users': users,
             'total': total,

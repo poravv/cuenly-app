@@ -1,0 +1,376 @@
+<div class="dashboard">
+
+  <!-- ================================================ -->
+  <!-- Cabecera de página                               -->
+  <!-- ================================================ -->
+  <div class="page-header">
+    <div class="page-header__left">
+      <h2 class="page-header__title">Dashboard</h2>
+      <p class="page-header__subtitle">Resumen general del sistema</p>
+    </div>
+    <button
+      class="btn-refresh"
+      (click)="loadData()"
+      [disabled]="loading"
+      title="Recargar datos">
+      <i class="bi bi-arrow-clockwise" [class.spin]="loading"></i>
+    </button>
+  </div>
+
+  <!-- ================================================ -->
+  <!-- Estado de carga inicial                          -->
+  <!-- ================================================ -->
+  <div *ngIf="loading" class="loading-state">
+    <span class="spinner"></span>
+    <p>Cargando datos del dashboard...</p>
+  </div>
+
+  <ng-container *ngIf="!loading">
+
+    <!-- ============================================== -->
+    <!-- KPI Cards                                      -->
+    <!-- ============================================== -->
+    <div class="kpi-grid">
+
+      <!-- Usuarios -->
+      <div class="kpi-card">
+        <div class="kpi-card__icon kpi-card__icon--indigo">
+          <i class="bi bi-people"></i>
+        </div>
+        <div class="kpi-card__body">
+          <span class="kpi-card__value">{{ formatNumber(userStats.total_users) }}</span>
+          <span class="kpi-card__label">Usuarios</span>
+          <span class="kpi-card__sub">
+            {{ formatNumber(userStats.active_users) }} activos
+            &middot;
+            {{ formatNumber(userStats.trial_users) }} trial
+          </span>
+        </div>
+      </div>
+
+      <!-- Facturas -->
+      <div class="kpi-card">
+        <div class="kpi-card__icon kpi-card__icon--amber">
+          <i class="bi bi-receipt"></i>
+        </div>
+        <div class="kpi-card__body">
+          <span class="kpi-card__value">{{ formatNumber(invoiceStats.total_invoices) }}</span>
+          <span class="kpi-card__label">Facturas</span>
+          <span class="kpi-card__sub">
+            {{ formatNumber(invoiceStats.total_items) }} ítems procesados
+          </span>
+        </div>
+      </div>
+
+      <!-- XML Nativo % -->
+      <div class="kpi-card">
+        <div class="kpi-card__icon kpi-card__icon--green">
+          <i class="bi bi-file-earmark-code"></i>
+        </div>
+        <div class="kpi-card__body">
+          <span class="kpi-card__value">
+            {{ getSourcePercent(invoiceStats.source_totals?.xml_nativo || 0) }}%
+          </span>
+          <span class="kpi-card__label">XML Nativo</span>
+          <span class="kpi-card__sub">
+            {{ formatNumber(invoiceStats.source_totals?.xml_nativo || 0) }} facturas
+          </span>
+        </div>
+      </div>
+
+      <!-- OpenAI Vision % -->
+      <div class="kpi-card">
+        <div class="kpi-card__icon kpi-card__icon--violet">
+          <i class="bi bi-robot"></i>
+        </div>
+        <div class="kpi-card__body">
+          <span class="kpi-card__value">
+            {{ getSourcePercent(invoiceStats.source_totals?.openai_vision || 0) }}%
+          </span>
+          <span class="kpi-card__label">OpenAI Vision</span>
+          <span class="kpi-card__sub">
+            {{ formatNumber(invoiceStats.source_totals?.openai_vision || 0) }} facturas
+          </span>
+        </div>
+      </div>
+
+    </div>
+    <!-- /kpi-grid -->
+
+    <!-- ============================================== -->
+    <!-- Colas RQ                                       -->
+    <!-- ============================================== -->
+    <div class="rq-panel" *ngIf="queueStats || loadingQueueStats">
+      <h4 class="rq-panel__title">
+        <i class="bi bi-hdd-stack"></i> Colas de Procesamiento
+      </h4>
+
+      <div class="rq-panel__cards">
+
+        <!-- Loading -->
+        <div class="rq-card" *ngIf="loadingQueueStats">
+          <span class="spinner-border spinner-border-sm text-muted"></span>
+          <span class="ms-2 text-muted small">Cargando...</span>
+        </div>
+
+        <ng-container *ngIf="!loadingQueueStats && queueStats">
+
+          <!-- Workers -->
+          <div class="rq-card">
+            <i class="bi bi-cpu rq-card__icon rq-card__icon--primary"></i>
+            <div class="rq-card__info">
+              <strong class="rq-card__value">{{ queueStats.workers_online }}</strong>
+              <span class="rq-card__label">Workers</span>
+            </div>
+          </div>
+
+          <!-- En cola -->
+          <div class="rq-card">
+            <i class="bi bi-hourglass-split rq-card__icon rq-card__icon--amber"></i>
+            <div class="rq-card__info">
+              <strong class="rq-card__value">{{ formatNumber(getTotalQueued()) }}</strong>
+              <span class="rq-card__label">En cola</span>
+            </div>
+          </div>
+
+          <!-- Fallidos -->
+          <div class="rq-card" [class.rq-card--alert]="getTotalFailed() > 0">
+            <i class="bi bi-exclamation-circle rq-card__icon"
+              [class.rq-card__icon--danger]="getTotalFailed() > 0"
+              [class.rq-card__icon--muted]="getTotalFailed() === 0"></i>
+            <div class="rq-card__info">
+              <strong class="rq-card__value"
+                [class.text-danger]="getTotalFailed() > 0">
+                {{ formatNumber(getTotalFailed()) }}
+              </strong>
+              <span class="rq-card__label">Fallidos</span>
+            </div>
+          </div>
+
+          <!-- Detalle por cola -->
+          <div class="rq-card rq-card--detail">
+            <div class="rq-queue-row">
+              <span class="rq-queue-name">High:</span>
+              <span class="rq-queue-val">{{ queueStats.queues.high?.queued || 0 }}</span>
+            </div>
+            <div class="rq-queue-row">
+              <span class="rq-queue-name">Default:</span>
+              <span class="rq-queue-val">{{ queueStats.queues.default?.queued || 0 }}</span>
+            </div>
+            <div class="rq-queue-row">
+              <span class="rq-queue-name">Low:</span>
+              <span class="rq-queue-val">{{ queueStats.queues.low?.queued || 0 }}</span>
+            </div>
+          </div>
+
+        </ng-container>
+      </div>
+    </div>
+    <!-- /rq-panel -->
+
+    <!-- ============================================== -->
+    <!-- Gráficos principales (2 columnas)              -->
+    <!-- ============================================== -->
+    <div class="charts-grid">
+
+      <!-- Facturas por Mes -->
+      <div class="chart-card">
+        <h3 class="chart-card__title">Facturas por Mes</h3>
+        <div class="chart-card__body">
+
+          <div *ngIf="getRecentMonths().length === 0" class="no-data">
+            <i class="bi bi-bar-chart"></i>
+            <span>Sin datos disponibles</span>
+          </div>
+
+          <div *ngIf="getRecentMonths().length > 0" class="bar-chart">
+            <div
+              *ngFor="let month of getRecentMonths()"
+              class="bar-chart__col"
+              [title]="month.month + ': ' + month.count + ' (XML: ' + month.xml_nativo + ' | IA: ' + month.openai_vision + ')'">
+
+              <div class="bar-chart__label">{{ month.month }}</div>
+
+              <div class="bar-chart__track">
+                <div
+                  class="bar-chart__fill"
+                  [style.height.%]="(month.count / getMaxMonthCount()) * 100">
+                </div>
+              </div>
+
+              <div class="bar-chart__count">{{ month.count }}</div>
+
+              <!-- Mini etiquetas de origen -->
+              <div class="bar-chart__source">
+                <span class="source-xml" [title]="'XML: ' + month.xml_nativo">
+                  {{ month.xml_nativo }}
+                </span>
+                <span class="source-ai" [title]="'IA: ' + month.openai_vision">
+                  {{ month.openai_vision }}
+                </span>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <!-- /chart-card Facturas por Mes -->
+
+      <!-- Top 5 Usuarios -->
+      <div class="chart-card">
+        <h3 class="chart-card__title">Top 5 Usuarios</h3>
+        <div class="chart-card__body">
+
+          <div *ngIf="getTopUsers().length === 0" class="no-data">
+            <i class="bi bi-person-lines-fill"></i>
+            <span>Sin datos disponibles</span>
+          </div>
+
+          <ul *ngIf="getTopUsers().length > 0" class="top-users">
+            <li *ngFor="let user of getTopUsers(); trackBy: trackByEmail" class="top-users__item">
+              <div class="top-users__email">{{ user.email }}</div>
+              <div class="top-users__stats">
+                <span class="top-users__count">{{ formatNumber(user.count) }} facturas</span>
+                <span class="top-users__amount">{{ formatCurrency(user.total) }}</span>
+              </div>
+            </li>
+          </ul>
+
+        </div>
+      </div>
+      <!-- /chart-card Top Usuarios -->
+
+    </div>
+    <!-- /charts-grid -->
+
+    <!-- ============================================== -->
+    <!-- Estadísticas filtradas (colapsable)            -->
+    <!-- ============================================== -->
+    <div class="advanced-section">
+
+      <button
+        class="advanced-section__toggle"
+        (click)="showAdvancedStats = !showAdvancedStats"
+        type="button">
+        <span class="advanced-section__toggle-label">
+          <i class="bi bi-funnel"></i> Estadísticas Filtradas
+        </span>
+        <i class="bi" [ngClass]="showAdvancedStats ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+      </button>
+
+      <div *ngIf="showAdvancedStats" class="advanced-section__body">
+
+        <!-- Formulario de filtros -->
+        <div class="filter-bar">
+          <div class="filter-bar__group">
+            <label class="filter-bar__label">Desde</label>
+            <input type="date" [(ngModel)]="statsFilters.start_date" class="form-control form-control-sm">
+          </div>
+          <div class="filter-bar__group">
+            <label class="filter-bar__label">Hasta</label>
+            <input type="date" [(ngModel)]="statsFilters.end_date" class="form-control form-control-sm">
+          </div>
+          <div class="filter-bar__group">
+            <label class="filter-bar__label">Usuario</label>
+            <select [(ngModel)]="statsFilters.user_email" class="form-control form-control-sm">
+              <option value="">Todos</option>
+              <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
+                {{ user.name || user.email }}
+              </option>
+            </select>
+          </div>
+          <div class="filter-bar__group filter-bar__group--action">
+            <button
+              class="btn btn-primary btn-sm"
+              (click)="loadFilteredStats()"
+              [disabled]="loadingFilteredStats">
+              <i class="bi bi-search"></i> Filtrar
+            </button>
+          </div>
+        </div>
+
+        <!-- Cargando estadísticas filtradas -->
+        <div *ngIf="loadingFilteredStats" class="inline-loading">
+          <span class="spinner-small"></span>
+          <span>Cargando estadísticas...</span>
+        </div>
+
+        <!-- Resultados -->
+        <ng-container *ngIf="filteredStats && !loadingFilteredStats">
+
+          <!-- Resumen numérico -->
+          <div class="summary-grid">
+            <div class="summary-card">
+              <strong>{{ formatNumber(filteredStats.stats.total_invoices) }}</strong>
+              <span>Facturas</span>
+            </div>
+            <div class="summary-card">
+              <strong>{{ formatCurrency(filteredStats.stats.total_amount) }}</strong>
+              <span>Monto Total</span>
+            </div>
+            <div class="summary-card">
+              <strong>{{ formatCurrency(filteredStats.stats.avg_amount) }}</strong>
+              <span>Promedio</span>
+            </div>
+          </div>
+
+          <!-- Distribución diaria -->
+          <div *ngIf="filteredStats.stats.daily_breakdown?.length > 0" class="sub-chart-card">
+            <h4 class="sub-chart-card__title">Distribución Diaria</h4>
+            <div class="micro-bar-chart">
+              <div
+                *ngFor="let day of filteredStats.stats.daily_breakdown"
+                class="micro-bar-chart__col">
+                <div class="micro-bar-chart__track">
+                  <div
+                    class="micro-bar-chart__fill"
+                    [style.height.%]="getBarHeight(day.count, getMaxDailyCount())">
+                  </div>
+                </div>
+                <div class="micro-bar-chart__label">{{ formatShortDate(day._id) }}</div>
+                <div class="micro-bar-chart__count">{{ day.count }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Distribución por hora -->
+          <div *ngIf="filteredStats.stats.hourly_breakdown?.length > 0" class="sub-chart-card">
+            <h4 class="sub-chart-card__title">Distribución por Hora</h4>
+            <div class="micro-bar-chart">
+              <div
+                *ngFor="let hour of filteredStats.stats.hourly_breakdown"
+                class="micro-bar-chart__col">
+                <div class="micro-bar-chart__track">
+                  <div
+                    class="micro-bar-chart__fill"
+                    [style.height.%]="getBarHeight(hour.count, getMaxHourlyCount())">
+                  </div>
+                </div>
+                <div class="micro-bar-chart__label">{{ hour._id }}h</div>
+                <div class="micro-bar-chart__count">{{ hour.count }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Breakdown por usuario -->
+          <div *ngIf="filteredStats.stats.user_breakdown?.length > 0" class="sub-chart-card">
+            <h4 class="sub-chart-card__title">Por Usuario</h4>
+            <ul class="user-breakdown">
+              <li *ngFor="let user of filteredStats.stats.user_breakdown" class="user-breakdown__item">
+                <strong class="user-breakdown__email">{{ user._id }}</strong>
+                <div class="user-breakdown__metrics">
+                  <span class="user-breakdown__count">{{ formatNumber(user.count) }} facturas</span>
+                  <span class="user-breakdown__amount">{{ formatCurrency(user.total_amount) }}</span>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+        </ng-container>
+      </div>
+    </div>
+    <!-- /advanced-section -->
+
+  </ng-container>
+</div>

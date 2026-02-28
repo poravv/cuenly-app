@@ -41,7 +41,10 @@ async def list_subscriptions(
     skip = (page - 1) * page_size
     query = {}
     if status != "all":
-        query["status"] = status
+        # Buscar tanto mayúsculas como minúsculas para retrocompatibilidad
+        status_lower = status.lower().replace("-", "_")
+        status_upper = status.upper()
+        query["status"] = {"$in": [status_lower, status_upper]}
 
     total = sub_repo.subscriptions_collection.count_documents(query)
     cursor = sub_repo.subscriptions_collection.find(query).sort("created_at", -1).skip(skip).limit(page_size)
@@ -176,12 +179,13 @@ async def update_subscription_status(
 ):
     """Actualizar el estado de una suscripción (admin)."""
     from bson import ObjectId
-    allowed_statuses = ["ACTIVE", "PAST_DUE", "CANCELLED"]
+    allowed_statuses = ["active", "past_due", "cancelled"]
+    status = status.lower().replace("-", "_")
     if status not in allowed_statuses:
         raise HTTPException(status_code=400, detail=f"Estado inválido. Debe ser uno de: {', '.join(allowed_statuses)}")
     try:
         update_data = {"status": status, "updated_at": datetime.utcnow()}
-        if status == "CANCELLED":
+        if status == "cancelled":
             update_data["cancelled_at"] = datetime.utcnow()
             update_data["cancelled_by"] = "admin"
             update_data["cancellation_reason"] = "admin_status_change"

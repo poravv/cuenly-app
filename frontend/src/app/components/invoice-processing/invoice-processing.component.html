@@ -630,10 +630,11 @@
                   El proceso histórico está ejecutándose. Puedes ver el progreso en
                   <a routerLink="/automatizacion/cola" class="alert-link">Cola de Eventos</a>.
                 </span>
-                <strong *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">Procesamiento finalizado:</strong>
+                <strong *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">Correos encolados:</strong>
                 <span *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">
                   <ng-container *ngIf="(dateRangeResult.queued_count || 0) > 0; else completedInvoicesRange">
-                    {{ dateRangeResult.queued_count || 0 }} correos encolados para procesamiento.
+                    {{ dateRangeResult.queued_count || 0 }} correos en cola. Los workers están extrayendo las facturas en segundo plano —
+                    <a routerLink="/automatizacion/cola" class="alert-link">ver progreso en Cola</a>.
                   </ng-container>
                   <ng-template #completedInvoicesRange>
                     {{ dateRangeResult.invoice_count || 0 }} facturas procesadas.
@@ -642,10 +643,11 @@
                 <strong *ngIf="!dateRangeResult.job_id">Procesamiento completado:</strong>
                 <span *ngIf="!dateRangeResult.job_id">
                   <ng-container *ngIf="(dateRangeResult.queued_count || 0) > 0; else completedInvoicesDirect">
-                    {{ dateRangeResult.queued_count || 0 }} correos encolados para procesamiento.
+                    {{ dateRangeResult.queued_count || 0 }} correos en cola. Las facturas aparecerán progresivamente —
+                    <a routerLink="/automatizacion/cola" class="alert-link">ver Cola de Procesamiento</a>.
                   </ng-container>
                   <ng-template #completedInvoicesDirect>
-                    {{ dateRangeResult.invoice_count || 0 }} facturas procesadas
+                    {{ dateRangeResult.invoice_count || 0 }} facturas procesadas.
                   </ng-template>
                 </span>
               </div>

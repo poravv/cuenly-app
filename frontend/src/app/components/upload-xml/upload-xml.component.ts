@@ -10,11 +10,12 @@ import { NotificationService } from '../../services/notification.service';
 
 interface UploadFileItem {
   file: File;
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  status: 'pending' | 'uploading' | 'success' | 'error' | 'ai_limit';
   message?: string;
   jobId?: string;
   progress?: number;
   result?: any;
+  reasonCode?: string;
 }
 
 @Component({
@@ -63,6 +64,11 @@ export class UploadXmlComponent implements OnInit, OnDestroy {
         const isXml = file.name.toLowerCase().endsWith('.xml') || file.type === 'text/xml' || file.type === 'application/xml';
         if (!isXml) {
           this.notificationService.warning(`El archivo ${file.name} no es un XML y fue ignorado.`);
+          continue;
+        }
+
+        if (file.size > 10 * 1024 * 1024) {
+          this.notificationService.warning(`El archivo ${file.name} excede el tamaño máximo de 10MB.`);
           continue;
         }
 
@@ -147,20 +153,30 @@ export class UploadXmlComponent implements OnInit, OnDestroy {
             this.apiService.getTaskStatus(item.jobId).subscribe({
               next: (st: TaskStatusResponse) => {
                 if (st.status === 'done') {
-                  item.status = st.result?.success ? 'success' : 'error';
-                  item.message = st.result?.success ? 'Procesado exitosamente' : (st.result?.message || 'Error en procesamiento');
+                  const reasonCode = st.result?.reason_code;
                   item.result = st.result;
+                  item.reasonCode = reasonCode;
 
-                  if (st.result?.success) {
+                  if (reasonCode === 'ai_limit_reached' || reasonCode === 'ai_unavailable') {
+                    item.status = 'ai_limit';
+                    item.message = reasonCode === 'ai_limit_reached'
+                      ? 'Archivo guardado pero pendiente de extracción (límite de IA alcanzado).'
+                      : 'Archivo guardado pero pendiente de extracción (IA no disponible temporalmente).';
+                  } else if (st.result?.success) {
+                    item.status = 'success';
+                    item.message = 'Procesado exitosamente';
                     this.userService.updateProfileAfterProcessing();
+                  } else {
+                    item.status = 'error';
+                    item.message = st.result?.message || 'Error en procesamiento';
                   }
                 } else if (st.status === 'error') {
                   item.status = 'error';
                   item.message = st.message || 'Error en la tarea';
                 }
               },
-              error: (err) => {
-                console.error('Error polling job', err);
+              error: () => {
+                // Error handled silently
               }
             });
           }
@@ -177,6 +193,10 @@ export class UploadXmlComponent implements OnInit, OnDestroy {
 
   goToDashboard(): void {
     this.router.navigate(['/']);
+  }
+
+  trackByFile(index: number, item: UploadFileItem): string {
+    return item.file.name;
   }
 
   resetForm(): void {

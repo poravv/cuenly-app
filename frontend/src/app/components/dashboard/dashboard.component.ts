@@ -237,7 +237,6 @@ export class DashboardComponent implements OnInit {
           this.loading = false;
         },
         error: (err) => {
-          console.error('Error loading dashboard data', err);
           this.loading = false;
           this.observability.error('Error loading dashboard data', err, 'DashboardComponent', { context: 'loadDashboardData' });
           this.loadFallbackData();
@@ -245,7 +244,6 @@ export class DashboardComponent implements OnInit {
       });
 
     } catch (error) {
-      console.error('Unexpected error', error);
       this.loading = false;
     }
   }
@@ -413,8 +411,6 @@ export class DashboardComponent implements OnInit {
         this.refreshDashboardAfterProcessing(400);
       },
       error: (error) => {
-        console.error('Error processing emails:', error);
-
         const errorMessage = error.error?.message || error.message || 'Error al procesar correos';
         this.notificationService.error(errorMessage, 'Error de Procesamiento');
 
@@ -536,14 +532,12 @@ export class DashboardComponent implements OnInit {
     this.api.downloadInvoice(id).subscribe({
       next: (res) => {
         if (res.success && res.download_url) {
-          console.log('MinIO URL:', res.download_url); // Para debug
           window.open(res.download_url, '_blank');
         } else {
           this.notificationService.error(res.message || 'El archivo no está disponible', 'Error de Descarga');
         }
       },
       error: (err) => {
-        console.error('Error descarga:', err);
         this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
       }
     });

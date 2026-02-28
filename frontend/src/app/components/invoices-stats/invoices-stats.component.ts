@@ -69,8 +69,7 @@ export class InvoicesStatsComponent implements OnInit {
           this.selectedMonthStats = null;
         }
       },
-      error: (err) => {
-        console.error('Error loading invoice months:', err);
+      error: () => {
         this.error = 'No se pudieron cargar los meses disponibles.';
       },
       complete: () => {
@@ -99,8 +98,7 @@ export class InvoicesStatsComponent implements OnInit {
       next: (response) => {
         this.selectedMonthStats = response?.statistics || null;
       },
-      error: (err) => {
-        console.error('Error loading month stats:', err);
+      error: () => {
         this.error = 'No se pudieron cargar las estadísticas del mes seleccionado.';
       },
       complete: () => {

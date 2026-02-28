@@ -16,10 +16,10 @@ class BillingPeriod(str, Enum):
 
 class SubscriptionStatus(str, Enum):
     """Estados posibles de una suscripción."""
-    ACTIVE = "ACTIVE"
-    PAST_DUE = "PAST_DUE"
-    CANCELLED = "CANCELLED"
-    EXPIRED = "EXPIRED"
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
 
 
 class TransactionStatus(str, Enum):

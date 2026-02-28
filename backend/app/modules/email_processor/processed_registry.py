@@ -20,6 +20,7 @@ class MongoProcessedEmailRepository:
         "pending_ai_unread",
         "retry_requested",
     }
+    _indexes_ensured: bool = False
 
     def __init__(self):
         self._client = None
@@ -34,12 +35,16 @@ class MongoProcessedEmailRepository:
         if not self._client:
             self._client = MongoClient(self._conn_str)
         coll = self._client[self._db_name].processed_emails
-        try:
-            coll.create_index("status")
-            coll.create_index("owner_email")
-            coll.create_index("message_id")
-        except Exception:
-            pass
+        if not MongoProcessedEmailRepository._indexes_ensured:
+            try:
+                coll.create_index("status")
+                coll.create_index("owner_email")
+                coll.create_index("message_id", unique=True, sparse=True)
+                coll.create_index([("owner_email", 1), ("status", 1)])
+                coll.create_index([("owner_email", 1), ("processed_at", -1)])
+                MongoProcessedEmailRepository._indexes_ensured = True
+            except Exception:
+                pass
         return coll
 
     def is_retryable_status(self, status: str) -> bool:

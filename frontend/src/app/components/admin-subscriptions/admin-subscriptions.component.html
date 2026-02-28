@@ -1,0 +1,89 @@
+<div class="admin-subscriptions-page">
+  <div class="page-header">
+    <div>
+      <h2>Suscripciones</h2>
+      <p class="page-subtitle">Gestiona cobros y estados de suscripción</p>
+    </div>
+    <div class="header-actions">
+      <select class="filter-select" [(ngModel)]="subscriptionsStatusFilter" (ngModelChange)="onFilterChange()">
+        <option value="all">Todos</option>
+        <option value="active">Activas</option>
+        <option value="past_due">Vencidas</option>
+        <option value="cancelled">Canceladas</option>
+      </select>
+      <span class="total-badge">{{formatNumber(totalSubscriptions)}}</span>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading-state">
+    <div class="spinner"></div>
+    <p>Cargando suscripciones...</p>
+  </div>
+
+  <div *ngIf="!loading" class="table-card">
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Plan</th>
+            <th>Estado</th>
+            <th class="hide-mobile">Inicio</th>
+            <th>Próx. Cobro</th>
+            <th class="hide-mobile">Tarjeta</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let sub of subscriptions; trackBy: trackBySub">
+            <td>
+              <div class="user-info">
+                <div class="user-avatar">{{(sub.user_email || '?').charAt(0).toUpperCase()}}</div>
+                <strong>{{sub.user_email}}</strong>
+              </div>
+            </td>
+            <td><span class="plan-name">{{sub.plan_name}}</span></td>
+            <td>
+              <span class="badge" [ngClass]="getStatusClass(sub.status)">
+                {{getStatusLabel(sub.status)}}
+              </span>
+            </td>
+            <td class="hide-mobile text-muted">{{formatDate(sub.started_at)}}</td>
+            <td>
+              <span [class.text-danger]="sub.next_billing_date < dateNow">
+                {{formatDate(sub.next_billing_date)}}
+              </span>
+            </td>
+            <td class="hide-mobile">
+              <span *ngIf="sub.has_card" class="badge badge-active">
+                <i class="bi bi-credit-card me-1"></i>OK
+              </span>
+              <span *ngIf="!sub.has_card" class="badge badge-warning">Sin Tarjeta</span>
+            </td>
+            <td>
+              <button class="btn-icon btn-icon--success" (click)="retryCharge(sub)"
+                title="Reintentar Cobro" [disabled]="sub.status === 'cancelled'">
+                <i class="bi bi-currency-dollar"></i>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div *ngIf="subscriptions.length === 0 && !loadingSubscriptions" class="empty-state">
+      <i class="bi bi-receipt"></i>
+      <p>No se encontraron suscripciones</p>
+    </div>
+
+    <div *ngIf="subscriptionsTotalPages > 1" class="pagination">
+      <button class="page-btn" [disabled]="subscriptionsPage <= 1" (click)="onPageChange(subscriptionsPage - 1)">
+        <i class="bi bi-chevron-left"></i> Anterior
+      </button>
+      <span class="page-info">{{subscriptionsPage}} / {{subscriptionsTotalPages}}</span>
+      <button class="page-btn" [disabled]="subscriptionsPage >= subscriptionsTotalPages" (click)="onPageChange(subscriptionsPage + 1)">
+        Siguiente <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+</div>

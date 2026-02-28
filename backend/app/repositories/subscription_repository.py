@@ -12,6 +12,8 @@ from app.config.settings import settings
 logger = logging.getLogger(__name__)
 
 class SubscriptionRepository:
+    _indexes_ensured: bool = False
+
     def __init__(self, conn_str: Optional[str] = None, db_name: Optional[str] = None):
         self.conn_str = conn_str or settings.MONGODB_URL
         self.db_name = db_name or settings.MONGODB_DATABASE
@@ -45,23 +47,23 @@ class SubscriptionRepository:
         return self._get_db().subscription_transactions
 
     def _ensure_indexes(self):
-        """Crear índices para optimizar consultas."""
+        """Crear índices una sola vez por proceso."""
+        if SubscriptionRepository._indexes_ensured:
+            return
         try:
-            # Índices para subscriptions
             self.subscriptions_collection.create_index([("user_email", 1)])
             self.subscriptions_collection.create_index([("status", 1), ("next_billing_date", 1)])
             self.subscriptions_collection.create_index([("pagopar_user_id", 1)])
-            
-            # Índices para payment_methods
+
             self.payment_methods_collection.create_index([("user_email", 1)], unique=True)
             self.payment_methods_collection.create_index([("pagopar_user_id", 1)])
-            
-            # Índices para transactions
+
             self.transactions_collection.create_index([("subscription_id", 1)])
             self.transactions_collection.create_index([("user_email", 1)])
             self.transactions_collection.create_index([("created_at", -1)])
-            
-            logger.info("✅ Índices de BD creados/verificados")
+
+            SubscriptionRepository._indexes_ensured = True
+            logger.info("Índices de suscripciones creados/verificados")
         except Exception as e:
             logger.warning(f"Error creando índices: {e}")
 
@@ -132,19 +134,20 @@ class SubscriptionRepository:
     # =====================================
 
     def get_subscriptions_due_for_billing(
-        self, 
+        self,
         target_date: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
         Obtener suscripciones que deben cobrarse.
-        Solo retorna suscripciones ACTIVE con next_billing_date <= target_date.
+        Incluye suscripciones ACTIVE y PAST_DUE cuyo next_billing_date ya venció.
+        PAST_DUE son reintentos programados tras un fallo de pago anterior.
         """
         try:
             if target_date is None:
                 target_date = datetime.utcnow()
-            
+
             query = {
-                "status": "active",  # lowercase per MongoDB schema
+                "status": {"$in": ["active", "ACTIVE", "past_due", "PAST_DUE"]},
                 "next_billing_date": {"$lte": target_date, "$ne": None}
             }
             
@@ -160,20 +163,21 @@ class SubscriptionRepository:
             return []
 
     def update_billing_date(
-        self, 
-        sub_id: str, 
+        self,
+        sub_id: str,
         next_billing_date: datetime
     ) -> bool:
-        """Actualizar fecha de próximo cobro."""
+        """Actualizar fecha de próximo cobro y restaurar status a active."""
         try:
             result = self.subscriptions_collection.update_one(
                 {"_id": ObjectId(sub_id)},
                 {
                     "$set": {
+                        "status": "active",  # Restaurar a activo tras cobro exitoso
                         "next_billing_date": next_billing_date,
                         "last_billing_date": datetime.utcnow(),
                         "updated_at": datetime.utcnow(),
-                        "retry_count": 0  # Resetear contador de reintentos
+                        "retry_count": 0
                     }
                 }
             )
@@ -191,7 +195,7 @@ class SubscriptionRepository:
         """Marcar suscripción como morosa."""
         try:
             update_data = {
-                "status": "PAST_DUE",
+                "status": "past_due",
                 "updated_at": datetime.utcnow(),
                 "last_retry_date": datetime.utcnow(),
                 "retry_count": retry_count,
@@ -360,12 +364,12 @@ class SubscriptionRepository:
             subscription = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": "active"  # lowercase per MongoDB schema
+                    "status": {"$in": ["active", "ACTIVE"]}
                 },
                 {"_id": 0}
             )
             return subscription
-            
+
         except Exception as e:
             logger.error(f"Error obteniendo suscripción de {user_email}: {e}")
             return None
@@ -378,8 +382,7 @@ class SubscriptionRepository:
             subscription = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": "active"  # lowercase per MongoDB schema
-                    # NO verificar expires_at - las suscripciones son indefinidas
+                    "status": {"$in": ["active", "ACTIVE"]}
                 }
                 # No excluir _id para poder identificar la suscripción
             )
@@ -428,8 +431,7 @@ class SubscriptionRepository:
             s = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": "active"  # lowercase per MongoDB schema
-                    # No verificar expires_at - suscripciones indefinidas
+                    "status": {"$in": ["active", "ACTIVE"]}
                 },
                 {"_id": 1}
             )
@@ -494,7 +496,7 @@ class SubscriptionRepository:
             result = self.subscriptions_collection.update_many(
                 {
                     "user_email": user_email,
-                    "status": "active"  # lowercase per MongoDB schema
+                    "status": {"$in": ["active", "ACTIVE"]}
                 },
                 {
                     "$set": {
@@ -533,7 +535,7 @@ class SubscriptionRepository:
                 {"_id": ObjectId(sub_id)},
                 {
                     "$set": {
-                        "status": "CANCELLED",
+                        "status": "cancelled",
                         "cancelled_at": datetime.utcnow(),
                         "cancelled_by": cancelled_by,  # "user" o "admin"
                         "cancellation_reason": reason,
@@ -610,7 +612,7 @@ class SubscriptionRepository:
                         "plan_name": {"$first": "$plan_name"},
                         "total_subscriptions": {"$sum": 1},
                         "active_subscriptions": {
-                            "$sum": {"$cond": [{"$eq": ["$status", "active"]}, 1, 0]}
+                            "$sum": {"$cond": [{"$in": ["$status", ["active", "ACTIVE"]]}, 1, 0]}
                         },
                         "total_revenue": {"$sum": "$plan_price"},
                         "avg_price": {"$avg": "$plan_price"}
@@ -625,7 +627,7 @@ class SubscriptionRepository:
             
             # Estadísticas generales
             total_subscriptions = self.subscriptions_collection.count_documents({})
-            active_subscriptions = self.subscriptions_collection.count_documents({"status": "active"})
+            active_subscriptions = self.subscriptions_collection.count_documents({"status": {"$in": ["active", "ACTIVE"]}})
             total_revenue = list(self.subscriptions_collection.aggregate([
                 {"$group": {"_id": None, "total": {"$sum": "$plan_price"}}}
             ]))

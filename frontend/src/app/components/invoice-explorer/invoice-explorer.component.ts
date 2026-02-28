@@ -103,12 +103,11 @@ export class InvoiceExplorerComponent implements OnInit {
 
       if (response?.success) {
         this.availableMonths = response.months;
-        console.log('📅 Meses disponibles cargados:', this.availableMonths.length);
+        // Meses cargados
       } else {
         this.error = 'No se pudieron cargar los meses disponibles';
       }
     } catch (error) {
-      console.error('Error cargando meses:', error);
       this.error = 'Error conectando con el servidor';
     } finally {
       this.loading = false;
@@ -123,6 +122,7 @@ export class InvoiceExplorerComponent implements OnInit {
     this.v2Headers = [];
     this.v2Items = [];
     this.v2Header = null;
+    this.v2Page = 1;
     this.expandedInvoiceId = null;
 
     if (!yearMonth) return;
@@ -136,12 +136,11 @@ export class InvoiceExplorerComponent implements OnInit {
 
       if (response?.success) {
         this.monthStatistics = response.statistics;
-        console.log('📊 Estadísticas del mes cargadas:', this.monthStatistics);
+        // Estadísticas cargadas
       } else {
         this.error = 'No se pudieron cargar las estadísticas del mes';
       }
     } catch (error) {
-      console.error('Error cargando estadísticas:', error);
       this.error = 'Error obteniendo estadísticas del mes';
     } finally {
       // La tabla v2 debe cargarse siempre para el mes seleccionado,
@@ -158,8 +157,8 @@ export class InvoiceExplorerComponent implements OnInit {
         this.v2Headers = res?.data || [];
         this.v2Total = res?.total || 0;
       },
-      error: (err) => {
-        console.error('Error cargando headers v2:', err);
+      error: () => {
+        // Error handled silently
       }
     });
   }
@@ -185,8 +184,8 @@ export class InvoiceExplorerComponent implements OnInit {
           this.v2Items = res?.items || [];
         }
       },
-      error: (err) => {
-        console.error('Error obteniendo invoice v2:', err);
+      error: () => {
+        // Error handled silently
       }
     });
   }
@@ -248,6 +247,23 @@ export class InvoiceExplorerComponent implements OnInit {
     });
   }
 
+  get v2TotalPages(): number {
+    return Math.ceil(this.v2Total / this.v2PageSize) || 1;
+  }
+
+  goToPage(page: number): void {
+    if (page < 1 || page > this.v2TotalPages || page === this.v2Page) return;
+    this.v2Page = page;
+    this.expandedInvoiceId = null;
+    this.v2Header = null;
+    this.v2Items = [];
+    this.loadV2Headers();
+  }
+
+  trackByHeaderId(index: number, header: any): string {
+    return header._id || header.id || index;
+  }
+
   refreshData(): void {
     this.loadAvailableMonths();
     if (this.selectedMonth) {
@@ -300,7 +316,6 @@ export class InvoiceExplorerComponent implements OnInit {
         setTimeout(() => window.URL.revokeObjectURL(url), 60000);
       },
       error: (err) => {
-        console.error('Error descarga:', err);
         if (err.status === 404) {
           this.notificationService.error('Archivo no disponible en almacenamiento', 'Error');
         } else {

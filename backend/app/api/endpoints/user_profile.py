@@ -2,13 +2,14 @@
 Endpoints de perfil de usuario
 Migrado desde api.py
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List, Literal
 from datetime import datetime
 import logging
 
 from app.api.deps import _get_current_user, _get_current_user_with_trial_info
+from app.config.settings import settings
 from app.repositories.user_repository import UserRepository
 from app.utils.validators import SecurityValidators
 
@@ -73,8 +74,8 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
     if db_user:
         is_admin = db_user.get('role') == 'admin'
     else:
-        # Fallback para el usuario principal si la DB falla
-        is_admin = user.get('email') == 'andyvercha@gmail.com'
+        # Fallback: verificar contra lista de admins configurada
+        is_admin = user.get('email', '').lower() in settings.ADMIN_EMAILS
     
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
@@ -559,6 +560,301 @@ async def cancel_active_queue_events(
     except Exception as e:
         logger.error(f"Error cancelando jobs activos para {owner_email}: {e}")
         raise HTTPException(status_code=500, detail="No se pudieron cancelar jobs activos")
+
+async def _get_sse_user(request: Request, token: Optional[str] = Query(default=None)) -> Dict[str, Any]:
+    """
+    Dependencia de autenticación para endpoints SSE.
+    Acepta el token JWT vía query param porque EventSource del navegador
+    no puede enviar cabeceras personalizadas (como Authorization: Bearer).
+    Fallback: lee el header Authorization estándar si no hay query param.
+    """
+    if token:
+        from app.utils.firebase_auth import verify_firebase_token
+        try:
+            claims = verify_firebase_token(token)
+        except HTTPException:
+            raise HTTPException(status_code=401, detail="Token inválido")
+
+        try:
+            user_repo = UserRepository()
+            user_repo.upsert_user({
+                "email": claims.get("email"),
+                "uid": claims.get("user_id"),
+                "name": claims.get("name"),
+                "picture": claims.get("picture") or claims.get("photoURL"),
+            })
+            db_user = user_repo.get_by_email(claims.get("email"))
+            if db_user and db_user.get("status") == "suspended":
+                raise HTTPException(status_code=403, detail="Tu cuenta está suspendida. Contacta al administrador.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"SSE auth upsert warning: {e}")
+
+        return {
+            "email": claims.get("email"),
+            "uid": claims.get("user_id"),
+            "name": claims.get("name"),
+        }
+
+    # Fallback: intentar con header Bearer estándar
+    return _get_current_user(request)
+
+
+@router.get("/queue-events/stream")
+async def stream_queue_events(
+    request: Request,
+    token: Optional[str] = Query(default=None),
+    status: str = Query(default="all"),
+    page_size: int = Query(default=20),
+    user: Dict[str, Any] = Depends(_get_sse_user),
+):
+    """
+    SSE stream para actualizaciones en tiempo real de la cola de procesamiento.
+    Emite eventos 'queue-update' cuando los datos cambian y 'heartbeat' cada 3 s
+    cuando no hay cambios, para mantener la conexión viva.
+    """
+    from sse_starlette.sse import EventSourceResponse
+    import json
+    import asyncio
+    import hashlib
+    from pymongo import MongoClient, DESCENDING
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+
+    owner = (user.get("email") or "").lower()
+
+    async def event_generator():
+        last_data_hash: Optional[str] = None
+
+        while True:
+            if await request.is_disconnected():
+                logger.debug(f"SSE desconectado para {owner}")
+                break
+
+            try:
+                client = MongoClient(settings.MONGODB_URL)
+                db = client[settings.MONGODB_DATABASE]
+                coll = db.processed_emails
+
+                query: Dict[str, Any] = {"owner_email": owner}
+                if status and status != "all":
+                    query["status"] = status
+                else:
+                    query["status"] = {
+                        "$in": [
+                            "skipped_ai_limit",
+                            "skipped_ai_limit_unread",
+                            "pending_ai_unread",
+                            "pending",
+                            "processing",
+                            "retry_requested",
+                            "failed",
+                            "error",
+                            "missing_metadata",
+                        ]
+                    }
+
+                total = coll.count_documents(query)
+                cursor = coll.find(query).sort("processed_at", DESCENDING).limit(page_size)
+
+                retryable_statuses = {
+                    "skipped_ai_limit",
+                    "skipped_ai_limit_unread",
+                    "pending_ai_unread",
+                    "failed",
+                    "error",
+                    "missing_metadata",
+                }
+                events: List[Dict[str, Any]] = []
+                for doc in cursor:
+                    is_manual = bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload"
+                    retry_supported = doc.get("retry_supported")
+                    can_retry = (
+                        (doc.get("status") in retryable_statuses)
+                        and (not is_manual)
+                        and (retry_supported is not False)
+                    )
+                    doc["can_retry"] = bool(can_retry)
+                    if not can_retry and is_manual:
+                        doc["retry_disabled_reason"] = "Evento manual: no aplica reintento"
+                    doc["_id"] = str(doc["_id"])
+                    if "processed_at" in doc and hasattr(doc["processed_at"], "isoformat"):
+                        doc["processed_at"] = doc["processed_at"].isoformat()
+                    if "last_retry_at" in doc and hasattr(doc["last_retry_at"], "isoformat"):
+                        doc["last_retry_at"] = doc["last_retry_at"].isoformat()
+                    if "email_date" in doc and hasattr(doc["email_date"], "isoformat"):
+                        doc["email_date"] = doc["email_date"].isoformat()
+                    events.append(doc)
+
+                client.close()
+
+                # Recolectar jobs RQ activos (misma lógica que get_queue_events)
+                if status in {"all", "pending", "processing"}:
+                    try:
+                        from rq.job import Job
+                        from rq.registry import StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry
+                        from app.worker.queues import get_queue
+
+                        candidate_ids: set = set()
+                        queue_sources: Dict[str, str] = {}
+                        conn = None
+
+                        for qname in ("high", "default"):
+                            q = get_queue(qname)
+                            conn = q.connection
+                            try:
+                                for jid in (q.get_job_ids() or []):
+                                    candidate_ids.add(jid)
+                                    queue_sources.setdefault(jid, qname)
+                            except Exception:
+                                pass
+                            for registry_cls in (StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry):
+                                try:
+                                    reg = registry_cls(queue=q, connection=conn)
+                                    for jid in (reg.get_job_ids() or []):
+                                        candidate_ids.add(jid)
+                                        queue_sources.setdefault(jid, qname)
+                                except Exception:
+                                    continue
+
+                        synthetic_events: List[Dict[str, Any]] = []
+                        if conn is not None:
+                            for job_id in candidate_ids:
+                                try:
+                                    job = Job.fetch(job_id, connection=conn)
+                                    kwargs = job.kwargs or {}
+                                    args = list(getattr(job, "args", ()) or ())
+                                    func_name = str(getattr(job, "func_name", "") or "")
+
+                                    candidate_owner = str(kwargs.get("owner_email", "")).lower().strip()
+                                    if not candidate_owner and "process_single_email_from_uid_job" in func_name and len(args) >= 2:
+                                        candidate_owner = str(args[1] or "").lower().strip()
+                                    if not candidate_owner and "process_emails_range_job" in func_name and len(args) >= 1:
+                                        candidate_owner = str(args[0] or "").lower().strip()
+                                    if not candidate_owner and "process_emails_job" in func_name and len(args) >= 1:
+                                        candidate_owner = str(args[0] or "").lower().strip()
+
+                                    if candidate_owner != owner:
+                                        continue
+
+                                    if "process_emails_range_job" in func_name:
+                                        action = "process_emails_range"
+                                        subject = "Procesamiento por rango"
+                                        email_uid = str(job.id)
+                                    elif "process_emails_job" in func_name:
+                                        action = "process_emails"
+                                        subject = "Procesamiento manual"
+                                        email_uid = str(job.id)
+                                    elif "process_single_email_from_uid_job" in func_name:
+                                        action = "process_single_email"
+                                        uid_from_kw = kwargs.get("email_uid")
+                                        uid_from_args = args[2] if len(args) >= 3 else None
+                                        uid_val = uid_from_kw if uid_from_kw else uid_from_args
+                                        email_uid = str(uid_val) if uid_val is not None else str(job.id)
+                                        subject = f"Procesamiento de correo UID {email_uid}"
+                                    else:
+                                        continue
+
+                                    raw_status = str(job.get_status(refresh=True) or "").lower().strip()
+                                    if "." in raw_status:
+                                        raw_status = raw_status.split(".")[-1]
+
+                                    if raw_status in {"queued", "deferred", "scheduled"}:
+                                        mapped_status = "pending"
+                                    elif raw_status in {"started", "running", "busy"}:
+                                        mapped_status = "processing"
+                                    elif raw_status in {"failed", "stopped", "canceled", "cancelled"}:
+                                        mapped_status = "error"
+                                    else:
+                                        continue
+
+                                    if status != "all" and status != mapped_status:
+                                        continue
+
+                                    ts = job.started_at or job.created_at
+                                    processed_at = ts.isoformat() if hasattr(ts, "isoformat") else None
+                                    job_meta = dict(getattr(job, "meta", {}) or {})
+                                    progress = job_meta.get("progress") if isinstance(job_meta.get("progress"), dict) else None
+
+                                    default_reason = (
+                                        "Job en ejecución desde cola distribuida"
+                                        if mapped_status == "processing"
+                                        else "Job encolado y pendiente de ejecución"
+                                    )
+                                    if isinstance(progress, dict):
+                                        queued_c = int(progress.get("queued_count") or 0)
+                                        skipped_c = int(progress.get("skipped_existing") or 0)
+                                        requeued_c = int(progress.get("requeued_errors") or 0)
+                                        matches_c = int(progress.get("discovered_matches") or 0)
+                                        stage_c = str(progress.get("stage") or "").strip().lower()
+                                        if stage_c in {"fanout_discovery_complete", "fanout_streaming", "fanout_batch", "fanout_streaming_done", "fanout_done"}:
+                                            default_reason = (
+                                                f"Procesando histórico: matches={matches_c}, "
+                                                f"encolados={queued_c}, omitidos_existentes={skipped_c}, "
+                                                f"reencolados_error={requeued_c}"
+                                            )
+                                        elif stage_c == "fanout_no_matches":
+                                            default_reason = "Procesando histórico: no hay nuevos correos para encolar en este rango."
+                                        elif stage_c == "starting":
+                                            default_reason = "Inicializando procesamiento histórico..."
+
+                                    synthetic_events.append({
+                                        "_id": f"rq::{job.id}",
+                                        "owner_email": owner,
+                                        "account_email": "system",
+                                        "email_uid": email_uid,
+                                        "status": mapped_status,
+                                        "reason": default_reason,
+                                        "subject": subject,
+                                        "sender": "Sistema",
+                                        "processed_at": processed_at,
+                                        "can_retry": False,
+                                        "retry_supported": False,
+                                        "job_id": str(job.id),
+                                        "job_action": action,
+                                        "source": f"rq_{queue_sources.get(job.id, 'unknown')}",
+                                    })
+                                except Exception:
+                                    continue
+
+                        if synthetic_events:
+                            synthetic_events.sort(key=lambda item: str(item.get("processed_at") or ""), reverse=True)
+                            events = (synthetic_events + events)[:page_size]
+                            total += len(synthetic_events)
+
+                    except Exception as e:
+                        logger.warning(f"SSE: no se pudieron recolectar jobs RQ para {owner}: {e}")
+
+                data = {
+                    "success": True,
+                    "events": events,
+                    "pagination": {
+                        "total": total,
+                        "page": 1,
+                        "pages": max(1, (total + page_size - 1) // page_size),
+                    },
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+
+                data_hash = hashlib.md5(json.dumps(data, default=str).encode()).hexdigest()
+
+                if data_hash != last_data_hash:
+                    last_data_hash = data_hash
+                    yield {"event": "queue-update", "data": json.dumps(data, default=str)}
+                else:
+                    yield {"event": "heartbeat", "data": "{}"}
+
+            except Exception as e:
+                logger.error(f"SSE error para {owner}: {e}")
+                yield {"event": "error", "data": json.dumps({"error": str(e)})}
+
+            await asyncio.sleep(3)
+
+    from sse_starlette.sse import EventSourceResponse
+    return EventSourceResponse(event_generator())
+
 
 @router.post("/queue-events/{event_id}/retry")
 async def retry_queue_event(event_id: str, user: Dict[str, Any] = Depends(_get_current_user)):

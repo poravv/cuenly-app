@@ -19,6 +19,7 @@ from bson import ObjectId
 
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.services.pagopar_service import PagoparService
+from app.services.email_notification_service import EmailNotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class SubscriptionBillingJob:
     def __init__(self):
         self.repo = SubscriptionRepository()
         self.pagopar = PagoparService()
+        self.email = EmailNotificationService()
         self.retry_schedule = [1, 3, 7]  # Días para reintentar
         
     async def run(self):
@@ -186,8 +188,13 @@ class SubscriptionBillingJob:
         )
         
         logger.info(f"✅ Suscripción actualizada. Próximo cobro: {next_billing_date.strftime('%Y-%m-%d')}")
-        
-        # TODO: Enviar email de confirmación al usuario
+
+        self.email.send_payment_success(
+            to_email=sub.get("user_email", ""),
+            plan_name=sub.get("plan_name", "Plan"),
+            amount=amount,
+            next_billing_date=next_billing_date.strftime('%d/%m/%Y')
+        )
     
     def _handle_payment_failure(self, sub: Dict[str, Any], reason: str):
         """Manejar fallo en el pago."""
@@ -228,8 +235,14 @@ class SubscriptionBillingJob:
             )
             
             logger.warning(f"⚠️ Reintento {retry_count}/{len(self.retry_schedule)} programado para {next_retry_date.strftime('%Y-%m-%d')}")
-            
-            # TODO: Enviar email notificando fallo y reintento
+
+            self.email.send_payment_failed(
+                to_email=user_email,
+                plan_name=sub.get("plan_name", "Plan"),
+                reason=reason,
+                retry_number=retry_count,
+                next_retry_date=next_retry_date.strftime('%d/%m/%Y')
+            )
             
         else:
             # Cancelar suscripción después de múltiples fallos
@@ -237,7 +250,7 @@ class SubscriptionBillingJob:
                 {"_id": ObjectId(sub_id)},
                 {
                     "$set": {
-                        "status": "CANCELLED",
+                        "status": "cancelled",
                         "cancelled_at": datetime.utcnow(),
                         "cancellation_reason": f"Múltiples fallos de pago: {reason}",
                         "updated_at": datetime.utcnow()
@@ -246,8 +259,12 @@ class SubscriptionBillingJob:
             )
             
             logger.error(f"❌ Suscripción cancelada por múltiples fallos de pago: {user_email}")
-            
-            # TODO: Enviar email notificando cancelación
+
+            self.email.send_subscription_cancelled(
+                to_email=user_email,
+                plan_name=sub.get("plan_name", "Plan"),
+                reason=f"Múltiples fallos de pago: {reason}"
+            )
 
 
 async def run_billing_job():

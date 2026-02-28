@@ -5,12 +5,13 @@ from typing import Any, Dict, Optional
 from app.config.settings import settings
 from .config import OpenAIConfig
 from .clients import make_openai_client
-from .pdf_text import extract_text_with_fallbacks, has_extractable_text_or_ocr
+from .pdf_text import extract_text_with_fallbacks
 from .image_utils import pdf_to_base64_first_page, ocr_from_base64_image
 from .prompts import build_text_prompt, build_image_prompt, build_xml_prompt, build_image_prompt_v2, messages_user_only, messages_user_with_image
 from .json_utils import extract_and_normalize_json
 from .cdc import validate_and_enhance_with_cdc
 from .cache import OpenAICache
+from app.utils.extended_metrics import extended_metrics
 import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
@@ -36,11 +37,13 @@ class OpenAIProcessor:
         self.client = make_openai_client(cfg.api_key)
         
         # Inicializar Redis Cache (con fallback graceful si no está disponible)
+        self._redis = None
         try:
             from .redis_cache import get_openai_cache
             self.cache = get_openai_cache()
             if self.cache.is_available:
                 logger.info("✅ OpenAI Redis Cache habilitado")
+                self._redis = self.cache._redis  # reusar la misma conexión para cuota cache
             else:
                 logger.warning("⚠️ Redis no disponible, cache deshabilitado")
                 self.cache = None
@@ -62,13 +65,13 @@ class OpenAIProcessor:
         
         try:
             # 0. CHECK DE SEGURIDAD: Validar límite de IA antes de consumir tokens
+            # El resultado se cachea en Redis (TTL 30s) para evitar una query MongoDB por cada PDF.
             if owner_email:
                 try:
-                    from app.repositories.user_repository import UserRepository
-                    user_repo = UserRepository()
-                    ai_check = user_repo.can_use_ai(owner_email)
+                    ai_check = self._check_ai_quota(owner_email)
                     if not ai_check['can_use']:
                         logger.warning(f"🛑 AI limit reached for {owner_email}: {ai_check['message']}. Aborting extraction.")
+                        extended_metrics.record_ai_limit_hit(owner_email)
                         return None
                 except Exception as e:
                     logger.warning(f"⚠️ Error verifying AI limit for {owner_email}: {e}")
@@ -86,30 +89,18 @@ class OpenAIProcessor:
                         # Si ya es un objeto válido, devolverlo directamente
                         return cached_result
             
-            # 1.5 Intentar estrategia por texto (más económica y rápida)
-            # NOTA: Se comenta temporalmente porque está causando fallos en el flujo.
-            # if has_extractable_text_or_ocr(pdf_path):
-            #     result = self._process_as_text(pdf_path, email_metadata)
-            #     if result:
-            #         # Marcar que se usó IA (aunque sea texto consume tokens)
-            #         if hasattr(result, '__dict__'):
-            #             result.ai_used = True
-            #         elif isinstance(result, dict):
-            #             result['ai_used'] = True
-            #         return result
-            #     logger.warning("Texto falló o insuficiente → intentamos por imagen")
-
-            # 2. Ir directo a la estrategia por imagen (Vision/OCR)
+            # 2. Estrategia por imagen (Vision/OCR)
             result = self._process_as_image(pdf_path, email_metadata)
             
-            # Si el procesamiento fue exitoso y usó IA, incrementar contador
+            # Si el procesamiento fue exitoso y usó IA, incrementar contador e invalidar cache
             if result and owner_email:
                 try:
-                    # NOTA: user_repo ya importado arriba si owner_email existe
                     from app.repositories.user_repository import UserRepository
                     user_repo = UserRepository()
                     updated_info = user_repo.increment_ai_usage(owner_email, 1)
                     logger.info(f"📊 IA usage incremented for {owner_email}: {updated_info.get('ai_invoices_processed', 0)}/{updated_info.get('ai_invoices_limit', 50)}")
+                    # Invalidar cache de cuota para que el próximo check refleje el contador actualizado
+                    self._invalidate_ai_quota_cache(owner_email)
                 except Exception as e:
                     logger.warning(f"Error updating AI usage counter: {e}")
             
@@ -250,15 +241,13 @@ class OpenAIProcessor:
                 logger.warning("Parser nativo falló: %s. Se usa OpenAI como fallback", e)
 
             # 2) Fallback: usar OpenAI con prompt XML
-            # CHECK DE SEGURIDAD: Validar límite de IA antes de fallback
+            # CHECK DE SEGURIDAD: usar el mismo método cacheado
             if owner_email:
                 try:
-                    from app.repositories.user_repository import UserRepository
-                    user_repo = UserRepository()
-                    ai_check = user_repo.can_use_ai(owner_email)
+                    ai_check = self._check_ai_quota(owner_email)
                     if not ai_check['can_use']:
                         logger.warning(f"🛑 AI limit reached for {owner_email} during XML fallback: {ai_check['message']}. Aborting AI fallback.")
-                        # Retornar lo que se pudo extraer nativamente (si algo) o None
+                        extended_metrics.record_ai_limit_hit(owner_email)
                         if 'native' in locals() and native:
                             logger.info("Returning partial native result instead of AI fallback due to limit.")
                             invoice = _coerce_invoice_model(native, email_metadata)
@@ -279,13 +268,13 @@ class OpenAIProcessor:
             data = extract_and_normalize_json(raw)
             logger.info("Datos extraídos del XML (OpenAI): %s", data)
             
-            # Incrementar contador de IA ya que usamos OpenAI como fallback
+            # Incrementar contador de IA ya que usamos OpenAI como fallback e invalidar cache
             if owner_email:
                 try:
                     from app.repositories.user_repository import UserRepository
-                    user_repo = UserRepository()
-                    updated_info = user_repo.increment_ai_usage(owner_email, 1)
+                    updated_info = UserRepository().increment_ai_usage(owner_email, 1)
                     logger.info(f"📊 IA usage incremented for XML fallback {owner_email}: {updated_info.get('ai_invoices_processed', 0)}/{updated_info.get('ai_invoices_limit', 50)}")
+                    self._invalidate_ai_quota_cache(owner_email)
                 except Exception as e:
                     logger.warning(f"Error updating AI usage counter for XML: {e}")
             
@@ -310,6 +299,47 @@ class OpenAIProcessor:
         except Exception as e:
             logger.exception("Error procesando XML: %s", e)
             return None
+
+    # ------------------------------------------------- AI quota cache (Redis) --
+
+    _AI_QUOTA_CACHE_KEY = "cuenly:user:ai_quota:{}"
+    _AI_QUOTA_TTL = 30  # segundos — balance entre frescura y ahorro de queries
+
+    def _check_ai_quota(self, owner_email: str) -> dict:
+        """
+        Verifica si el usuario puede usar IA.
+        Cachea el resultado en Redis por 30 segundos para reducir queries a MongoDB.
+        Se invalida automáticamente después de cada incremento de uso.
+        """
+        import json
+        cache_key = self._AI_QUOTA_CACHE_KEY.format(owner_email)
+
+        if self._redis:
+            try:
+                cached = self._redis.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            except Exception:
+                pass
+
+        from app.repositories.user_repository import UserRepository
+        result = UserRepository().can_use_ai(owner_email)
+
+        if self._redis:
+            try:
+                self._redis.setex(cache_key, self._AI_QUOTA_TTL, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
+
+    def _invalidate_ai_quota_cache(self, owner_email: str) -> None:
+        """Invalida el cache de cuota de IA para que el próximo check lea MongoDB fresco."""
+        if self._redis:
+            try:
+                self._redis.delete(self._AI_QUOTA_CACHE_KEY.format(owner_email))
+            except Exception:
+                pass
 
     # ----------------------------------------------------------- Estrategias --
     def _process_as_text(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None):
@@ -368,6 +398,8 @@ class OpenAIProcessor:
             else:
                 invoice = _coerce_invoice_model(data, email_metadata)
             invoice = validate_and_enhance_with_cdc(invoice)
+            # Estimar costo de OpenAI Vision (~$0.01 por imagen con GPT-4o vision)
+            extended_metrics.update_openai_cost_estimate(0.01)
             return invoice
         except Exception as e:
             logger.warning("Fallo procesando JSON de imagen (v2/v1): %s", e)
