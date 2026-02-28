@@ -1,73 +1,628 @@
-/* Estilos login */
-.btn .bi-google { font-size: 1.1rem; }
+// ==========================================================================
+// LOGIN PAGE — Desktop & Mobile
+// ==========================================================================
 
-.login-hero {
+$primary: #4F46E5;
+$primary-light: #818CF8;
+$primary-dark: #3730A3;
+$green: #10B981;
+$amber: #F59E0B;
+$gray-50: #F9FAFB;
+$gray-100: #F3F4F6;
+$gray-200: #E5E7EB;
+$gray-400: #9CA3AF;
+$gray-500: #6B7280;
+$gray-600: #4B5563;
+$gray-700: #374151;
+$gray-800: #1F2937;
+$gray-900: #111827;
+
+// ---------- Page layout ----------
+
+.login-page {
   min-height: 100vh;
-  background: radial-gradient(1200px 400px at 20% 10%, #eef2ff, transparent), linear-gradient(135deg, #f8fafc 0%, #eef2ff 60%, #ffffff 100%);
+  min-height: 100dvh;
   position: relative;
   overflow: hidden;
+  background: $gray-50;
+}
+
+.login-container {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  position: relative;
+  z-index: 2;
+}
+
+// ---------- Background ----------
+
+.bg-gradient {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 0% 0%, rgba($primary, 0.08), transparent 60%),
+    radial-gradient(ellipse 60% 80% at 100% 100%, rgba($primary-light, 0.06), transparent 60%);
+  z-index: 0;
+}
+
+.bg-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  z-index: 0;
+  animation: float 20s ease-in-out infinite;
+
+  &.blob-1 {
+    width: 300px;
+    height: 300px;
+    background: rgba($primary-light, 0.3);
+    top: -80px;
+    right: 15%;
+    animation-delay: 0s;
+  }
+
+  &.blob-2 {
+    width: 200px;
+    height: 200px;
+    background: rgba($green, 0.2);
+    bottom: 10%;
+    left: -40px;
+    animation-delay: -7s;
+  }
+
+  &.blob-3 {
+    width: 250px;
+    height: 250px;
+    background: rgba($amber, 0.15);
+    bottom: -60px;
+    right: -60px;
+    animation-delay: -14s;
+  }
+}
+
+.bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba($gray-200, 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba($gray-200, 0.3) 1px, transparent 1px);
+  background-size: 60px 60px;
+  z-index: 0;
+  mask-image: radial-gradient(ellipse 70% 60% at 30% 40%, black, transparent);
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(20px, -20px) scale(1.05); }
+  66% { transform: translate(-10px, 15px) scale(0.95); }
+}
+
+// ---------- Left: Brand panel ----------
+
+.login-brand {
+  flex: 1 1 55%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  position: relative;
+}
+
+.brand-content {
+  max-width: 520px;
+  position: relative;
+  z-index: 2;
+}
+
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  border-radius: 100px;
+  background: rgba($primary, 0.08);
+  color: $primary;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 1.5rem;
+
+  i { font-size: 0.85rem; }
+}
+
+.brand-headline {
+  font-size: 2.75rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: $gray-900;
+  letter-spacing: -0.03em;
+  margin-bottom: 1.25rem;
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brand-subtitle {
+  font-size: 1.1rem;
+  line-height: 1.7;
+  color: $gray-500;
+  margin-bottom: 2.5rem;
+  max-width: 440px;
+}
+
+// ---------- Feature list ----------
+
+.feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-bottom: 2.5rem;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba($gray-200, 0.8);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover {
+    transform: translateX(4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  }
+}
+
+.feature-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba($primary, 0.1);
+  color: $primary;
+  font-size: 1.1rem;
+
+  &.icon-green {
+    background: rgba($green, 0.1);
+    color: $green;
+  }
+
+  &.icon-amber {
+    background: rgba($amber, 0.1);
+    color: $amber;
+  }
+}
+
+.feature-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: $gray-800;
+}
+
+.feature-desc {
+  font-size: 0.8rem;
+  color: $gray-400;
+  margin-top: 1px;
+}
+
+// ---------- Stats row ----------
+
+.brand-footer {
+  padding-top: 2rem;
+  border-top: 1px solid $gray-200;
+}
+
+.stats-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-value {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: $gray-800;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: $gray-400;
+  margin-top: 2px;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 32px;
+  background: $gray-200;
+}
+
+// ---------- Right: Login form panel ----------
+
+.login-form-panel {
+  flex: 1 1 45%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  position: relative;
+}
+
+.login-form-content {
+  width: 100%;
+  max-width: 400px;
+  position: relative;
+  z-index: 2;
+}
+
+.mobile-brand {
+  display: none;
+}
+
+// ---------- Login card ----------
+
+.login-card {
+  background: white;
+  border-radius: 20px;
+  padding: 2.5rem;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba($gray-200, 0.6);
+}
+
+.card-header-section {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.desktop-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  margin-bottom: 1rem;
+}
+
+.card-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: $gray-900;
+  margin-bottom: 0.35rem;
+}
+
+.card-subtitle {
+  font-size: 0.9rem;
+  color: $gray-500;
+  margin: 0;
+}
+
+// ---------- Alerts ----------
+
+.alert-custom {
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+
+  &.alert-error {
+    background: #FEF2F2;
+    color: #DC2626;
+    border: 1px solid #FECACA;
+  }
+
+  &.alert-info {
+    background: #EFF6FF;
+    color: #2563EB;
+    border: 1px solid #BFDBFE;
+  }
+}
+
+// ---------- Google button ----------
+
+.google-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.5rem;
+  border: 1.5px solid $gray-200;
+  border-radius: 12px;
+  background: white;
+  color: $gray-700;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, $primary, $primary-light);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  &:hover:not(:disabled) {
+    border-color: $primary-light;
+    box-shadow: 0 4px 16px rgba($primary, 0.15);
+    transform: translateY(-1px);
+
+    &::before { opacity: 0.04; }
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba($primary, 0.1);
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  &.loading {
+    border-color: $primary-light;
+  }
 }
 
 .google-icon {
-  width: 18px;
-  height: 18px;
-  display: inline-block;
+  width: 20px;
+  height: 20px;
+  position: relative;
+  z-index: 1;
 }
 
-.login-logo {
+.google-btn-text {
+  position: relative;
+  z-index: 1;
+}
+
+// ---------- Divider ----------
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  color: $gray-400;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+
+  &::before, &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: $gray-200;
+  }
+}
+
+// ---------- Trust signals ----------
+
+.trust-signals {
   display: flex;
   justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.trust-item {
+  display: flex;
   align-items: center;
-  
-  .logo-image {
-    width: 72px;
-    height: 72px;
-    object-fit: contain;
-    transition: transform 0.3s ease;
-    
-    &:hover {
-      transform: scale(1.05);
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: $gray-400;
+
+  i { font-size: 0.85rem; }
+}
+
+// ---------- Legal & footer ----------
+
+.legal-text {
+  font-size: 0.75rem;
+  color: $gray-400;
+  text-align: center;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.login-footer {
+  text-align: center;
+  margin-top: 1.5rem;
+}
+
+.help-link {
+  font-size: 0.85rem;
+  color: $gray-500;
+  text-decoration: none;
+  transition: color 0.2s ease;
+
+  &:hover {
+    color: $primary;
+  }
+}
+
+// ==========================================================================
+// RESPONSIVE — Tablet
+// ==========================================================================
+
+@media (max-width: 992px) {
+  .login-brand {
+    flex: 1 1 50%;
+    padding: 2rem;
+  }
+
+  .brand-headline {
+    font-size: 2.25rem;
+  }
+
+  .brand-subtitle {
+    font-size: 1rem;
+  }
+
+  .login-form-panel {
+    flex: 1 1 50%;
+  }
+}
+
+// ==========================================================================
+// RESPONSIVE — Mobile
+// ==========================================================================
+
+@media (max-width: 768px) {
+  .login-container {
+    flex-direction: column;
+  }
+
+  // Hide brand panel on mobile
+  .login-brand {
+    display: none;
+  }
+
+  .bg-grid {
+    display: none;
+  }
+
+  .bg-blob {
+    &.blob-1 {
+      width: 200px;
+      height: 200px;
+      top: -60px;
+      right: -40px;
     }
+
+    &.blob-2 {
+      width: 150px;
+      height: 150px;
+      bottom: -40px;
+      left: -40px;
+    }
+
+    &.blob-3 { display: none; }
+  }
+
+  // Show mobile brand instead
+  .mobile-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-top: 1rem;
+  }
+
+  .mobile-logo {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    margin-bottom: 0.75rem;
+  }
+
+  .mobile-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: $gray-900;
+    margin: 0 0 0.25rem;
+    letter-spacing: -0.02em;
+  }
+
+  .mobile-subtitle {
+    font-size: 0.9rem;
+    color: $gray-500;
+    margin: 0;
+  }
+
+  .login-form-panel {
+    flex: 1;
+    align-items: flex-start;
+    padding: 1.5rem 1.25rem;
+    padding-top: 3rem;
+  }
+
+  .login-form-content {
+    max-width: 100%;
+  }
+
+  .login-card {
+    padding: 2rem 1.5rem;
+    border-radius: 16px;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 4px 20px rgba(0, 0, 0, 0.06);
+  }
+
+  .desktop-logo {
+    display: none;
+  }
+
+  .card-title {
+    font-size: 1.35rem;
+  }
+
+  .card-header-section {
+    margin-bottom: 1.5rem;
+  }
+
+  .google-btn {
+    padding: 0.9rem 1.5rem;
+  }
+
+  .trust-signals {
+    gap: 1rem;
+  }
+
+  .login-footer {
+    margin-top: 1.25rem;
+    padding-bottom: 1rem;
   }
 }
 
-.login-card.glass {
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: 0 30px 80px rgba(2, 6, 23, 0.12);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-}
+// ==========================================================================
+// RESPONSIVE — Small Mobile
+// ==========================================================================
 
-.brand-title { font-weight: 800; letter-spacing: -0.02em; }
-
-.benefits li { 
-  padding: 0.35rem 0; 
-  color: #374151; 
-  display: flex; 
-  align-items: center;
-}
-
-.left-pane { border-right: 1px solid #eef2f7; }
-
-.right-pane .btn.btn-primary {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-  border: none;
-}
-
-.bg-accent {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.5;
-  &.one { width: 220px; height: 220px; background: #93c5fd; right: -60px; bottom: 10%; }
-  &.two { width: 280px; height: 280px; background: #a78bfa; left: -80px; top: 20%; }
-}
-
-@media (max-width: 576px) {
-  .login-logo .logo-image {
-    width: 56px;
-    height: 56px;
+@media (max-width: 380px) {
+  .login-form-panel {
+    padding: 1rem;
+    padding-top: 2rem;
   }
-  .left-pane { border-right: none; border-bottom: 1px solid #eef2f7; }
+
+  .login-card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .mobile-logo {
+    width: 52px;
+    height: 52px;
+  }
+
+  .mobile-title {
+    font-size: 1.5rem;
+  }
+
+  .trust-signals {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: center;
+  }
 }

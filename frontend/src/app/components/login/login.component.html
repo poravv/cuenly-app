@@ -1,47 +1,144 @@
-<div class="login-hero d-flex align-items-center">
-  <div class="container">
-    <div class="row justify-content-center">
-      <div class="col-12 col-lg-10">
-        <div class="login-card glass">
-          <div class="row g-0 align-items-stretch">
-            <!-- Left: Brand and value prop -->
-            <div class="col-12 col-md-6 p-4 p-lg-5 left-pane">
-              <div class="login-logo mb-3">
-                <img src="assets/logo.png" alt="CuenlyApp Logo" class="logo-image">
-              </div>
-              <h1 class="brand-title mb-2">Cuenly</h1>
-              <p class="text-muted mb-4">Automatiza tus facturas con IA</p>
-              <ul class="benefits list-unstyled mb-4">
-                <li><i class="bi bi-robot me-2 text-primary"></i>Extracción inteligente desde PDF y XML</li>
-                <li><i class="bi bi-envelope-open me-2 text-success"></i>Procesamiento automático desde tu correo</li>
-                <li><i class="bi bi-shield-check me-2 text-info"></i>Datos seguros y centralizados</li>
-                <li><i class="bi bi-speedometer2 me-2 text-warning"></i>Panel para controlar y auditar</li>
-              </ul>
-              <div class="small text-muted">¿Necesitas ayuda? <a routerLink="/cuenta/ayuda">Visita la ayuda</a></div>
+<div class="login-page">
+  <!-- Background elements -->
+  <div class="bg-gradient"></div>
+  <div class="bg-blob blob-1"></div>
+  <div class="bg-blob blob-2"></div>
+  <div class="bg-blob blob-3"></div>
+  <div class="bg-grid"></div>
+
+  <div class="login-container">
+    <!-- Left panel: Branding (hidden on mobile) -->
+    <div class="login-brand">
+      <div class="brand-content">
+        <div class="brand-badge">
+          <i class="bi bi-lightning-charge-fill"></i>
+          Plataforma de Facturación Inteligente
+        </div>
+
+        <h1 class="brand-headline">
+          Automatiza tu<br>
+          <span class="text-gradient">gestión de facturas</span>
+        </h1>
+
+        <p class="brand-subtitle">
+          Extrae, centraliza y exporta facturas electrónicas desde tus correos,
+          sin entrada manual de datos.
+        </p>
+
+        <div class="feature-list">
+          <div class="feature-item">
+            <div class="feature-icon">
+              <i class="bi bi-robot"></i>
             </div>
-            <!-- Right: Auth -->
-            <div class="col-12 col-md-6 p-4 p-lg-5 right-pane">
-              <div class="text-center mb-4">
-                <div class="fw-bold h4 mb-1">Accede a tu cuenta</div>
-                <div class="text-muted">Inicia sesión para continuar</div>
-              </div>
-              <div *ngIf="error" class="alert alert-danger border-0">{{ error }}</div>
-              <div *ngIf="info" class="alert alert-info border-0">{{ info }}</div>
-              <button class="btn btn-primary w-100 d-flex align-items-center justify-content-center" (click)="signInGoogle()" [disabled]="loading">
-                <span *ngIf="loading" class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                <img *ngIf="!loading" src="assets/google.svg" alt="Google" class="google-icon me-2">
-                <span>Continuar con Google</span>
-              </button>
-              <div class="mt-4 small text-muted text-center">
-                Al continuar aceptas nuestras políticas. Usamos tu correo solo para autenticación y vincular tus datos.
-              </div>
+            <div>
+              <div class="feature-title">Extracción con IA</div>
+              <div class="feature-desc">GPT-4o Vision para PDF e imágenes</div>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon icon-green">
+              <i class="bi bi-envelope-open-fill"></i>
+            </div>
+            <div>
+              <div class="feature-title">Procesamiento automático</div>
+              <div class="feature-desc">Conecta tus correos IMAP y olvídate</div>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon icon-amber">
+              <i class="bi bi-file-earmark-spreadsheet"></i>
+            </div>
+            <div>
+              <div class="feature-title">Exportación flexible</div>
+              <div class="feature-desc">Templates personalizados en Excel</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="brand-footer">
+          <div class="stats-row">
+            <div class="stat-item">
+              <div class="stat-value">SIFEN</div>
+              <div class="stat-label">Compatible</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <div class="stat-value">XML + PDF</div>
+              <div class="stat-label">Formatos</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+              <div class="stat-value">15 días</div>
+              <div class="stat-label">Prueba gratis</div>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Right panel: Login form -->
+    <div class="login-form-panel">
+      <div class="login-form-content">
+        <!-- Mobile logo -->
+        <div class="mobile-brand">
+          <img src="assets/logo.png" alt="CuenlyApp" class="mobile-logo">
+          <h2 class="mobile-title">Cuenly</h2>
+          <p class="mobile-subtitle">Automatiza tus facturas con IA</p>
+        </div>
+
+        <!-- Login card -->
+        <div class="login-card">
+          <div class="card-header-section">
+            <img src="assets/logo.png" alt="CuenlyApp" class="desktop-logo">
+            <h2 class="card-title">Bienvenido</h2>
+            <p class="card-subtitle">Inicia sesión para acceder a tu cuenta</p>
+          </div>
+
+          <div *ngIf="error" class="alert-custom alert-error">
+            <i class="bi bi-exclamation-circle me-2"></i>{{ error }}
+          </div>
+          <div *ngIf="info" class="alert-custom alert-info">
+            <i class="bi bi-check-circle me-2"></i>{{ info }}
+          </div>
+
+          <button
+            class="google-btn"
+            (click)="signInGoogle()"
+            [disabled]="loading"
+            [class.loading]="loading">
+            <span *ngIf="loading" class="spinner-border spinner-border-sm me-2"></span>
+            <img *ngIf="!loading" src="assets/google.svg" alt="Google" class="google-icon">
+            <span class="google-btn-text">Continuar con Google</span>
+          </button>
+
+          <div class="divider">
+            <span>Seguro y rápido</span>
+          </div>
+
+          <div class="trust-signals">
+            <div class="trust-item">
+              <i class="bi bi-shield-lock-fill"></i>
+              <span>Autenticación segura</span>
+            </div>
+            <div class="trust-item">
+              <i class="bi bi-google"></i>
+              <span>Firebase Auth</span>
+            </div>
+          </div>
+
+          <p class="legal-text">
+            Al continuar, aceptas nuestras políticas de uso.
+            Tu correo se utiliza exclusivamente para autenticación.
+          </p>
+        </div>
+
+        <div class="login-footer">
+          <a routerLink="/cuenta/ayuda" class="help-link">
+            <i class="bi bi-question-circle me-1"></i>
+            ¿Necesitas ayuda?
+          </a>
+        </div>
+      </div>
+    </div>
   </div>
-  <!-- Background accents -->
-  <div class="bg-accent one"></div>
-  <div class="bg-accent two"></div>
 </div>
