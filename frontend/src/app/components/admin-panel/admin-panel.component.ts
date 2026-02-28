@@ -83,6 +83,9 @@ export class AdminPanelComponent implements OnInit {
 
   // Tabs
   activeTab = 'stats';
+  billingSubTab = 'plans';
+  systemSubTab = 'ai-limits';
+  showAdvancedStats = false;
 
   // Audit log
   auditLogs: any[] = [];
@@ -374,11 +377,29 @@ export class AdminPanelComponent implements OnInit {
   // Tabs
   setActiveTab(tab: string): void {
     this.activeTab = tab;
-    if (tab === 'audit') {
-      this.loadAuditLogs();
-    } else if (tab === 'subscriptions') {
+    if (tab === 'billing' && this.billingSubTab === 'subscriptions') {
       this.loadSubscriptions();
-    } else if (tab === 'ai-limits') {
+    } else if (tab === 'system') {
+      if (this.systemSubTab === 'ai-limits') {
+        this.loadAiLimitsData();
+      } else {
+        this.loadAuditLogs();
+      }
+    }
+  }
+
+  setBillingSubTab(sub: string): void {
+    this.billingSubTab = sub;
+    if (sub === 'subscriptions') {
+      this.loadSubscriptions();
+    }
+  }
+
+  setSystemSubTab(sub: string): void {
+    this.systemSubTab = sub;
+    if (sub === 'audit') {
+      this.loadAuditLogs();
+    } else if (sub === 'ai-limits') {
       this.loadAiLimitsData();
     }
   }

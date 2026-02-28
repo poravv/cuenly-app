@@ -1,10 +1,14 @@
 <div class="admin-panel">
+  <!-- Header compacto -->
   <div class="admin-header">
-    <h1 class="admin-title">
-      <i class="bi bi-shield-check"></i>
-      Panel de Administración
-    </h1>
-    <p class="admin-subtitle">Gestión de usuarios y estadísticas del sistema</p>
+    <div class="admin-header-content">
+      <h1 class="admin-title">
+        <i class="bi bi-shield-check"></i> Administración
+      </h1>
+      <button class="btn-refresh" (click)="loadData()" [disabled]="loading" title="Recargar datos">
+        <i class="bi bi-arrow-clockwise" [class.spin]="loading"></i>
+      </button>
+    </div>
   </div>
 
   <div *ngIf="loading" class="loading-container">
@@ -14,35 +18,34 @@
 
   <div *ngIf="!loading" class="admin-content">
 
+    <!-- Navegación reorganizada: 4 tabs claros -->
     <div class="tab-navigation">
       <button class="tab-button" [class.active]="activeTab === 'stats'" (click)="setActiveTab('stats')">
-        <i class="bi bi-graph-up"></i>
-        Estadísticas
+        <i class="bi bi-speedometer2"></i>
+        <span class="tab-label">Resumen</span>
       </button>
       <button class="tab-button" [class.active]="activeTab === 'users'" (click)="setActiveTab('users')">
         <i class="bi bi-people"></i>
-        Usuarios
+        <span class="tab-label">Usuarios</span>
+        <span class="tab-badge" *ngIf="userStats.total_users">{{userStats.total_users}}</span>
       </button>
-      <button class="tab-button" [class.active]="activeTab === 'plans'" (click)="setActiveTab('plans')">
+      <button class="tab-button" [class.active]="activeTab === 'billing'" (click)="setActiveTab('billing')">
         <i class="bi bi-credit-card"></i>
-        Planes
+        <span class="tab-label">Facturación</span>
       </button>
-      <button class="tab-button" [class.active]="activeTab === 'subscriptions'" (click)="setActiveTab('subscriptions')">
-        <i class="bi bi-arrow-repeat"></i>
-        Suscripciones
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'ai-limits'" (click)="setActiveTab('ai-limits')">
-        <i class="bi bi-robot"></i>
-        Límites IA
-      </button>
-      <button class="tab-button" [class.active]="activeTab === 'audit'" (click)="setActiveTab('audit')">
-        <i class="bi bi-journal-text"></i>
-        Auditoría
+      <button class="tab-button" [class.active]="activeTab === 'system'" (click)="setActiveTab('system')">
+        <i class="bi bi-gear"></i>
+        <span class="tab-label">Sistema</span>
+        <span class="tab-badge tab-badge--alert" *ngIf="getTotalFailed() > 0">!</span>
       </button>
     </div>
 
+    <!-- ============================================ -->
+    <!-- TAB: RESUMEN (KPIs + Colas + Gráficos)       -->
+    <!-- ============================================ -->
     <div *ngIf="activeTab === 'stats'" class="tab-content">
 
+      <!-- KPIs principales -->
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-icon users">
@@ -50,8 +53,8 @@
           </div>
           <div class="stat-content">
             <h3>{{formatNumber(userStats.total_users)}}</h3>
-            <p>Total Usuarios</p>
-            <small class="text-muted">{{formatNumber(userStats.active_users)}} activos · {{formatNumber(userStats.trial_users)}} trial</small>
+            <p>Usuarios</p>
+            <small>{{formatNumber(userStats.active_users)}} activos · {{formatNumber(userStats.trial_users)}} trial</small>
           </div>
         </div>
 
@@ -61,87 +64,94 @@
           </div>
           <div class="stat-content">
             <h3>{{formatNumber(invoiceStats.total_invoices)}}</h3>
-            <p>Total Facturas</p>
-            <small class="text-muted">{{formatNumber(invoiceStats.total_items)}} ítems</small>
+            <p>Facturas</p>
+            <small>{{formatNumber(invoiceStats.total_items)}} ítems procesados</small>
           </div>
         </div>
 
         <div class="stat-card">
-          <div class="stat-icon" style="background: rgba(34,197,94,0.12); color: #16a34a;">
+          <div class="stat-icon xml-source">
             <i class="bi bi-file-earmark-code"></i>
           </div>
           <div class="stat-content">
-            <h3>{{formatNumber(invoiceStats.source_totals?.xml_nativo || 0)}}</h3>
+            <h3>{{getSourcePercent(invoiceStats.source_totals?.xml_nativo || 0)}}%</h3>
             <p>XML Nativo</p>
-            <small class="text-muted">{{getSourcePercent(invoiceStats.source_totals?.xml_nativo || 0)}}% del total</small>
+            <small>{{formatNumber(invoiceStats.source_totals?.xml_nativo || 0)}} facturas</small>
           </div>
         </div>
 
         <div class="stat-card">
-          <div class="stat-icon" style="background: rgba(139,92,246,0.12); color: #7c3aed;">
+          <div class="stat-icon ai-source">
             <i class="bi bi-robot"></i>
           </div>
           <div class="stat-content">
-            <h3>{{formatNumber(invoiceStats.source_totals?.openai_vision || 0)}}</h3>
+            <h3>{{getSourcePercent(invoiceStats.source_totals?.openai_vision || 0)}}%</h3>
             <p>OpenAI Vision</p>
-            <small class="text-muted">{{getSourcePercent(invoiceStats.source_totals?.openai_vision || 0)}}% del total</small>
+            <small>{{formatNumber(invoiceStats.source_totals?.openai_vision || 0)}} facturas</small>
           </div>
         </div>
       </div>
 
-      <!-- Cola RQ en tiempo real -->
+      <!-- Cola RQ -->
       <div class="rq-stats-row" *ngIf="queueStats || loadingQueueStats">
-        <div class="rq-card" *ngIf="loadingQueueStats">
-          <span class="spinner-border spinner-border-sm text-muted"></span>
-          <span class="ms-2 text-muted small">Cargando colas...</span>
+        <h4 class="rq-title"><i class="bi bi-hdd-stack"></i> Colas de Procesamiento</h4>
+        <div class="rq-cards">
+          <div class="rq-card" *ngIf="loadingQueueStats">
+            <span class="spinner-border spinner-border-sm text-muted"></span>
+            <span class="ms-2 text-muted small">Cargando...</span>
+          </div>
+          <ng-container *ngIf="!loadingQueueStats && queueStats">
+            <div class="rq-card">
+              <i class="bi bi-cpu text-primary"></i>
+              <div>
+                <strong>{{queueStats.workers_online}}</strong>
+                <span class="rq-label">Workers</span>
+              </div>
+            </div>
+            <div class="rq-card">
+              <i class="bi bi-hourglass-split text-warning"></i>
+              <div>
+                <strong>{{formatNumber(getTotalQueued())}}</strong>
+                <span class="rq-label">En cola</span>
+              </div>
+            </div>
+            <div class="rq-card" [class.rq-card--alert]="getTotalFailed() > 0">
+              <i class="bi bi-exclamation-circle" [class.text-danger]="getTotalFailed() > 0" [class.text-muted]="getTotalFailed() === 0"></i>
+              <div>
+                <strong [class.text-danger]="getTotalFailed() > 0">{{formatNumber(getTotalFailed())}}</strong>
+                <span class="rq-label">Fallidos</span>
+              </div>
+            </div>
+            <div class="rq-card rq-detail">
+              <div class="rq-queue-line">
+                <span class="rq-q-name">High:</span>
+                <span class="rq-q-val">{{queueStats.queues.high?.queued || 0}}</span>
+              </div>
+              <div class="rq-queue-line">
+                <span class="rq-q-name">Default:</span>
+                <span class="rq-q-val">{{queueStats.queues.default?.queued || 0}}</span>
+              </div>
+              <div class="rq-queue-line">
+                <span class="rq-q-name">Low:</span>
+                <span class="rq-q-val">{{queueStats.queues.low?.queued || 0}}</span>
+              </div>
+            </div>
+          </ng-container>
         </div>
-        <ng-container *ngIf="!loadingQueueStats && queueStats">
-          <div class="rq-card">
-            <i class="bi bi-cpu text-primary"></i>
-            <div>
-              <strong>{{queueStats.workers_online}}</strong>
-              <span class="rq-label">Workers activos</span>
-            </div>
-          </div>
-          <div class="rq-card">
-            <i class="bi bi-hourglass-split text-warning"></i>
-            <div>
-              <strong>{{formatNumber(getTotalQueued())}}</strong>
-              <span class="rq-label">En cola</span>
-            </div>
-          </div>
-          <div class="rq-card" [class.rq-card--alert]="getTotalFailed() > 0">
-            <i class="bi bi-exclamation-circle" [class.text-danger]="getTotalFailed() > 0" [class.text-muted]="getTotalFailed() === 0"></i>
-            <div>
-              <strong [class.text-danger]="getTotalFailed() > 0">{{formatNumber(getTotalFailed())}}</strong>
-              <span class="rq-label">Fallidos</span>
-            </div>
-          </div>
-          <div class="rq-card rq-detail">
-            <span class="rq-q-name">High</span>
-            <span class="rq-q-val">{{queueStats.queues.high?.queued || 0}} pendientes</span>
-            <span class="rq-q-name ms-2">Default</span>
-            <span class="rq-q-val">{{queueStats.queues.default?.queued || 0}} pendientes</span>
-            <span class="rq-q-name ms-2">Low</span>
-            <span class="rq-q-val">{{queueStats.queues.low?.queued || 0}} pendientes</span>
-          </div>
-        </ng-container>
       </div>
 
+      <!-- Gráficos lado a lado -->
       <div class="charts-section">
         <div class="chart-container">
-          <h3>Facturas por Mes (Últimos 6 meses)</h3>
+          <h3>Facturas por Mes</h3>
           <div class="chart-content">
-            <div *ngIf="getRecentMonths().length === 0" class="no-data">
-              No hay datos disponibles
-            </div>
+            <div *ngIf="getRecentMonths().length === 0" class="no-data">Sin datos</div>
             <div *ngIf="getRecentMonths().length > 0" class="simple-chart">
               <div *ngFor="let month of getRecentMonths()" class="chart-bar"
-                [title]="month.month + ': ' + month.count + ' facturas (XML: ' + month.xml_nativo + ' | IA: ' + month.openai_vision + ')'">
+                [title]="month.month + ': ' + month.count + ' (XML: ' + month.xml_nativo + ' | IA: ' + month.openai_vision + ')'">
                 <div class="bar-label">{{month.month}}</div>
                 <div class="bar-container">
-                  <div class="bar" [style.height.%]="(month.count / getMaxMonthCount()) * 100">
-                  </div>
+                  <div class="bar" [style.height.%]="(month.count / getMaxMonthCount()) * 100"></div>
                 </div>
                 <div class="bar-value">{{month.count}}</div>
                 <div class="bar-source-mini">
@@ -154,11 +164,9 @@
         </div>
 
         <div class="chart-container">
-          <h3>Top 5 Usuarios (Facturas procesadas)</h3>
+          <h3>Top 5 Usuarios</h3>
           <div class="chart-content">
-            <div *ngIf="getTopUsers().length === 0" class="no-data">
-              No hay datos disponibles
-            </div>
+            <div *ngIf="getTopUsers().length === 0" class="no-data">Sin datos</div>
             <div *ngIf="getTopUsers().length > 0" class="user-stats-list">
               <div *ngFor="let user of getTopUsers()" class="user-stat-item">
                 <div class="user-email">{{user.email}}</div>
@@ -172,99 +180,97 @@
         </div>
       </div>
 
+      <!-- Estadísticas filtradas (colapsable) -->
       <div class="advanced-stats-section">
-        <h3>Estadísticas Filtradas</h3>
-
-        <div class="filters-form">
-          <div class="filter-row">
-            <div class="filter-group">
-              <label>Fecha Inicio:</label>
-              <input type="date" [(ngModel)]="statsFilters.start_date" class="form-control">
-            </div>
-
-            <div class="filter-group">
-              <label>Fecha Fin:</label>
-              <input type="date" [(ngModel)]="statsFilters.end_date" class="form-control">
-            </div>
-
-            <div class="filter-group">
-              <label>Usuario:</label>
-              <select [(ngModel)]="statsFilters.user_email" class="form-control">
-                <option value="">Todos los usuarios</option>
-                <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
-                  {{user.name || user.email}}
-                </option>
-              </select>
-            </div>
-
-            <div class="filter-group">
-              <button class="btn btn-primary" (click)="loadFilteredStats()" [disabled]="loadingFilteredStats">
-                <i class="bi bi-search"></i>
-                Filtrar
-              </button>
-            </div>
-          </div>
+        <div class="section-toggle" (click)="showAdvancedStats = !showAdvancedStats">
+          <h3><i class="bi bi-funnel"></i> Estadísticas Filtradas</h3>
+          <i class="bi" [ngClass]="showAdvancedStats ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
         </div>
 
-        <div *ngIf="loadingFilteredStats" class="loading-stats">
-          <div class="spinner-small"></div>
-          <span>Cargando estadísticas filtradas...</span>
-        </div>
-
-        <div *ngIf="filteredStats && !loadingFilteredStats" class="filtered-stats-content">
-          <div class="filtered-summary">
-            <div class="summary-card">
-              <h4>{{formatNumber(filteredStats.stats.total_invoices)}}</h4>
-              <p>Facturas</p>
-            </div>
-            <div class="summary-card">
-              <h4>{{formatCurrency(filteredStats.stats.total_amount)}}</h4>
-              <p>Monto Total</p>
-            </div>
-            <div class="summary-card">
-              <h4>{{formatCurrency(filteredStats.stats.avg_amount)}}</h4>
-              <p>Promedio</p>
-            </div>
-          </div>
-
-          <div *ngIf="filteredStats.stats.daily_breakdown.length > 0" class="chart-container">
-            <h4>Distribución Diaria</h4>
-            <div class="daily-chart">
-              <div *ngFor="let day of filteredStats.stats.daily_breakdown" class="daily-bar">
-                <div class="bar-container">
-                  <div class="bar" [style.height.%]="getBarHeight(day.count, getMaxDailyCount())">
-                  </div>
-                </div>
-                <div class="bar-label">{{formatShortDate(day._id)}}</div>
-                <div class="bar-value">{{day.count}}</div>
+        <div *ngIf="showAdvancedStats" class="advanced-stats-body">
+          <div class="filters-form">
+            <div class="filter-row">
+              <div class="filter-group">
+                <label>Desde</label>
+                <input type="date" [(ngModel)]="statsFilters.start_date" class="form-control">
+              </div>
+              <div class="filter-group">
+                <label>Hasta</label>
+                <input type="date" [(ngModel)]="statsFilters.end_date" class="form-control">
+              </div>
+              <div class="filter-group">
+                <label>Usuario</label>
+                <select [(ngModel)]="statsFilters.user_email" class="form-control">
+                  <option value="">Todos</option>
+                  <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
+                    {{user.name || user.email}}
+                  </option>
+                </select>
+              </div>
+              <div class="filter-group filter-group--action">
+                <button class="btn btn-primary" (click)="loadFilteredStats()" [disabled]="loadingFilteredStats">
+                  <i class="bi bi-search"></i> Filtrar
+                </button>
               </div>
             </div>
           </div>
 
-          <div *ngIf="filteredStats.stats.hourly_breakdown.length > 0" class="chart-container">
-            <h4>Distribución por Hora</h4>
-            <div class="hourly-chart">
-              <div *ngFor="let hour of filteredStats.stats.hourly_breakdown" class="hourly-bar">
-                <div class="bar-container">
-                  <div class="bar" [style.height.%]="getBarHeight(hour.count, getMaxHourlyCount())">
-                  </div>
-                </div>
-                <div class="bar-label">{{hour._id}}:00</div>
-                <div class="bar-value">{{hour.count}}</div>
-              </div>
-            </div>
+          <div *ngIf="loadingFilteredStats" class="loading-stats">
+            <div class="spinner-small"></div>
+            <span>Cargando...</span>
           </div>
 
-          <div *ngIf="filteredStats.stats.user_breakdown.length > 0" class="chart-container">
-            <h4>Por Usuario</h4>
-            <div class="user-breakdown-list">
-              <div *ngFor="let user of filteredStats.stats.user_breakdown" class="user-breakdown-item">
-                <div class="user-info">
+          <div *ngIf="filteredStats && !loadingFilteredStats" class="filtered-stats-content">
+            <div class="filtered-summary">
+              <div class="summary-card">
+                <h4>{{formatNumber(filteredStats.stats.total_invoices)}}</h4>
+                <p>Facturas</p>
+              </div>
+              <div class="summary-card">
+                <h4>{{formatCurrency(filteredStats.stats.total_amount)}}</h4>
+                <p>Monto Total</p>
+              </div>
+              <div class="summary-card">
+                <h4>{{formatCurrency(filteredStats.stats.avg_amount)}}</h4>
+                <p>Promedio</p>
+              </div>
+            </div>
+
+            <div *ngIf="filteredStats.stats.daily_breakdown?.length > 0" class="chart-container">
+              <h4>Distribución Diaria</h4>
+              <div class="daily-chart">
+                <div *ngFor="let day of filteredStats.stats.daily_breakdown" class="daily-bar">
+                  <div class="bar-container">
+                    <div class="bar" [style.height.%]="getBarHeight(day.count, getMaxDailyCount())"></div>
+                  </div>
+                  <div class="bar-label">{{formatShortDate(day._id)}}</div>
+                  <div class="bar-value">{{day.count}}</div>
+                </div>
+              </div>
+            </div>
+
+            <div *ngIf="filteredStats.stats.hourly_breakdown?.length > 0" class="chart-container">
+              <h4>Distribución por Hora</h4>
+              <div class="hourly-chart">
+                <div *ngFor="let hour of filteredStats.stats.hourly_breakdown" class="hourly-bar">
+                  <div class="bar-container">
+                    <div class="bar" [style.height.%]="getBarHeight(hour.count, getMaxHourlyCount())"></div>
+                  </div>
+                  <div class="bar-label">{{hour._id}}h</div>
+                  <div class="bar-value">{{hour.count}}</div>
+                </div>
+              </div>
+            </div>
+
+            <div *ngIf="filteredStats.stats.user_breakdown?.length > 0" class="chart-container">
+              <h4>Por Usuario</h4>
+              <div class="user-breakdown-list">
+                <div *ngFor="let user of filteredStats.stats.user_breakdown" class="user-breakdown-item">
                   <strong>{{user._id}}</strong>
-                </div>
-                <div class="user-metrics">
-                  <span class="metric">{{formatNumber(user.count)}} facturas</span>
-                  <span class="metric">{{formatCurrency(user.total_amount)}}</span>
+                  <div class="user-metrics">
+                    <span class="metric">{{formatNumber(user.count)}} facturas</span>
+                    <span class="metric">{{formatCurrency(user.total_amount)}}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -273,16 +279,21 @@
       </div>
     </div>
 
+    <!-- ============================================ -->
+    <!-- TAB: USUARIOS                                -->
+    <!-- ============================================ -->
     <div *ngIf="activeTab === 'users'" class="tab-content">
-
       <div class="users-section">
         <div class="section-header">
-          <h3>Gestión de Usuarios</h3>
+          <h3>Usuarios</h3>
           <div class="section-actions">
-            <input type="text" class="form-control form-control-sm" style="width: 220px; display: inline-block; margin-right: 12px;"
-              placeholder="Buscar por email o nombre..."
-              [(ngModel)]="userSearchTerm" (ngModelChange)="onUserSearch()">
-            <span class="total-count">Total: {{formatNumber(totalUsers)}} usuarios</span>
+            <div class="search-input-wrapper">
+              <i class="bi bi-search search-icon"></i>
+              <input type="text" class="form-control form-control-sm search-input"
+                placeholder="Buscar por email o nombre..."
+                [(ngModel)]="userSearchTerm" (ngModelChange)="onUserSearch()">
+            </div>
+            <span class="total-count">{{formatNumber(totalUsers)}}</span>
           </div>
         </div>
 
@@ -296,11 +307,11 @@
             <thead>
               <tr>
                 <th>Usuario</th>
-                <th>Roles</th>
+                <th>Rol</th>
                 <th>Estado</th>
-                <th>Creado</th>
-                <th>Último Login</th>
-                <th>Límite/Trial</th>
+                <th class="hide-mobile">Creado</th>
+                <th class="hide-mobile">Último Login</th>
+                <th>Plan/IA</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -322,12 +333,12 @@
                     {{user.status === 'active' ? 'Activo' : 'Suspendido'}}
                   </span>
                 </td>
-                <td>{{formatDate(user.created_at)}}</td>
-                <td>{{formatDate(user.last_login)}}</td>
+                <td class="hide-mobile">{{formatDate(user.created_at)}}</td>
+                <td class="hide-mobile">{{formatDate(user.last_login)}}</td>
                 <td>
                   <div class="trial-info">
                     <span *ngIf="user.is_trial_user" class="trial-badge">Trial</span>
-                    <span *ngIf="!user.is_trial_user" class="premium-badge">Premium</span>
+                    <span *ngIf="!user.is_trial_user" class="premium-badge">Pagado</span>
                     <small *ngIf="user.ai_invoices_processed !== undefined">
                       {{user.ai_invoices_processed}}/{{user.ai_invoices_limit === -1 ? '∞' : user.ai_invoices_limit}}
                     </small>
@@ -350,7 +361,7 @@
                     </button>
 
                     <span *ngIf="isProtectedAdmin(user)" class="protected-admin">
-                      <i class="bi bi-shield-check" title="Administrador protegido"></i>
+                      <i class="bi bi-shield-check" title="Tu cuenta"></i>
                     </span>
                   </div>
                 </td>
@@ -361,316 +372,299 @@
 
         <div *ngIf="totalPages > 1" class="pagination">
           <button class="btn-page" [disabled]="currentPage <= 1" (click)="prevPage()">
-            <i class="bi bi-chevron-left"></i>
-            Anterior
-          </button>
-
-          <span class="page-info">
-            Página {{currentPage}} de {{totalPages}}
-          </span>
-
-          <button class="btn-page" [disabled]="currentPage >= totalPages" (click)="nextPage()">
-            Siguiente
-            <i class="bi bi-chevron-right"></i>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div *ngIf="activeTab === 'plans'" class="tab-content">
-      <app-plans-management></app-plans-management>
-    </div>
-
-    <div *ngIf="activeTab === 'subscriptions'" class="tab-content">
-      <div class="users-section">
-        <div class="section-header">
-          <h3>Gestión de Suscripciones</h3>
-          <div class="section-actions">
-            <select class="form-control form-control-sm" style="width: auto; display: inline-block; margin-right: 12px;"
-              [(ngModel)]="subscriptionsStatusFilter" (ngModelChange)="onSubscriptionsFilterChange()">
-              <option value="all">Todos</option>
-              <option value="active">Activas</option>
-              <option value="past_due">Vencidas</option>
-              <option value="cancelled">Canceladas</option>
-            </select>
-            <span class="total-count">Total: {{formatNumber(totalSubscriptions)}}</span>
-          </div>
-        </div>
-
-        <div *ngIf="loadingSubscriptions" class="loading-users">
-          <div class="spinner-small"></div>
-          <span>Cargando suscripciones...</span>
-        </div>
-
-        <div *ngIf="!loadingSubscriptions" class="users-table-container">
-          <table class="users-table">
-            <thead>
-              <tr>
-                <th>Usuario</th>
-                <th>Plan</th>
-                <th>Estado</th>
-                <th>Inicio</th>
-                <th>Próx. Cobro</th>
-                <th>Tarjeta</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let sub of subscriptions; trackBy: trackBySub">
-                <td>
-                  <div class="user-details">
-                    <strong>{{sub.user_email}}</strong>
-                  </div>
-                </td>
-                <td>{{sub.plan_name}}</td>
-                <td>
-                  <span [class]="getSubscriptionStatusClass(sub.status)">{{sub.status}}</span>
-                </td>
-                <td>{{formatDate(sub.started_at)}}</td>
-                <td>
-                  <span [style.color]="sub.next_billing_date < dateNow ? 'red' : 'inherit'">
-                    {{formatDate(sub.next_billing_date)}}
-                  </span>
-                </td>
-                <td>
-                  <span *ngIf="sub.has_card" class="badge-success"><i class="bi bi-credit-card"></i> Vinculada</span>
-                  <span *ngIf="!sub.has_card" class="badge-warning">Sin Tarjeta</span>
-                </td>
-                <td class="actions">
-                  <button class="btn-action btn-promote" (click)="retryCharge(sub)" title="Reintentar Cobro"
-                    [disabled]="sub.status === 'cancelled'">
-                    <i class="bi bi-currency-dollar"></i>
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div *ngIf="subscriptionsTotalPages > 1" class="pagination">
-          <button class="btn-page" [disabled]="subscriptionsPage <= 1" (click)="onSubscriptionsPageChange(subscriptionsPage - 1)">
             <i class="bi bi-chevron-left"></i> Anterior
           </button>
-          <span class="page-info">Página {{subscriptionsPage}} de {{subscriptionsTotalPages}}</span>
-          <button class="btn-page" [disabled]="subscriptionsPage >= subscriptionsTotalPages" (click)="onSubscriptionsPageChange(subscriptionsPage + 1)">
+          <span class="page-info">{{currentPage}} / {{totalPages}}</span>
+          <button class="btn-page" [disabled]="currentPage >= totalPages" (click)="nextPage()">
             Siguiente <i class="bi bi-chevron-right"></i>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- AI Limits Tab -->
-    <div *ngIf="activeTab === 'ai-limits'" class="tab-content">
-      <div class="section-header">
-        <h3>Gestión de Límites de IA</h3>
-        <button class="btn btn-primary" (click)="loadAiLimitsData()">
-          <i class="bi bi-arrow-clockwise"></i>
-          Actualizar
+    <!-- ============================================ -->
+    <!-- TAB: FACTURACIÓN (Planes + Suscripciones)    -->
+    <!-- ============================================ -->
+    <div *ngIf="activeTab === 'billing'" class="tab-content">
+
+      <!-- Sub-tabs para Planes y Suscripciones -->
+      <div class="sub-tab-nav">
+        <button class="sub-tab" [class.active]="billingSubTab === 'plans'" (click)="billingSubTab = 'plans'">
+          <i class="bi bi-boxes"></i> Planes
+        </button>
+        <button class="sub-tab" [class.active]="billingSubTab === 'subscriptions'" (click)="setBillingSubTab('subscriptions')">
+          <i class="bi bi-arrow-repeat"></i> Suscripciones
+          <span class="sub-tab-count" *ngIf="totalSubscriptions">{{totalSubscriptions}}</span>
         </button>
       </div>
 
-      <!-- Scheduler Status -->
-      <div class="ai-limits-section">
-        <h4>Estado del Reseteo Automático</h4>
-
-        <div *ngIf="loadingSchedulerStatus" class="loading">
-          <div class="spinner-small"></div>
-          <span>Cargando estado del scheduler...</span>
-        </div>
-
-        <div *ngIf="!loadingSchedulerStatus && schedulerStatus" class="scheduler-info">
-          <div class="info-grid">
-            <div class="info-card">
-              <div class="info-icon scheduler">
-                <i class="bi bi-calendar-event"></i>
-              </div>
-              <div class="info-content">
-                <h5>Próximo Reseteo</h5>
-                <p>{{formatDate(schedulerStatus.next_reset_date)}}</p>
-              </div>
-            </div>
-
-            <div class="info-card">
-              <div class="info-icon" [class.success]="schedulerStatus.scheduler.running"
-                [class.danger]="!schedulerStatus.scheduler.running">
-                <i class="bi" [class.bi-play-circle]="schedulerStatus.scheduler.running"
-                  [class.bi-pause-circle]="!schedulerStatus.scheduler.running"></i>
-              </div>
-              <div class="info-content">
-                <h5>Scheduler</h5>
-                <p>{{schedulerStatus.scheduler.running ? 'Activo' : 'Inactivo'}}</p>
-              </div>
-            </div>
-
-            <div class="info-card">
-              <div class="info-icon warning" *ngIf="schedulerStatus.should_run_today">
-                <i class="bi bi-exclamation-triangle"></i>
-              </div>
-              <div class="info-icon info" *ngIf="!schedulerStatus.should_run_today">
-                <i class="bi bi-info-circle"></i>
-              </div>
-              <div class="info-content">
-                <h5>Estado Hoy</h5>
-                <p>{{schedulerStatus.should_run_today ? 'Reseteo pendiente' : 'Sin reseteo hoy'}}</p>
-              </div>
-            </div>
-          </div>
-        </div>
+      <!-- Planes -->
+      <div *ngIf="billingSubTab === 'plans'">
+        <app-plans-management></app-plans-management>
       </div>
 
-      <!-- Reset Statistics -->
-      <div class="ai-limits-section">
-        <h4>Estadísticas de Reseteo</h4>
-
-        <div *ngIf="loadingResetStats" class="loading">
-          <div class="spinner-small"></div>
-          <span>Cargando estadísticas...</span>
-        </div>
-
-        <div *ngIf="!loadingResetStats && resetStats" class="reset-stats">
-          <div class="stats-grid">
-            <div class="stat-card">
-              <div class="stat-icon users">
-                <i class="bi bi-people"></i>
-              </div>
-              <div class="stat-content">
-                <h3>{{formatNumber(resetStats.active_subscriptions)}}</h3>
-                <p>Suscripciones Activas</p>
-              </div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-icon success">
-                <i class="bi bi-arrow-clockwise"></i>
-              </div>
-              <div class="stat-content">
-                <h3>{{formatNumber(resetStats.resetted_this_month)}}</h3>
-                <p>Reseteados Este Mes</p>
-              </div>
+      <!-- Suscripciones -->
+      <div *ngIf="billingSubTab === 'subscriptions'">
+        <div class="users-section">
+          <div class="section-header">
+            <h3>Suscripciones</h3>
+            <div class="section-actions">
+              <select class="form-control form-control-sm"
+                [(ngModel)]="subscriptionsStatusFilter" (ngModelChange)="onSubscriptionsFilterChange()">
+                <option value="all">Todos</option>
+                <option value="active">Activas</option>
+                <option value="past_due">Vencidas</option>
+                <option value="cancelled">Canceladas</option>
+              </select>
+              <span class="total-count">{{formatNumber(totalSubscriptions)}}</span>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- Manual Actions -->
-      <div class="ai-limits-section">
-        <h4>Acciones Manuales</h4>
+          <div *ngIf="loadingSubscriptions" class="loading-users">
+            <div class="spinner-small"></div>
+            <span>Cargando...</span>
+          </div>
 
-        <div class="manual-actions">
-          <div class="action-group">
-            <h5>Reseteo Mensual Manual</h5>
-            <p>Ejecuta el reseteo mensual de límites para todos los usuarios con planes activos</p>
-            <button class="btn btn-warning" (click)="executeMonthlyReset()" [disabled]="loadingMonthlyReset">
-              <i class="bi bi-arrow-repeat"></i>
-              <span *ngIf="!loadingMonthlyReset">Ejecutar Reseteo Mensual</span>
-              <span *ngIf="loadingMonthlyReset">Ejecutando...</span>
+          <div *ngIf="!loadingSubscriptions" class="users-table-container">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>Plan</th>
+                  <th>Estado</th>
+                  <th class="hide-mobile">Inicio</th>
+                  <th>Próx. Cobro</th>
+                  <th class="hide-mobile">Tarjeta</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let sub of subscriptions; trackBy: trackBySub">
+                  <td>
+                    <div class="user-details">
+                      <strong>{{sub.user_email}}</strong>
+                    </div>
+                  </td>
+                  <td>{{sub.plan_name}}</td>
+                  <td>
+                    <span [class]="getSubscriptionStatusClass(sub.status)">{{sub.status}}</span>
+                  </td>
+                  <td class="hide-mobile">{{formatDate(sub.started_at)}}</td>
+                  <td>
+                    <span [class.text-danger]="sub.next_billing_date < dateNow">
+                      {{formatDate(sub.next_billing_date)}}
+                    </span>
+                  </td>
+                  <td class="hide-mobile">
+                    <span *ngIf="sub.has_card" class="badge-success"><i class="bi bi-credit-card"></i> OK</span>
+                    <span *ngIf="!sub.has_card" class="badge-warning">Sin Tarjeta</span>
+                  </td>
+                  <td class="actions">
+                    <button class="btn-action btn-promote" (click)="retryCharge(sub)" title="Reintentar Cobro"
+                      [disabled]="sub.status === 'cancelled'">
+                      <i class="bi bi-currency-dollar"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div *ngIf="subscriptionsTotalPages > 1" class="pagination">
+            <button class="btn-page" [disabled]="subscriptionsPage <= 1" (click)="onSubscriptionsPageChange(subscriptionsPage - 1)">
+              <i class="bi bi-chevron-left"></i> Anterior
+            </button>
+            <span class="page-info">{{subscriptionsPage}} / {{subscriptionsTotalPages}}</span>
+            <button class="btn-page" [disabled]="subscriptionsPage >= subscriptionsTotalPages" (click)="onSubscriptionsPageChange(subscriptionsPage + 1)">
+              Siguiente <i class="bi bi-chevron-right"></i>
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- TAB: SISTEMA (IA + Auditoría)                -->
+    <!-- ============================================ -->
+    <div *ngIf="activeTab === 'system'" class="tab-content">
+
+      <!-- Sub-tabs -->
+      <div class="sub-tab-nav">
+        <button class="sub-tab" [class.active]="systemSubTab === 'ai-limits'" (click)="systemSubTab = 'ai-limits'">
+          <i class="bi bi-robot"></i> Límites IA
+        </button>
+        <button class="sub-tab" [class.active]="systemSubTab === 'audit'" (click)="setSystemSubTab('audit')">
+          <i class="bi bi-journal-text"></i> Auditoría
+          <span class="sub-tab-count" *ngIf="auditTotal">{{auditTotal}}</span>
+        </button>
+      </div>
+
+      <!-- Límites IA -->
+      <div *ngIf="systemSubTab === 'ai-limits'">
+        <div class="section-header">
+          <h3>Límites de IA</h3>
+          <button class="btn btn-primary btn-sm" (click)="loadAiLimitsData()">
+            <i class="bi bi-arrow-clockwise"></i> Actualizar
+          </button>
+        </div>
+
+        <!-- Scheduler + Reset Stats en grid compacto -->
+        <div class="ai-info-grid">
+          <div class="ai-info-card">
+            <div class="ai-info-header">
+              <i class="bi bi-calendar-event text-primary"></i>
+              <span>Próximo Reseteo</span>
+            </div>
+            <div class="ai-info-value" *ngIf="!loadingSchedulerStatus && schedulerStatus">
+              {{formatDate(schedulerStatus.next_reset_date)}}
+            </div>
+            <div class="ai-info-value text-muted" *ngIf="loadingSchedulerStatus">Cargando...</div>
+          </div>
+
+          <div class="ai-info-card">
+            <div class="ai-info-header">
+              <i class="bi" [ngClass]="schedulerStatus?.scheduler?.running ? 'bi-play-circle text-success' : 'bi-pause-circle text-danger'"></i>
+              <span>Scheduler</span>
+            </div>
+            <div class="ai-info-value" *ngIf="!loadingSchedulerStatus && schedulerStatus">
+              {{schedulerStatus.scheduler.running ? 'Activo' : 'Inactivo'}}
+            </div>
+            <div class="ai-info-value text-muted" *ngIf="loadingSchedulerStatus">Cargando...</div>
+          </div>
+
+          <div class="ai-info-card">
+            <div class="ai-info-header">
+              <i class="bi bi-people text-info"></i>
+              <span>Suscripciones Activas</span>
+            </div>
+            <div class="ai-info-value" *ngIf="!loadingResetStats && resetStats">
+              {{formatNumber(resetStats.active_subscriptions)}}
+            </div>
+            <div class="ai-info-value text-muted" *ngIf="loadingResetStats">Cargando...</div>
+          </div>
+
+          <div class="ai-info-card">
+            <div class="ai-info-header">
+              <i class="bi bi-arrow-clockwise text-success"></i>
+              <span>Reseteados Este Mes</span>
+            </div>
+            <div class="ai-info-value" *ngIf="!loadingResetStats && resetStats">
+              {{formatNumber(resetStats.resetted_this_month)}}
+            </div>
+            <div class="ai-info-value text-muted" *ngIf="loadingResetStats">Cargando...</div>
+          </div>
+        </div>
+
+        <!-- Acciones manuales -->
+        <div class="manual-actions">
+          <div class="action-group">
+            <div class="action-group-header">
+              <div>
+                <h5>Reseteo Mensual</h5>
+                <p>Resetea límites de IA de todos los usuarios con planes activos</p>
+              </div>
+              <button class="btn btn-warning btn-sm" (click)="executeMonthlyReset()" [disabled]="loadingMonthlyReset">
+                <i class="bi bi-arrow-repeat"></i>
+                {{loadingMonthlyReset ? 'Ejecutando...' : 'Ejecutar'}}
+              </button>
+            </div>
+          </div>
 
           <div class="action-group">
-            <h5>Reset Individual</h5>
-            <p>Resetea los límites de IA de un usuario específico</p>
-
-            <div class="user-reset-form">
-              <div class="form-group">
-                <label>Usuario:</label>
-                <select [(ngModel)]="selectedUserForReset" class="form-control">
-                  <option value="">Seleccionar usuario...</option>
-                  <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
-                    {{user.name || user.email}} ({{user.email}})
-                  </option>
-                </select>
+            <div class="action-group-header">
+              <div>
+                <h5>Reset Individual</h5>
+                <p>Resetea los límites de un usuario específico</p>
               </div>
-
-              <button class="btn btn-info" (click)="resetUserLimits()"
+            </div>
+            <div class="user-reset-form">
+              <select [(ngModel)]="selectedUserForReset" class="form-control form-control-sm">
+                <option value="">Seleccionar usuario...</option>
+                <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
+                  {{user.name || user.email}} ({{user.email}})
+                </option>
+              </select>
+              <button class="btn btn-info btn-sm" (click)="resetUserLimits()"
                 [disabled]="!selectedUserForReset || loadingUserReset">
-                <i class="bi bi-person-refresh"></i>
-                <span *ngIf="!loadingUserReset">Resetear Usuario</span>
-                <span *ngIf="loadingUserReset">Reseteando...</span>
+                <i class="bi bi-person-gear"></i>
+                {{loadingUserReset ? 'Reseteando...' : 'Resetear'}}
               </button>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Audit Log Tab -->
-    <div *ngIf="activeTab === 'audit'" class="tab-content">
-      <div class="users-section">
-        <div class="section-header">
-          <h3>Log de Auditoría</h3>
-          <div class="section-actions">
-            <select class="form-control form-control-sm" style="width: auto; display: inline-block; margin-right: 12px;"
-              [(ngModel)]="auditActionFilter" (ngModelChange)="onAuditFilterChange()">
-              <option value="">Todas las acciones</option>
-              <option value="user_role_changed">Cambio de rol</option>
-              <option value="user_suspended">Suspensión</option>
-              <option value="user_activated">Activación</option>
-              <option value="monthly_ai_reset">Reset mensual IA</option>
-              <option value="user_ai_reset">Reset IA individual</option>
-            </select>
-            <span class="total-count">Total: {{formatNumber(auditTotal)}}</span>
+      <!-- Auditoría -->
+      <div *ngIf="systemSubTab === 'audit'">
+        <div class="users-section">
+          <div class="section-header">
+            <h3>Log de Auditoría</h3>
+            <div class="section-actions">
+              <select class="form-control form-control-sm"
+                [(ngModel)]="auditActionFilter" (ngModelChange)="onAuditFilterChange()">
+                <option value="">Todas</option>
+                <option value="user_role_changed">Cambio de rol</option>
+                <option value="user_suspended">Suspensión</option>
+                <option value="user_activated">Activación</option>
+                <option value="monthly_ai_reset">Reset mensual IA</option>
+                <option value="user_ai_reset">Reset IA individual</option>
+              </select>
+              <span class="total-count">{{formatNumber(auditTotal)}}</span>
+            </div>
           </div>
-        </div>
 
-        <div *ngIf="loadingAudit" class="loading-users">
-          <div class="spinner-small"></div>
-          <span>Cargando auditoría...</span>
-        </div>
+          <div *ngIf="loadingAudit" class="loading-users">
+            <div class="spinner-small"></div>
+            <span>Cargando...</span>
+          </div>
 
-        <div *ngIf="!loadingAudit && auditLogs.length === 0" class="no-data" style="padding: 40px; text-align: center;">
-          <i class="bi bi-journal-text" style="font-size: 2rem; color: #9ca3af;"></i>
-          <p style="color: #6b7280; margin-top: 12px;">No hay registros de auditoría</p>
-        </div>
+          <div *ngIf="!loadingAudit && auditLogs.length === 0" class="no-data">
+            <i class="bi bi-journal-text" style="font-size: 2rem; color: #9ca3af;"></i>
+            <p>No hay registros de auditoría</p>
+          </div>
 
-        <div *ngIf="!loadingAudit && auditLogs.length > 0" class="users-table-container">
-          <table class="users-table">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Acción</th>
-                <th>Administrador</th>
-                <th>Usuario afectado</th>
-                <th>Detalles</th>
-                <th>IP</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let log of auditLogs; trackBy: trackByAuditId">
-                <td>{{formatDate(log.timestamp)}}</td>
-                <td>
-                  <span [class]="getActionClass(log.action)">{{getActionLabel(log.action)}}</span>
-                </td>
-                <td>
-                  <small>{{log.admin_email}}</small>
-                </td>
-                <td>
-                  <small>{{log.target_user || '—'}}</small>
-                </td>
-                <td>
-                  <small *ngIf="log.details && (log.details | json) !== '{}'" class="text-muted">
-                    {{log.details | json}}
-                  </small>
-                  <span *ngIf="!log.details || (log.details | json) === '{}'" class="text-muted">—</span>
-                </td>
-                <td>
-                  <small class="text-muted">{{log.ip_address || '—'}}</small>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          <div *ngIf="!loadingAudit && auditLogs.length > 0" class="users-table-container">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Acción</th>
+                  <th>Admin</th>
+                  <th>Usuario</th>
+                  <th class="hide-mobile">Detalles</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let log of auditLogs; trackBy: trackByAuditId">
+                  <td><small>{{formatDate(log.timestamp)}}</small></td>
+                  <td>
+                    <span [class]="getActionClass(log.action)">{{getActionLabel(log.action)}}</span>
+                  </td>
+                  <td><small>{{log.admin_email}}</small></td>
+                  <td><small>{{log.target_user || '—'}}</small></td>
+                  <td class="hide-mobile">
+                    <small *ngIf="log.details && (log.details | json) !== '{}'" class="text-muted">
+                      {{log.details | json}}
+                    </small>
+                    <span *ngIf="!log.details || (log.details | json) === '{}'" class="text-muted">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-        <div *ngIf="auditTotalPages > 1" class="pagination">
-          <button class="btn-page" [disabled]="auditPage <= 1" (click)="onAuditPageChange(auditPage - 1)">
-            <i class="bi bi-chevron-left"></i> Anterior
-          </button>
-          <span class="page-info">Página {{auditPage}} de {{auditTotalPages}}</span>
-          <button class="btn-page" [disabled]="auditPage >= auditTotalPages" (click)="onAuditPageChange(auditPage + 1)">
-            Siguiente <i class="bi bi-chevron-right"></i>
-          </button>
+          <div *ngIf="auditTotalPages > 1" class="pagination">
+            <button class="btn-page" [disabled]="auditPage <= 1" (click)="onAuditPageChange(auditPage - 1)">
+              <i class="bi bi-chevron-left"></i> Anterior
+            </button>
+            <span class="page-info">{{auditPage}} / {{auditTotalPages}}</span>
+            <button class="btn-page" [disabled]="auditPage >= auditTotalPages" (click)="onAuditPageChange(auditPage + 1)">
+              Siguiente <i class="bi bi-chevron-right"></i>
+            </button>
+          </div>
         </div>
       </div>
     </div>
+
   </div>
 </div>
