@@ -68,6 +68,46 @@ class SubscriptionRepository:
             logger.warning(f"Error creando índices: {e}")
 
     # =====================================
+    # RESOLUCIÓN DE PAGOPAR USER ID
+    # =====================================
+
+    def resolve_pagopar_user_id(self, user_email: str) -> Optional[str]:
+        """
+        Resolver pagopar_user_id buscando en todas las fuentes disponibles.
+        Orden: payment_methods → auth_users → suscripción activa.
+        Sincroniza automáticamente a payment_methods si falta.
+        """
+        user_email = (user_email or "").lower()
+        pagopar_id = None
+
+        # 1. payment_methods (fuente principal para billing)
+        pm = self.get_user_payment_method(user_email)
+        if pm:
+            pagopar_id = pm.get("pagopar_user_id")
+
+        # 2. auth_users
+        if not pagopar_id:
+            user = self.users_collection.find_one({"email": user_email}, {"pagopar_user_id": 1})
+            if user:
+                pagopar_id = user.get("pagopar_user_id")
+
+        # 3. suscripción activa
+        if not pagopar_id:
+            sub = self.subscriptions_collection.find_one(
+                {"user_email": user_email, "status": "active"},
+                {"pagopar_user_id": 1}
+            )
+            if sub:
+                pagopar_id = sub.get("pagopar_user_id")
+
+        # Sincronizar a payment_methods si encontramos en otra fuente
+        if pagopar_id and (not pm or not pm.get("pagopar_user_id")):
+            self.save_payment_method(user_email, pagopar_id, "Bancard")
+            logger.info(f"📎 Sincronizado pagopar_user_id a payment_methods para {user_email}")
+
+        return pagopar_id
+
+    # =====================================
     # GESTIÓN DE MÉTODOS DE PAGO
     # =====================================
 
@@ -147,7 +187,7 @@ class SubscriptionRepository:
                 target_date = datetime.utcnow()
 
             query = {
-                "status": {"$in": ["active", "ACTIVE", "past_due", "PAST_DUE"]},
+                "status": {"$in": ["active", "past_due"]},
                 "next_billing_date": {"$lte": target_date, "$ne": None}
             }
             
@@ -364,7 +404,7 @@ class SubscriptionRepository:
             subscription = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": {"$in": ["active", "ACTIVE"]}
+                    "status": "active"
                 },
                 {"_id": 0}
             )
@@ -382,7 +422,7 @@ class SubscriptionRepository:
             subscription = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": {"$in": ["active", "ACTIVE"]}
+                    "status": "active"
                 }
                 # No excluir _id para poder identificar la suscripción
             )
@@ -431,7 +471,7 @@ class SubscriptionRepository:
             s = self.subscriptions_collection.find_one(
                 {
                     "user_email": user_email,
-                    "status": {"$in": ["active", "ACTIVE"]}
+                    "status": "active"
                 },
                 {"_id": 1}
             )
@@ -496,7 +536,7 @@ class SubscriptionRepository:
             result = self.subscriptions_collection.update_many(
                 {
                     "user_email": user_email,
-                    "status": {"$in": ["active", "ACTIVE"]}
+                    "status": "active"
                 },
                 {
                     "$set": {
@@ -612,7 +652,7 @@ class SubscriptionRepository:
                         "plan_name": {"$first": "$plan_name"},
                         "total_subscriptions": {"$sum": 1},
                         "active_subscriptions": {
-                            "$sum": {"$cond": [{"$in": ["$status", ["active", "ACTIVE"]]}, 1, 0]}
+                            "$sum": {"$cond": [{"$eq": ["$status", "active"]}, 1, 0]}
                         },
                         "total_revenue": {"$sum": "$plan_price"},
                         "avg_price": {"$avg": "$plan_price"}
@@ -627,7 +667,7 @@ class SubscriptionRepository:
             
             # Estadísticas generales
             total_subscriptions = self.subscriptions_collection.count_documents({})
-            active_subscriptions = self.subscriptions_collection.count_documents({"status": {"$in": ["active", "ACTIVE"]}})
+            active_subscriptions = self.subscriptions_collection.count_documents({"status": "active"})
             total_revenue = list(self.subscriptions_collection.aggregate([
                 {"$group": {"_id": None, "total": {"$sum": "$plan_price"}}}
             ]))
@@ -706,6 +746,23 @@ class SubscriptionRepository:
                 logger.error(f"Plan no encontrado: {plan_code}")
                 return False
             
+            # Sincronizar pagopar_user_id: buscar en auth_users y garantizar
+            # que esté en payment_methods y en la suscripción para billing
+            pagopar_user_id = kwargs.get("pagopar_user_id")
+            if not pagopar_user_id:
+                user = self.users_collection.find_one({"email": user_email}, {"pagopar_user_id": 1})
+                pagopar_user_id = (user or {}).get("pagopar_user_id")
+            if not pagopar_user_id:
+                pm = self.get_user_payment_method(user_email)
+                pagopar_user_id = (pm or {}).get("pagopar_user_id")
+
+            # Si encontramos pagopar_user_id, asegurar que exista en payment_methods
+            if pagopar_user_id:
+                existing_pm = self.get_user_payment_method(user_email)
+                if not existing_pm or not existing_pm.get("pagopar_user_id"):
+                    self.save_payment_method(user_email, pagopar_user_id, "Bancard")
+                    logger.info(f"📎 Sincronizado pagopar_user_id a payment_methods para {user_email}")
+
             subscription_data = {
                 "user_email": user_email,
                 "plan_code": plan_code,
@@ -713,16 +770,19 @@ class SubscriptionRepository:
                 "plan_price": plan["price"],
                 "currency": plan["currency"],
                 "billing_period": plan["billing_period"],
-                # Incluir features del plan para actualizar límites del usuario correctamente
                 "plan_features": plan.get("features", {}),
-                "status": "active",  # lowercase per MongoDB schema
+                "status": "active",
                 "payment_method": payment_method,
                 "payment_reference": kwargs.get("payment_reference", f"admin_assigned_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}")
             }
-            
-            # Merge extra data (like pagopar_card_token)
+
+            # Incluir pagopar_user_id en la suscripción si disponible
+            if pagopar_user_id:
+                subscription_data["pagopar_user_id"] = pagopar_user_id
+
+            # Merge extra data
             subscription_data.update(kwargs)
-            
+
             return await self.create_subscription(subscription_data)
             
         except Exception as e:

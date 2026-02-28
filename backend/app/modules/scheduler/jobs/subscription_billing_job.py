@@ -14,7 +14,7 @@ Este job se ejecuta diariamente y:
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from bson import ObjectId
 
 from app.repositories.subscription_repository import SubscriptionRepository
@@ -22,6 +22,32 @@ from app.services.pagopar_service import PagoparService
 from app.services.email_notification_service import EmailNotificationService
 
 logger = logging.getLogger(__name__)
+
+
+def _acquire_billing_lock(ttl: int = 300) -> bool:
+    """
+    Lock distribuido via Redis para evitar que múltiples pods
+    ejecuten el billing job simultáneamente.
+    Retorna True si se adquirió el lock, False si otro pod ya lo tiene.
+    """
+    try:
+        from app.core.redis_client import get_redis_client
+        redis = get_redis_client(decode_responses=True)
+        acquired = redis.set("cuenly:billing_job_lock", "1", nx=True, ex=ttl)
+        return bool(acquired)
+    except Exception as e:
+        logger.warning(f"⚠️ Redis no disponible para billing lock, ejecutando de todas formas: {e}")
+        return True  # Sin Redis, asumir single-pod
+
+
+def _release_billing_lock():
+    """Liberar el lock de billing."""
+    try:
+        from app.core.redis_client import get_redis_client
+        redis = get_redis_client(decode_responses=True)
+        redis.delete("cuenly:billing_job_lock")
+    except Exception:
+        pass
 
 
 class SubscriptionBillingJob:
@@ -35,10 +61,15 @@ class SubscriptionBillingJob:
         
     async def run(self):
         """Ejecutar job de cobros."""
+        # Lock distribuido: solo un pod ejecuta el billing
+        if not _acquire_billing_lock(ttl=600):
+            logger.info("⏭️ Billing job: otro pod ya está ejecutando, saltando")
+            return
+
         logger.info("=" * 80)
         logger.info("🔄 Iniciando job de cobros recurrentes de suscripciones")
         logger.info("=" * 80)
-        
+
         try:
             # Buscar suscripciones que deben cobrarse
             subscriptions = self.repo.get_subscriptions_due_for_billing()
@@ -71,6 +102,8 @@ class SubscriptionBillingJob:
         except Exception as e:
             logger.error(f"Error fatal en job de cobros: {e}")
             raise
+        finally:
+            _release_billing_lock()
     
     async def _process_subscription(self, sub: Dict[str, Any]) -> bool:
         """
@@ -87,19 +120,10 @@ class SubscriptionBillingJob:
         logger.info(f"💳 Procesando cobro: {user_email} - {plan_name} - {amount} PYG")
         
         try:
-            # 1. Verificar que tenga método de pago
-            payment_method = self.repo.get_user_payment_method(user_email)
-            if not payment_method:
-                logger.error(f"❌ Usuario {user_email} no tiene método de pago configurado")
-                self._handle_payment_failure(
-                    sub, 
-                    "No tiene método de pago configurado"
-                )
-                return False
-            
-            pagopar_user_id = payment_method.get("pagopar_user_id")
+            # 1. Resolver pagopar_user_id desde múltiples fuentes
+            pagopar_user_id = self.repo.resolve_pagopar_user_id(user_email)
             if not pagopar_user_id:
-                logger.error(f"❌ Usuario {user_email} no tiene pagopar_user_id")
+                logger.error(f"❌ Usuario {user_email} no tiene pagopar_user_id en ninguna fuente")
                 self._handle_payment_failure(
                     sub,
                     "Pagopar user ID no disponible"

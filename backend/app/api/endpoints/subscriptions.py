@@ -212,27 +212,10 @@ async def subscribe(
         # 2. Verificar Tarjetas Existentes SIEMPRE (auto-detectar)
         # Si el usuario ya tiene tarjetas, activar directamente sin pedir nueva
         existing_cards = []
-        pagopar_id_lookup = pagopar_user_id  # Default al ID generado por hash
-        
-        logger.info(f"🔎 DEBUG: Buscando tarjetas para {user_email}")
-        logger.info(f"   - pagopar_user_id (hash): {pagopar_user_id}")
-        
-        # IMPORTANTE: Primero verificar si ya existe un pagopar_id guardado en users collection
-        saved_pagopar_id = user_repo.get_pagopar_user_id(user_email)
-        logger.info(f"   - saved_pagopar_id (users): {saved_pagopar_id}")
-        
-        if saved_pagopar_id:
-            pagopar_id_lookup = saved_pagopar_id
-            logger.info(f"📎 Usando pagopar_id existente de users: {pagopar_id_lookup}")
-        else:
-            # Fallback: verificar si hay un método de pago guardado con otro ID
-            pm = sub_repo.get_user_payment_method(user_email)
-            logger.info(f"   - payment_method doc: {pm}")
-            if pm and pm.get("pagopar_user_id"):
-                pagopar_id_lookup = pm.get("pagopar_user_id")
-                logger.info(f"📎 Usando pagopar_id de payment_methods: {pagopar_id_lookup}")
-            else:
-                logger.warning(f"⚠️ No se encontró pagopar_id guardado, usando hash: {pagopar_id_lookup}")
+
+        # Resolver pagopar_id desde todas las fuentes (payment_methods, users, suscripción)
+        pagopar_id_lookup = sub_repo.resolve_pagopar_user_id(user_email) or pagopar_user_id
+        logger.info(f"🔎 pagopar_id resuelto para {user_email}: {pagopar_id_lookup}")
         
         try:
             existing_cards = await pagopar_service.list_cards(pagopar_id_lookup)

@@ -30,23 +30,9 @@ class PayRequest(BaseModel):
     order_hash: str
     card_token: str
 
-# Helper function to get pagopar_id consistently from both collections
 def _get_pagopar_id(email: str) -> Optional[str]:
-    """
-    Get pagopar_user_id from users collection, falling back to payment_methods.
-    Also syncs the ID to users collection if only found in payment_methods.
-    """
-    pagopar_id = user_repo.get_pagopar_user_id(email)
-    
-    if not pagopar_id:
-        payment_method = sub_repo.get_user_payment_method(email)
-        if payment_method:
-            pagopar_id = payment_method.get("pagopar_user_id")
-            if pagopar_id:
-                logger.info(f"📎 Usando pagopar_id de payment_methods: {pagopar_id}")
-                user_repo.update_pagopar_user_id(email, pagopar_id)
-    
-    return pagopar_id
+    """Resolver pagopar_user_id usando el método centralizado del repositorio."""
+    return sub_repo.resolve_pagopar_user_id(email)
 
 @router.get("/cards")
 async def list_cards(current_user: dict = Depends(_get_current_user)):
@@ -229,13 +215,7 @@ async def pay(
     success = await pagopar_service.process_payment(pagopar_id, request.order_hash, request.card_token)
     if not success:
         raise HTTPException(status_code=400, detail="Payment failed")
-        
-    return {"success": True}
 
-    success = await pagopar_service.process_payment(pagopar_id, request.order_hash, request.card_token)
-    if not success:
-        raise HTTPException(status_code=400, detail="Payment failed")
-        
     return {"success": True}
 
 # --- Validation / Staging -> Production Flow Endpoints ---

@@ -41,19 +41,24 @@ async def list_subscriptions(
     skip = (page - 1) * page_size
     query = {}
     if status != "all":
-        # Buscar tanto mayúsculas como minúsculas para retrocompatibilidad
-        status_lower = status.lower().replace("-", "_")
-        status_upper = status.upper()
-        query["status"] = {"$in": [status_lower, status_upper]}
+        query["status"] = status.lower().replace("-", "_")
 
     total = sub_repo.subscriptions_collection.count_documents(query)
     cursor = sub_repo.subscriptions_collection.find(query).sort("created_at", -1).skip(skip).limit(page_size)
     
     subscriptions = list(cursor)
-    
+
+    # Cache de payment_methods por email para evitar N+1 queries
+    emails = list(set(sub.get("user_email", "") for sub in subscriptions))
+    payment_methods_map = {}
+    for email in emails:
+        if email:
+            pm = sub_repo.get_user_payment_method(email)
+            payment_methods_map[email] = bool(pm and pm.get("pagopar_user_id"))
+
     for sub in subscriptions:
-        sub["_id"] = str(sub.get("_id")) # Serialize ObjectId
-        sub["has_card"] = bool(sub.get("pagopar_card_token"))
+        sub["_id"] = str(sub.get("_id"))
+        sub["has_card"] = payment_methods_map.get(sub.get("user_email", ""), False)
         
     return {
         "data": subscriptions,
@@ -216,14 +221,30 @@ async def admin_create_subscription(
             plan_code,
             payment_method
         )
-        
+
         if not success:
             raise HTTPException(status_code=400, detail="Error asignando plan al usuario")
-        
-        return {
+
+        # Verificar si el usuario tiene tarjeta para cobro automático
+        warnings = []
+        pagopar_id = sub_repo.resolve_pagopar_user_id(user_email)
+        if not pagopar_id:
+            warnings.append("Usuario no tiene Pagopar configurado. No se podrá cobrar automáticamente.")
+        else:
+            try:
+                cards = await pagopar_service.list_cards(pagopar_id)
+                if not cards:
+                    warnings.append("Usuario no tiene tarjeta registrada en Pagopar. El cobro automático fallará hasta que registre una.")
+            except Exception:
+                warnings.append("No se pudo verificar tarjetas en Pagopar.")
+
+        response = {
             "success": True,
             "message": f"Plan '{plan_code}' asignado a {user_email}"
         }
+        if warnings:
+            response["warnings"] = warnings
+        return response
     except HTTPException:
         raise
     except Exception as e:
