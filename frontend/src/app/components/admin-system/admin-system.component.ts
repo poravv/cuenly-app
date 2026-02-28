@@ -127,7 +127,7 @@ export class AdminSystemComponent implements OnInit {
   }
 
   loadUsers(): void {
-    this.apiService.getAdminUsers(1, 200, '').subscribe({
+    this.apiService.getAdminUsers(1, 100, '').subscribe({
       next: (response) => {
         if (response.success) {
           this.users = response.users;

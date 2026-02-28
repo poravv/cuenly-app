@@ -136,7 +136,7 @@ export class AdminDashboardComponent implements OnInit {
    * No requiere paginación completa: se trae la primera página grande.
    */
   loadUsers(): void {
-    this.apiService.getAdminUsers(1, 200, '').subscribe({
+    this.apiService.getAdminUsers(1, 100, '').subscribe({
       next: (response) => {
         if (response.success) {
           this.users = response.users;
