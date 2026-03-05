@@ -159,12 +159,11 @@ $gray-900: #111827;
 .badge-info { background: rgba($info, 0.1); color: $info; }
 .badge-muted { background: $gray-100; color: $gray-500; }
 
+// empty-state uses global styles from styles.scss
+// Local overrides to match the table-card context
 .empty-state {
-  text-align: center;
-  padding: 48px;
-  color: $gray-400;
-  i { font-size: 2.5rem; display: block; margin-bottom: 8px; }
-  p { margin: 0; font-size: 0.9rem; }
+  background: transparent;
+  border-radius: 0;
 }
 
 .pagination {

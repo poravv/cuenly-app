@@ -1,10 +1,10 @@
 <div class="container-fluid px-4 py-5">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-      <h2 class="mb-1">Métodos de Pago</h2>
+      <h2 class="mb-1">Metodos de Pago</h2>
       <p class="text-muted">Gestiona tus tarjetas para pagos recurrentes.</p>
     </div>
-    <button class="btn btn-primary" (click)="openAddCardModal()" [disabled]="processingAdd">
+    <button class="btn btn-primary" (click)="openAddCardModal()" [disabled]="processingAdd" aria-label="Agregar nueva tarjeta">
       <i class="bi bi-plus-lg me-2"></i>
       {{ processingAdd ? 'Iniciando...' : 'Nueva Tarjeta' }}
     </button>
@@ -16,31 +16,39 @@
     </div>
   </div>
 
-  <div *ngIf="!loading && cards.length === 0" class="text-center py-5 bg-light rounded">
-    <i class="bi bi-credit-card text-muted" style="font-size: 3rem;"></i>
-    <h4 class="mt-3">No tienes tarjetas guardadas</h4>
-    <p class="text-muted">Agrega una tarjeta para agilizar tus pagos.</p>
+  <div *ngIf="!loading && cards.length === 0" class="empty-state">
+    <i class="bi bi-credit-card-2-back"></i>
+    <h4>No tienes tarjetas guardadas</h4>
+    <p>Agrega una tarjeta para agilizar tus pagos recurrentes.</p>
+    <button class="btn btn-primary" (click)="openAddCardModal()" [disabled]="processingAdd" aria-label="Agregar primera tarjeta">
+      <i class="bi bi-plus-lg me-2"></i>Agregar Tarjeta
+    </button>
   </div>
 
   <div *ngIf="!loading && cards.length > 0" class="row">
-    <div class="col-md-6 col-lg-4 mb-4" *ngFor="let card of cards">
+    <div class="col-md-6 col-lg-4 mb-4" *ngFor="let card of cards; trackBy: trackByCardAlias">
 
       <!-- Realistic Credit Card -->
       <div class="credit-card mb-3">
         <div class="card-top">
           <div class="chip-icon"></div>
-          <img *ngIf="card.url_logo" [src]="card.url_logo" alt="Logo" style="height: 35px; object-fit: contain;">
+          <img *ngIf="card.url_logo"
+               [src]="card.url_logo"
+               alt="Logo de {{ card.emisor || card.tipo_tarjeta || 'tarjeta' }}"
+               class="card-logo"
+               (error)="onCardLogoError($event)">
+          <i class="bi bi-credit-card card-logo-fallback" style="display: none;"></i>
         </div>
 
         <div>
           <p class="text-monospace card-number">{{ card.tarjeta_numero }}</p>
           <div class="card-bottom">
             <div>
-              <p class="text-white-50 small mb-0" style="font-size: 0.7rem;">Titular / Banco</p>
+              <p class="card-label">Titular / Banco</p>
               <p class="card-holder">{{ card.emisor || 'Cliente' }}</p>
             </div>
             <div class="text-end">
-              <p class="text-white-50 small mb-0" style="font-size: 0.7rem;">Tipo</p>
+              <p class="card-label">Tipo</p>
               <p class="card-brand">{{ card.tipo_tarjeta }}</p>
             </div>
           </div>
@@ -49,7 +57,9 @@
 
       <!-- Action Buttons below the card -->
       <div class="card-actions d-flex justify-content-end px-2">
-        <button class="btn btn-outline-danger shadow-sm rounded-pill px-3" (click)="deleteCard(card)">
+        <button class="btn btn-outline-danger shadow-sm rounded-pill px-3"
+                (click)="deleteCard(card)"
+                [attr.aria-label]="'Eliminar tarjeta ' + card.tarjeta_numero">
           <i class="bi bi-trash me-1"></i> Eliminar
         </button>
       </div>
@@ -59,15 +69,15 @@
 </div>
 
 <!-- Add Card Modal (Custom Implement to hold Iframe) -->
-<div class="modal fade" [class.show]="showAddModal" [style.display]="showAddModal ? 'block' : 'none'" tabindex="-1">
+<div class="modal fade" [class.show]="showAddModal" [style.display]="showAddModal ? 'block' : 'none'" tabindex="-1" role="dialog" aria-labelledby="addCardModalTitle">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Agregar Tarjeta</h5>
-        <button type="button" class="btn-close" (click)="closeAddModal()"></button>
+        <h5 class="modal-title" id="addCardModalTitle">Agregar Tarjeta</h5>
+        <button type="button" class="btn-close" (click)="closeAddModal()" aria-label="Cerrar modal"></button>
       </div>
-      <div class="modal-body p-0" style="min-height: 500px;">
-        <iframe *ngIf="iframeUrl" [src]="iframeUrl" width="100%" height="500px" frameborder="0"></iframe>
+      <div class="modal-body p-0 modal-iframe-body">
+        <iframe *ngIf="iframeUrl" [src]="iframeUrl" width="100%" height="500px" frameborder="0" title="Formulario de pago Pagopar"></iframe>
       </div>
     </div>
   </div>

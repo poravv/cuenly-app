@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
@@ -6,7 +6,8 @@ import { NotificationService } from '../../services/notification.service';
 @Component({
     selector: 'app-pagopar-result',
     templateUrl: './pagopar-result.component.html',
-    styleUrls: ['./pagopar-result.component.scss']
+    styleUrls: ['./pagopar-result.component.scss'],
+    changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PagoparResultComponent implements OnInit {
     loading = true;
@@ -18,7 +19,8 @@ export class PagoparResultComponent implements OnInit {
         private route: ActivatedRoute,
         private router: Router,
         private apiService: ApiService,
-        private notificationService: NotificationService
+        private notificationService: NotificationService,
+        private cdr: ChangeDetectorRef
     ) { }
 
     ngOnInit(): void {
@@ -26,8 +28,9 @@ export class PagoparResultComponent implements OnInit {
         if (this.hash) {
             this.validateOrder();
         } else {
-            this.error = 'No se proporcionó un hash de pedido válido.';
+            this.error = 'No se proporcion\u00f3 un hash de pedido v\u00e1lido.';
             this.loading = false;
+            this.cdr.markForCheck();
         }
     }
 
@@ -41,15 +44,17 @@ export class PagoparResultComponent implements OnInit {
                 if (data.respuesta && data.resultado && data.resultado.length > 0) {
                     const detail = data.resultado[0];
                     if (detail.pagado) {
-                        this.notificationService.success('¡Pago completado con éxito!');
+                        this.notificationService.success('\u00a1Pago completado con \u00e9xito!');
                     } else if (detail.cancelado) {
                         this.notificationService.error('El pedido fue cancelado.');
                     }
                 }
+                this.cdr.markForCheck();
             },
             error: () => {
                 this.error = 'No pudimos verificar el estado de tu pedido. Por favor, contacta a soporte.';
                 this.loading = false;
+                this.cdr.markForCheck();
             }
         });
     }

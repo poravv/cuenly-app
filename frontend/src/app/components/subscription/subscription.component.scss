@@ -1,11 +1,16 @@
-// Subscription Management Page Styles
+// Subscription Page — Consistent with CuenlyApp Design System
+// Uses $primary (#4F46E5), $success, $warning, $danger from _variables.scss
+
+$primary: #4F46E5;
+$primary-light: #818CF8;
+$primary-dark: #3730A3;
+$success: #10B981;
+$warning: #F59E0B;
+$danger: #EF4444;
+
 .subscription-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-
-  .container-fluid {
-    max-width: 1400px;
-  }
+  background: #f8fafc;
 }
 
 .loading-container {
@@ -15,1034 +20,788 @@
   min-height: 50vh;
 }
 
-// Navigation Tabs
-.nav-tabs {
-  border-bottom: 2px solid #e5e7eb;
-  margin-bottom: 2rem;
+// =========== PAGE HEADER ===========
 
-  .nav-link {
-    border: none;
-    background: transparent;
-    color: #6b7280;
-    font-weight: 500;
-    padding: 1rem 1.5rem;
-    border-radius: 8px 8px 0 0;
-    transition: all 0.3s ease;
-
-    &:hover {
-      color: #2563eb;
-      background: rgba(37, 99, 235, 0.05);
-      border-color: transparent;
-    }
-
-    &.active {
-      color: #2563eb;
-      background: white;
-      border-color: #e5e7eb #e5e7eb white;
-      border-width: 1px 1px 2px 1px;
-      margin-bottom: -2px;
-      font-weight: 600;
-    }
-
-    i {
-      font-size: 0.9rem;
-    }
-  }
+.page-header {
+  margin-bottom: 1.5rem;
 }
 
-// Subscription Details
-.subscription-details {
-  .card {
-    border: none;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-    transition: all 0.3s ease;
-
-    &:hover {
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-    }
-
-    .card-header {
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
-      color: white;
-      border: none;
-      border-radius: 12px 12px 0 0;
-      padding: 1.5rem;
-
-      .card-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-      }
-
-      .badge {
-        font-size: 0.8rem;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-      }
-    }
-
-    .card-body {
-      padding: 2rem;
-
-      p {
-        margin-bottom: 0.5rem;
-
-        strong {
-          color: #374151;
-          font-weight: 600;
-        }
-      }
-
-      .text-muted {
-        color: #6b7280 !important;
-        font-size: 0.95rem;
-      }
-    }
-  }
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 0.25rem;
 }
 
-// Usage Progress
-.progress {
-  height: 12px;
-  border-radius: 6px;
-  background: #f3f4f6;
-  overflow: hidden;
-
-  .progress-bar {
-    border-radius: 6px;
-    transition: width 0.6s ease;
-
-    &.bg-success {
-      background: linear-gradient(90deg, #10b981, #059669);
-    }
-
-    &.bg-warning {
-      background: linear-gradient(90deg, #f59e0b, #d97706);
-    }
-
-    &.bg-danger {
-      background: linear-gradient(90deg, #ef4444, #dc2626);
-    }
-  }
+.page-subtitle {
+  color: #6b7280;
+  font-size: 0.95rem;
+  margin-bottom: 0;
 }
 
-// Badge Styles
-.badge {
-  &.badge-success {
-    background: linear-gradient(135deg, #10b981, #059669);
-    color: white;
-  }
-
-  &.badge-warning {
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    color: white;
-  }
-
-  &.badge-secondary {
-    background: linear-gradient(135deg, #6b7280, #4b5563);
-    color: white;
-  }
-}
-
-// Plan Cards
-.card.h-100 {
-  border: none;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s ease;
-  overflow: hidden;
+.btn-ghost {
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  color: #6b7280;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
 
   &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-  }
-
-  &.plan-free {
-    border-left: 4px solid #10b981;
-
-    .card-header {
-      background: linear-gradient(135deg, #10b981, #059669);
-      color: white;
-    }
-  }
-
-  &.plan-basic {
-    border-left: 4px solid #3b82f6;
-
-    .card-header {
-      background: linear-gradient(135deg, #3b82f6, #2563eb);
-      color: white;
-    }
-  }
-
-  &.plan-premium {
-    border-left: 4px solid #8b5cf6;
-
-    .card-header {
-      background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-      color: white;
-    }
-  }
-
-  &.plan-enterprise {
-    border-left: 4px solid #f59e0b;
-
-    .card-header {
-      background: linear-gradient(135deg, #f59e0b, #d97706);
-      color: white;
-    }
-  }
-
-  .card-header {
-    border: none;
-    padding: 1.5rem;
-    text-align: center;
-
-    .card-title {
-      font-size: 1.25rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-    }
-
-    .plan-type-badge .badge {
-      font-size: 0.75rem;
-      padding: 0.3rem 0.8rem;
-      border-radius: 15px;
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
-    }
-
-    .plan-price {
-      margin-top: 1rem;
-
-      .h4 {
-        font-size: 2rem;
-        font-weight: 800;
-        margin: 0;
-      }
-
-      .text-muted {
-        color: rgba(255, 255, 255, 0.8) !important;
-        font-size: 0.9rem;
-      }
-    }
-  }
-
-  .card-body {
-    padding: 1.5rem;
-
-    .list-unstyled {
-      margin: 0;
-
-      li {
-        padding: 0.5rem 0;
-        font-size: 0.9rem;
-        color: #4b5563;
-        display: flex;
-        align-items: flex-start;
-
-        i {
-          margin-right: 0.75rem;
-          margin-top: 0.1rem;
-          font-size: 1rem;
-          color: #10b981;
-          flex-shrink: 0;
-        }
-      }
-    }
-
-    .small {
-      background: #f8fafc;
-      padding: 0.75rem;
-      border-radius: 8px;
-      border-left: 3px solid #e5e7eb;
-    }
-  }
-
-  .card-footer {
-    background: #f8fafc;
-    border: none;
-    padding: 1.5rem;
-
-    .btn {
-      font-weight: 600;
-      padding: 0.75rem 1.5rem;
-      border-radius: 8px;
-      transition: all 0.3s ease;
-
-      &.btn-primary {
-        background: linear-gradient(135deg, #2563eb, #1d4ed8);
-        border: none;
-
-        &:hover {
-          background: linear-gradient(135deg, #1d4ed8, #1e40af);
-          transform: translateY(-2px);
-          box-shadow: 0 8px 25px rgba(37, 99, 235, 0.3);
-        }
-      }
-
-      &.btn-success {
-        background: linear-gradient(135deg, #10b981, #059669);
-        border: none;
-      }
-    }
+    background: #f3f4f6;
+    color: #374151;
+    border-color: #d1d5db;
   }
 }
 
-.popular-badge {
+// =========== TAB NAVIGATION ===========
+
+.tab-nav {
+  display: flex;
+  gap: 0.25rem;
+  background: #f3f4f6;
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  font-weight: 500;
+  font-size: 0.9rem;
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+
+  &:hover:not(.active) {
+    color: #374151;
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  &.active {
+    background: white;
+    color: $primary;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+
+  i {
+    font-size: 0.85rem;
+  }
+}
+
+// =========== CURRENT PLAN BANNER ===========
+
+.current-plan-banner {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid $primary;
+  border-radius: 10px;
+  padding: 1rem 1.5rem;
+}
+
+.banner-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba($primary, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  i {
+    font-size: 1.2rem;
+    color: $primary;
+  }
+}
+
+.banner-label {
+  display: block;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.banner-plan {
+  display: block;
+  font-size: 1.05rem;
+  color: #111827;
+}
+
+.banner-usage {
+  text-align: right;
+}
+
+.banner-usage-label {
+  display: block;
+  font-size: 0.7rem;
+  color: #9ca3af;
+  text-transform: uppercase;
+}
+
+.banner-usage-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+// =========== PLAN CARDS ===========
+
+.plan-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  position: relative;
+  transition: all 0.25s ease;
+
+  &:hover {
+    border-color: #d1d5db;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    transform: translateY(-4px);
+  }
+
+  &.plan-popular {
+    border-color: $primary;
+    box-shadow: 0 4px 20px rgba($primary, 0.12);
+  }
+
+  &.plan-current {
+    background: #fafafa;
+    border-color: $success;
+  }
+}
+
+.popular-ribbon {
   position: absolute;
   top: -12px;
   left: 50%;
   transform: translateX(-50%);
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  background: linear-gradient(135deg, $primary, $primary-dark);
   color: white;
-  padding: 0.5rem 1.5rem;
+  padding: 0.35rem 1.25rem;
   border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba($primary, 0.3);
+
+  i { font-size: 0.65rem; }
+}
+
+.plan-card-header {
+  text-align: center;
+  margin-bottom: 1.25rem;
+}
+
+.plan-type-tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: $primary;
+  background: rgba($primary, 0.08);
+  padding: 0.2rem 0.75rem;
+  border-radius: 20px;
+  margin-bottom: 0.75rem;
+}
+
+.plan-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 0.25rem;
+}
+
+.plan-desc {
+  color: #9ca3af;
+  font-size: 0.85rem;
+  margin-bottom: 0;
+}
+
+.plan-pricing {
+  text-align: center;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.plan-price {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1;
+}
+
+.plan-period {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.plan-ai-badge {
+  text-align: center;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
   font-size: 0.8rem;
   font-weight: 600;
-  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+  color: #374151;
+  margin-bottom: 1.25rem;
 
-  i {
-    font-size: 0.7rem;
-  }
+  i { color: $primary; }
 }
 
-// Plan Header
-.plan-header {
-  text-align: center;
-  margin-bottom: 2rem;
-
-  .plan-name {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #1f2937;
-    margin-bottom: 0.5rem;
-  }
-
-  .plan-description {
-    color: #6b7280;
-    font-size: 0.9rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .plan-pricing {
-    .price-container {
-      display: flex;
-      align-items: baseline;
-      justify-content: center;
-      gap: 0.5rem;
-      margin-bottom: 0.5rem;
-
-      .price {
-        font-size: 2.5rem;
-        font-weight: 800;
-        color: #1f2937;
-      }
-
-      .period {
-        font-size: 1rem;
-        color: #6b7280;
-        font-weight: 500;
-      }
-    }
-
-    .original-price {
-      font-size: 0.9rem;
-      text-align: center;
-    }
-  }
-}
-
-// Plan Features
 .plan-features {
-  margin-bottom: 2rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  flex-grow: 1;
 
-  .features-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-
-    .feature-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      padding: 0.75rem 0;
-      font-size: 0.9rem;
-      color: #4b5563;
-
-      i {
-        color: #10b981;
-        font-size: 1rem;
-        margin-top: 2px;
-        flex-shrink: 0;
-      }
-    }
-  }
-}
-
-// Plan Action
-.plan-action {
-  .plan-btn {
-    padding: 0.875rem 2rem;
-    font-weight: 600;
-    border-radius: 12px;
-    transition: all 0.3s ease;
-
-    &.btn-primary {
-      background: linear-gradient(135deg, #2b4eff, #1e40af);
-      border: none;
-
-      &:hover {
-        background: linear-gradient(135deg, #1e40af, #1d4ed8);
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(43, 78, 255, 0.3);
-      }
-    }
-
-    &.btn-outline-primary {
-      border: 2px solid #2b4eff;
-      color: #2b4eff;
-
-      &:hover {
-        background: #2b4eff;
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(43, 78, 255, 0.3);
-      }
-    }
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.4rem 0;
+    font-size: 0.85rem;
+    color: #4b5563;
 
     i {
-      transition: transform 0.2s ease;
-    }
-
-    &:hover i {
-      transform: translateX(3px);
+      color: $success;
+      font-size: 0.95rem;
+      margin-top: 1px;
+      flex-shrink: 0;
     }
   }
 }
 
-// History Table
-.subscription-history {
-  .card {
+.plan-action {
+  .btn-plan-select {
+    background: white;
+    border: 2px solid $primary;
+    color: $primary;
+    font-weight: 600;
+    padding: 0.7rem;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: $primary;
+      color: white;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba($primary, 0.25);
+    }
+
+    &.btn-plan-popular {
+      background: $primary;
+      color: white;
+
+      &:hover {
+        background: $primary-dark;
+        box-shadow: 0 6px 16px rgba($primary, 0.35);
+      }
+    }
+  }
+
+  .btn-plan-current {
+    background: rgba($success, 0.1);
+    border: 2px solid rgba($success, 0.3);
+    color: $success;
+    font-weight: 600;
+    padding: 0.7rem;
+    border-radius: 10px;
+  }
+}
+
+// =========== CURRENT SUBSCRIPTION ===========
+
+.stat-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+
+  .badge { margin-left: auto; }
+}
+
+.stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  i { font-size: 1.2rem; }
+
+  &.stat-icon-plan {
+    background: rgba($primary, 0.1);
+    i { color: $primary; }
+  }
+
+  &.stat-icon-date {
+    background: rgba($success, 0.1);
+    i { color: $success; }
+  }
+
+  &.stat-icon-expire {
+    background: rgba($warning, 0.1);
+    i { color: $warning; }
+  }
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.stat-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// AI Usage card
+.usage-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.usage-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+
+  h5 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    margin: 0;
+  }
+}
+
+.usage-fraction {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.usage-bar-container {
+  height: 10px;
+  background: #f3f4f6;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.usage-bar {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.6s ease;
+
+  &.usage-ok { background: linear-gradient(90deg, $success, #34d399); }
+  &.usage-warn { background: linear-gradient(90deg, $warning, #fbbf24); }
+  &.usage-danger { background: linear-gradient(90deg, $danger, #f87171); }
+}
+
+.usage-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.usage-remaining {
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.usage-pct {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.sub-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+
+  .btn {
+    font-weight: 500;
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+  }
+}
+
+// =========== HISTORY TABLE ===========
+
+.history-section {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #f3f4f6;
+
+  h5 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    margin: 0;
+  }
+}
+
+.history-count {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  background: #f3f4f6;
+  padding: 0.2rem 0.75rem;
+  border-radius: 20px;
+}
+
+.history-table {
+  margin: 0;
+
+  thead th {
     border: none;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    color: #6b7280;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 0.75rem 1.5rem;
+    background: #fafafa;
+  }
 
-    .card-header {
-      background: linear-gradient(135deg, #f8fafc, #e2e8f0);
-      border: none;
-      border-radius: 12px 12px 0 0;
-      padding: 1.5rem;
+  tbody td {
+    border: none;
+    padding: 0.85rem 1.5rem;
+    color: #374151;
+    vertical-align: middle;
+  }
 
-      .card-title {
-        color: #374151;
-        font-weight: 600;
-        margin: 0;
-      }
-    }
+  tbody tr {
+    border-bottom: 1px solid #f3f4f6;
+    transition: background 0.15s ease;
 
-    .history-table-wrapper {
-      max-height: 480px;
-      overflow: auto;
-    }
+    &:last-child { border-bottom: none; }
+    &:hover { background: #fafafa; }
 
-    .table.history-table {
-      margin: 0;
-
-      thead th {
-        border: none;
-        color: #6b7280;
-        font-weight: 600;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        padding: 1rem 1.5rem;
-        position: sticky;
-        top: 0;
-        background: #ffffff;
-        z-index: 1;
-        box-shadow: 0 1px 0 #f0f2f5;
-      }
-
-      tbody td {
-        border: none;
-        padding: 1rem 1.5rem;
-        color: #374151;
-        vertical-align: middle;
-
-        strong {
-          font-weight: 600;
-        }
-      }
-
-      tbody tr {
-        border-bottom: 1px solid #f3f4f6;
-        transition: background 0.2s ease, transform 0.05s ease;
-
-        &:last-child {
-          border-bottom: none;
-        }
-
-        &:hover {
-          background: #f8fafc;
-        }
-
-        &.status-active {
-          border-left: 4px solid #10b981;
-        }
-
-        &.status-pending {
-          border-left: 4px solid #f59e0b;
-        }
-
-        &.status-inactive {
-          border-left: 4px solid #6b7280;
-        }
-
-        &.status-cancelled {
-          border-left: 4px solid #ef4444;
-        }
-      }
-    }
+    &.status-active { border-left: 3px solid $success; }
+    &.status-pending { border-left: 3px solid $warning; }
+    &.status-inactive { border-left: 3px solid #9ca3af; }
+    &.status-cancelled { border-left: 3px solid $danger; }
   }
 }
 
-// Enhanced chips and cells
 .date-chip {
   display: inline-block;
-  padding: 0.25rem 0.6rem;
+  padding: 0.2rem 0.5rem;
   background: #f3f4f6;
   color: #6b7280;
-  border-radius: 999px;
+  border-radius: 6px;
   font-size: 0.8rem;
-  line-height: 1;
 
   &.subtle {
     background: #f9fafb;
+    color: #9ca3af;
   }
 }
 
-.plan-cell {
-  display: flex;
-  align-items: center;
+// =========== BADGES ===========
 
-  .plan-icon {
-    color: #6366f1;
-    opacity: 0.9;
+.badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+
+  &.badge-success {
+    background: rgba($success, 0.1);
+    color: $success;
+  }
+
+  &.badge-warning {
+    background: rgba($warning, 0.1);
+    color: $warning;
+  }
+
+  &.badge-secondary {
+    background: #f3f4f6;
+    color: #6b7280;
+  }
+
+  &.badge-danger {
+    background: rgba($danger, 0.1);
+    color: $danger;
   }
 }
 
-// Extra badge style for cancelled
-.badge.badge-danger {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-  color: #fff;
-}
+// =========== EMPTY STATES ===========
 
-.feature-highlight {
+.empty-state {
   text-align: center;
-  padding: 1.5rem;
-
-  .feature-icon {
-    margin-bottom: 1rem;
-
-    i {
-      font-size: 2.5rem;
-      color: #2b4eff;
-      background: rgba(43, 78, 255, 0.1);
-      padding: 1rem;
-      border-radius: 50%;
-      width: 70px;
-      height: 70px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto;
-    }
-  }
-
-  h4 {
-    color: #1f2937;
-    font-weight: 600;
-    margin-bottom: 1rem;
-  }
-
-  p {
-    font-size: 0.9rem;
-    line-height: 1.6;
-  }
-}
-
-// FAQ Section
-.faq-section {
+  padding: 4rem 2rem;
   background: white;
-  border-radius: 16px;
-  padding: 3rem 2rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
 
-  h2 {
-    color: #1f2937;
-    font-weight: 700;
-    margin-bottom: 2rem;
-  }
-
-  .accordion {
-    .accordion-item {
-      border: none;
-      margin-bottom: 1rem;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-
-      .accordion-header {
-        .accordion-button {
-          background: #f8fafc;
-          border: none;
-          color: #1f2937;
-          font-weight: 600;
-          padding: 1.25rem 1.5rem;
-
-          &:not(.collapsed) {
-            background: #2b4eff;
-            color: white;
-            box-shadow: none;
-          }
-
-          &:focus {
-            border: none;
-            box-shadow: none;
-          }
-        }
-      }
-
-      .accordion-body {
-        padding: 1.5rem;
-        background: white;
-        color: #4b5563;
-        line-height: 1.6;
-      }
-    }
-  }
-}
-
-// Contact Section
-.contact-section {
-  background: white;
-  border-radius: 16px;
-  padding: 3rem 2rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-
-  h3 {
-    color: #1f2937;
-    font-weight: 700;
+  > i {
+    font-size: 3rem;
+    color: #d1d5db;
+    display: block;
     margin-bottom: 1rem;
-  }
-
-  .contact-options {
-    .btn {
-      padding: 0.75rem 1.5rem;
-      font-weight: 600;
-      border-radius: 12px;
-      transition: all 0.3s ease;
-
-      &:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-      }
-    }
-  }
-}
-
-// Modal Styles
-.modal {
-  &.show {
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-  }
-
-  .modal-dialog {
-    .modal-content {
-      border: none;
-      border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-
-      .modal-header {
-        border: none;
-        padding: 2rem 2rem 1rem;
-
-        .modal-title {
-          color: #374151;
-          font-weight: 700;
-          font-size: 1.25rem;
-        }
-
-        .btn-close {
-          margin: 0;
-          padding: 0.5rem;
-          opacity: 0.6;
-
-          &:hover {
-            opacity: 1;
-          }
-        }
-      }
-
-      .modal-body {
-        padding: 1rem 2rem;
-
-        p {
-          color: #6b7280;
-          margin-bottom: 1.5rem;
-        }
-
-        .form-label {
-          color: #374151;
-          font-weight: 600;
-          font-size: 0.9rem;
-        }
-
-        .form-control {
-          border: 2px solid #e5e7eb;
-          border-radius: 8px;
-          padding: 0.75rem 1rem;
-          transition: all 0.3s ease;
-
-          &:focus {
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-          }
-        }
-
-        .plan-compare {
-          .compare-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-            padding: 0.9rem;
-            background: #fff;
-
-            &.current {
-              border-left: 4px solid #6b7280;
-            }
-
-            &.new {
-              border-left: 4px solid #2563eb;
-            }
-
-            .compare-title {
-              color: #6b7280;
-              font-weight: 600;
-              font-size: 0.85rem;
-              margin-bottom: 0.25rem;
-            }
-
-            .compare-name {
-              font-weight: 700;
-              color: #111827;
-            }
-
-            .compare-meta {
-              margin-top: 0.35rem;
-              display: flex;
-              flex-wrap: wrap;
-              gap: 0.4rem;
-            }
-          }
-
-          .chip {
-            background: #f3f4f6;
-            color: #374151;
-            border-radius: 999px;
-            padding: 0.25rem 0.6rem;
-            font-size: 0.8rem;
-
-            &.muted {
-              background: #f9fafb;
-              color: #6b7280;
-            }
-          }
-        }
-      }
-
-      .modal-footer {
-        border: none;
-        padding: 1rem 2rem 2rem;
-
-        .btn {
-          padding: 0.75rem 1.5rem;
-          font-weight: 600;
-          border-radius: 8px;
-          transition: all 0.3s ease;
-
-          &.btn-secondary {
-            background: #f3f4f6;
-            border: 2px solid #e5e7eb;
-            color: #6b7280;
-
-            &:hover {
-              background: #e5e7eb;
-              color: #374151;
-            }
-          }
-
-          &.btn-primary {
-            background: linear-gradient(135deg, #2563eb, #1d4ed8);
-            border: none;
-
-            &:hover:not(:disabled) {
-              background: linear-gradient(135deg, #1d4ed8, #1e40af);
-              transform: translateY(-1px);
-              box-shadow: 0 8px 25px rgba(37, 99, 235, 0.3);
-            }
-
-            &:disabled {
-              background: #9ca3af;
-              transform: none;
-              box-shadow: none;
-            }
-          }
-
-          .spinner-border-sm {
-            width: 1rem;
-            height: 1rem;
-          }
-        }
-      }
-    }
-  }
-}
-
-.modal-backdrop {
-  &.show {
-    opacity: 0.5;
-  }
-}
-
-// Empty States
-.text-center.py-5 {
-  padding: 4rem 2rem !important;
-
-  i {
-    margin-bottom: 1.5rem;
-    opacity: 0.6;
   }
 
   h4 {
     color: #374151;
     font-weight: 600;
-    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
   }
 
-  .text-muted {
-    color: #6b7280 !important;
-    font-size: 1rem;
-    margin-bottom: 2rem;
-  }
-
-  .btn {
-    font-weight: 600;
-    padding: 0.75rem 2rem;
-    border-radius: 8px;
+  p {
+    color: #9ca3af;
+    font-size: 0.9rem;
+    margin-bottom: 0;
   }
 }
 
-// Responsive Design
-@media (max-width: 768px) {
-  .subscription-page {
-    .container-fluid {
-      padding-left: 1rem !important;
-      padding-right: 1rem !important;
-    }
+// =========== MODALS ===========
+
+.modal {
+  &.show {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
   }
 
-  .nav-tabs {
-    .nav-link {
-      padding: 0.75rem 1rem;
-      font-size: 0.85rem;
-
-      i {
-        display: none;
-      }
-    }
+  .modal-content {
+    border: none;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
   }
 
-  .subscription-details {
-    .row {
-      .col-lg-4 {
-        margin-top: 1.5rem;
-      }
-    }
+  .modal-header {
+    padding: 1.5rem 1.5rem 0.75rem;
 
-    .card .card-body {
-      padding: 1.5rem;
-    }
-  }
-
-  .card.h-100 {
-    margin-bottom: 1.5rem;
-
-    &:hover {
-      transform: none;
-    }
-
-    .card-header .plan-price .h4 {
-      font-size: 1.5rem;
-    }
-
-    .card-body,
-    .card-footer {
-      padding: 1rem;
-    }
-  }
-
-  .modal .modal-dialog {
-    margin: 1rem;
-
-    .modal-content {
-
-      .modal-header,
-      .modal-body,
-      .modal-footer {
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
-      }
-    }
-  }
-
-  .table-responsive {
-    font-size: 0.85rem;
-
-    .table {
-
-      thead th,
-      tbody td {
-        padding: 0.75rem 1rem;
-      }
-    }
-  }
-}
-
-@media (max-width: 576px) {
-  .nav-tabs .nav-link {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8rem;
-  }
-
-  .subscription-details .card .card-body {
-    padding: 1rem;
-
-    .row .col-md-6 {
-      margin-bottom: 1rem;
-    }
-  }
-
-  .card.h-100 {
-    .card-header {
-      padding: 1rem;
-
-      .plan-price .h4 {
-        font-size: 1.25rem;
-      }
-    }
-
-    .card-body .list-unstyled li {
-      font-size: 0.8rem;
-      padding: 0.3rem 0;
-    }
-  }
-
-  .modal .modal-dialog {
-    margin: 0.5rem;
-
-    .modal-content {
-      border-radius: 12px;
-
-      .modal-header,
-      .modal-body,
-      .modal-footer {
-        padding-left: 1rem;
-        padding-right: 1rem;
-      }
-
-      .modal-footer .btn {
-        font-size: 0.85rem;
-        padding: 0.6rem 1.25rem;
-      }
-    }
-  }
-
-  .table-responsive .table {
-    font-size: 0.75rem;
-
-    thead th,
-    tbody td {
-      padding: 0.5rem 0.75rem;
-    }
-  }
-
-  .text-center.py-5 {
-    padding: 2rem 1rem !important;
-
-    h4 {
+    .modal-title {
+      font-weight: 600;
       font-size: 1.1rem;
+      color: #374151;
     }
+  }
 
-    .text-muted {
-      font-size: 0.9rem;
+  .modal-body {
+    padding: 0.75rem 1.5rem;
+
+    p { color: #4b5563; }
+  }
+
+  .modal-footer {
+    padding: 0.75rem 1.5rem 1.5rem;
+
+    .btn {
+      padding: 0.6rem 1.25rem;
+      font-weight: 500;
+      border-radius: 8px;
     }
   }
 }
 
-// NUEVO: Overlay para confirmación de tarjeta
+.modal-icon-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba($primary, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  i {
+    font-size: 1.75rem;
+    color: $primary;
+  }
+}
+
+.missing-fields-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  max-width: 280px;
+  margin: 0 auto;
+
+  li {
+    padding: 0.4rem 0;
+    font-size: 0.9rem;
+    color: #374151;
+  }
+}
+
+// =========== OVERLAYS ===========
+
 .confirm-overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10000;
-  animation: fadeIn 0.3s ease;
+  animation: fadeIn 0.2s ease;
+}
 
-  .confirm-card {
-    background: white;
-    padding: 3rem 4rem;
-    border-radius: 16px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    text-align: center;
-    animation: slideUp 0.3s ease;
+.confirm-card {
+  background: white;
+  padding: 2.5rem 3rem;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  animation: slideUp 0.25s ease;
 
-    h4 {
-      color: #374151;
-      font-weight: 600;
-      margin-bottom: 0.5rem;
-    }
-
-    .text-muted {
-      color: #6b7280;
-      font-size: 0.95rem;
-    }
+  h4 {
+    color: #374151;
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
   }
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes slideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
+  from { transform: translateY(15px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+// =========== RESPONSIVE ===========
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.75rem;
   }
 
-  to {
-    transform: translateY(0);
-    opacity: 1;
+  .tab-nav {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab-btn {
+    white-space: nowrap;
+    font-size: 0.82rem;
+    padding: 0.55rem 0.75rem;
+
+    i { display: none; }
+  }
+
+  .current-plan-banner {
+    .d-flex {
+      flex-direction: column;
+      align-items: flex-start !important;
+    }
+  }
+
+  .plan-card {
+    &:hover {
+      transform: none;
+    }
+  }
+
+  .plan-price {
+    font-size: 1.75rem;
+  }
+
+  .stat-card {
+    padding: 1rem;
+  }
+
+  .sub-actions {
+    flex-direction: column;
+
+    .btn { width: 100%; }
+  }
+
+  .history-table {
+    font-size: 0.82rem;
+
+    thead th, tbody td {
+      padding: 0.65rem 1rem;
+    }
+  }
+
+  .confirm-card {
+    margin: 1rem;
+    padding: 2rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .page-title {
+    font-size: 1.35rem;
+  }
+
+  .plan-card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .plan-features li {
+    font-size: 0.8rem;
+  }
+
+  .usage-footer {
+    flex-direction: column;
+    gap: 0.25rem;
+    text-align: center;
+  }
+
+  .modal .modal-content {
+    margin: 0.5rem;
+
+    .modal-header, .modal-body, .modal-footer {
+      padding-left: 1.25rem;
+      padding-right: 1.25rem;
+    }
   }
 }

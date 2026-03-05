@@ -297,12 +297,12 @@ export class DashboardComponent implements OnInit {
           label: 'Inversión',
           fill: true,
           tension: 0.4,
-          borderColor: '#4e73df',
-          backgroundColor: 'rgba(78, 115, 223, 0.05)',
-          pointBackgroundColor: '#4e73df',
+          borderColor: '#4F46E5',
+          backgroundColor: 'rgba(79, 70, 229, 0.05)',
+          pointBackgroundColor: '#4F46E5',
           pointBorderColor: '#fff',
           pointHoverBackgroundColor: '#fff',
-          pointHoverBorderColor: '#4e73df'
+          pointHoverBorderColor: '#4F46E5'
         }
       ]
     };
@@ -321,10 +321,10 @@ export class DashboardComponent implements OnInit {
         {
           data: top5.map(e => e.total_amount),
           backgroundColor: [
-            '#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b'
+            '#4F46E5', '#10B981', '#3B82F6', '#F59E0B', '#EF4444'
           ],
           hoverBackgroundColor: [
-            '#2e59d9', '#17a673', '#2c9faf', '#dda20a', '#be2617'
+            '#3730A3', '#059669', '#2563EB', '#D97706', '#DC2626'
           ],
           hoverBorderColor: "rgba(234, 236, 244, 1)",
         }
@@ -541,5 +541,13 @@ export class DashboardComponent implements OnInit {
         this.notificationService.error('Error al conectar con el servidor', 'Error de Conexión');
       }
     });
+  }
+
+  trackByIndex(index: number): number {
+    return index;
+  }
+
+  trackByInvoiceId(index: number, inv: any): string {
+    return inv?.id || inv?._id || index;
   }
 }

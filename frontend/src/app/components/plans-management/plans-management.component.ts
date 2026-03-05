@@ -407,4 +407,8 @@ export class PlansManagementComponent implements OnInit {
       if (field === 'max_email_accounts') this.planForm.features[field] = 2;
     }
   }
+
+  trackByPlanCode(index: number, plan: any): string {
+    return plan?.code || index;
+  }
 }

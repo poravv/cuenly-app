@@ -941,8 +941,9 @@ class EmailProcessor:
                 "sender": metadata.get("sender", ""),
                 "subject": metadata.get("subject", ""),
                 "date": metadata.get("date"),
-                "message_id": str(email_id),
+                "message_id": real_msg_id or str(email_id),
                 "rfc822_message_id": real_msg_id or metadata.get("rfc822_message_id", ""),
+                "email_uid": str(email_id),
             }
 
             xml_path = None
@@ -1173,13 +1174,14 @@ class EmailProcessor:
             from app.modules.mapping.invoice_mapping import map_invoice
 
             # Crear InvoiceData mínima solo para tracking
+            rfc_msg_id = metadata.get("rfc822_message_id") or ""
             inv = InvoiceData(
                 numero_factura=f"ERR_{email_id[:8]}",
                 ruc_emisor="UNKNOWN",
                 nombre_emisor=str(metadata.get("sender", "Unknown sender"))[:100],
                 fecha=metadata.get("date"),
                 email_origen=str(metadata.get("sender", "")),
-                message_id=str(email_id),
+                message_id=rfc_msg_id or str(email_id),
                 status=status,
                 processing_error=str(error_msg)[:500],
                 fuente="EMAIL_BATCH_PROCESSOR",

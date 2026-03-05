@@ -25,7 +25,8 @@
   <div *ngIf="!loading" class="table-card">
     <div *ngIf="auditLogs.length === 0" class="empty-state">
       <i class="bi bi-journal-text"></i>
-      <p>No hay registros de auditoría</p>
+      <h4>Sin registros de auditoria</h4>
+      <p>Las acciones administrativas (cambios de rol, suspensiones, resets de IA) se registraran aqui automaticamente.</p>
     </div>
 
     <div *ngIf="auditLogs.length > 0" class="table-container">

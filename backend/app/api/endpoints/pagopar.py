@@ -274,14 +274,22 @@ async def pagopar_webhook(payload: Dict[str, Any] = Body(...)):
     """
     PASO 2: Webhook de Respuesta (URL de Respuesta).
     Pagopar envía aquí el resultado del pago.
-    CRÍTICO: Este endpoint activa suscripciones cuando el pago es exitoso.
+    CRITICO: Este endpoint activa suscripciones cuando el pago es exitoso.
+    Valida token_publico para verificar que la request proviene de Pagopar.
     """
     import logging
     from datetime import datetime
+    from app.config.settings import settings
     logger = logging.getLogger(__name__)
-    logger.info(f"💰 WEBHOOK RECEIVED: {payload}")
-    
+    logger.info(f"Webhook recibido desde Pagopar")
+
     try:
+        # Validar que el request proviene de Pagopar verificando token_publico
+        token_publico = payload.get("token_publico")
+        if settings.PAGOPAR_PUBLIC_KEY and token_publico != settings.PAGOPAR_PUBLIC_KEY:
+            logger.warning(f"Webhook rechazado: token_publico invalido (recibido: {token_publico[:8]}...)" if token_publico else "Webhook rechazado: token_publico ausente")
+            return {"respuesta": False, "error": "Token invalido"}
+
         # Pagopar envía un objeto con "resultado" que es un array
         resultado = payload.get("resultado")
         if not resultado or not isinstance(resultado, list) or len(resultado) == 0:

@@ -475,30 +475,27 @@ async def update_email_processing_start_date(
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @app.get("/debug/user-info")
-async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_current_user)):
+async def debug_user_info(request: Request, admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
-    Endpoint de debug para verificar información del usuario autenticado
+    Endpoint de debug para verificar información del usuario autenticado.
+    Requiere permisos de administrador para evitar exposición de claims internos.
     """
-    if not user:
-        return {"authenticated": False, "message": "No authenticated user"}
-    
     try:
-        # Verificar si el usuario existe en la base de datos
         user_repo = UserRepository()
-        db_user = user_repo.get_by_email(user.get('email'))
-        trial_info = user_repo.get_trial_info(user.get('email'))
-        
+        db_user = user_repo.get_by_email(admin.get('email'))
+        trial_info = user_repo.get_trial_info(admin.get('email'))
+
         return {
             "authenticated": True,
-            "firebase_claims": user,
-            "database_user": db_user,
+            "email": admin.get('email'),
+            "role": db_user.get('role') if db_user else None,
             "trial_info": trial_info
         }
     except Exception as e:
         return {
             "authenticated": True,
-            "firebase_claims": user,
-            "database_error": str(e)
+            "email": admin.get('email'),
+            "database_error": "Error consultando datos de usuario"
         }
 
 @app.post("/process", response_model=ProcessResult)
@@ -684,8 +681,8 @@ async def enqueue_process_emails(
         raise HTTPException(status_code=500, detail="No se pudo encolar el procesamiento")
 
 @app.get("/tasks/{job_id}")
-async def get_task_status(job_id: str):
-    """Consulta el estado de un job enviado a la cola."""
+async def get_task_status(job_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
+    """Consulta el estado de un job enviado a la cola. Requiere autenticación."""
     # 1) Compatibilidad con cola local (uploads/range/legacy)
     job = task_queue.get(job_id)
     if job:
@@ -854,8 +851,8 @@ async def cancel_task(
     }
 
 @app.delete("/tasks/cleanup")
-async def cleanup_old_tasks():
-    """Limpia tareas antiguas que están atoradas."""
+async def cleanup_old_tasks(admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Limpia tareas antiguas que están atoradas. Requiere permisos de administrador."""
     cleanup_count = 0
     current_time = time.time()
     
@@ -2896,9 +2893,10 @@ def _cleanup_processing_cache_for_deleted_headers(
 ) -> int:
     """
     Limpia cache de procesamiento (processed_emails) asociado a headers eliminados.
-    Estrategia:
-    - owner_email + message_id (principal para correos procesados)
-    - owner_email + minio_key + manual_upload (fallback para uploads manuales pending)
+    Estrategia (multi-match para máxima cobertura):
+    1. owner_email + message_id (RFC822 Message-ID, match principal)
+    2. owner_email + minio_key + manual_upload (uploads manuales)
+    3. _id regex por owner_email (fallback para datos legacy con IMAP UID como message_id)
     """
     if not headers:
         return 0
@@ -2915,10 +2913,25 @@ def _cleanup_processing_cache_for_deleted_headers(
 
             msg_id = str(hdr.get("message_id") or "").strip()
             if msg_id:
+                # Match por message_id field (RFC822 Message-ID)
                 key = f"msg::{owner}::{msg_id}"
                 if key not in seen:
                     clauses.append({"owner_email": owner, "message_id": msg_id})
                     seen.add(key)
+
+                # Fallback: match por _id que contiene el message_id como UID
+                # Handles legacy data where invoice_headers.message_id was the IMAP UID
+                # _id format: "{owner}::{account}::{uid}"
+                if not msg_id.startswith("<"):  # IMAP UID, not RFC822
+                    id_key = f"id_suffix::{owner}::{msg_id}"
+                    if id_key not in seen:
+                        import re
+                        safe_uid = re.escape(msg_id)
+                        clauses.append({
+                            "_id": {"$regex": f"^{re.escape(owner)}::.*::{safe_uid}$"},
+                            "owner_email": owner,
+                        })
+                        seen.add(id_key)
 
             minio_key = str(hdr.get("minio_key") or "").strip()
             if minio_key:
@@ -3229,10 +3242,11 @@ async def v2_get_bulk_delete_info(
         raise HTTPException(status_code=500, detail="Error obteniendo información")
 
 @app.post("/job/start", response_model=JobStatus)
-async def start_job():
+async def start_job(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Inicia el trabajo programado para procesar correos periódicamente.
-    
+    Requiere permisos de administrador.
+
     Returns:
         JobStatus: Estado del trabajo.
     """
@@ -3244,10 +3258,11 @@ async def start_job():
         raise HTTPException(status_code=500, detail=f"Error al iniciar el job: {str(e)}")
 
 @app.post("/job/stop", response_model=JobStatus)
-async def stop_job():
+async def stop_job(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Detiene el trabajo programado.
-    
+    Requiere permisos de administrador.
+
     Returns:
         JobStatus: Estado del trabajo.
     """
@@ -3295,8 +3310,8 @@ async def job_status(request: Request):
     return status
 
 @app.post("/job/interval", response_model=JobStatus)
-async def set_job_interval(payload: IntervalPayload):
-    """Ajusta el intervalo (minutos) del job de automatización."""
+async def set_job_interval(payload: IntervalPayload, admin: Dict[str, Any] = Depends(_get_current_admin)):
+    """Ajusta el intervalo (minutos) del job de automatización. Requiere permisos de administrador."""
     try:
         logger.info(f"🛠️ Ajustando intervalo de job a {payload.minutes} minutos")
         status = invoice_sync.update_job_interval(payload.minutes)
@@ -3311,10 +3326,11 @@ async def set_job_interval(payload: IntervalPayload):
         raise HTTPException(status_code=500, detail=f"Error al ajustar intervalo: {str(e)}")
 
 @app.get("/cache/stats")
-async def cache_stats():
+async def cache_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Obtiene estadísticas del cache de OpenAI.
-    
+    Requiere permisos de administrador.
+
     Returns:
         dict: Estadísticas del cache.
     """
@@ -3368,13 +3384,14 @@ async def debug_fix_user_trial_status(user_email: str, admin: Dict[str, Any] = D
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/cache/clear")
-async def clear_cache(older_than_hours: Optional[int] = None):
+async def clear_cache(older_than_hours: Optional[int] = None, admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Limpia el cache de OpenAI.
-    
+    Requiere permisos de administrador.
+
     Args:
         older_than_hours: Si se especifica, elimina solo cache más viejo que X horas
-    
+
     Returns:
         dict: Resultado de la limpieza.
     """
@@ -3393,10 +3410,11 @@ async def clear_cache(older_than_hours: Optional[int] = None):
         raise HTTPException(status_code=500, detail=f"Error limpiando cache: {str(e)}")
 
 @app.get("/imap/pool/stats")
-async def imap_pool_stats():
+async def imap_pool_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Obtiene estadísticas del pool de conexiones IMAP.
-    
+    Requiere permisos de administrador.
+
     Returns:
         dict: Estadísticas del pool de conexiones.
     """
@@ -3415,10 +3433,11 @@ async def imap_pool_stats():
         raise HTTPException(status_code=500, detail=f"Error obteniendo estadísticas del pool: {str(e)}")
 
 @app.get("/health/detailed")
-async def detailed_health():
+async def detailed_health(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Health check comprensivo con métricas detalladas de todos los componentes.
-    
+    Requiere permisos de administrador.
+
     Returns:
         dict: Estado detallado del sistema con métricas de performance.
     """
@@ -3433,10 +3452,11 @@ async def detailed_health():
         raise HTTPException(status_code=500, detail=f"Error en health check: {str(e)}")
 
 @app.get("/health/redis")
-async def redis_health():
+async def redis_health(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Health check específico para Redis.
-    
+    Requiere permisos de administrador.
+
     Returns:
         dict: Estado de conexión Redis y estadísticas de cache.
     """
@@ -3467,10 +3487,11 @@ async def redis_health():
 
 
 @app.get("/health/trends")
-async def health_trends():
+async def health_trends(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Obtiene tendencias de salud del sistema basadas en histórico.
-    
+    Requiere permisos de administrador.
+
     Returns:
         dict: Tendencias y métricas históricas.
     """
@@ -3485,10 +3506,11 @@ async def health_trends():
         raise HTTPException(status_code=500, detail=f"Error obteniendo tendencias: {str(e)}")
 
 @app.post("/system/force-restart")
-async def force_system_restart():
+async def force_system_restart(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Endpoint de emergencia para forzar reinicio del sistema cuando hay bloqueos.
-    
+    Requiere permisos de administrador.
+
     Returns:
         dict: Confirmación de reinicio.
     """
@@ -3542,10 +3564,11 @@ async def force_system_restart():
         raise HTTPException(status_code=500, detail=f"Error en reinicio: {str(e)}")
 
 @app.get("/system/health")
-async def get_system_health():
+async def get_system_health(admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Endpoint de salud del sistema con información detallada.
-    
+    Requiere permisos de administrador.
+
     Returns:
         dict: Estado de salud del sistema.
     """
@@ -4952,20 +4975,25 @@ def prefs_set_auto_refresh(uid: str, enabled: bool, interval_ms: int) -> Dict:
     return _auto_refresh_prefs[uid]
 
 @app.get("/prefs/auto-refresh", response_model=AutoRefreshPref)
-async def get_auto_refresh(uid: Optional[str] = Query(default="global")):
+async def get_auto_refresh(uid: Optional[str] = Query(default="global"), user: Dict[str, Any] = Depends(_get_current_user)):
+    """Obtiene preferencia de auto-refresh. Requiere autenticación."""
     try:
-        data = prefs_get_auto_refresh(uid)
-        return AutoRefreshPref(uid=uid, enabled=bool(data.get("enabled", False)), interval_ms=int(data.get("interval_ms", 30000)))
+        # Forzar uid al email del usuario autenticado para tenant isolation
+        effective_uid = (user.get("email") or "global").lower()
+        data = prefs_get_auto_refresh(effective_uid)
+        return AutoRefreshPref(uid=effective_uid, enabled=bool(data.get("enabled", False)), interval_ms=int(data.get("interval_ms", 30000)))
     except Exception as e:
         logger.error(f"Error al obtener preferencia auto-refresh: {e}")
         raise HTTPException(status_code=500, detail="No se pudo obtener preferencia")
 
 @app.post("/prefs/auto-refresh", response_model=AutoRefreshPref)
-async def set_auto_refresh(payload: AutoRefreshPayload):
+async def set_auto_refresh(payload: AutoRefreshPayload, user: Dict[str, Any] = Depends(_get_current_user)):
+    """Guarda preferencia de auto-refresh. Requiere autenticación."""
     try:
-        uid = payload.uid or "global"
-        data = prefs_set_auto_refresh(uid, payload.enabled, payload.interval_ms)
-        return AutoRefreshPref(uid=uid, enabled=bool(data.get("enabled", False)), interval_ms=int(data.get("interval_ms", 30000)))
+        # Forzar uid al email del usuario autenticado para tenant isolation
+        effective_uid = (user.get("email") or "global").lower()
+        data = prefs_set_auto_refresh(effective_uid, payload.enabled, payload.interval_ms)
+        return AutoRefreshPref(uid=effective_uid, enabled=bool(data.get("enabled", False)), interval_ms=int(data.get("interval_ms", 30000)))
     except Exception as e:
         logger.error(f"Error al guardar preferencia auto-refresh: {e}")
         raise HTTPException(status_code=500, detail="No se pudo guardar preferencia")

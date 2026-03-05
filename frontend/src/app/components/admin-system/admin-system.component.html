@@ -66,25 +66,25 @@
       <div class="detail-row">
         <span class="detail-label">High</span>
         <span class="detail-values">
-          <span class="dv" title="En cola">{{queueStats.queues.high?.queued || 0}} en cola</span>
-          <span class="dv" title="Iniciados">{{queueStats.queues.high?.started || 0}} activos</span>
-          <span class="dv" [class.text-danger]="(queueStats.queues.high?.failed || 0) > 0" title="Fallidos">{{queueStats.queues.high?.failed || 0}} fallidos</span>
+          <span class="dv" title="En cola">{{queueStats.queues.high.queued || 0}} en cola</span>
+          <span class="dv" title="Iniciados">{{queueStats.queues.high.started || 0}} activos</span>
+          <span class="dv" [class.text-danger]="(queueStats.queues.high.failed || 0) > 0" title="Fallidos">{{queueStats.queues.high.failed || 0}} fallidos</span>
         </span>
       </div>
       <div class="detail-row">
         <span class="detail-label">Default</span>
         <span class="detail-values">
-          <span class="dv">{{queueStats.queues.default?.queued || 0}} en cola</span>
-          <span class="dv">{{queueStats.queues.default?.started || 0}} activos</span>
-          <span class="dv" [class.text-danger]="(queueStats.queues.default?.failed || 0) > 0">{{queueStats.queues.default?.failed || 0}} fallidos</span>
+          <span class="dv">{{queueStats.queues.default.queued || 0}} en cola</span>
+          <span class="dv">{{queueStats.queues.default.started || 0}} activos</span>
+          <span class="dv" [class.text-danger]="(queueStats.queues.default.failed || 0) > 0">{{queueStats.queues.default.failed || 0}} fallidos</span>
         </span>
       </div>
       <div class="detail-row">
         <span class="detail-label">Low</span>
         <span class="detail-values">
-          <span class="dv">{{queueStats.queues.low?.queued || 0}} en cola</span>
-          <span class="dv">{{queueStats.queues.low?.started || 0}} activos</span>
-          <span class="dv" [class.text-danger]="(queueStats.queues.low?.failed || 0) > 0">{{queueStats.queues.low?.failed || 0}} fallidos</span>
+          <span class="dv">{{queueStats.queues.low.queued || 0}} en cola</span>
+          <span class="dv">{{queueStats.queues.low.started || 0}} activos</span>
+          <span class="dv" [class.text-danger]="(queueStats.queues.low.failed || 0) > 0">{{queueStats.queues.low.failed || 0}} fallidos</span>
         </span>
       </div>
     </div>

@@ -48,7 +48,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let plan of plans">
+            <tr *ngFor="let plan of plans; trackBy: trackByPlanCode">
               <td>
                 <div class="plan-cell">
                   <strong>{{plan.name}}</strong>

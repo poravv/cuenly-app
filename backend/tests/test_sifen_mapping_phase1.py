@@ -18,7 +18,7 @@ def _repo_root() -> Path:
 
 
 def _load_enterprise_sample_xml() -> str:
-    xml_path = _repo_root() / "docs" / "cuenly-enterprise" / "Extructura xml_DE.xml"
+    xml_path = _repo_root() / "docs" / "sifen" / "Extructura xml_DE.xml"
     return xml_path.read_text(encoding="utf-8")
 
 

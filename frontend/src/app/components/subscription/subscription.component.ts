@@ -63,16 +63,10 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   availablePlans: SubscriptionPlan[] = [];
 
   // UI Estado
-  activeTab = 'plans'; // Changed default to 'plans'
-  showPlanChangeModal = false;
+  activeTab = 'plans';
   showCancelConfirmModal = false;
   selectedPlanId = '';
-  changeReason = '';
   cancelling = false;
-  confirmChangeAcknowledged = false;
-
-  // Estado de envío
-  submittingPlanChange = false;
 
   // NUEVO: Estado para iframe de Bancard
   showBancardIframeModal = false;
@@ -87,16 +81,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   // Estado de perfil incompleto
   showIncompleteProfileModal = false;
   missingProfileFields: string[] = [];
-
-  // Datos del comprador para Pagopar (YA NO SE USA - solo para backward compatibility)
-  buyerData = {
-    tipo_documento: 'CI',
-    documento: '',
-    ruc: '',
-    telefono: '',
-    direccion: '',
-    razon_social: ''
-  };
 
   constructor(
     private apiService: ApiService,
@@ -350,18 +334,6 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
     });
   }
 
-  closePlanChangeModal(): void {
-    this.showPlanChangeModal = false;
-    this.selectedPlanId = '';
-    this.changeReason = '';
-    this.confirmChangeAcknowledged = false;
-  }
-
-  // DEPRECATED: Ya no se usa el formulario de datos del comprador
-  submitPlanChange(): void {
-    // Este método ya no se usa - el flujo ahora va directo al iframe
-  }
-
   get selectedPlan(): SubscriptionPlan | undefined {
     return this.availablePlans.find(p => p._id === this.selectedPlanId);
   }
@@ -440,6 +412,18 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
       style: 'currency',
       currency: currency || 'USD'
     }).format(price);
+  }
+
+  trackByPlanId(index: number, plan: SubscriptionPlan): string {
+    return plan._id;
+  }
+
+  trackByFeature(index: number, feature: string): string {
+    return feature;
+  }
+
+  trackByHistoryId(index: number, item: SubscriptionHistory): string {
+    return item._id;
   }
 
   goBack(): void {

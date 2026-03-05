@@ -1,69 +1,68 @@
+@import '../../../styles/variables';
+
+// ==========================================================================
+// PAGOPAR RESULT - Estilos del componente
+// ==========================================================================
+
 .result-container {
     min-height: 80vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 2rem;
-    background: radial-gradient(circle at top right, rgba(var(--primary-rgb), 0.05) 0%, transparent 40%),
-        radial-gradient(circle at bottom left, rgba(var(--primary-rgb), 0.05) 0%, transparent 40%);
+    padding: $space-8;
+    background:
+        radial-gradient(circle at top right, rgba(79, 70, 229, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at bottom left, rgba(79, 70, 229, 0.05) 0%, transparent 40%);
 }
 
-.glass-card {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.4);
+.result-card {
+    max-width: 28rem;
+    width: 100%;
+    border-radius: $radius-xl;
+    border: 1px solid $border;
+    animation: fadeIn 0.6s $ease-out;
 }
 
-.loading-spinner {
-    width: 50px;
-    height: 50px;
-    border: 4px solid rgba(var(--primary-rgb), 0.1);
-    border-top: 4px solid var(--primary-color);
-    border-radius: 50%;
-    margin: 0 auto;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% {
-        transform: rotate(0deg);
-    }
-
-    100% {
-        transform: rotate(360deg);
-    }
-}
-
-.animate-fade-in {
-    animation: fadeIn 0.6s ease-out;
-}
+// --------------------------------------------------------------------------
+// Animaciones
+// --------------------------------------------------------------------------
 
 @keyframes fadeIn {
     from {
         opacity: 0;
         transform: translateY(10px);
     }
-
     to {
         opacity: 1;
         transform: translateY(0);
     }
 }
 
-// Checkmark Animation
+.pulse-icon {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+// --------------------------------------------------------------------------
+// Checkmark animado (success)
+// --------------------------------------------------------------------------
+
 .checkmark-circle {
     width: 80px;
     height: 80px;
     position: relative;
     display: inline-block;
     vertical-align: top;
-    margin-bottom: 2rem;
 
     .background {
         width: 80px;
         height: 80px;
         border-radius: 50%;
-        background: #4bb543;
+        background: $success;
         position: absolute;
     }
 
@@ -98,19 +97,16 @@
         width: 0;
         opacity: 1;
     }
-
     20% {
         height: 0;
         width: 20px;
         opacity: 1;
     }
-
     40% {
         height: 40px;
         width: 20px;
         opacity: 1;
     }
-
     100% {
         height: 40px;
         width: 20px;
@@ -118,14 +114,33 @@
     }
 }
 
+// --------------------------------------------------------------------------
+// Info grid (detalles del pago)
+// --------------------------------------------------------------------------
+
+.info-grid {
+    .border-bottom {
+        border-color: $gray-200 !important;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Boton primario override (gradiente consistente con design system)
+// --------------------------------------------------------------------------
+
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary-color) 0%, #4f46e5 100%);
-    color: white;
+    background: linear-gradient(135deg, $primary 0%, $primary-dark 100%);
     border: none;
-    cursor: pointer;
+    border-radius: $radius-lg;
+    transition: box-shadow $transition-base, transform $transition-base;
 
     &:hover {
-        box-shadow: 0 10px 15px -3px rgba(var(--primary-rgb), 0.4);
+        background: linear-gradient(135deg, $primary 0%, $primary-dark 100%);
+        box-shadow: $shadow-primary-lg;
         transform: translateY(-2px);
+    }
+
+    &:active {
+        transform: scale(0.98);
     }
 }

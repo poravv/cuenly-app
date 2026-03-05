@@ -9,7 +9,13 @@ if "pymongo" not in sys.modules:
     pymongo_stub = types.ModuleType("pymongo")
     pymongo_stub.MongoClient = object  # type: ignore[attr-defined]
     pymongo_stub.UpdateOne = object  # type: ignore[attr-defined]
+    pymongo_stub.ReturnDocument = type("ReturnDocument", (), {"AFTER": "after", "BEFORE": "before"})  # type: ignore[attr-defined]
     sys.modules["pymongo"] = pymongo_stub
+else:
+    # Asegurar que ReturnDocument existe aunque pymongo sea parcial
+    pymongo_mod = sys.modules["pymongo"]
+    if not hasattr(pymongo_mod, "ReturnDocument"):
+        pymongo_mod.ReturnDocument = type("ReturnDocument", (), {"AFTER": "after", "BEFORE": "before"})  # type: ignore[attr-defined]
 
 if "pymongo.collection" not in sys.modules:
     pymongo_collection_stub = types.ModuleType("pymongo.collection")

@@ -1,36 +1,71 @@
+@import '../../../styles/variables';
+
 .text-monospace {
   font-family: 'Courier New', Courier, monospace;
   letter-spacing: 3px;
 }
 
 .rounded-card {
-  border-radius: 16px !important;
+  border-radius: $radius-lg !important;
 }
 
+// =========================================================================
+// Empty State
+// =========================================================================
+.empty-state {
+  text-align: center;
+  padding: $space-16 $space-8;
+  background: $gray-50;
+  border-radius: $radius-md;
+
+  i {
+    font-size: $text-5xl;
+    color: $primary-light;
+    display: block;
+    margin-bottom: $space-4;
+  }
+
+  h4 {
+    font-size: $text-lg;
+    font-weight: $font-semibold;
+    color: $gray-800;
+    margin-bottom: $space-2;
+  }
+
+  p {
+    color: $gray-500;
+    font-size: $text-sm;
+    margin-bottom: $space-6;
+  }
+}
+
+// =========================================================================
+// Credit Card Visual
+// =========================================================================
 .credit-card {
   width: 100%;
   max-width: 360px;
   height: 220px;
   margin: 0 auto;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border-radius: $radius-lg;
+  background: linear-gradient(135deg, $gray-800 0%, $gray-900 100%);
   color: #ffffff;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: $shadow-md;
+  transition: transform $transition-slow, box-shadow $transition-slow;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 1.5rem;
+  padding: $space-6;
   border: 1px solid rgba(255, 255, 255, 0.1);
 
   &:hover {
     transform: translateY(-5px);
-    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
+    box-shadow: $shadow-lg;
   }
 
-  /* Efecto de brillo sutil en el fondo */
+  // Efecto de brillo sutil en el fondo
   &::before {
     content: '';
     position: absolute;
@@ -52,8 +87,8 @@
   .chip-icon {
     width: 45px;
     height: 35px;
-    background: linear-gradient(135deg, #eab308 0%, #ca8a04 100%);
-    border-radius: 6px;
+    background: linear-gradient(135deg, $warning 0%, $warning-dark 100%);
+    border-radius: $radius-sm;
     position: relative;
     overflow: hidden;
 
@@ -68,12 +103,29 @@
     }
   }
 
+  .card-logo {
+    height: 35px;
+    object-fit: contain;
+  }
+
+  .card-logo-fallback {
+    font-size: $text-2xl;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
   .card-number {
     font-size: 1.35rem;
-    font-weight: 500;
-    margin-bottom: 0.5rem;
+    font-weight: $font-medium;
+    margin-bottom: $space-2;
     z-index: 1;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  }
+
+  .card-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: $text-xs;
+    margin-bottom: 0;
+    line-height: $leading-tight;
   }
 
   .card-bottom {
@@ -84,7 +136,7 @@
 
     .card-holder {
       text-transform: uppercase;
-      font-size: 0.85rem;
+      font-size: $text-sm;
       letter-spacing: 1px;
       opacity: 0.8;
       margin-bottom: 0;
@@ -92,7 +144,7 @@
 
     .card-brand {
       font-size: 1.1rem;
-      font-weight: bold;
+      font-weight: $font-bold;
       opacity: 0.9;
       margin-bottom: 0;
     }
@@ -102,4 +154,11 @@
 .card-actions {
   max-width: 360px;
   margin: 0 auto;
+}
+
+// =========================================================================
+// Modal iframe
+// =========================================================================
+.modal-iframe-body {
+  min-height: 500px;
 }

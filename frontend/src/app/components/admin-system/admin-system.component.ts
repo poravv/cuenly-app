@@ -71,23 +71,23 @@ export class AdminSystemComponent implements OnInit {
 
   getTotalQueued(): number {
     if (!this.queueStats) return 0;
-    return (this.queueStats.queues.high?.queued || 0)
-         + (this.queueStats.queues.default?.queued || 0)
-         + (this.queueStats.queues.low?.queued || 0);
+    return (this.queueStats.queues.high.queued || 0)
+         + (this.queueStats.queues.default.queued || 0)
+         + (this.queueStats.queues.low.queued || 0);
   }
 
   getTotalFailed(): number {
     if (!this.queueStats) return 0;
-    return (this.queueStats.queues.high?.failed || 0)
-         + (this.queueStats.queues.default?.failed || 0)
-         + (this.queueStats.queues.low?.failed || 0);
+    return (this.queueStats.queues.high.failed || 0)
+         + (this.queueStats.queues.default.failed || 0)
+         + (this.queueStats.queues.low.failed || 0);
   }
 
   getTotalStarted(): number {
     if (!this.queueStats) return 0;
-    return (this.queueStats.queues.high?.started || 0)
-         + (this.queueStats.queues.default?.started || 0)
-         + (this.queueStats.queues.low?.started || 0);
+    return (this.queueStats.queues.high.started || 0)
+         + (this.queueStats.queues.default.started || 0)
+         + (this.queueStats.queues.low.started || 0);
   }
 
   // AI Limits

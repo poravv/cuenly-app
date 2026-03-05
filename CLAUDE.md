@@ -8,9 +8,11 @@
 
 ## 1. ¿Qué es CuenlyApp?
 
-**CuenlyApp** es una plataforma de extracción y centralización automática de facturas electrónicas para empresas paraguayas. Procesa correos electrónicos de una o más cuentas IMAP para detectar, descargar y estructurar facturas en formato SIFEN (Sistema de Facturación Electrónica de la SET paraguaya), así como PDFs e imágenes vía OpenAI Vision.
+**CuenlyApp** es una plataforma **multiusuario (multi-tenant)** de extraccion y centralizacion automatica de facturas electronicas para empresas paraguayas. Cada usuario tiene su propio espacio aislado: sus cuentas IMAP, sus facturas, sus configuraciones y su suscripcion. El sistema procesa correos electronicos de una o mas cuentas IMAP por usuario para detectar, descargar y estructurar facturas en formato SIFEN (Sistema de Facturacion Electronica de la SET paraguaya), asi como PDFs e imagenes via OpenAI Vision.
 
-**Objetivo central:** Eliminar la entrada manual de datos contables. Un usuario conecta sus correos, configura términos de búsqueda, y el sistema extrae todas sus facturas automáticamente a una base de datos centralizada que puede exportar en el formato que necesite.
+**Modelo multi-tenant:** Aislamiento por `owner_email` en todas las colecciones MongoDB. Cada query filtra por el email del usuario autenticado. Los datos de un usuario nunca son visibles para otro. Los administradores tienen acceso transversal via endpoints `/admin/*`.
+
+**Objetivo central:** Eliminar la entrada manual de datos contables. Un usuario conecta sus correos, configura terminos de busqueda, y el sistema extrae todas sus facturas automaticamente a una base de datos centralizada que puede exportar en el formato que necesite.
 
 ---
 
@@ -276,7 +278,20 @@ Usuario exporta vía templates configurables → Excel (.xlsx)
 
 ---
 
-## 11. Convenciones de Código
+## 11. Skills del Proyecto
+
+El proyecto tiene skills personalizadas en `.claude/skills/` que contienen el **mapa completo de la estructura** de cada capa y las reglas obligatorias. Consultarlas antes de analizar o modificar código.
+
+| Skill | Archivo | Contenido |
+|-------|---------|-----------|
+| **Hexagonal Guard** | `.claude/skills/hexagonal_guard.md` | Mapa completo de `backend/app/` (api, config, core, models, repositories, services, modules, utils, worker). Reglas: capas y dependencias, multi-tenancy, logging, idempotencia, excepciones tipadas, configuración centralizada, índices MongoDB, jobs RQ, tipado, seguridad. |
+| **UI Architect** | `.claude/skills/ui_architect.md` | Mapa completo de `frontend/src/app/` (components, services, guards, interceptors, models, state, modules). Reglas: HTTP centralizado en api.service.ts, OnPush, trackBy, cleanup de suscripciones, Akita, Bootstrap 5, notificaciones, guards, lazy loading admin, no console.log. |
+
+Estas skills se aplican automáticamente al trabajar en `backend/` o `frontend/` respectivamente.
+
+---
+
+## 12. Convenciones de Código
 
 ### Backend (Python/FastAPI)
 - **Modelos**: Pydantic v2 con `model_post_init()` para validaciones post-init
@@ -295,7 +310,7 @@ Usuario exporta vía templates configurables → Excel (.xlsx)
 
 ---
 
-## 12. Variables de Entorno Críticas
+## 13. Variables de Entorno Críticas
 
 ```env
 # Backend (.env en backend/)
@@ -319,24 +334,28 @@ TRIAL_AI_INVOICE_LIMIT=50
 
 ---
 
-## 13. Checklist de Seguridad (Estado Actual)
+## 14. Checklist de Seguridad (Estado Actual)
 
-| Item | Estado | Acción |
+| Item | Estado | Accion |
 |------|--------|--------|
 | Contraseñas IMAP cifradas | ✅ Fernet | Implementado con enc:v1: prefix + retrocompatibilidad plaintext |
 | Admin email env-configurable | ✅ settings.ADMIN_EMAILS | Env var + default permanente |
 | Rate limiting en API | ✅ K8s + Nginx + slowapi | Implementado en 3 capas (100 RPS, por endpoint, backend) |
-| Índices DB completos | ✅ _indexes_ensured | Agregados en todos los repositorios, creados 1x por proceso |
+| Indices DB completos | ✅ _indexes_ensured | Agregados en todos los repositorios, creados 1x por proceso |
 | OAuth tokens cifrados | ✅ Fernet | Cifrados con EMAIL_CONFIG_ENCRYPTION_KEY |
 | Audit log en admin ops | ✅ admin_audit_log | Collection + UI tab, todas las ops registradas |
-| Input validation | ⚠️ Parcial | Pydantic v2 en modelos, validar endpoints públicos pending |
-| HTTPS en producción | ✅ OK | TLS via Nginx Ingress |
+| Input validation | ⚠️ Parcial | Pydantic v2 en modelos, validar endpoints publicos pending |
+| HTTPS en produccion | ✅ OK | TLS via Nginx Ingress |
 | Multi-tenancy filtering | ✅ OK | `owner_email` en todas las queries |
-| Secrets en variables de entorno | ✅ OK | No hay secrets en código fuente |
+| Secrets en variables de entorno | ✅ OK | No hay secrets en codigo fuente |
+| Endpoints de sistema protegidos | ✅ OK | 14 endpoints protegidos con _get_current_admin o _get_current_user. Solo /health, /metrics y /api/plans quedan publicos (por diseño) |
+| Webhook Pagopar validado | ✅ OK | Validacion de token_publico contra settings.PAGOPAR_PUBLIC_KEY |
+| /debug/user-info restringido | ✅ OK | Solo admin, no expone firebase_claims completos |
+| /prefs/auto-refresh con tenant isolation | ✅ OK | uid forzado a email del usuario autenticado |
 
 ---
 
-## 14. Flujo de Datos de Estadísticas (LO QUE FALTA)
+## 15. Flujo de Datos de Estadísticas (LO QUE FALTA)
 
 El módulo de Estadísticas (`/facturas/estadisticas`) actualmente muestra:
 - Total facturas, montos, IVA por mes
@@ -353,7 +372,7 @@ Estos datos existen en `invoice_headers.processing_method` y `processed_emails.s
 
 ---
 
-## 15. Estado del Panel de Admin
+## 16. Estado del Panel de Admin
 
 **Problemas actuales:**
 - Algunas métricas del tab "Stats" no reflejan datos reales
@@ -370,7 +389,7 @@ Estos datos existen en `invoice_headers.processing_method` y `processed_emails.s
 
 ---
 
-## 16. Notas de Despliegue
+## 17. Notas de Despliegue
 
 ### Local (Docker Compose)
 ```bash
@@ -390,7 +409,7 @@ docker compose up -d --build
 
 ---
 
-## 17. Referencia Rápida de Archivos Críticos
+## 18. Referencia Rápida de Archivos Críticos
 
 | Archivo | Propósito |
 |---------|-----------|

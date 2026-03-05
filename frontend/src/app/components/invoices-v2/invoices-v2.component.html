@@ -72,7 +72,7 @@
       </div>
       <!-- Chips de filtros activos -->
       <div class="mt-3 d-flex flex-wrap gap-2" *ngIf="chips.length">
-        <span class="chip" *ngFor="let c of chips">
+        <span class="chip" *ngFor="let c of chips; trackBy: trackByChipKey">
           <span class="chip-label">{{ c.label }}:</span>
           <span class="chip-value">{{ c.value }}</span>
           <button class="chip-close" (click)="removeChip(c.key)" aria-label="Quitar filtro">
@@ -87,7 +87,7 @@
   <div class="card border-0 shadow-sm">
     <div class="card-body">
       <div *ngIf="loading" class="py-3">
-        <div class="skeleton-row" *ngFor="let s of [1,2,3,4,5]">
+        <div class="skeleton-row" *ngFor="let s of [1,2,3,4,5]; trackBy: trackByIndex">
           <div class="skeleton sk-icon"></div>
           <div class="skeleton sk-col"></div>
           <div class="skeleton sk-col"></div>
@@ -312,7 +312,7 @@
                             <tr *ngIf="!(itemsCache[h.id]?.length)">
                               <td colspan="7" class="text-center text-muted py-3">Sin ítems</td>
                             </tr>
-                            <tr *ngFor="let it of itemsCache[h.id]">
+                            <tr *ngFor="let it of itemsCache[h.id]; trackBy: trackByItemLinea">
                               <td>{{ it.linea }}</td>
                               <td>{{ it.descripcion }}</td>
                               <td class="text-end">{{ it.cantidad }}</td>
@@ -348,7 +348,7 @@
             </div>
             <div class="btn-group">
               <button class="btn btn-outline-secondary" (click)="prevPage()" [disabled]="page <= 1">Anterior</button>
-              <ng-container *ngFor="let p of getPageNumbers()">
+              <ng-container *ngFor="let p of getPageNumbers(); trackBy: trackByIndex">
                 <button class="btn" [ngClass]="p === page ? 'btn-primary' : 'btn-outline-secondary'"
                   (click)="goToPage(p)">{{ p }}</button>
               </ng-container>
@@ -412,7 +412,7 @@
             </div>
 
             <div class="max-height-200 overflow-auto border rounded p-2" *ngIf="deleteInfo.invoices?.length">
-              <div class="small" *ngFor="let inv of deleteInfo.invoices">
+              <div class="small" *ngFor="let inv of deleteInfo.invoices; trackBy: trackByIndex">
                 <strong>{{ inv.numero_documento }}</strong> - {{ inv.emisor }} - {{ toCurrency(inv.monto_total) }}
               </div>
             </div>

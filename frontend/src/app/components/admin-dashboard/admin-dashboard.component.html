@@ -69,11 +69,11 @@
         </div>
         <div class="kpi-card__body">
           <span class="kpi-card__value">
-            {{ getSourcePercent(invoiceStats.source_totals?.xml_nativo || 0) }}%
+            {{ getSourcePercent(invoiceStats.source_totals.xml_nativo || 0) }}%
           </span>
           <span class="kpi-card__label">XML Nativo</span>
           <span class="kpi-card__sub">
-            {{ formatNumber(invoiceStats.source_totals?.xml_nativo || 0) }} facturas
+            {{ formatNumber(invoiceStats.source_totals.xml_nativo || 0) }} facturas
           </span>
         </div>
       </div>
@@ -85,11 +85,11 @@
         </div>
         <div class="kpi-card__body">
           <span class="kpi-card__value">
-            {{ getSourcePercent(invoiceStats.source_totals?.openai_vision || 0) }}%
+            {{ getSourcePercent(invoiceStats.source_totals.openai_vision || 0) }}%
           </span>
           <span class="kpi-card__label">OpenAI Vision</span>
           <span class="kpi-card__sub">
-            {{ formatNumber(invoiceStats.source_totals?.openai_vision || 0) }} facturas
+            {{ formatNumber(invoiceStats.source_totals.openai_vision || 0) }} facturas
           </span>
         </div>
       </div>
@@ -151,15 +151,15 @@
           <div class="rq-card rq-card--detail">
             <div class="rq-queue-row">
               <span class="rq-queue-name">High:</span>
-              <span class="rq-queue-val">{{ queueStats.queues.high?.queued || 0 }}</span>
+              <span class="rq-queue-val">{{ queueStats.queues.high.queued || 0 }}</span>
             </div>
             <div class="rq-queue-row">
               <span class="rq-queue-name">Default:</span>
-              <span class="rq-queue-val">{{ queueStats.queues.default?.queued || 0 }}</span>
+              <span class="rq-queue-val">{{ queueStats.queues.default.queued || 0 }}</span>
             </div>
             <div class="rq-queue-row">
               <span class="rq-queue-name">Low:</span>
-              <span class="rq-queue-val">{{ queueStats.queues.low?.queued || 0 }}</span>
+              <span class="rq-queue-val">{{ queueStats.queues.low.queued || 0 }}</span>
             </div>
           </div>
 
@@ -185,7 +185,7 @@
 
           <div *ngIf="getRecentMonths().length > 0" class="bar-chart">
             <div
-              *ngFor="let month of getRecentMonths()"
+              *ngFor="let month of getRecentMonths(); trackBy: trackByMonth"
               class="bar-chart__col"
               [title]="month.month + ': ' + month.count + ' (XML: ' + month.xml_nativo + ' | IA: ' + month.openai_vision + ')'">
 
@@ -316,11 +316,11 @@
           </div>
 
           <!-- Distribución diaria -->
-          <div *ngIf="filteredStats.stats.daily_breakdown?.length > 0" class="sub-chart-card">
+          <div *ngIf="filteredStats.stats.daily_breakdown.length > 0" class="sub-chart-card">
             <h4 class="sub-chart-card__title">Distribución Diaria</h4>
             <div class="micro-bar-chart">
               <div
-                *ngFor="let day of filteredStats.stats.daily_breakdown"
+                *ngFor="let day of filteredStats.stats.daily_breakdown; trackBy: trackByIndex"
                 class="micro-bar-chart__col">
                 <div class="micro-bar-chart__track">
                   <div
@@ -335,11 +335,11 @@
           </div>
 
           <!-- Distribución por hora -->
-          <div *ngIf="filteredStats.stats.hourly_breakdown?.length > 0" class="sub-chart-card">
+          <div *ngIf="filteredStats.stats.hourly_breakdown.length > 0" class="sub-chart-card">
             <h4 class="sub-chart-card__title">Distribución por Hora</h4>
             <div class="micro-bar-chart">
               <div
-                *ngFor="let hour of filteredStats.stats.hourly_breakdown"
+                *ngFor="let hour of filteredStats.stats.hourly_breakdown; trackBy: trackByIndex"
                 class="micro-bar-chart__col">
                 <div class="micro-bar-chart__track">
                   <div
@@ -354,10 +354,10 @@
           </div>
 
           <!-- Breakdown por usuario -->
-          <div *ngIf="filteredStats.stats.user_breakdown?.length > 0" class="sub-chart-card">
+          <div *ngIf="filteredStats.stats.user_breakdown.length > 0" class="sub-chart-card">
             <h4 class="sub-chart-card__title">Por Usuario</h4>
             <ul class="user-breakdown">
-              <li *ngFor="let user of filteredStats.stats.user_breakdown" class="user-breakdown__item">
+              <li *ngFor="let user of filteredStats.stats.user_breakdown; trackBy: trackByEmail" class="user-breakdown__item">
                 <strong class="user-breakdown__email">{{ user._id }}</strong>
                 <div class="user-breakdown__metrics">
                   <span class="user-breakdown__count">{{ formatNumber(user.count) }} facturas</span>

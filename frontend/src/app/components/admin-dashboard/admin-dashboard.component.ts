@@ -184,16 +184,16 @@ export class AdminDashboardComponent implements OnInit {
 
   getTotalQueued(): number {
     if (!this.queueStats) return 0;
-    return (this.queueStats.queues.high?.queued    || 0)
-         + (this.queueStats.queues.default?.queued || 0)
-         + (this.queueStats.queues.low?.queued     || 0);
+    return (this.queueStats.queues.high.queued    || 0)
+         + (this.queueStats.queues.default.queued || 0)
+         + (this.queueStats.queues.low.queued     || 0);
   }
 
   getTotalFailed(): number {
     if (!this.queueStats) return 0;
-    return (this.queueStats.queues.high?.failed    || 0)
-         + (this.queueStats.queues.default?.failed || 0)
-         + (this.queueStats.queues.low?.failed     || 0);
+    return (this.queueStats.queues.high.failed    || 0)
+         + (this.queueStats.queues.default.failed || 0)
+         + (this.queueStats.queues.low.failed     || 0);
   }
 
   // =====================================
@@ -231,8 +231,8 @@ export class AdminDashboardComponent implements OnInit {
   }
 
   getSourcePercent(value: number): number {
-    const total = (this.invoiceStats.source_totals?.xml_nativo    || 0)
-                + (this.invoiceStats.source_totals?.openai_vision || 0);
+    const total = (this.invoiceStats.source_totals.xml_nativo    || 0)
+                + (this.invoiceStats.source_totals.openai_vision || 0);
     if (!total) return 0;
     return Math.round((value / total) * 100);
   }
@@ -242,7 +242,7 @@ export class AdminDashboardComponent implements OnInit {
   // =====================================
 
   getMaxDailyCount(): number {
-    if (!this.filteredStats?.stats?.daily_breakdown) return 1;
+    if (!this.filteredStats || !this.filteredStats.stats.daily_breakdown) return 1;
     return Math.max(
       ...this.filteredStats.stats.daily_breakdown.map((d: any) => d.count),
       1
@@ -250,7 +250,7 @@ export class AdminDashboardComponent implements OnInit {
   }
 
   getMaxHourlyCount(): number {
-    if (!this.filteredStats?.stats?.hourly_breakdown) return 1;
+    if (!this.filteredStats || !this.filteredStats.stats.hourly_breakdown) return 1;
     return Math.max(
       ...this.filteredStats.stats.hourly_breakdown.map((h: any) => h.count),
       1
@@ -309,5 +309,13 @@ export class AdminDashboardComponent implements OnInit {
 
   trackByEmail(_index: number, user: any): string {
     return user.email;
+  }
+
+  trackByIndex(index: number): number {
+    return index;
+  }
+
+  trackByMonth(index: number, month: any): string {
+    return month?.year_month || index;
   }
 }

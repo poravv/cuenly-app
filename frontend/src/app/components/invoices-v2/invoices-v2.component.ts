@@ -257,6 +257,18 @@ export class InvoicesV2Component implements OnInit {
     return h?.id || h?._id || index;
   }
 
+  trackByChipKey(index: number, c: { key: string }): string {
+    return c.key;
+  }
+
+  trackByItemLinea(index: number, it: any): any {
+    return it?.linea ?? index;
+  }
+
+  trackByIndex(index: number): number {
+    return index;
+  }
+
   // Métodos de selección
   toggleSelection(headerId: string): void {
     if (this.selectedHeaders.has(headerId)) {
