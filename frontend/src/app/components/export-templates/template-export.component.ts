@@ -96,6 +96,16 @@ export class TemplateExportComponent implements OnInit {
       return;
     }
 
+    if (!this.filters.fecha_inicio || !this.filters.fecha_fin) {
+      this.notificationService.warning('Debe seleccionar la fecha desde y hasta para exportar.');
+      return;
+    }
+
+    if (this.filters.fecha_inicio > this.filters.fecha_fin) {
+      this.notificationService.warning('La fecha desde no puede ser mayor a la fecha hasta.');
+      return;
+    }
+
     this.exporting = true;
 
     // Preparar filtros

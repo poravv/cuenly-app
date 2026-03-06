@@ -1,133 +1,153 @@
-<div class="container mt-4 px-4 px-lg-5">
-  <div class="row">
-    <div class="col-12 mb-4 text-center">
-      <h1 class="display-5">Carga manual de facturas</h1>
-      <p class="lead">Sube facturas en formato PDF o Imágenes para extraer sus datos</p>
-    </div>
-  </div>
+<div class="upload-page">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-lg-8 col-xl-7">
 
-  <div class="row justify-content-center">
-    <div class="col-md-9 col-lg-7">
-      <div class="card shadow">
-        <div class="card-header header-primary">
-          <h5 class="card-title mb-0">Formulario de carga</h5>
+        <!-- Page Header -->
+        <div class="page-header">
+          <h1 class="page-title">Carga de Facturas</h1>
+          <p class="page-subtitle">Sube facturas en formato PDF o imagenes para extraer sus datos con IA</p>
         </div>
 
-        <div class="card-body">
-          <form [formGroup]="uploadForm">
-            <!-- Selector de archivo -->
-            <div class="mb-4">
-              <label for="file" class="form-label">Archivos (PDF o Imágenes) *</label>
-              <!---// Changed loading to isProcessing-->
-              <div class="input-group">
-                <input type="file" class="form-control" id="file" accept=".pdf,image/jpeg,image/png,image/webp" multiple
-                  (change)="onFileSelected($event)" [disabled]="isProcessing">
-                <button class="btn btn-outline-primary" type="button" onclick="document.getElementById('file').click()">
-                  <i class="bi bi-upload"></i> Examinar
-                </button>
+        <!-- Drop Zone Card -->
+        <div class="upload-card">
+          <div class="upload-zone"
+            [class.active]="isDragging"
+            [class.disabled]="isProcessing"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onDrop($event)"
+            (click)="fileInput.click()">
+            <input #fileInput type="file" class="d-none" accept=".pdf,image/jpeg,image/png,image/webp" multiple
+              (change)="onFileSelected($event)" [disabled]="isProcessing">
+            <div class="upload-zone-content">
+              <div class="upload-icon">
+                <i class="bi bi-cloud-arrow-up"></i>
               </div>
-              <div class="form-text">Selecciona múltiples archivos. Las imágenes serán validadas automáticamente.</div>
+              <p class="upload-text">Arrastra tus archivos aqui o haz clic para seleccionar</p>
+              <p class="upload-hint">PDF, JPG, PNG o WebP (max 10MB por archivo)</p>
             </div>
-
-            <!-- Lista de archivos -->
-            <div class="file-list mt-4" *ngIf="files.length > 0">
-              <h5 class="mb-3">Archivos Seleccionados ({{files.length}})</h5>
-
-              <div class="list-group">
-                <div class="list-group-item d-flex align-items-center justify-content-between p-3"
-                  *ngFor="let item of files; let i = index; trackBy: trackByFile" [ngClass]="{'list-group-item-danger': item.status === 'error' || item.status === 'invalid_content',
-                                 'list-group-item-success': item.status === 'success',
-                                 'list-group-item-warning': item.status === 'validating' || item.status === 'ai_limit'}">
-
-                  <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
-                    <div class="file-icon me-3">
-                      <i class="bi bi-file-earmark-pdf text-danger fs-4" *ngIf="!item.isImage"></i>
-                      <i class="bi bi-file-earmark-image text-primary fs-4" *ngIf="item.isImage"></i>
-                    </div>
-                    <div class="file-info overflow-hidden">
-                      <div class="fw-bold text-truncate">{{item.file.name}}</div>
-                      <div class="small text-muted" *ngIf="item.status === 'pending'">
-                        {{ (item.file.size / 1024 / 1024) | number:'1.2-2' }} MB - Listo
-                      </div>
-                      <div class="small text-muted" *ngIf="item.status === 'validating'">
-                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                        Analizando...
-                      </div>
-                      <div class="small text-danger fw-bold" *ngIf="item.status === 'invalid_content'">
-                        <i class="bi bi-exclamation-triangle me-1"></i>
-                        {{ item.message }}
-                      </div>
-                      <div class="small text-warning fw-bold" *ngIf="item.status === 'ai_limit'">
-                        <i class="bi bi-exclamation-triangle me-1"></i>
-                        {{ item.message }}
-                      </div>
-                      <div class="small" [ngClass]="item.status === 'error' ? 'text-danger' : 'text-primary'"
-                        *ngIf="item.status === 'uploading' || item.status === 'success' || item.status === 'error'">
-                        {{item.message}}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="file-actions ms-3 d-flex align-items-center gap-2">
-                    <!-- Force Upload Button -->
-                    <button class="btn btn-sm btn-outline-warning" type="button"
-                      *ngIf="item.status === 'invalid_content'" (click)="forceUpload(item)">
-                      <i class="bi bi-arrow-up-circle me-1"></i> Forzar
-                    </button>
-
-                    <!-- Progress Bar -->
-                    <div class="progress flex-grow-1" style="width: 100px; height: 6px;"
-                      *ngIf="item.status === 'uploading'">
-                      <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
-                        [style.width.%]="item.progress"></div>
-                    </div>
-
-                    <!-- View Button -->
-                    <!-- <button class="btn btn-sm btn-success" *ngIf="item.status === 'success'" (click)="viewInvoice(item)">
-                      <i class="bi bi-eye"></i>
-                    </button> -->
-
-                    <!-- Remove Button -->
-                    <button class="btn btn-sm btn-outline-danger border-0" type="button" (click)="removeFile(i)"
-                      [disabled]="item.status === 'uploading' && !item.isImage">
-                      <i class="bi bi-x-lg"></i>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Botones Globales -->
-              <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
-                <button type="button" class="btn btn-outline-secondary me-md-2" (click)="resetForm()"
-                  [disabled]="isProcessing">
-                  Cancelar
-                </button>
-                <button type="button" class="btn btn-primary px-4" (click)="onSubmit()" [disabled]="isProcessing">
-                  <span *ngIf="isProcessing" class="spinner-border spinner-border-sm me-2" role="status"
-                    aria-hidden="true"></span>
-                  {{ isProcessing ? 'Procesando...' : 'Procesar Archivos' }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Campos adicionales (Opcionales) -->
-            <div class="mb-3 mt-4" *ngIf="files.length > 0">
-              <hr>
-              <h6 class="text-muted mb-3">Opciones Adicionales</h6>
-              <div class="row">
-                <div class="col-md-6">
-                  <label for="sender" class="form-label">Remitente (opcional)</label>
-                  <input type="text" class="form-control" id="sender" formControlName="sender"
-                    placeholder="Correo o nombre" [disabled]="isProcessing">
-                </div>
-                <div class="col-md-6">
-                  <label for="date" class="form-label">Fecha (opcional)</label>
-                  <input type="date" class="form-control" id="date" formControlName="date" [disabled]="isProcessing">
-                </div>
-              </div>
-            </div>
-          </form>
+          </div>
         </div>
+
+        <!-- File List -->
+        <div *ngIf="files.length > 0" class="files-card">
+          <div class="files-header">
+            <span class="files-title">
+              <i class="bi bi-files me-2"></i>
+              Archivos ({{ files.length }})
+            </span>
+            <button type="button" class="btn-clear" (click)="resetForm()" [disabled]="isProcessing">
+              <i class="bi bi-trash3 me-1"></i> Limpiar
+            </button>
+          </div>
+
+          <div class="files-list">
+            <div class="file-item" *ngFor="let item of files; let i = index; trackBy: trackByFile"
+              [ngClass]="{
+                'status-error': item.status === 'error' || item.status === 'invalid_content',
+                'status-success': item.status === 'success',
+                'status-warning': item.status === 'validating' || item.status === 'ai_limit',
+                'status-uploading': item.status === 'uploading'
+              }">
+
+              <div class="file-icon-wrapper">
+                <i class="bi bi-file-earmark-pdf" *ngIf="!item.isImage"></i>
+                <i class="bi bi-file-earmark-image" *ngIf="item.isImage"></i>
+              </div>
+
+              <div class="file-details">
+                <div class="file-name">{{ item.file.name }}</div>
+                <div class="file-meta" *ngIf="item.status === 'pending'">
+                  {{ (item.file.size / 1024 / 1024) | number:'1.2-2' }} MB — Listo para procesar
+                </div>
+                <div class="file-meta validating" *ngIf="item.status === 'validating'">
+                  <span class="spinner-border spinner-border-sm me-1"></span>
+                  Analizando contenido...
+                </div>
+                <div class="file-meta uploading" *ngIf="item.status === 'uploading'">
+                  {{ item.message }}
+                </div>
+                <div class="file-meta success" *ngIf="item.status === 'success'">
+                  <i class="bi bi-check-circle me-1"></i> {{ item.message }}
+                </div>
+                <div class="file-meta error" *ngIf="item.status === 'error'">
+                  <i class="bi bi-x-circle me-1"></i> {{ item.message }}
+                </div>
+                <div class="file-meta warning" *ngIf="item.status === 'invalid_content'">
+                  <i class="bi bi-exclamation-triangle me-1"></i> {{ item.message }}
+                </div>
+                <div class="file-meta warning" *ngIf="item.status === 'ai_limit'">
+                  <i class="bi bi-exclamation-triangle me-1"></i> {{ item.message }}
+                </div>
+
+                <!-- Progress bar -->
+                <div class="file-progress" *ngIf="item.status === 'uploading'">
+                  <div class="file-progress-bar" [style.width.%]="item.progress"></div>
+                </div>
+              </div>
+
+              <div class="file-actions">
+                <button class="btn-force" type="button"
+                  *ngIf="item.status === 'invalid_content'" (click)="forceUpload(item)"
+                  title="Subir de todas formas">
+                  <i class="bi bi-arrow-up-circle"></i>
+                </button>
+                <button class="btn-remove" type="button" (click)="removeFile(i)"
+                  [disabled]="item.status === 'uploading' && !item.isImage"
+                  title="Eliminar">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Optional fields -->
+          <div class="optional-section">
+            <div class="optional-header" (click)="showOptions = !showOptions">
+              <i class="bi" [ngClass]="showOptions ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+              Opciones adicionales
+            </div>
+            <div *ngIf="showOptions" class="optional-fields">
+              <form [formGroup]="uploadForm">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label for="sender" class="form-label">Remitente</label>
+                    <input type="text" class="form-control" id="sender" formControlName="sender"
+                      placeholder="Correo o nombre" [disabled]="isProcessing">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="date" class="form-label">Fecha</label>
+                    <input type="date" class="form-control" id="date" formControlName="date" [disabled]="isProcessing">
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <div class="files-footer">
+            <button type="button" class="btn btn-process" (click)="onSubmit()" [disabled]="isProcessing">
+              <span *ngIf="!isProcessing"><i class="bi bi-cpu me-2"></i>Procesar Archivos</span>
+              <span *ngIf="isProcessing">
+                <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Info Banner -->
+        <div class="info-banner">
+          <i class="bi bi-info-circle-fill info-icon"></i>
+          <div>
+            <p class="info-title">Procesamiento con IA</p>
+            <p class="info-text">
+              Los archivos PDF e imagenes se procesan con inteligencia artificial para extraer datos de facturas.
+              Los archivos XML SIFEN se procesan nativamente sin consumir cuota de IA.
+            </p>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>

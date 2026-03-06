@@ -26,9 +26,11 @@ class ExportTemplateRepository:
         if ExportTemplateRepository._indexes_ensured:
             return
         try:
-            self.collection.create_index([("owner_email", 1), ("name", 1)], unique=True)
+            self.collection.create_index([("owner_email", 1), ("name", 1)], unique=True, sparse=True)
             self.collection.create_index([("owner_email", 1), ("created_at", -1)])
             self.collection.create_index([("owner_email", 1), ("is_default", 1)])
+            self.collection.create_index([("is_system", 1)])
+            self.collection.create_index([("system_code", 1)], unique=True, sparse=True)
             ExportTemplateRepository._indexes_ensured = True
             logger.debug("Índices de export_templates creados correctamente")
         except Exception as e:
@@ -120,8 +122,12 @@ class ExportTemplateRepository:
                 if 'alignment' in field and field['alignment'] in alignment_mapping:
                     field['alignment'] = alignment_mapping[field['alignment']]
             # 2) Filtrar campos no soportados (por ejemplo: descripcion_factura eliminada)
+            #    Fields with transforms are always allowed (their keys may not be in AVAILABLE_FIELDS)
             allowed = set(AVAILABLE_FIELDS.keys())
-            filtered_fields = [f for f in template_dict['fields'] if f.get('field_key') in allowed]
+            filtered_fields = [
+                f for f in template_dict['fields']
+                if f.get('field_key') in allowed or f.get('transform') is not None
+            ]
             # 3) Reordenar por 'order' si existe, preservando estabilidad; luego reasignar orden secuencial
             sorted_fields = sorted(filtered_fields, key=lambda x: x.get('order', 10**9))
             for i, f in enumerate(sorted_fields, start=1):
@@ -313,33 +319,164 @@ class ExportTemplateRepository:
             logger.error(f"Error estableciendo template por defecto {template_id}: {e}")
             return False
     
+    def get_template_by_id_any(self, template_id: str) -> Optional[ExportTemplate]:
+        """
+        Obtener template por ID sin filtrar por owner_email.
+        Usado internamente para acceder a system templates.
+        """
+        try:
+            doc = self.collection.find_one({"_id": ObjectId(template_id)})
+            if doc:
+                return self._doc_to_template(doc)
+            return None
+        except Exception as e:
+            logger.error(f"Error obteniendo template {template_id}: {e}")
+            return None
+
     def duplicate_template(self, template_id: str, new_name: str, owner_email: str) -> Optional[str]:
         """
-        Duplicar un template existente
-        
+        Duplicar un template existente (user-owned o system template).
+
         Args:
             template_id: ID del template a duplicar
             new_name: Nuevo nombre para el template duplicado
             owner_email: Email del propietario
-            
+
         Returns:
             ID del nuevo template o None si falla
         """
         try:
+            # Try user-owned template first, then system template
             original = self.get_template_by_id(template_id, owner_email)
             if not original:
-                return None
-            
-            # Crear copia con nuevo nombre
+                original = self.get_template_by_id_any(template_id)
+                if not original or not original.is_system:
+                    return None
+
+            # Crear copia con nuevo nombre — always user-owned
             new_template = original.model_copy()
             new_template.id = None
             new_template.name = new_name
             new_template.is_default = False
+            new_template.is_system = False
+            new_template.system_code = None
+            new_template.owner_email = owner_email
             new_template.created_at = datetime.utcnow()
             new_template.updated_at = datetime.utcnow()
-            
+
             return self.create_template(new_template)
-            
+
         except Exception as e:
             logger.error(f"Error duplicando template {template_id}: {e}")
             return None
+
+    # === System Templates ===
+
+    def _doc_to_template(self, doc: dict) -> ExportTemplate:
+        """Helper: convert a MongoDB document to an ExportTemplate."""
+        template_dict = dict(doc)
+        template_dict["id"] = str(doc["_id"])
+        if "_id" in template_dict:
+            del template_dict["_id"]
+        template_dict = self._migrate_template_data(template_dict)
+        return ExportTemplate(**template_dict)
+
+    def get_system_templates(self) -> List[ExportTemplate]:
+        """
+        Get all system-provided templates.
+
+        Returns:
+            List of system templates
+        """
+        try:
+            docs = list(self.collection.find({"is_system": True}).sort("created_at", -1))
+            return [self._doc_to_template(doc) for doc in docs]
+        except Exception as e:
+            logger.error(f"Error obteniendo system templates: {e}")
+            return []
+
+    def get_system_template_by_code(self, system_code: str) -> Optional[ExportTemplate]:
+        """
+        Get a specific system template by its unique code.
+
+        Args:
+            system_code: Unique code (e.g., 'rg90_compras')
+
+        Returns:
+            The system template or None
+        """
+        try:
+            doc = self.collection.find_one({"is_system": True, "system_code": system_code})
+            if doc:
+                return self._doc_to_template(doc)
+            return None
+        except Exception as e:
+            logger.error(f"Error obteniendo system template '{system_code}': {e}")
+            return None
+
+    def get_templates_for_user(self, owner_email: str, plan_template_codes=None) -> List[ExportTemplate]:
+        """
+        Get user's own templates plus system templates matching the given plan codes.
+
+        Args:
+            owner_email: Email of the user
+            plan_template_codes: List of system_code values included in the user's plan
+
+        Returns:
+            Combined list of user + allowed system templates
+        """
+        try:
+            # User's own templates
+            user_templates = self.get_templates_by_user(owner_email)
+
+            # System templates matching plan codes (or all if "__all__")
+            system_templates = []
+            if plan_template_codes == "__all__":
+                system_templates = self.get_system_templates()
+            elif plan_template_codes:
+                docs = list(self.collection.find({
+                    "is_system": True,
+                    "system_code": {"$in": plan_template_codes}
+                }).sort("created_at", -1))
+                system_templates = [self._doc_to_template(doc) for doc in docs]
+
+            return user_templates + system_templates
+
+        except Exception as e:
+            logger.error(f"Error obteniendo templates for user {owner_email}: {e}")
+            return []
+
+    def create_system_template(self, template_data: dict) -> str:
+        """
+        Create a system template (no owner_email required).
+
+        Args:
+            template_data: Dict with template fields including is_system=True and system_code
+
+        Returns:
+            str: ID of the created template
+
+        Raises:
+            ValueError: If a system template with the same system_code already exists
+        """
+        try:
+            template_data["is_system"] = True
+            template_data["owner_email"] = None
+            template_data["created_at"] = datetime.utcnow()
+            template_data["updated_at"] = datetime.utcnow()
+
+            # Remove id if present
+            template_data.pop("id", None)
+            template_data.pop("_id", None)
+
+            result = self.collection.insert_one(template_data)
+            template_id = str(result.inserted_id)
+
+            logger.info(f"System template '{template_data.get('name')}' created with code '{template_data.get('system_code')}'")
+            return template_id
+
+        except DuplicateKeyError:
+            raise ValueError(f"Ya existe un system template con el code '{template_data.get('system_code')}'")
+        except Exception as e:
+            logger.error(f"Error creando system template: {e}")
+            raise

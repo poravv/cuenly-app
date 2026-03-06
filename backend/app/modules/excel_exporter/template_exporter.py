@@ -8,7 +8,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.models.export_template import (
-    ExportTemplate, ExportField, FieldType, FieldAlignment, GroupingType
+    ExportTemplate, ExportField, FieldType, FieldAlignment, GroupingType, FieldTransform
 )
 from app.models.models import InvoiceData
 
@@ -122,8 +122,13 @@ class ExcelExporter:
             for field in sorted(template.fields, key=lambda f: f.order):
                 if not field.is_visible:
                     continue
-                    
+
                 value = self._extract_field_value(invoice_dict, field)
+
+                # Apply transform if present
+                if field.transform:
+                    value = self._apply_transform(field, value, invoice_dict)
+
                 formatted_value = self._format_field_value(value, field)
                 row_data[field.field_key] = formatted_value
                 
@@ -154,6 +159,7 @@ class ExcelExporter:
             field_mappings = {
                 "base_gravada_5": ["gravado_5", "subtotal_5"],
                 "base_gravada_10": ["gravado_10", "subtotal_10"],
+                "punto_expedicion": ["punto_expedicion", "punto"],
                 # Mapeo robusto para productos: usar claves internas del producto
                 "productos.nombre": ["nombre", "descripcion", "articulo"],
                 "productos.descripcion": ["descripcion", "nombre", "articulo"],
@@ -250,6 +256,103 @@ class ExcelExporter:
             logger.warning(f"Error extrayendo campo {field.field_key}: {e}")
             return None
     
+    def _apply_transform(self, field: ExportField, raw_value: Any, invoice_data: dict) -> Any:
+        """
+        Apply a transform to the extracted field value.
+
+        Args:
+            field: Field configuration with transform info
+            raw_value: The raw extracted value
+            invoice_data: Full invoice dict for cross-field lookups
+
+        Returns:
+            Transformed value, or raw_value if transform fails
+        """
+        try:
+            transform = field.transform
+            t_type = transform.type
+            params = transform.params
+
+            if t_type == "constant":
+                return params.get("value", "")
+
+            elif t_type == "ruc_body":
+                # Extract RUC body without DV: "80012345-6" -> "80012345"
+                if raw_value and isinstance(raw_value, str) and "-" in raw_value:
+                    return raw_value.split("-")[0]
+                return raw_value if raw_value else ""
+
+            elif t_type == "sum_fields":
+                # Sum multiple fields from invoice_data
+                fields_to_sum = params.get("fields", [])
+                total = 0.0
+                for f_key in fields_to_sum:
+                    val = invoice_data.get(f_key)
+                    if val is not None:
+                        try:
+                            total += float(val)
+                        except (ValueError, TypeError):
+                            pass
+                return total
+
+            elif t_type == "map_values":
+                # Map values using a dictionary
+                mapping = params.get("mapping", {})
+                default = params.get("default", raw_value)
+                str_value = str(raw_value) if raw_value is not None else ""
+                return mapping.get(str_value, default)
+
+            elif t_type == "boolean_flag":
+                # Return "S" or "N" based on condition
+                condition = params.get("condition", "not_empty")
+
+                if condition == "not_in":
+                    values = params.get("values", [])
+                    str_value = str(raw_value) if raw_value is not None else ""
+                    return "S" if str_value not in values else "N"
+
+                elif condition == "equals":
+                    target = params.get("value")
+                    return "S" if raw_value == target else "N"
+
+                elif condition == "not_empty":
+                    return "S" if raw_value else "N"
+
+                return "N"
+
+            elif t_type == "date_format":
+                # Format date as specified
+                fmt = params.get("format", "DD/MM/YYYY")
+                if not raw_value:
+                    return ""
+
+                # Convert DD/MM/YYYY style format to Python strftime
+                py_fmt = fmt.replace("DD", "%d").replace("MM", "%m").replace("YYYY", "%Y").replace("YY", "%y")
+
+                if isinstance(raw_value, datetime):
+                    return raw_value.strftime(py_fmt)
+                elif isinstance(raw_value, str):
+                    # Try common input formats
+                    for input_fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S.%f",
+                                      "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f%z"]:
+                        try:
+                            dt = datetime.strptime(raw_value.replace("Z", "+0000"), input_fmt)
+                            return dt.strftime(py_fmt)
+                        except ValueError:
+                            continue
+                    # If parsing fails, return as-is
+                    return str(raw_value)
+
+                return str(raw_value)
+
+            else:
+                logger.warning(f"Unknown transform type '{t_type}' for field {field.field_key}")
+                return raw_value
+
+        except Exception as e:
+            logger.warning(f"Error applying transform '{field.transform.type}' to field {field.field_key}: {e}")
+            return raw_value
+
     def _process_array_field(self, array_value: List[Any], field: ExportField) -> str:
         """
         Procesar campos de array según tipo de agrupación

@@ -25,6 +25,11 @@ export enum CalculatedFieldType {
   // Sin campos calculados
 }
 
+export interface FieldTransform {
+  type: string; // 'constant', 'ruc_body', 'sum_fields', 'map_values', 'boolean_flag', 'date_format'
+  params?: { [key: string]: any };
+}
+
 export interface ExportField {
   field_key: string;
   display_name: string;
@@ -35,7 +40,8 @@ export interface ExportField {
   order?: number;
   is_visible?: boolean;
   width?: number;
-  
+  transform?: FieldTransform;
+
     // Sin campos calculados
   is_calculated?: boolean;
   calculated_type?: CalculatedFieldType;
@@ -52,6 +58,8 @@ export interface ExportTemplate {
   fields: ExportField[];
   owner_email?: string;
   is_default?: boolean;
+  is_system?: boolean;
+  system_code?: string;
   created_at?: Date;
   updated_at?: Date;
 }

@@ -145,6 +145,37 @@ async def admin_delete_plan(
         raise HTTPException(status_code=500, detail="Error eliminando plan")
 
 
+@router.get("/system-templates")
+async def list_system_templates_for_plans(
+    admin: Dict[str, Any] = Depends(_get_current_admin_user)
+):
+    """Lista todos los system templates disponibles para asignar a planes"""
+    try:
+        from app.repositories.export_template_repository import ExportTemplateRepository
+
+        repo = ExportTemplateRepository()
+        templates = repo.get_system_templates()
+
+        return {
+            "success": True,
+            "data": [
+                {
+                    "id": t.id,
+                    "system_code": t.system_code,
+                    "name": t.name,
+                    "description": t.description,
+                    "fields_count": len(t.fields),
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                }
+                for t in templates
+            ],
+            "count": len(templates)
+        }
+    except Exception as e:
+        logger.error(f"Error listando system templates para planes: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo system templates")
+
+
 # API pública para planes (sin autenticación de admin, pero con usuario autenticado)
 @router.get("/public")
 async def list_public_plans(

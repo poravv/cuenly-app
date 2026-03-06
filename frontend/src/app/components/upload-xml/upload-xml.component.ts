@@ -27,6 +27,8 @@ export class UploadXmlComponent implements OnInit, OnDestroy {
   uploadForm: FormGroup;
   files: UploadFileItem[] = [];
   loading = false;
+  isDragging = false;
+  showOptions = false;
   destroy$ = new Subject<void>();
   pollingSub: Subscription | null = null;
 
@@ -188,6 +190,28 @@ export class UploadXmlComponent implements OnInit, OnDestroy {
     const uploading = this.files.some(f => f.status === 'uploading');
     if (!uploading) {
       this.loading = false;
+    }
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = true;
+  }
+
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = false;
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = false;
+    if (event.dataTransfer?.files) {
+      const fakeEvent = { target: { files: event.dataTransfer.files, value: '' } } as any;
+      this.onFileSelected(fakeEvent);
     }
   }
 

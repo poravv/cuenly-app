@@ -94,8 +94,11 @@ class MongoInvoiceRepository(InvoiceRepository):
         Obtiene facturas del usuario aplicando filtros opcionales
         """
         try:
-            # Base query
-            query = {"owner_email": owner_email}
+            # Base query - exclude incomplete invoices (PENDING_AI, FAILED, PROCESSING)
+            query = {
+                "owner_email": owner_email,
+                "status": {"$nin": ["PENDING_AI", "FAILED", "PROCESSING"]},
+            }
             
             # Aplicar filtros
             if filters:

@@ -990,6 +990,7 @@ class EmailProcessor:
                 if inv:
                     if 'xml_minio_key' in locals() and xml_minio_key:
                         inv.minio_key = xml_minio_key
+                    inv.fuente = "XML_NATIVO"
                     self._mark_email_processed(email_id, "xml", message_id=real_msg_id, reason="Factura extraída de XML adjunto")
                     return inv
 
@@ -999,6 +1000,7 @@ class EmailProcessor:
                 if inv:
                     if 'pdf_minio_key' in locals() and pdf_minio_key:
                          inv.minio_key = pdf_minio_key
+                    inv.fuente = "OPENAI_VISION"
                     self._mark_email_processed(email_id, "pdf", message_id=real_msg_id, reason="Factura extraída de PDF/Imagen adjunta usando IA")
                     return inv
 
@@ -1008,11 +1010,11 @@ class EmailProcessor:
                     try:
                         # download_pdf_from_url ahora retorna StoragePath (porque save_binary lo hace)
                         storage_result = download_pdf_from_url(link)
-                        
+
                         # Manejar si devuelve objeto o string vacío (fallo)
                         if not storage_result or not hasattr(storage_result, "local_path"):
                              continue
-                             
+
                         downloaded_path = storage_result.local_path
                         if not downloaded_path:
                              continue
@@ -1020,8 +1022,12 @@ class EmailProcessor:
 
                         if downloaded_path.lower().endswith(".xml"):
                             inv = self.openai_processor.extract_invoice_data_from_xml(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                            if inv:
+                                inv.fuente = "XML_NATIVO"
                         elif downloaded_path.lower().endswith(".pdf"):
                             inv = self.openai_processor.extract_invoice_data(downloaded_path, email_meta_for_ai, owner_email=self.owner_email)
+                            if inv:
+                                inv.fuente = "OPENAI_VISION"
                         else:
                             continue
                         if inv:
@@ -1108,12 +1114,15 @@ class EmailProcessor:
             if error and hasattr(invoice, 'processing_error'):
                 invoice.processing_error = error
 
+            # Usar la fuente del invoice si fue seteada por _process_single_email,
+            # fallback a EMAIL_BATCH_PROCESSOR para compatibilidad
+            effective_fuente = getattr(invoice, "fuente", "") or "EMAIL_BATCH_PROCESSOR"
             doc = map_invoice(
                 invoice,
-                fuente="EMAIL_BATCH_PROCESSOR",
+                fuente=effective_fuente,
                 minio_key=(getattr(invoice, "minio_key", "") or ""),
             )
-            
+
             # Asignar owner_email si está disponible
             if hasattr(self, 'owner_email') and self.owner_email:
                 try:

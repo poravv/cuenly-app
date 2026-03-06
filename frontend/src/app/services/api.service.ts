@@ -507,6 +507,11 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/admin/ai-limits/reset-monthly`, {});
   }
 
+  // System templates for plans
+  getSystemTemplates(): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/admin/plans/system-templates`);
+  }
+
   // Audit log
   getAuditLogs(page: number = 1, pageSize: number = 30, action?: string): Observable<any> {
     const params: any = { page: page.toString(), page_size: pageSize.toString() };

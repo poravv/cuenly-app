@@ -96,6 +96,11 @@ export class ProfileComponent implements OnInit, OnDestroy {
         return isValid;
     }
 
+    getAiPercent(): number {
+        if (!this.profile || !this.profile.ai_invoices_limit) return 0;
+        return Math.min(100, Math.round((this.profile.ai_invoices_processed / this.profile.ai_invoices_limit) * 100));
+    }
+
     saveProfile(): void {
         if (!this.validate()) {
             this.notificationService.error('Por favor corrige los errores en el formulario');

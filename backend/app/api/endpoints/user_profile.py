@@ -402,11 +402,14 @@ async def get_queue_events(
                     stage = str(progress_payload.get("stage") or "").strip().lower()
 
                     if stage in {"fanout_discovery_complete", "fanout_streaming", "fanout_batch", "fanout_streaming_done", "fanout_done"}:
-                        return (
-                            "Procesando histórico: "
-                            f"matches={matches}, encolados={queued}, omitidos_existentes={skipped}, "
-                            f"reencolados_error={requeued}"
-                        )
+                        parts = [f"Se encontraron {matches} correos"]
+                        if queued > 0:
+                            parts.append(f"{queued} en cola de procesamiento")
+                        if skipped > 0:
+                            parts.append(f"{skipped} ya procesados anteriormente")
+                        if requeued > 0:
+                            parts.append(f"{requeued} reintentando por error previo")
+                        return "Procesando historico: " + ", ".join(parts) + "."
                     if stage == "fanout_no_matches":
                         return "Procesando histórico: no hay nuevos correos para encolar en este rango."
                     if stage == "starting":
@@ -471,11 +474,23 @@ async def get_queue_events(
                         processed_at = ts.isoformat() if hasattr(ts, "isoformat") else None
                         job_meta = dict(getattr(job, "meta", {}) or {})
                         progress = job_meta.get("progress") if isinstance(job_meta.get("progress"), dict) else None
-                        default_reason = (
-                            "Job en ejecución desde cola distribuida"
-                            if mapped_status == "processing"
-                            else "Job encolado y pendiente de ejecución"
-                        )
+                        if mapped_status == "processing":
+                            default_reason = "Procesando correo..."
+                        elif mapped_status == "error":
+                            exc_str = str(getattr(job, "exc_info", "") or "")
+                            latest = getattr(job, "latest_result", None)
+                            if latest and hasattr(latest, "exc_string"):
+                                exc_str = str(latest.exc_string or exc_str)
+                            if "AbandonedJobError" in exc_str:
+                                default_reason = "Tarea interrumpida por reinicio del servidor. Puedes reintentar."
+                            elif "timeout" in exc_str.lower() or "timedout" in exc_str.lower():
+                                default_reason = "La tarea excedio el tiempo maximo. Puedes reintentar."
+                            elif exc_str.strip():
+                                default_reason = "Error al procesar. Puedes reintentar."
+                            else:
+                                default_reason = "Error al procesar."
+                        else:
+                            default_reason = "En cola, pendiente de procesamiento"
                         reason = _build_reason_from_progress(default_reason, progress)
 
                         synthetic_events.append({
@@ -778,11 +793,23 @@ async def stream_queue_events(
                                     job_meta = dict(getattr(job, "meta", {}) or {})
                                     progress = job_meta.get("progress") if isinstance(job_meta.get("progress"), dict) else None
 
-                                    default_reason = (
-                                        "Job en ejecución desde cola distribuida"
-                                        if mapped_status == "processing"
-                                        else "Job encolado y pendiente de ejecución"
-                                    )
+                                    if mapped_status == "processing":
+                                        default_reason = "Procesando correo..."
+                                    elif mapped_status == "error":
+                                        exc_str = str(getattr(job, "exc_info", "") or "")
+                                        latest = getattr(job, "latest_result", None)
+                                        if latest and hasattr(latest, "exc_string"):
+                                            exc_str = str(latest.exc_string or exc_str)
+                                        if "AbandonedJobError" in exc_str:
+                                            default_reason = "Tarea interrumpida por reinicio del servidor. Puedes reintentar."
+                                        elif "timeout" in exc_str.lower() or "timedout" in exc_str.lower():
+                                            default_reason = "La tarea excedio el tiempo maximo. Puedes reintentar."
+                                        elif exc_str.strip():
+                                            default_reason = "Error al procesar. Puedes reintentar."
+                                        else:
+                                            default_reason = "Error al procesar."
+                                    else:
+                                        default_reason = "En cola, pendiente de procesamiento"
                                     if isinstance(progress, dict):
                                         queued_c = int(progress.get("queued_count") or 0)
                                         skipped_c = int(progress.get("skipped_existing") or 0)
@@ -790,11 +817,14 @@ async def stream_queue_events(
                                         matches_c = int(progress.get("discovered_matches") or 0)
                                         stage_c = str(progress.get("stage") or "").strip().lower()
                                         if stage_c in {"fanout_discovery_complete", "fanout_streaming", "fanout_batch", "fanout_streaming_done", "fanout_done"}:
-                                            default_reason = (
-                                                f"Procesando histórico: matches={matches_c}, "
-                                                f"encolados={queued_c}, omitidos_existentes={skipped_c}, "
-                                                f"reencolados_error={requeued_c}"
-                                            )
+                                            parts_c = [f"Se encontraron {matches_c} correos"]
+                                            if queued_c > 0:
+                                                parts_c.append(f"{queued_c} en cola de procesamiento")
+                                            if skipped_c > 0:
+                                                parts_c.append(f"{skipped_c} ya procesados anteriormente")
+                                            if requeued_c > 0:
+                                                parts_c.append(f"{requeued_c} reintentando por error previo")
+                                            default_reason = "Procesando historico: " + ", ".join(parts_c) + "."
                                         elif stage_c == "fanout_no_matches":
                                             default_reason = "Procesando histórico: no hay nuevos correos para encolar en este rango."
                                         elif stage_c == "starting":

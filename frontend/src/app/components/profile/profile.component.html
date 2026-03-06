@@ -1,163 +1,202 @@
-<div class="container py-5">
+<div class="profile-page">
+  <div class="container">
     <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card shadow-sm border-0">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center mb-4">
-                        <div class="profile-avatar-container me-3">
-                            <img *ngIf="profile?.picture" [src]="profile?.picture" alt="Avatar"
-                                class="profile-avatar shadow-sm">
-                            <div *ngIf="!profile?.picture" class="profile-avatar-placeholder shadow-sm">
-                                <i class="bi bi-person-fill"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1">
-                            <h2 class="mb-1 fw-bold text-dark">Mi Perfil</h2>
-                            <p class="text-muted mb-0">{{ profile?.email }}</p>
-                        </div>
-                    </div>
+      <div class="col-lg-8 col-xl-7">
 
-                    <form (ngSubmit)="saveProfile()" #profileForm="ngForm">
-                        <div class="row g-3">
-
-                            <!-- Banner de errores de validación si existen -->
-                            <div *ngIf="validationErrors['general']" class="col-12">
-                                <div class="alert alert-danger d-flex align-items-center mb-0">
-                                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                                    <div>{{ validationErrors['general'] }}</div>
-                                </div>
-                            </div>
-
-                            <!-- Nombre -->
-                            <div class="col-12">
-                                <label for="name" class="form-label fw-semibold text-secondary small text-uppercase">
-                                    Nombre Completo <span class="text-danger">*</span>
-                                </label>
-                                <div class="input-group has-validation">
-                                    <span class="input-group-text bg-light border-end-0"><i
-                                            class="bi bi-person text-primary"></i></span>
-                                    <input type="text" id="name" name="name" [(ngModel)]="editProfile.name"
-                                        class="form-control bg-light border-start-0"
-                                        [class.is-invalid]="validationErrors['name']" placeholder="Tu nombre completo"
-                                        required>
-                                    <div class="invalid-feedback ps-2">
-                                        {{ validationErrors['name'] }}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Teléfono -->
-                            <div class="col-md-6">
-                                <label for="phone" class="form-label fw-semibold text-secondary small text-uppercase">
-                                    Celular / Teléfono <span class="text-danger">*</span>
-                                </label>
-                                <div class="input-group has-validation">
-                                    <span class="input-group-text bg-light border-end-0"><i
-                                            class="bi bi-phone text-primary"></i></span>
-                                    <input type="tel" id="phone" name="phone" [(ngModel)]="editProfile.phone"
-                                        class="form-control bg-light border-start-0"
-                                        [class.is-invalid]="validationErrors['phone']" placeholder="Ej: 0981123456"
-                                        required>
-                                    <div class="invalid-feedback ps-2">
-                                        {{ validationErrors['phone'] }}
-                                    </div>
-                                </div>
-                                <div class="form-text small" *ngIf="!validationErrors['phone']">Necesario para cargos
-                                    recurrentes en Pagopar.</div>
-                            </div>
-
-                            <!-- RUC / CI -->
-                            <div class="col-md-6">
-                                <label for="ruc" class="form-label fw-semibold text-secondary small text-uppercase">
-                                    RUC o Cédula <span class="text-danger">*</span>
-                                </label>
-                                <div class="input-group has-validation">
-                                    <span class="input-group-text bg-light border-end-0"><i
-                                            class="bi bi-card-text text-primary"></i></span>
-                                    <input type="text" id="ruc" name="ruc" [(ngModel)]="editProfile.ruc"
-                                        class="form-control bg-light border-start-0"
-                                        [class.is-invalid]="validationErrors['ruc']" placeholder="Ej: 1234567-8"
-                                        required>
-                                    <div class="invalid-feedback ps-2">
-                                        {{ validationErrors['ruc'] }}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Tipo Documento -->
-                            <div class="col-md-6">
-                                <label for="document_type"
-                                    class="form-label fw-semibold text-secondary small text-uppercase">
-                                    Tipo de Documento
-                                </label>
-                                <select id="document_type" name="document_type" [(ngModel)]="editProfile.document_type"
-                                    class="form-select bg-light">
-                                    <option value="CI">Cédula de Identidad</option>
-                                    <option value="RUC">RUC</option>
-                                    <option value="PASSPORT">Pasaporte</option>
-                                </select>
-                            </div>
-
-                            <!-- Ciudad -->
-                            <div class="col-md-6">
-                                <label for="city" class="form-label fw-semibold text-secondary small text-uppercase">
-                                    Ciudad <span class="text-danger">*</span>
-                                </label>
-                                <div class="input-group has-validation">
-                                    <span class="input-group-text bg-light border-end-0"><i
-                                            class="bi bi-geo-alt text-primary"></i></span>
-                                    <input type="text" id="city" name="city" [(ngModel)]="editProfile.city"
-                                        class="form-control bg-light border-start-0"
-                                        [class.is-invalid]="validationErrors['city']" placeholder="Ej: Asunción"
-                                        required>
-                                    <div class="invalid-feedback ps-2">
-                                        {{ validationErrors['city'] }}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Dirección -->
-                            <div class="col-12">
-                                <label for="address" class="form-label fw-semibold text-secondary small text-uppercase">
-                                    Dirección Completa <span class="text-danger">*</span>
-                                </label>
-                                <div class="input-group has-validation">
-                                    <span class="input-group-text bg-light border-end-0"><i
-                                            class="bi bi-house text-primary"></i></span>
-                                    <input type="text" id="address" name="address" [(ngModel)]="editProfile.address"
-                                        class="form-control bg-light border-start-0"
-                                        [class.is-invalid]="validationErrors['address']"
-                                        placeholder="Calle, número, barrio..." required>
-                                    <div class="invalid-feedback ps-2">
-                                        {{ validationErrors['address'] }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mt-5 d-flex gap-3">
-                            <button type="submit" class="btn btn-primary px-4 py-2 fw-bold flex-grow-1"
-                                [disabled]="saving || !profileForm.valid">
-                                <span *ngIf="!saving"><i class="bi bi-save me-2"></i>Guardar Cambios</span>
-                                <span *ngIf="saving"><span
-                                        class="spinner-border spinner-border-sm me-2"></span>Guardando...</span>
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Ayuda/Información Pagopar -->
-            <div class="alert alert-info mt-4 border-0 shadow-sm" role="alert">
-                <div class="d-flex">
-                    <i class="bi bi-info-circle-fill me-3 fs-4 text-primary"></i>
-                    <div>
-                        <h6 class="alert-heading fw-bold">Información de Facturación</h6>
-                        <p class="mb-0 small text-muted">Asegúrate de completar tu RUC y dirección correctamente. Estos
-                            datos son obligatorios para procesar tus pagos de suscripción.</p>
-                    </div>
-                </div>
-            </div>
+        <!-- Page Header -->
+        <div class="page-header">
+          <h1 class="page-title">Mi Perfil</h1>
+          <p class="page-subtitle">Gestiona tu informacion personal y de facturacion</p>
         </div>
+
+        <!-- Loading Skeleton -->
+        <ng-container *ngIf="!profile">
+          <div class="profile-header-card">
+            <div class="skeleton" style="width:88px;height:88px;border-radius:50%"></div>
+            <div style="flex:1">
+              <div class="skeleton" style="width:60%;height:20px;margin-bottom:8px"></div>
+              <div class="skeleton" style="width:40%;height:14px"></div>
+            </div>
+          </div>
+        </ng-container>
+
+        <!-- Profile Header Card -->
+        <div *ngIf="profile" class="profile-header-card">
+          <img *ngIf="profile.picture" [src]="profile.picture" alt="Avatar" class="avatar avatar-img">
+          <div *ngIf="!profile.picture" class="avatar avatar-placeholder">
+            <i class="bi bi-person-fill"></i>
+          </div>
+
+          <div class="profile-info">
+            <h2 class="profile-name">{{ profile.name || 'Sin nombre' }}</h2>
+            <p class="profile-email">{{ profile.email }}</p>
+            <div class="profile-badges">
+              <span class="badge-role" [ngClass]="profile.is_admin ? 'admin' : 'user'">
+                <i class="bi" [ngClass]="profile.is_admin ? 'bi-shield-check' : 'bi-person'"></i>
+                {{ profile.is_admin ? 'Administrador' : 'Usuario' }}
+              </span>
+              <span *ngIf="profile.is_trial" class="badge-role trial">
+                <i class="bi bi-clock"></i>
+                Trial ({{ profile.trial_days_remaining }}d)
+              </span>
+              <span *ngIf="!profile.is_trial" class="badge-role active">
+                <i class="bi bi-check-circle"></i>
+                Activo
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Usage + Stats -->
+        <div *ngIf="profile" class="ai-usage">
+          <div class="ai-usage-header">
+            <span class="ai-label"><i class="bi bi-cpu me-1"></i> Uso de IA este mes</span>
+            <span class="ai-count">{{ profile.ai_invoices_processed }} / {{ profile.ai_invoices_limit }}</span>
+          </div>
+          <div class="ai-bar">
+            <div class="ai-bar-fill"
+              [ngClass]="{
+                'low': getAiPercent() < 60,
+                'medium': getAiPercent() >= 60 && getAiPercent() < 90,
+                'high': getAiPercent() >= 90
+              }"
+              [style.width.%]="getAiPercent()">
+            </div>
+          </div>
+        </div>
+
+        <!-- Form Card -->
+        <div *ngIf="profile" class="form-card">
+
+          <!-- Datos Personales -->
+          <div class="form-section-title">
+            <i class="bi bi-person-lines-fill"></i> Datos Personales
+          </div>
+
+          <form (ngSubmit)="saveProfile()" #profileForm="ngForm">
+            <div class="row g-3">
+
+              <!-- Validation Banner -->
+              <div *ngIf="validationErrors['general']" class="col-12">
+                <div class="alert alert-danger d-flex align-items-center py-2 mb-0">
+                  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                  <span class="small">{{ validationErrors['general'] }}</span>
+                </div>
+              </div>
+
+              <!-- Nombre -->
+              <div class="col-12">
+                <label for="name" class="form-label">
+                  Nombre Completo <span class="text-danger">*</span>
+                </label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text border-end-0"><i class="bi bi-person"></i></span>
+                  <input type="text" id="name" name="name" [(ngModel)]="editProfile.name"
+                    class="form-control border-start-0"
+                    [class.is-invalid]="validationErrors['name']"
+                    placeholder="Tu nombre completo" required>
+                  <div class="invalid-feedback ps-2">{{ validationErrors['name'] }}</div>
+                </div>
+              </div>
+
+              <!-- Telefono + Documento -->
+              <div class="col-md-6">
+                <label for="phone" class="form-label">
+                  Celular / Telefono <span class="text-danger">*</span>
+                </label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text border-end-0"><i class="bi bi-phone"></i></span>
+                  <input type="tel" id="phone" name="phone" [(ngModel)]="editProfile.phone"
+                    class="form-control border-start-0"
+                    [class.is-invalid]="validationErrors['phone']"
+                    placeholder="Ej: 0981123456" required>
+                  <div class="invalid-feedback ps-2">{{ validationErrors['phone'] }}</div>
+                </div>
+                <div class="form-text" *ngIf="!validationErrors['phone']">Necesario para pagos recurrentes.</div>
+              </div>
+
+              <div class="col-md-6">
+                <label for="ruc" class="form-label">
+                  RUC o Cedula <span class="text-danger">*</span>
+                </label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text border-end-0"><i class="bi bi-card-text"></i></span>
+                  <input type="text" id="ruc" name="ruc" [(ngModel)]="editProfile.ruc"
+                    class="form-control border-start-0"
+                    [class.is-invalid]="validationErrors['ruc']"
+                    placeholder="Ej: 1234567-8" required>
+                  <div class="invalid-feedback ps-2">{{ validationErrors['ruc'] }}</div>
+                </div>
+              </div>
+
+              <!-- Tipo Documento + Ciudad -->
+              <div class="col-md-6">
+                <label for="document_type" class="form-label">Tipo de Documento</label>
+                <select id="document_type" name="document_type" [(ngModel)]="editProfile.document_type"
+                  class="form-select">
+                  <option value="CI">Cedula de Identidad</option>
+                  <option value="RUC">RUC</option>
+                  <option value="PASSPORT">Pasaporte</option>
+                </select>
+              </div>
+
+              <div class="col-md-6">
+                <label for="city" class="form-label">
+                  Ciudad <span class="text-danger">*</span>
+                </label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text border-end-0"><i class="bi bi-geo-alt"></i></span>
+                  <input type="text" id="city" name="city" [(ngModel)]="editProfile.city"
+                    class="form-control border-start-0"
+                    [class.is-invalid]="validationErrors['city']"
+                    placeholder="Ej: Asuncion" required>
+                  <div class="invalid-feedback ps-2">{{ validationErrors['city'] }}</div>
+                </div>
+              </div>
+
+              <!-- Direccion -->
+              <div class="col-12">
+                <label for="address" class="form-label">
+                  Direccion Completa <span class="text-danger">*</span>
+                </label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text border-end-0"><i class="bi bi-house"></i></span>
+                  <input type="text" id="address" name="address" [(ngModel)]="editProfile.address"
+                    class="form-control border-start-0"
+                    [class.is-invalid]="validationErrors['address']"
+                    placeholder="Calle, numero, barrio..." required>
+                  <div class="invalid-feedback ps-2">{{ validationErrors['address'] }}</div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Submit -->
+            <div class="mt-4 d-flex justify-content-end">
+              <button type="submit" class="btn btn-save"
+                [disabled]="saving || !profileForm.valid">
+                <span *ngIf="!saving"><i class="bi bi-check2-circle me-2"></i>Guardar Cambios</span>
+                <span *ngIf="saving">
+                  <span class="spinner-border spinner-border-sm me-2"></span>Guardando...
+                </span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Info Banner -->
+        <div class="info-banner">
+          <i class="bi bi-info-circle-fill info-icon"></i>
+          <div>
+            <p class="info-title">Informacion de Facturacion</p>
+            <p class="info-text">
+              Asegurate de completar tu RUC y direccion correctamente.
+              Estos datos son obligatorios para procesar tus pagos de suscripcion mediante Pagopar.
+            </p>
+          </div>
+        </div>
+
+      </div>
     </div>
+  </div>
 </div>

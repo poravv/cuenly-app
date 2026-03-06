@@ -1,3 +1,410 @@
-/* Estilos simples para consistencia con upload PDF */
-.form-text { font-size: 0.9rem; color: #6c757d; }
+@import '../../../styles/variables';
 
+// ==========================================================================
+// UPLOAD XML PAGE — Same design system as upload PDF
+// ==========================================================================
+
+.upload-page {
+    min-height: calc(100vh - 60px);
+    background: $surface;
+    padding: $space-6 $space-4;
+}
+
+.page-header {
+    margin-bottom: $space-6;
+
+    .page-title {
+        font-size: $text-2xl;
+        font-weight: $font-bold;
+        color: $text-primary;
+        margin: 0;
+    }
+
+    .page-subtitle {
+        font-size: $text-sm;
+        color: $text-secondary;
+        margin: $space-1 0 0;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Upload Zone
+// --------------------------------------------------------------------------
+
+.upload-card {
+    margin-bottom: $space-5;
+}
+
+.upload-zone {
+    border: 2px dashed $border;
+    border-radius: $radius-xl;
+    background: $background;
+    padding: $space-12 $space-6;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color $transition-base, background-color $transition-base;
+
+    &:hover,
+    &.active {
+        border-color: $success;
+        background: $success-50;
+    }
+
+    &.disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+}
+
+.upload-zone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: $space-2;
+}
+
+.upload-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: $radius-full;
+    background: $success-100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: $space-2;
+
+    i {
+        font-size: $text-3xl;
+        color: $success;
+    }
+}
+
+.upload-text {
+    font-size: $text-base;
+    font-weight: $font-semibold;
+    color: $text-primary;
+    margin: 0;
+}
+
+.upload-hint {
+    font-size: $text-xs;
+    color: $text-secondary;
+    margin: 0;
+}
+
+// --------------------------------------------------------------------------
+// File List
+// --------------------------------------------------------------------------
+
+.files-card {
+    background: $background;
+    border-radius: $radius-xl;
+    border: 1px solid $border;
+    overflow: hidden;
+    margin-bottom: $space-5;
+}
+
+.files-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: $space-4 $space-5;
+    border-bottom: 1px solid $border;
+
+    .files-title {
+        font-size: $text-sm;
+        font-weight: $font-semibold;
+        color: $text-primary;
+    }
+}
+
+.btn-clear {
+    background: none;
+    border: none;
+    font-size: $text-xs;
+    color: $text-secondary;
+    cursor: pointer;
+    padding: $space-1 $space-2;
+    border-radius: $radius-base;
+    transition: color $transition-base, background-color $transition-base;
+
+    &:hover {
+        color: $danger;
+        background: $danger-50;
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+.files-list {
+    padding: 0;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: $space-3;
+    padding: $space-3 $space-5;
+    border-bottom: 1px solid $border;
+    transition: background-color $transition-base;
+
+    &:last-child {
+        border-bottom: none;
+    }
+
+    &.status-success {
+        background: $success-50;
+    }
+
+    &.status-error {
+        background: $danger-50;
+    }
+
+    &.status-warning {
+        background: $warning-50;
+    }
+
+    &.status-uploading {
+        background: $primary-50;
+    }
+}
+
+.file-icon-wrapper {
+    width: 36px;
+    height: 36px;
+    border-radius: $radius-base;
+    background: $gray-100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    i {
+        font-size: $text-lg;
+        color: $success;
+    }
+
+    .status-error & i {
+        color: $danger;
+    }
+
+    .status-success & i {
+        color: $success-dark;
+    }
+}
+
+.file-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-name {
+    font-size: $text-sm;
+    font-weight: $font-medium;
+    color: $text-primary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-meta {
+    font-size: $text-xs;
+    color: $text-secondary;
+    margin-top: 2px;
+
+    &.uploading {
+        color: $primary;
+    }
+
+    &.success {
+        color: $success-dark;
+    }
+
+    &.error {
+        color: $danger;
+    }
+
+    &.warning {
+        color: $warning-dark;
+    }
+}
+
+.file-actions {
+    display: flex;
+    gap: $space-1;
+    flex-shrink: 0;
+}
+
+.status-badge {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: $success;
+
+    &.error {
+        color: $danger;
+    }
+
+    i {
+        font-size: $text-lg;
+    }
+}
+
+.btn-remove {
+    width: 32px;
+    height: 32px;
+    border-radius: $radius-base;
+    border: none;
+    background: transparent;
+    color: $text-secondary;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color $transition-base, color $transition-base;
+
+    i {
+        font-size: $text-sm;
+    }
+
+    &:hover {
+        background: $danger-50;
+        color: $danger;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Optional Section
+// --------------------------------------------------------------------------
+
+.optional-section {
+    border-top: 1px solid $border;
+}
+
+.optional-header {
+    padding: $space-3 $space-5;
+    font-size: $text-xs;
+    font-weight: $font-semibold;
+    color: $text-secondary;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+
+    &:hover {
+        color: $primary;
+    }
+}
+
+.optional-fields {
+    padding: 0 $space-5 $space-4;
+}
+
+.form-label {
+    font-size: $text-xs;
+    font-weight: $font-semibold;
+    color: $text-secondary;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: $space-1;
+}
+
+.form-control {
+    background: $gray-50;
+    border-color: $border;
+    color: $text-primary;
+    font-size: $text-sm;
+    padding: 0.625rem 0.875rem;
+    border-radius: $radius-base;
+    transition: border-color $transition-base, box-shadow $transition-base;
+
+    &::placeholder {
+        color: $text-disabled;
+    }
+
+    &:focus {
+        background: $background;
+        border-color: $primary;
+        box-shadow: 0 0 0 3px rgba($primary, 0.1);
+    }
+}
+
+// --------------------------------------------------------------------------
+// Footer
+// --------------------------------------------------------------------------
+
+.files-footer {
+    padding: $space-4 $space-5;
+    border-top: 1px solid $border;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-process {
+    background: linear-gradient(135deg, $success 0%, $success-dark 100%);
+    color: #fff;
+    border: none;
+    border-radius: $radius-lg;
+    padding: 0.75rem $space-6;
+    font-weight: $font-semibold;
+    font-size: $text-sm;
+    transition: box-shadow $transition-base, transform $transition-base;
+
+    &:hover:not(:disabled) {
+        box-shadow: 0 4px 12px rgba($success, 0.3);
+        transform: translateY(-1px);
+        color: #fff;
+    }
+
+    &:active:not(:disabled) {
+        transform: scale(0.98);
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Info Banner
+// --------------------------------------------------------------------------
+
+.info-banner {
+    background: rgba($success, 0.05);
+    border: 1px solid rgba($success, 0.15);
+    border-radius: $radius-lg;
+    padding: $space-4;
+    display: flex;
+    gap: $space-3;
+    align-items: flex-start;
+
+    .info-icon {
+        color: $success;
+        font-size: $text-xl;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .info-title {
+        font-size: $text-sm;
+        font-weight: $font-semibold;
+        color: $text-primary;
+        margin: 0 0 $space-1;
+    }
+
+    .info-text {
+        font-size: $text-xs;
+        color: $text-secondary;
+        margin: 0;
+        line-height: $leading-relaxed;
+    }
+}

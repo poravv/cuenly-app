@@ -1,64 +1,413 @@
- .profile-avatar-container {
-     .profile-avatar {
-         width: 80px;
-         height: 80px;
-         border-radius: 50%;
-         object-fit: cover;
-         border: 3px solid #f8f9fa;
-     }
+@import '../../../styles/variables';
 
-     .profile-avatar-placeholder {
-         width: 80px;
-         height: 80px;
-         border-radius: 50%;
-         background-color: #e9ecef;
-         display: flex;
-         align-items: center;
-         justify-content: center;
-         font-size: 2.5rem;
-         color: #adb5bd;
-         border: 3px solid #f8f9fa;
-     }
- }
+// ==========================================================================
+// PROFILE PAGE
+// ==========================================================================
 
- .form-control:focus,
- .form-select:focus {
-     border-color: #0d6efd;
-     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.1);
- }
+.profile-page {
+    min-height: calc(100vh - 60px);
+    background: $surface;
+    padding: $space-6 $space-4;
+}
 
- .input-group-text {
-     color: #6c757d;
- }
+.page-header {
+    margin-bottom: $space-6;
 
- .card {
-     border-radius: 1rem;
-     overflow: hidden;
- }
+    .page-title {
+        font-size: $text-2xl;
+        font-weight: $font-bold;
+        color: $text-primary;
+        margin: 0;
+    }
 
- .btn-primary {
-     border-radius: 0.5rem;
-     transition: all 0.2s ease;
+    .page-subtitle {
+        font-size: $text-sm;
+        color: $text-secondary;
+        margin: $space-1 0 0;
+    }
+}
 
-     &:hover {
-         transform: translateY(-2px);
-         box-shadow: 0 4px 12px rgba(13, 110, 253, 0.2);
-     }
+// --------------------------------------------------------------------------
+// Profile Header Card
+// --------------------------------------------------------------------------
 
-     &:active {
-         transform: translateY(0);
-     }
- }
+.profile-header-card {
+    background: $background;
+    border-radius: $radius-xl;
+    border: 1px solid $border;
+    padding: $space-6;
+    margin-bottom: $space-6;
+    display: flex;
+    align-items: center;
+    gap: $space-5;
 
- .alert {
-     border-radius: 0.75rem;
- }
+    @media (max-width: $breakpoint-sm) {
+        flex-direction: column;
+        text-align: center;
+        padding: $space-5;
+    }
+}
 
- label {
-     letter-spacing: 0.5px;
- }
+.avatar {
+    width: 88px;
+    height: 88px;
+    border-radius: $radius-full;
+    flex-shrink: 0;
+    border: 3px solid $primary-100;
 
- input.bg-light,
- select.bg-light {
-     border-color: #f1f3f5;
- }
+    &.avatar-img {
+        object-fit: cover;
+    }
+
+    &.avatar-placeholder {
+        background: $primary-50;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: $text-3xl;
+        color: $primary;
+    }
+}
+
+.profile-info {
+    flex: 1;
+    min-width: 0;
+
+    .profile-name {
+        font-size: $text-xl;
+        font-weight: $font-bold;
+        color: $text-primary;
+        margin: 0;
+    }
+
+    .profile-email {
+        font-size: $text-sm;
+        color: $text-secondary;
+        margin: $space-1 0 0;
+    }
+
+    .profile-badges {
+        display: flex;
+        gap: $space-2;
+        margin-top: $space-2;
+        flex-wrap: wrap;
+
+        @media (max-width: $breakpoint-sm) {
+            justify-content: center;
+        }
+    }
+}
+
+.badge-role {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-1;
+    padding: $space-1 $space-3;
+    border-radius: $radius-full;
+    font-size: $text-xs;
+    font-weight: $font-semibold;
+
+    &.admin {
+        background: rgba($primary, 0.1);
+        color: $primary;
+    }
+
+    &.user {
+        background: $gray-100;
+        color: $gray-600;
+    }
+
+    &.trial {
+        background: rgba($warning, 0.1);
+        color: $warning-dark;
+    }
+
+    &.active {
+        background: rgba($success, 0.1);
+        color: $success-dark;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Form Card
+// --------------------------------------------------------------------------
+
+.form-card {
+    background: $background;
+    border-radius: $radius-xl;
+    border: 1px solid $border;
+    padding: $space-6;
+
+    @media (max-width: $breakpoint-sm) {
+        padding: $space-4;
+    }
+}
+
+.form-section-title {
+    font-size: $text-base;
+    font-weight: $font-semibold;
+    color: $text-primary;
+    margin-bottom: $space-4;
+    padding-bottom: $space-3;
+    border-bottom: 1px solid $border;
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+
+    i {
+        color: $primary;
+    }
+}
+
+.form-label {
+    font-size: $text-xs;
+    font-weight: $font-semibold;
+    color: $text-secondary;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: $space-1;
+}
+
+.input-group-text {
+    background: $gray-50;
+    border-color: $border;
+    color: $text-secondary;
+
+    i {
+        color: $primary;
+        font-size: $text-sm;
+    }
+}
+
+.form-control,
+.form-select {
+    background: $gray-50;
+    border-color: $border;
+    color: $text-primary;
+    font-size: $text-sm;
+    padding: 0.625rem 0.875rem;
+    transition: border-color $transition-base, box-shadow $transition-base;
+
+    &::placeholder {
+        color: $text-disabled;
+    }
+
+    &:focus {
+        background: $background;
+        border-color: $primary;
+        box-shadow: 0 0 0 3px rgba($primary, 0.1);
+    }
+
+    &.is-invalid {
+        border-color: $danger;
+
+        &:focus {
+            box-shadow: 0 0 0 3px rgba($danger, 0.1);
+        }
+    }
+}
+
+.form-control.border-start-0 {
+    border-left: none;
+
+    &:focus {
+        border-left: none;
+    }
+}
+
+.input-group-text.border-end-0 {
+    border-right: none;
+}
+
+.input-group:focus-within {
+    .input-group-text {
+        border-color: $primary;
+    }
+}
+
+.form-text {
+    font-size: $text-xs;
+    color: $text-secondary;
+}
+
+.invalid-feedback {
+    font-size: $text-xs;
+}
+
+// --------------------------------------------------------------------------
+// Stats Row (readonly info)
+// --------------------------------------------------------------------------
+
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: $space-3;
+    margin-bottom: $space-6;
+}
+
+.stat-card {
+    background: $gray-50;
+    border-radius: $radius-lg;
+    padding: $space-4;
+    text-align: center;
+
+    .stat-label {
+        font-size: $text-xs;
+        font-weight: $font-medium;
+        color: $text-secondary;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .stat-value {
+        font-size: $text-lg;
+        font-weight: $font-bold;
+        color: $text-primary;
+        margin-top: $space-1;
+    }
+
+    .stat-extra {
+        font-size: $text-xs;
+        color: $text-secondary;
+        margin-top: $space-1;
+    }
+}
+
+// --------------------------------------------------------------------------
+// AI Usage Bar
+// --------------------------------------------------------------------------
+
+.ai-usage {
+    margin-bottom: $space-6;
+    background: $gray-50;
+    border-radius: $radius-lg;
+    padding: $space-4;
+}
+
+.ai-usage-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: $space-2;
+
+    .ai-label {
+        font-size: $text-xs;
+        font-weight: $font-semibold;
+        color: $text-secondary;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .ai-count {
+        font-size: $text-sm;
+        font-weight: $font-bold;
+        color: $text-primary;
+    }
+}
+
+.ai-bar {
+    height: 8px;
+    background: $gray-200;
+    border-radius: $radius-full;
+    overflow: hidden;
+}
+
+.ai-bar-fill {
+    height: 100%;
+    border-radius: $radius-full;
+    transition: width $transition-slow;
+
+    &.low {
+        background: $success;
+    }
+
+    &.medium {
+        background: $warning;
+    }
+
+    &.high {
+        background: $danger;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Submit Button
+// --------------------------------------------------------------------------
+
+.btn-save {
+    background: linear-gradient(135deg, $primary 0%, $primary-dark 100%);
+    color: #fff;
+    border: none;
+    border-radius: $radius-lg;
+    padding: 0.75rem $space-6;
+    font-weight: $font-semibold;
+    font-size: $text-sm;
+    transition: box-shadow $transition-base, transform $transition-base;
+
+    &:hover:not(:disabled) {
+        box-shadow: 0 4px 12px rgba($primary, 0.3);
+        transform: translateY(-1px);
+        color: #fff;
+    }
+
+    &:active:not(:disabled) {
+        transform: scale(0.98);
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Info Banner
+// --------------------------------------------------------------------------
+
+.info-banner {
+    background: rgba($info, 0.05);
+    border: 1px solid rgba($info, 0.15);
+    border-radius: $radius-lg;
+    padding: $space-4;
+    margin-top: $space-5;
+    display: flex;
+    gap: $space-3;
+    align-items: flex-start;
+
+    .info-icon {
+        color: $info;
+        font-size: $text-xl;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .info-title {
+        font-size: $text-sm;
+        font-weight: $font-semibold;
+        color: $text-primary;
+        margin: 0 0 $space-1;
+    }
+
+    .info-text {
+        font-size: $text-xs;
+        color: $text-secondary;
+        margin: 0;
+        line-height: $leading-relaxed;
+    }
+}
+
+// --------------------------------------------------------------------------
+// Skeleton Loading
+// --------------------------------------------------------------------------
+
+.skeleton {
+    background: linear-gradient(90deg, $gray-100 25%, $gray-200 50%, $gray-100 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: $radius-base;
+}
+
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}

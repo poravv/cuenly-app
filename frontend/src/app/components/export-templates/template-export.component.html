@@ -176,20 +176,24 @@
             </div>
 
             <div class="row g-3">
-              <!-- Date Range -->
+              <!-- Date Range (required) -->
               <div class="col-md-6">
-                <label for="fechaInicio" class="form-label">Fecha desde</label>
-                <input type="date" 
-                       class="form-control" 
+                <label for="fechaInicio" class="form-label">Fecha desde *</label>
+                <input type="date"
+                       class="form-control"
+                       [class.is-invalid]="!filters.fecha_inicio && filters.fecha_fin"
                        id="fechaInicio"
-                       [(ngModel)]="filters.fecha_inicio">
+                       [(ngModel)]="filters.fecha_inicio"
+                       required>
               </div>
               <div class="col-md-6">
-                <label for="fechaFin" class="form-label">Fecha hasta</label>
-                <input type="date" 
-                       class="form-control" 
+                <label for="fechaFin" class="form-label">Fecha hasta *</label>
+                <input type="date"
+                       class="form-control"
+                       [class.is-invalid]="!filters.fecha_fin && filters.fecha_inicio"
                        id="fechaFin"
-                       [(ngModel)]="filters.fecha_fin">
+                       [(ngModel)]="filters.fecha_fin"
+                       required>
               </div>
 
               <!-- RUC Filters -->

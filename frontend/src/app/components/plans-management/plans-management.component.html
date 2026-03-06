@@ -347,6 +347,25 @@
               class="form-input" min="1" max="10">
             <small class="form-hint">Los archivos más antiguos se purgan automáticamente.</small>
           </div>
+
+          <!-- System Templates -->
+          <div class="system-templates-section" *ngIf="systemTemplates.length > 0">
+            <label class="system-templates-section__label">Plantillas incluidas</label>
+            <p class="form-hint" style="margin-top: 0; margin-bottom: 10px;">Selecciona las plantillas del sistema que se incluirán con este plan</p>
+            <div class="system-templates-grid">
+              <div class="system-template-item" *ngFor="let tmpl of systemTemplates">
+                <label class="checkbox-label">
+                  <input type="checkbox"
+                         [checked]="isTemplateIncluded(planForm.features, tmpl.system_code)"
+                         (change)="toggleSystemTemplate(planForm.features, tmpl.system_code)">
+                  <span class="system-template-info">
+                    <span class="system-template-info__name">{{ tmpl.name }}</span>
+                    <small class="system-template-info__desc" *ngIf="tmpl.description">{{ tmpl.description }}</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="form-row">

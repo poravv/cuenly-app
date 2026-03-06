@@ -115,6 +115,8 @@ class InvoiceData(BaseModel):
     telefono_emisor: Optional[str] = ""
     email_emisor: Optional[str] = ""
 
+    establecimiento: Optional[str] = ""
+    punto_expedicion: Optional[str] = ""
     descripcion_factura: Optional[str] = ""
     detalle_articulos: Optional[str] = ""
     email_origen: Optional[str] = ""

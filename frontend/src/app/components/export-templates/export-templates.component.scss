@@ -12,10 +12,30 @@
     box-shadow: 0 0 0 0.1rem rgba(25, 135, 84, 0.25);
   }
 
+  &.system-template-card {
+    border-left: 3px solid #4F46E5;
+    background-color: rgba(79, 70, 229, 0.02);
+
+    &:hover {
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.12);
+    }
+
+    .card-header {
+      background-color: rgba(79, 70, 229, 0.04);
+    }
+  }
+
   .card-title {
     font-weight: 600;
     color: #333;
   }
+}
+
+.system-badge {
+  background-color: #4F46E5;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .empty-state-icon {

@@ -1,0 +1,67 @@
+{
+  "_descripcion": "Catalogo de codigos DNIT para planillas RG-90 (Marangatu). Solo se deben usar los codigos numericos en el export, nunca texto descriptivo.",
+
+  "tipo_registro": {
+    "1": "Registro de Venta / Ingreso",
+    "2": "Registro de Compra / Egreso"
+  },
+
+  "tipo_identificacion": {
+    "1": "RUC (Paraguay)",
+    "2": "Cedula de Identidad (Paraguay)",
+    "3": "Pasaporte",
+    "4": "Identificacion Tributaria del pais de origen (extranjeros)",
+    "5": "Sin identificacion (ventas menores / Sin Nombre)"
+  },
+
+  "tipo_comprobante": {
+    "1": "Factura",
+    "2": "Nota de Credito",
+    "3": "Nota de Debito",
+    "4": "Autofactura",
+    "11": "Liquidacion de Salarios"
+  },
+
+  "condicion_venta_compra": {
+    "1": "Contado",
+    "2": "Credito"
+  },
+
+  "flags_imputacion": {
+    "S": "Si - imputa a este impuesto",
+    "N": "No - no imputa a este impuesto"
+  },
+
+  "_mapeo_cuenlyapp": {
+    "_nota": "Traducciones de valores SIFEN almacenados en CuenlyApp a codigos DNIT para el export RG-90",
+
+    "condicion_venta": {
+      "CONTADO": "1",
+      "CREDITO": "2"
+    },
+
+    "tipo_documento_electronico_a_tipo_comprobante": {
+      "Factura electrónica": "1",
+      "Factura electronica": "1",
+      "Nota de crédito electrónica": "2",
+      "Nota de credito electronica": "2",
+      "Nota de débito electrónica": "3",
+      "Nota de debito electronica": "3",
+      "Autofactura electrónica": "4",
+      "Autofactura electronica": "4"
+    },
+
+    "tipo_de_codigo_sifen": {
+      "1": "Factura",
+      "2": "Nota de Credito",
+      "3": "Nota de Debito",
+      "4": "Autofactura"
+    },
+
+    "moneda_a_flag_extranjera": {
+      "PYG": "N",
+      "GS": "N",
+      "_default": "S"
+    }
+  }
+}

@@ -20,6 +20,7 @@ interface Plan {
     minio_storage: boolean;
     retention_days: number;
     retention_years?: number; // UI only
+    included_system_templates?: string[];
   };
   status: string;
   is_popular: boolean;
@@ -88,7 +89,8 @@ export class PlansManagementComponent implements OnInit {
       custom_templates: false,
       minio_storage: false,
       retention_days: 365,
-      retention_years: 1
+      retention_years: 1,
+      included_system_templates: [] as string[]
     },
     status: 'active',
     is_popular: false,
@@ -101,6 +103,10 @@ export class PlansManagementComponent implements OnInit {
   loadingUsers: boolean = false;
   selectedUser: string = '';
   selectedPlan: string = '';
+
+  // System templates
+  systemTemplates: any[] = [];
+  loadingSystemTemplates: boolean = false;
 
   // Available features for form
   availableExportFormats = [
@@ -130,6 +136,7 @@ export class PlansManagementComponent implements OnInit {
   ngOnInit(): void {
     this.loadPlans();
     this.loadSubscriptionStats();
+    this.loadSystemTemplates();
   }
 
   setActiveTab(tab: string): void {
@@ -177,6 +184,41 @@ export class PlansManagementComponent implements OnInit {
     }
   }
 
+  async loadSystemTemplates(): Promise<void> {
+    this.loadingSystemTemplates = true;
+    try {
+      const response = await this.apiService.getSystemTemplates().toPromise();
+      if (response && response.success) {
+        this.systemTemplates = response.data || [];
+      } else if (Array.isArray(response)) {
+        this.systemTemplates = response;
+      }
+    } catch (error) {
+      // Fail gracefully — system templates are optional
+      this.systemTemplates = [];
+    } finally {
+      this.loadingSystemTemplates = false;
+    }
+  }
+
+  toggleSystemTemplate(features: any, templateCode: string): void {
+    if (!features) return;
+    if (!features.included_system_templates) {
+      features.included_system_templates = [];
+    }
+    const index = features.included_system_templates.indexOf(templateCode);
+    if (index > -1) {
+      features.included_system_templates.splice(index, 1);
+    } else {
+      features.included_system_templates.push(templateCode);
+    }
+  }
+
+  isTemplateIncluded(features: any, templateCode: string): boolean {
+    if (!features || !features.included_system_templates) return false;
+    return features.included_system_templates.includes(templateCode);
+  }
+
   showCreatePlanForm(): void {
     this.editingPlan = null;
     this.resetPlanForm();
@@ -189,7 +231,8 @@ export class PlansManagementComponent implements OnInit {
       ...plan,
       features: {
         ...plan.features,
-        retention_years: plan.features.retention_days ? Math.max(1, Math.floor(plan.features.retention_days / 365)) : 1
+        retention_years: plan.features.retention_days ? Math.max(1, Math.floor(plan.features.retention_days / 365)) : 1,
+        included_system_templates: plan.features.included_system_templates ? [...plan.features.included_system_templates] : []
       }
     };
     this.showPlanForm = true;
@@ -213,7 +256,8 @@ export class PlansManagementComponent implements OnInit {
         custom_templates: false,
         minio_storage: false,
         retention_days: 365,
-        retention_years: 1
+        retention_years: 1,
+        included_system_templates: []
       },
       status: 'active',
       is_popular: false,
@@ -289,7 +333,8 @@ export class PlansManagementComponent implements OnInit {
       ...plan,
       features: {
         ...plan.features,
-        retention_years: plan.features.retention_days ? Math.max(1, Math.floor(plan.features.retention_days / 365)) : 1
+        retention_years: plan.features.retention_days ? Math.max(1, Math.floor(plan.features.retention_days / 365)) : 1,
+        included_system_templates: plan.features.included_system_templates ? [...plan.features.included_system_templates] : []
       }
     };
     // Modify unique fields to avoid collision/confusion

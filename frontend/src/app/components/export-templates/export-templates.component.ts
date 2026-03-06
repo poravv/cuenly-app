@@ -27,10 +27,15 @@ export class ExportTemplatesComponent implements OnInit {
   loadTemplates(): void {
     this.loading = true;
     this.error = '';
-    
+
     this.exportTemplateService.getTemplates().subscribe({
       next: (response) => {
-        this.templates = response.templates;
+        // Sort: system templates first, then user templates
+        this.templates = (response.templates || []).sort((a, b) => {
+          if (a.is_system && !b.is_system) return -1;
+          if (!a.is_system && b.is_system) return 1;
+          return 0;
+        });
         this.loading = false;
       },
       error: () => {
@@ -38,6 +43,10 @@ export class ExportTemplatesComponent implements OnInit {
         this.loading = false;
       }
     });
+  }
+
+  isSystemTemplate(template: ExportTemplate): boolean {
+    return !!template.is_system;
   }
 
   createTemplate(): void {

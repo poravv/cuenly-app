@@ -614,6 +614,56 @@ textarea.form-input {
 }
 
 // ================================================
+// System Templates (plan feature assignment)
+// ================================================
+
+.system-templates-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed $gray-200;
+
+  &__label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: $gray-700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+}
+
+.system-templates-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.system-template-item {
+  .checkbox-label {
+    align-items: flex-start;
+  }
+}
+
+.system-template-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+
+  &__name {
+    font-weight: 600;
+    color: $gray-800;
+    font-size: 0.85rem;
+  }
+
+  &__desc {
+    color: $gray-500;
+    font-size: 0.78rem;
+    font-weight: 400;
+  }
+}
+
+// ================================================
 // Buttons
 // ================================================
 

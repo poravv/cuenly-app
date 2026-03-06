@@ -33,10 +33,18 @@ class CalculatedFieldType(str, Enum):
     """No hay campos calculados - eliminados todos"""
     pass
 
+class FieldTransform(BaseModel):
+    """Transform to apply when extracting field value for export"""
+    model_config = ConfigDict(populate_by_name=True)
+
+    type: str = Field(..., description="Transform type: constant, ruc_body, sum_fields, map_values, boolean_flag, date_format")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Parameters for the transform")
+
+
 class ExportField(BaseModel):
     """Campo individual del template de exportación"""
     model_config = ConfigDict(populate_by_name=True)
-    
+
     field_key: str = Field(..., description="Campo fuente de la factura")
     display_name: str = Field(..., description="Nombre a mostrar en el Excel")
     field_type: FieldType = Field(..., description="Tipo de dato del campo")
@@ -46,7 +54,8 @@ class ExportField(BaseModel):
     order: int = Field(0, description="Orden del campo en el template")
     is_visible: bool = Field(True, description="Si el campo es visible en la exportación")
     width: Optional[int] = Field(None, description="Ancho personalizado de la columna")
-    
+    transform: Optional[FieldTransform] = Field(None, description="Optional transform to apply to the field value")
+
     # Campos para calculados - ELIMINADOS
     is_calculated: bool = Field(False, description="Siempre False - sin campos calculados")
     calculated_type: Optional[CalculatedFieldType] = Field(None, description="Eliminado")
@@ -60,7 +69,7 @@ class CalculatedFieldDefinition(BaseModel):
 class ExportTemplate(BaseModel):
     """Template de exportación personalizado"""
     model_config = ConfigDict(populate_by_name=True)
-    
+
     id: Optional[str] = Field(None, description="ID único del template")
     name: str = Field(..., description="Nombre del template")
     description: Optional[str] = Field(None, description="Descripción del template")
@@ -68,10 +77,12 @@ class ExportTemplate(BaseModel):
     include_header: bool = Field(True, description="Incluir fila de encabezados")
     include_totals: bool = Field(False, description="Incluir fila de totales")
     fields: List[ExportField] = Field(default_factory=list, description="Campos del template")
-    
+
     # Metadatos
     owner_email: Optional[str] = Field(None, description="Email del propietario")
     is_default: bool = Field(False, description="Si es el template por defecto")
+    is_system: bool = Field(False, description="If true, this is a system-provided template")
+    system_code: Optional[str] = Field(None, description="Unique code for system templates (e.g., 'rg90_compras')")
     created_at: Optional[datetime] = Field(default_factory=datetime.now, description="Fecha de creación")
     updated_at: Optional[datetime] = Field(default_factory=datetime.now, description="Fecha de modificación")
 
@@ -93,8 +104,11 @@ AVAILABLE_FIELDS: Dict[str, Dict[str, Any]] = {
     "tipo_cambio": {"description": "Tipo de cambio", "field_type": FieldType.NUMBER},
     "ind_presencia": {"description": "Indicador de presencia", "field_type": FieldType.TEXT},
     "ind_presencia_codigo": {"description": "Código de indicador de presencia", "field_type": FieldType.TEXT},
+    "establecimiento": {"description": "Código de establecimiento", "field_type": FieldType.TEXT},
+    "punto_expedicion": {"description": "Punto de expedición", "field_type": FieldType.TEXT},
     "qr_url": {"description": "URL de consulta QR SET", "field_type": FieldType.TEXT},
     "info_adicional": {"description": "Información adicional SIFEN", "field_type": FieldType.TEXT},
+    "descripcion_factura": {"description": "Descripción general de la factura", "field_type": FieldType.TEXT},
 
     # === EMISOR ===
     "ruc_emisor": {"description": "RUC del emisor", "field_type": FieldType.TEXT},
@@ -167,6 +181,8 @@ AVAILABLE_FIELD_CATEGORIES: Dict[str, List[str]] = {
         "fecha",
         "cdc",
         "timbrado",
+        "establecimiento",
+        "punto_expedicion",
         "tipo_documento",
         "tipo_documento_electronico",
         "tipo_de_codigo",
@@ -176,6 +192,7 @@ AVAILABLE_FIELD_CATEGORIES: Dict[str, List[str]] = {
         "plazo_credito_dias",
         "moneda",
         "tipo_cambio",
+        "descripcion_factura",
         "ind_presencia",
         "ind_presencia_codigo",
         "qr_url",
@@ -257,7 +274,7 @@ def get_invalid_template_field_keys(fields: List[ExportField]) -> List[str]:
     invalid = {
         field.field_key
         for field in fields
-        if field.field_key not in allowed
+        if field.field_key not in allowed and field.transform is None
     }
     return sorted(invalid)
 

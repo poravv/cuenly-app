@@ -1,95 +1,142 @@
-<div class="container mt-4 px-4 px-lg-5">
-  <div class="row">
-    <div class="col-12 mb-4 text-center">
-      <h1 class="display-5">Carga manual de XML</h1>
-      <p class="lead">Sube uno o varios archivos XML para su procesamiento</p>
-    </div>
-  </div>
+<div class="upload-page">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-lg-8 col-xl-7">
 
-  <div class="row justify-content-center">
-    <div class="col-md-9 col-lg-7">
-      <div class="card shadow-sm">
-        <div class="card-header header-primary">
-          <h5 class="card-title mb-0"><i class="bi bi-upload"></i> Formulario de carga XML</h5>
+        <!-- Page Header -->
+        <div class="page-header">
+          <h1 class="page-title">Carga de XML</h1>
+          <p class="page-subtitle">Sube archivos XML SIFEN para procesamiento nativo sin consumo de IA</p>
         </div>
-        <div class="card-body">
-          <form [formGroup]="uploadForm" (ngSubmit)="onSubmit()">
-            <div class="mb-4">
-              <label for="file" class="form-label">Archivos XML *</label>
-              <div class="input-group">
-                <input type="file" id="file" class="form-control" multiple (change)="onFileSelected($event)"
-                  accept=".xml, text/xml, application/xml" [disabled]="loading">
-                <button class="btn btn-outline-primary" type="button" onclick="document.getElementById('file').click()">
-                  <i class="bi bi-upload"></i> Examinar
-                </button>
+
+        <!-- Drop Zone Card -->
+        <div class="upload-card">
+          <div class="upload-zone"
+            [class.active]="isDragging"
+            [class.disabled]="loading"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onDrop($event)"
+            (click)="fileInput.click()">
+            <input #fileInput type="file" class="d-none" accept=".xml,text/xml,application/xml" multiple
+              (change)="onFileSelected($event)" [disabled]="loading">
+            <div class="upload-zone-content">
+              <div class="upload-icon">
+                <i class="bi bi-file-earmark-code"></i>
               </div>
-              <div class="form-text">Puedes seleccionar múltiples archivos a la vez.</div>
+              <p class="upload-text">Arrastra tus archivos XML aqui o haz clic para seleccionar</p>
+              <p class="upload-hint">Solo archivos XML SIFEN (max 10MB por archivo)</p>
             </div>
+          </div>
+        </div>
 
-            <!-- Lista de archivos -->
-            <div *ngIf="files.length > 0" class="mb-4">
-              <h6 class="mb-3">Archivos seleccionados ({{files.length}})</h6>
-              <div class="list-group">
-                <div *ngFor="let item of files; let i = index; trackBy: trackByFile" class="list-group-item"
-                  [ngClass]="{'list-group-item-warning': item.status === 'ai_limit'}">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div class="text-truncate me-2">
-                      <i class="bi bi-file-code text-primary me-2"></i>
-                      <strong>{{ item.file.name }}</strong>
-                      <small class="text-muted ms-2">({{ (item.file.size / 1024).toFixed(1) }} KB)</small>
-                    </div>
-                    <div>
-                      <span *ngIf="item.status === 'pending'" class="badge bg-secondary">Pendiente</span>
-                      <span *ngIf="item.status === 'uploading'" class="badge bg-primary">Procesando...</span>
-                      <span *ngIf="item.status === 'success'" class="badge bg-success">Completado</span>
-                      <span *ngIf="item.status === 'error'" class="badge bg-danger">Error</span>
-                      <span *ngIf="item.status === 'ai_limit'" class="badge bg-warning text-dark">Pendiente IA</span>
+        <!-- File List -->
+        <div *ngIf="files.length > 0" class="files-card">
+          <div class="files-header">
+            <span class="files-title">
+              <i class="bi bi-file-earmark-code me-2"></i>
+              Archivos XML ({{ files.length }})
+            </span>
+            <button type="button" class="btn-clear" (click)="resetForm()" [disabled]="loading">
+              <i class="bi bi-trash3 me-1"></i> Limpiar
+            </button>
+          </div>
 
-                      <button *ngIf="item.status === 'pending' || item.status === 'error'" type="button"
-                        class="btn btn-sm btn-link text-danger ms-2 p-0" (click)="removeFile(i)" title="Eliminar">
-                        <i class="bi bi-x-circle-fill"></i>
-                      </button>
-                    </div>
-                  </div>
+          <div class="files-list">
+            <div class="file-item" *ngFor="let item of files; let i = index; trackBy: trackByFile"
+              [ngClass]="{
+                'status-error': item.status === 'error',
+                'status-success': item.status === 'success',
+                'status-warning': item.status === 'ai_limit',
+                'status-uploading': item.status === 'uploading'
+              }">
 
-                  <!-- Mensaje de estado -->
-                  <div *ngIf="item.message" class="small"
-                    [ngClass]="{'text-danger': item.status === 'error', 'text-success': item.status === 'success', 'text-primary': item.status === 'uploading'}">
-                    {{ item.message }}
-                  </div>
+              <div class="file-icon-wrapper">
+                <i class="bi bi-file-earmark-code"></i>
+              </div>
+
+              <div class="file-details">
+                <div class="file-name">{{ item.file.name }}</div>
+                <div class="file-meta" *ngIf="item.status === 'pending'">
+                  {{ (item.file.size / 1024) | number:'1.1-1' }} KB — Listo para procesar
+                </div>
+                <div class="file-meta uploading" *ngIf="item.status === 'uploading'">
+                  <span class="spinner-border spinner-border-sm me-1"></span>
+                  {{ item.message }}
+                </div>
+                <div class="file-meta success" *ngIf="item.status === 'success'">
+                  <i class="bi bi-check-circle me-1"></i> {{ item.message }}
+                </div>
+                <div class="file-meta error" *ngIf="item.status === 'error'">
+                  <i class="bi bi-x-circle me-1"></i> {{ item.message }}
+                </div>
+                <div class="file-meta warning" *ngIf="item.status === 'ai_limit'">
+                  <i class="bi bi-exclamation-triangle me-1"></i> {{ item.message }}
                 </div>
               </div>
-            </div>
 
-            <div class="mb-3">
-              <label for="sender" class="form-label">Remitente (opcional para todos)</label>
-              <input id="sender" type="text" class="form-control" formControlName="sender" placeholder="Ej. Juan Perez"
-                [disabled]="loading">
-            </div>
-
-            <div class="mb-4">
-              <label for="date" class="form-label">Fecha (opcional para todos)</label>
-              <input id="date" type="date" class="form-control" formControlName="date" [disabled]="loading">
-            </div>
-
-            <div class="d-grid gap-2">
-              <button class="btn btn-success" type="submit" [disabled]="loading || files.length === 0">
-                <span *ngIf="loading" class="spinner-border spinner-border-sm me-2" role="status"
-                  aria-hidden="true"></span>
-                <span *ngIf="!loading"><i class="bi bi-cloud-upload"></i> Procesar XMLs</span>
-              </button>
-
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-secondary w-50" (click)="resetForm()" [disabled]="loading">
-                  <i class="bi bi-eraser"></i> Limpiar todo
-                </button>
-                <button type="button" class="btn btn-outline-primary w-50" (click)="goToDashboard()">
-                  <i class="bi bi-arrow-left"></i> Dashboard
+              <div class="file-actions">
+                <span class="status-badge" *ngIf="item.status === 'success'">
+                  <i class="bi bi-check-circle-fill"></i>
+                </span>
+                <span class="status-badge error" *ngIf="item.status === 'error'">
+                  <i class="bi bi-x-circle-fill"></i>
+                </span>
+                <button class="btn-remove" type="button" (click)="removeFile(i)"
+                  *ngIf="item.status === 'pending' || item.status === 'error'"
+                  title="Eliminar">
+                  <i class="bi bi-x-lg"></i>
                 </button>
               </div>
             </div>
-          </form>
+          </div>
+
+          <!-- Optional fields -->
+          <div class="optional-section">
+            <div class="optional-header" (click)="showOptions = !showOptions">
+              <i class="bi" [ngClass]="showOptions ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+              Opciones adicionales
+            </div>
+            <div *ngIf="showOptions" class="optional-fields">
+              <form [formGroup]="uploadForm">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label for="sender" class="form-label">Remitente</label>
+                    <input type="text" class="form-control" id="sender" formControlName="sender"
+                      placeholder="Ej. Juan Perez" [disabled]="loading">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="date" class="form-label">Fecha</label>
+                    <input type="date" class="form-control" id="date" formControlName="date" [disabled]="loading">
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <div class="files-footer">
+            <button type="button" class="btn btn-process" (click)="onSubmit()" [disabled]="loading || files.length === 0">
+              <span *ngIf="!loading"><i class="bi bi-lightning me-2"></i>Procesar XMLs</span>
+              <span *ngIf="loading">
+                <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
+              </span>
+            </button>
+          </div>
         </div>
+
+        <!-- Info Banner -->
+        <div class="info-banner">
+          <i class="bi bi-lightning-fill info-icon"></i>
+          <div>
+            <p class="info-title">Procesamiento Nativo</p>
+            <p class="info-text">
+              Los archivos XML SIFEN se procesan nativamente sin consumir tu cuota de IA.
+              Es la forma mas rapida y eficiente de cargar facturas electronicas.
+            </p>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>

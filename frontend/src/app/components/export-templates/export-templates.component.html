@@ -54,19 +54,22 @@
 
     <!-- Templates Cards -->
     <div *ngFor="let template of templates" class="col-lg-4 col-md-6 mb-4">
-      <div class="card h-100 template-card" [class.border-success]="template.is_default">
+      <div class="card h-100 template-card"
+           [class.border-success]="template.is_default && !isSystemTemplate(template)"
+           [class.system-template-card]="isSystemTemplate(template)">
         <div class="card-header d-flex justify-content-between align-items-center">
           <div class="d-flex align-items-center">
-            <i class="bi bi-file-earmark-excel text-success me-2"></i>
+            <i class="bi me-2" [ngClass]="isSystemTemplate(template) ? 'bi-gift text-primary' : 'bi-file-earmark-excel text-success'"></i>
             <h6 class="mb-0 card-title">{{ template.name }}</h6>
           </div>
           <div class="dropdown">
-            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" 
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
                     data-bs-toggle="dropdown" aria-expanded="false">
               <i class="bi bi-three-dots"></i>
             </button>
             <ul class="dropdown-menu">
-              <li>
+              <!-- Editar: solo templates de usuario -->
+              <li *ngIf="!isSystemTemplate(template)">
                 <a class="dropdown-item" href="#" (click)="editTemplate(template); $event.preventDefault()">
                   <i class="bi bi-pencil me-2"></i>Editar
                 </a>
@@ -76,24 +79,35 @@
                   <i class="bi bi-files me-2"></i>Duplicar
                 </a>
               </li>
-              <li *ngIf="!template.is_default">
+              <!-- Marcar como por defecto: solo templates de usuario -->
+              <li *ngIf="!template.is_default && !isSystemTemplate(template)">
                 <a class="dropdown-item" href="#" (click)="setDefaultTemplate(template); $event.preventDefault()">
                   <i class="bi bi-star me-2"></i>Marcar como por defecto
                 </a>
               </li>
-              <li><hr class="dropdown-divider"></li>
-              <li>
-                <a class="dropdown-item text-danger" href="#" (click)="deleteTemplate(template); $event.preventDefault()">
-                  <i class="bi bi-trash me-2"></i>Eliminar
-                </a>
-              </li>
+              <!-- Eliminar: solo templates de usuario -->
+              <ng-container *ngIf="!isSystemTemplate(template)">
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                  <a class="dropdown-item text-danger" href="#" (click)="deleteTemplate(template); $event.preventDefault()">
+                    <i class="bi bi-trash me-2"></i>Eliminar
+                  </a>
+                </li>
+              </ng-container>
             </ul>
           </div>
         </div>
 
         <div class="card-body">
+          <!-- System Template Badge -->
+          <div *ngIf="isSystemTemplate(template)" class="mb-2">
+            <span class="badge system-badge">
+              <i class="bi bi-gift me-1"></i>Incluido en tu plan
+            </span>
+          </div>
+
           <!-- Default Badge -->
-          <div *ngIf="template.is_default" class="mb-2">
+          <div *ngIf="template.is_default && !isSystemTemplate(template)" class="mb-2">
             <span class="badge bg-success">
               <i class="bi bi-star me-1"></i>Por defecto
             </span>
@@ -110,9 +124,13 @@
               <i class="bi bi-list-ul text-primary"></i>
               <span class="ms-1">{{ getFieldCount(template) }} campos</span>
             </div>
-            <div class="stat-item mt-1">
+            <div class="stat-item mt-1" *ngIf="!isSystemTemplate(template)">
               <i class="bi bi-calendar text-muted"></i>
               <span class="ms-1 text-muted small">{{ formatDate(template.created_at) }}</span>
+            </div>
+            <div class="stat-item mt-1" *ngIf="isSystemTemplate(template) && template.system_code">
+              <i class="bi bi-tag text-muted"></i>
+              <span class="ms-1 text-muted small">{{ template.system_code }}</span>
             </div>
           </div>
 
@@ -120,11 +138,11 @@
           <div class="fields-preview mb-3">
             <div class="small text-muted mb-1">Campos incluidos:</div>
             <div class="field-tags">
-              <span *ngFor="let field of template.fields | slice:0:3" 
+              <span *ngFor="let field of template.fields | slice:0:3"
                     class="badge bg-light text-dark me-1 mb-1">
                 {{ field.display_name }}
               </span>
-              <span *ngIf="template.fields.length > 3" 
+              <span *ngIf="template.fields.length > 3"
                     class="badge bg-secondary">
                 +{{ template.fields.length - 3 }} más
               </span>

@@ -1,4 +1,4 @@
-from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues, admin_ai_limits, admin_scheduler, admin_audit
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues, admin_ai_limits, admin_scheduler, admin_audit, admin_export_templates
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -144,6 +144,7 @@ app.include_router(queues.router, prefix="/admin/queues", tags=["Admin Queues"])
 app.include_router(admin_ai_limits.router, prefix="/admin/ai-limits", tags=["Admin AI Limits"])
 app.include_router(admin_scheduler.router, prefix="/admin/scheduler", tags=["Admin Scheduler"])
 app.include_router(admin_audit.router, prefix="/admin/audit", tags=["Admin Audit"])
+app.include_router(admin_export_templates.router, prefix="/admin/export-templates/system", tags=["Admin Export Templates"])
 
 
 # Startup event para inicializar servicios
@@ -751,6 +752,10 @@ async def get_task_status(job_id: str, user: Dict[str, Any] = Depends(_get_curre
             token in lowered_error for token in ("stopped", "cancel")
         ):
             message = "Proceso cancelado por el usuario"
+        elif "abandonedjob" in lowered_error or "abandonedjoberror" in lowered_error:
+            message = "Tarea interrumpida por reinicio del servidor. Puedes reintentar el procesamiento."
+        elif "timeout" in lowered_error or "timedout" in lowered_error:
+            message = "La tarea excedio el tiempo maximo permitido. Puedes reintentar."
         else:
             message = raw_error or "Error en procesamiento"
 
@@ -768,11 +773,14 @@ async def get_task_status(job_id: str, user: Dict[str, Any] = Depends(_get_curre
             if stage in {"starting"}:
                 return "Inicializando procesamiento histórico..."
             if stage in {"fanout_discovery_complete", "fanout_streaming", "fanout_batch", "fanout_streaming_done", "fanout_done"}:
-                return (
-                    "Procesando histórico: "
-                    f"matches={matches}, encolados={queued}, omitidos_existentes={skipped}, "
-                    f"reencolados_error={requeued}"
-                )
+                parts = [f"Se encontraron {matches} correos"]
+                if queued > 0:
+                    parts.append(f"{queued} en cola de procesamiento")
+                if skipped > 0:
+                    parts.append(f"{skipped} ya procesados anteriormente")
+                if requeued > 0:
+                    parts.append(f"{requeued} reintentando por error previo")
+                return "Procesando historico: " + ", ".join(parts) + "."
             if stage == "fanout_no_matches":
                 return "Procesamiento histórico en ejecución: no se encontraron nuevos correos para encolar."
             if stage == "fanout_error":
@@ -3772,13 +3780,30 @@ async def admin_get_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
                 "$group": {
                     "_id": {"$dateToString": {"format": "%Y-%m", "date": "$fecha_emision"}},
                     "count": {"$sum": 1},
-                    "total_amount": {"$sum": "$monto_total"}
+                    "total_amount": {"$sum": "$monto_total"},
+                    "xml_nativo": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$fuente", ""]}, "regex": "XML"}}, 1, 0]}},
+                    "openai_vision": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$fuente", ""]}, "regex": "OPENAI"}}, 1, 0]}},
                 }
             },
             {"$sort": {"_id": 1}}
         ]
-        
+
         monthly_stats = list(headers_coll.aggregate(monthly_pipeline))
+
+        # Source totals (XML nativo vs OpenAI Vision)
+        source_pipeline = [
+            {
+                "$group": {
+                    "_id": None,
+                    "xml_nativo": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$fuente", ""]}, "regex": "XML"}}, 1, 0]}},
+                    "openai_vision": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$fuente", ""]}, "regex": "OPENAI"}}, 1, 0]}},
+                    "total_amount": {"$sum": "$monto_total"},
+                }
+            }
+        ]
+        source_result = list(headers_coll.aggregate(source_pipeline))
+        source_totals = source_result[0] if source_result else {"xml_nativo": 0, "openai_vision": 0, "total_amount": 0}
+        source_totals.pop("_id", None)
         
         # Facturas por usuario (top 10)
         user_pipeline = [
@@ -3819,7 +3844,8 @@ async def admin_get_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
                 "total_items": items_coll.count_documents({}),
                 "monthly_invoices": monthly_stats,
                 "daily_invoices": daily_stats,
-                "user_invoices": user_invoices_stats
+                "user_invoices": user_invoices_stats,
+                "source_totals": source_totals
             }
         }
     except Exception as e:
@@ -4217,10 +4243,8 @@ async def admin_delete_plan(
 # ==========================================
 
 @app.get("/api/plans", tags=["Plans"])
-@app.get("/plans", tags=["Plans"]) # Alias for convenience
-async def list_public_plans(
-    user: Dict[str, Any] = Depends(_get_current_user)
-):
+@app.get("/plans", tags=["Plans"]) # Public alias — no auth required (por diseño)
+async def list_public_plans():
     """
     Lista los planes públicos activos disponibles para suscripción.
     """
@@ -5300,6 +5324,8 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
         invoice.transporte_nro_despacho = doc.get("transporte_nro_despacho", "")
         invoice.qr_url = doc.get("qr_url", "")
         invoice.info_adicional = doc.get("info_adicional", "")
+        invoice.establecimiento = doc.get("establecimiento", "")
+        invoice.punto_expedicion = doc.get("punto_expedicion", "") or doc.get("punto", "")
         invoice.fuente = doc.get("fuente", "")
         invoice.email_origen = doc.get("email_origen", "")
 
@@ -5416,18 +5442,45 @@ def _mongo_doc_to_invoice_data(doc: Dict[str, Any]) -> InvoiceData:
 
 @app.get("/export-templates")
 async def get_export_templates(user: Dict[str, Any] = Depends(_get_current_user)):
-    """Obtener todos los templates de exportación del usuario"""
+    """Obtener todos los templates de exportación del usuario, incluyendo system templates de su plan"""
     try:
         from app.repositories.export_template_repository import ExportTemplateRepository
-        
+        from app.repositories.subscription_repository import SubscriptionRepository
+
+        owner_email = user["email"]
+
+        # Determine which system template codes are included in the user's plan
+        plan_template_codes = []
+        try:
+            sub_repo = SubscriptionRepository()
+            subscription = await sub_repo.get_user_active_subscription(owner_email)
+            if subscription:
+                plan_code = subscription.get("plan_code")
+                if plan_code:
+                    plan = await sub_repo.get_plan_by_code(plan_code)
+                    if plan and plan.get("features"):
+                        features = plan["features"]
+                        plan_template_codes = features.get("included_system_templates", [])
+                        # If plan has custom_templates enabled, include ALL system templates
+                        if features.get("custom_templates") and not plan_template_codes:
+                            plan_template_codes = "__all__"
+        except Exception as e:
+            logger.warning(f"Error obteniendo plan para system templates de {owner_email}: {e}")
+
         repo = ExportTemplateRepository()
-        templates = repo.get_templates_by_user(user["email"])
-        
+        templates = repo.get_templates_for_user(owner_email, plan_template_codes)
+
+        result = []
+        for template in templates:
+            t_dict = template.model_dump()
+            t_dict["is_system"] = template.is_system
+            result.append(t_dict)
+
         return {
-            "templates": [template.model_dump() for template in templates],
-            "count": len(templates)
+            "templates": result,
+            "count": len(result)
         }
-        
+
     except Exception as e:
         logger.error(f"Error obteniendo templates: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -5492,18 +5545,21 @@ async def get_export_template(
     template_id: str,
     user: Dict[str, Any] = Depends(_get_current_user)
 ):
-    """Obtener un template específico"""
+    """Obtener un template específico (user-owned o system template)"""
     try:
         from app.repositories.export_template_repository import ExportTemplateRepository
-        
+
         repo = ExportTemplateRepository()
         template = repo.get_template_by_id(template_id, user["email"])
-        
+
+        # If not found as user template, try system template
         if not template:
-            raise HTTPException(status_code=404, detail="Template no encontrado")
-        
+            template = repo.get_template_by_id_any(template_id)
+            if not template or not template.is_system:
+                raise HTTPException(status_code=404, detail="Template no encontrado")
+
         return template.model_dump()
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -5520,10 +5576,20 @@ async def update_export_template(
     try:
         from app.repositories.export_template_repository import ExportTemplateRepository
         from app.models.export_template import ExportTemplate, get_invalid_template_field_keys
-        
+
+        repo = ExportTemplateRepository()
+
+        # Block modification of system templates
+        existing = repo.get_template_by_id_any(template_id)
+        if existing and existing.is_system:
+            raise HTTPException(
+                status_code=403,
+                detail="No se puede modificar un template del sistema. Puede duplicarlo para crear su propia versión."
+            )
+
         # Agregar owner_email
         template_data["owner_email"] = user["email"]
-        
+
         # Actualizar template
         template = ExportTemplate(**template_data)
         invalid_fields = get_invalid_template_field_keys(template.fields)
@@ -5536,8 +5602,6 @@ async def update_export_template(
                 },
             )
 
-        repo = ExportTemplateRepository()
-        
         if repo.update_template(template_id, template):
             return {
                 "success": True,
@@ -5545,7 +5609,7 @@ async def update_export_template(
             }
         else:
             raise HTTPException(status_code=404, detail="Template no encontrado")
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
@@ -5562,9 +5626,17 @@ async def delete_export_template(
     """Eliminar un template"""
     try:
         from app.repositories.export_template_repository import ExportTemplateRepository
-        
+
         repo = ExportTemplateRepository()
-        
+
+        # Block deletion of system templates
+        existing = repo.get_template_by_id_any(template_id)
+        if existing and existing.is_system:
+            raise HTTPException(
+                status_code=403,
+                detail="No se puede eliminar un template del sistema."
+            )
+
         if repo.delete_template(template_id, user["email"]):
             return {
                 "success": True,
@@ -5572,7 +5644,7 @@ async def delete_export_template(
             }
         else:
             raise HTTPException(status_code=404, detail="Template no encontrado")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -5681,13 +5753,16 @@ async def export_invoices_with_template(
         if not template_id:
             raise HTTPException(status_code=400, detail="template_id requerido")
         
-        # Obtener template
+        # Obtener template (user-owned o system template)
         template_repo = ExportTemplateRepository()
         template = template_repo.get_template_by_id(template_id, user["email"])
-        
+
         if not template:
-            raise HTTPException(status_code=404, detail="Template no encontrado")
-        
+            # Try system template
+            template = template_repo.get_template_by_id_any(template_id)
+            if not template or not template.is_system:
+                raise HTTPException(status_code=404, detail="Template no encontrado")
+
         # Obtener facturas
         invoice_repo = MongoInvoiceRepository()
         invoices_raw = invoice_repo.get_invoices_by_user(user["email"], filters)

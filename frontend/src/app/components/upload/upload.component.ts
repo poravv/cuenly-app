@@ -32,11 +32,13 @@ interface UploadFileItem {
 export class UploadComponent implements OnInit, OnDestroy {
   uploadForm: FormGroup;
   files: UploadFileItem[] = [];
-  isProcessing = false; // Renamed from 'loading'
+  isProcessing = false;
+  isDragging = false;
+  showOptions = false;
 
   // Polling
   private pollInterval: any;
-  private activeJobs: string[] = []; // To track job_ids for PDFs
+  private activeJobs: string[] = [];
 
   constructor(
     private fb: FormBuilder,
@@ -326,7 +328,27 @@ export class UploadComponent implements OnInit, OnDestroy {
     return item.file.name;
   }
 
-  // Limpiar formulario y lista
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = true;
+  }
+
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = false;
+  }
+
+  async onDrop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = false;
+    if (event.dataTransfer?.files) {
+      await this.processFiles(Array.from(event.dataTransfer.files));
+    }
+  }
+
   resetForm(): void {
     this.uploadForm.reset();
     this.files = [];

@@ -89,9 +89,18 @@ export class TemplateEditorComponent implements OnInit {
 
   loadTemplate(): void {
     if (!this.templateId) return;
-    
+
     this.exportTemplateService.getTemplate(this.templateId).subscribe({
       next: (template: ExportTemplate) => {
+        // Defensive: system templates should not be edited directly
+        if (template.is_system) {
+          this.notificationService.error(
+            'Los templates del sistema no se pueden editar. Puede duplicarlo para crear una copia editable.',
+            'Template de sistema'
+          );
+          this.router.navigate(['/templates-export']);
+          return;
+        }
         this.template = { ...template };
         this.loading = false;
       },
@@ -233,8 +242,9 @@ export class TemplateEditorComponent implements OnInit {
       'fecha': 'Fecha',
       'cdc': 'CDC',
       'timbrado': 'Timbrado',
-      'establecimiento': 'Establecimiento',
-      'punto_expedicion': 'Punto de Expedición',
+      'establecimiento': 'Codigo Establecimiento',
+      'punto_expedicion': 'Punto de Expedicion',
+      'descripcion_factura': 'Descripcion de la Factura',
       'tipo_documento': 'Tipo de Documento',
       'condicion_venta': 'Condición de Venta',
       'moneda': 'Moneda',
@@ -293,8 +303,7 @@ export class TemplateEditorComponent implements OnInit {
       'processing_quality': 'Calidad Procesamiento',
       'email_origen': 'Email Origen',
       'mes_proceso': 'Mes Proceso',
-      'created_at': 'Fecha Procesamiento',
-      'descripcion_factura': 'Descripción Factura'
+      'created_at': 'Fecha Procesamiento'
     };
     
     return fieldNames[fieldKey] || fieldKey;
