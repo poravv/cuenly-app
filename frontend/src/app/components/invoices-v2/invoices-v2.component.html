@@ -175,8 +175,15 @@
                         </div>
                         <div class="col-12 col-lg-6">
                           <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
-                            <span class="badge bg-info text-dark" *ngIf="h.cdc">CDC: {{ (h.cdc || '').slice(0,8)
-                              }}…</span>
+                            <span class="badge bg-info text-dark cdc-badge" *ngIf="h.cdc"
+                              [title]="h.cdc" (click)="copyCdc(h.cdc)" role="button">
+                              CDC: {{ (h.cdc || '').slice(0,8) }}…{{ (h.cdc || '').slice(-6) }}
+                              <i class="bi bi-clipboard ms-1"></i>
+                            </span>
+                            <a class="badge bg-success text-white text-decoration-none" *ngIf="h.qr_url"
+                              [href]="h.qr_url" target="_blank" rel="noopener noreferrer" title="Verificar en SIFEN">
+                              <i class="bi bi-patch-check me-1"></i>SIFEN
+                            </a>
                             <span class="badge bg-secondary" *ngIf="h.timbrado">Timbrado: {{ h.timbrado }}</span>
                             <span class="badge bg-light text-dark border" *ngIf="h.tipo_de_codigo">TiDE: {{
                               h.tipo_de_codigo }}</span>

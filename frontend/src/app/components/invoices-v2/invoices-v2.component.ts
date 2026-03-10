@@ -232,6 +232,22 @@ export class InvoicesV2Component implements OnInit {
     });
   }
 
+  copyCdc(cdc: string): void {
+    if (!cdc) return;
+    navigator.clipboard.writeText(cdc).then(() => {
+      this.notificationService.success('CDC copiado al portapapeles');
+    }).catch(() => {
+      // Fallback para navegadores sin clipboard API
+      const textarea = document.createElement('textarea');
+      textarea.value = cdc;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      this.notificationService.success('CDC copiado al portapapeles');
+    });
+  }
+
   updateChips(): void {
     const chips: { key: string; label: string; value: string }[] = [];
     if (this.month) chips.push({ key: 'month', label: 'Mes', value: this.month });
