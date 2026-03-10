@@ -22,8 +22,7 @@ if env_path.exists():
 EXAMPLE_DIR = Path(__file__).parent.parent.parent / "example"
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
-import openai
-openai.api_key = OPENAI_API_KEY
+from openai import OpenAI
 
 from app.modules.openai_processor.image_utils import pdf_to_base64_first_page
 from app.modules.openai_processor.prompts import build_image_prompt_v2
@@ -31,12 +30,14 @@ from app.modules.openai_processor.json_utils import extract_and_normalize_json
 from app.modules.openai_processor.processor import _convert_v2_to_v1_dict, _coerce_invoice_model
 from app.modules.mapping.invoice_mapping import map_invoice
 
+client = OpenAI(api_key=OPENAI_API_KEY, timeout=60)
+
 
 def extract_and_inspect(doc_path: str):
     base64_img = pdf_to_base64_first_page(doc_path)
     prompt = build_image_prompt_v2()
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{
             "role": "user",
@@ -46,10 +47,10 @@ def extract_and_inspect(doc_path: str):
             ]
         }],
         temperature=0.1,
-        max_tokens=2000,
-        timeout=60,
+        max_tokens=4000,
+        response_format={"type": "json_object"},
     )
-    raw_text = response["choices"][0]["message"]["content"]
+    raw_text = response.choices[0].message.content or ""
     data = extract_and_normalize_json(raw_text)
 
     # Mostrar JSON crudo de OpenAI

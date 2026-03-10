@@ -44,11 +44,11 @@ logger = logging.getLogger(__name__)
 # ─── Helpers ───
 
 def _call_openai_vision(image_base64: str, prompt: str) -> dict:
-    """Llama a OpenAI Vision API (legacy SDK 0.28.x) y retorna el JSON parseado."""
-    import openai
-    openai.api_key = OPENAI_API_KEY
+    """Llama a OpenAI Vision API (SDK >=1.x) con response_format JSON."""
+    from openai import OpenAI
 
-    response = openai.ChatCompletion.create(
+    client = OpenAI(api_key=OPENAI_API_KEY, timeout=60)
+    response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{
             "role": "user",
@@ -58,12 +58,11 @@ def _call_openai_vision(image_base64: str, prompt: str) -> dict:
             ]
         }],
         temperature=0.1,
-        max_tokens=2000,
-        timeout=60,
+        max_tokens=4000,
+        response_format={"type": "json_object"},
     )
-    raw = response["choices"][0]["message"]["content"]
+    raw = response.choices[0].message.content or ""
 
-    # Parsear JSON de la respuesta
     from app.modules.openai_processor.json_utils import extract_and_normalize_json
     return extract_and_normalize_json(raw)
 
