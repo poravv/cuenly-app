@@ -450,7 +450,7 @@ def _convert_v2_to_v1_dict(v2: Dict[str, Any]) -> Dict[str, Any]:
         "monto_total": float(t.get("total", 0) or 0),
         # CRÍTICO: Campos faltantes para template export
         "total_operacion": float(t.get("total_operacion", 0) or t.get("total", 0) or 0),  # Campo faltante
-        "total_iva": float(t.get("total_iva", 0) or 0),
+        "total_iva": float(t.get("total_iva") or (float(t.get("iva_5", 0) or 0) + float(t.get("iva_10", 0) or 0))),
         "exonerado": float(t.get("exonerado", 0) or 0),
         "total_descuento": float(t.get("total_descuento", 0) or 0),
         "anticipo": float(t.get("anticipo", 0) or 0),

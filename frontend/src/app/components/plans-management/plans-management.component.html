@@ -190,7 +190,7 @@
         <label for="userSelect">Usuario</label>
         <select id="userSelect" [(ngModel)]="selectedUser" class="form-select">
           <option value="">Seleccionar usuario...</option>
-          <option *ngFor="let user of users" [value]="user.email">
+          <option *ngFor="let user of users; trackBy: trackByEmail" [value]="user.email">
             {{user.name || user.email}} ({{user.email}})
           </option>
         </select>
@@ -200,7 +200,7 @@
         <label for="planSelect">Plan</label>
         <select id="planSelect" [(ngModel)]="selectedPlan" class="form-select">
           <option value="">Seleccionar plan...</option>
-          <option *ngFor="let plan of plans" [value]="plan.code" [disabled]="plan.status !== 'active'">
+          <option *ngFor="let plan of plans; trackBy: trackByPlanCode" [value]="plan.code" [disabled]="plan.status !== 'active'">
             {{plan.name}} - {{formatCurrency(plan.price, plan.currency)}}
             ({{getBillingPeriodLabel(plan.billing_period)}})
           </option>
@@ -257,7 +257,7 @@
           <div class="form-group">
             <label>Moneda</label>
             <select [(ngModel)]="planForm.currency" name="currency" class="form-select">
-              <option *ngFor="let currency of currencies" [value]="currency.value">
+              <option *ngFor="let currency of currencies; trackBy: trackByValue" [value]="currency.value">
                 {{currency.label}}
               </option>
             </select>
@@ -265,7 +265,7 @@
           <div class="form-group">
             <label>Período</label>
             <select [(ngModel)]="planForm.billing_period" name="billing_period" class="form-select">
-              <option *ngFor="let period of billingPeriods" [value]="period.value">
+              <option *ngFor="let period of billingPeriods; trackBy: trackByValue" [value]="period.value">
                 {{period.label}}
               </option>
             </select>

@@ -7,6 +7,8 @@ from app.config.settings import settings
 logger = logging.getLogger(__name__)
 
 class TransactionRepository:
+    _indexes_ensured: bool = False
+
     def __init__(self, conn_str: Optional[str] = None, db_name: Optional[str] = None):
         self.conn_str = conn_str or settings.MONGODB_URL
         self.db_name = db_name or settings.MONGODB_DATABASE
@@ -19,7 +21,23 @@ class TransactionRepository:
 
     @property
     def transactions_collection(self):
-        return self._get_db().transactions
+        db = self._get_db()
+        if not TransactionRepository._indexes_ensured:
+            self._create_indexes(db)
+        return db.transactions
+
+    @classmethod
+    def _create_indexes(cls, db: Any) -> None:
+        try:
+            col = db.transactions
+            col.create_index("user_email")
+            col.create_index("created_at")
+            col.create_index([("user_email", 1), ("created_at", -1)])
+            col.create_index("status")
+            cls._indexes_ensured = True
+            logger.info("TransactionRepository indexes ensured")
+        except Exception as e:
+            logger.warning(f"Could not create transaction indexes: {e}")
 
     async def log_transaction(self, 
                             user_email: str, 

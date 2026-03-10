@@ -189,9 +189,18 @@ export class QueueEventsComponent implements OnInit, OnDestroy {
     this.loadEvents();
   }
 
+  /** Array de números de página para la paginación (evita [].constructor() anti-pattern) */
+  get pagesArray(): number[] {
+    return Array.from({ length: this.totalPages }, (_, i) => i + 1);
+  }
+
   /** trackBy para evitar que Angular destruya y reconstruya filas existentes */
   trackByEventId(_: number, event: any): string {
     return event._id || String(_);
+  }
+
+  trackByIndex(index: number): number {
+    return index;
   }
 
   getStatusBadgeClass(status: string, event?: any): string {

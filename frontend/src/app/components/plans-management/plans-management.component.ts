@@ -456,4 +456,12 @@ export class PlansManagementComponent implements OnInit {
   trackByPlanCode(index: number, plan: any): string {
     return plan?.code || index;
   }
+
+  trackByEmail(index: number, user: any): string {
+    return user?.email || index;
+  }
+
+  trackByValue(index: number, item: any): string {
+    return item?.value ?? index;
+  }
 }

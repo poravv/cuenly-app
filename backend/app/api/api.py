@@ -15,7 +15,6 @@ from datetime import datetime
 
 # Importar validadores de seguridad
 from app.utils.validators import SecurityValidators, DataValidators, ValidationError, log_security_event
-from fastapi.responses import FileResponse
 from fastapi import Response
 from pydantic import BaseModel
 
@@ -32,7 +31,6 @@ from app.modules.scheduler.task_queue import task_queue
 from app.modules.email_processor.storage import save_binary, cleanup_local_file_if_safe
 from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
-from app.repositories.user_repository import UserRepository
 from app.modules.mapping.invoice_mapping import map_invoice
 from app.modules.mongo_query_service import get_mongo_query_service
 from app.modules.email_processor.config_store import (

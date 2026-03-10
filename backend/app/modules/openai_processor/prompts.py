@@ -73,6 +73,7 @@ def v2_header_detail_schema() -> Dict[str, Any]:
                 "iva_5": 0,
                 "gravado_10": 0,
                 "iva_10": 0,
+                "total_iva": 0,
                 "total": 0
             }
         },
@@ -98,6 +99,7 @@ Analiza la imagen de una factura paraguaya y devuelve **solo** un JSON válido c
 
 Reglas:
 - `gravado_5` y `gravado_10` son montos base imponible (sin IVA).
+- `total_iva` = `iva_5` + `iva_10` (suma total de IVA).
 - Si solo tienes IVA: `gravado_10 = iva_10 * 10`, `gravado_5 = iva_5 * 20`.
 - Moneda: "GS" para Guaraníes, "USD" para Dólares. No conviertas.
 - condicion_venta: CONTADO o CREDITO. tipo_documento: CO (CONTADO) o CR (CREDITO).

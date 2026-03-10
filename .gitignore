@@ -52,6 +52,9 @@ data/temp/
 .coverage
 htmlcov/
 
+# Angular build cache
+frontend/.angular/
+
 # Distribution / packaging
 .Python
 .installed.cfg
