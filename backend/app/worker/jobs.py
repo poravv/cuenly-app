@@ -395,6 +395,344 @@ def process_single_email_from_uid_job(
         return {"success": False, "message": str(e)}
 
 
+def process_manual_pdf_job(
+    owner_email: str,
+    pdf_path: str,
+    minio_key: str,
+    sender: str = "Carga manual",
+    date_str: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Job RQ para procesar un PDF subido manualmente.
+    Se ejecuta en el worker distribuido (Redis), no en memoria del backend.
+    """
+    logger.info(f"📄 Procesando PDF manual para {owner_email}: {pdf_path}")
+    _set_current_job_progress("starting", owner_email=owner_email)
+
+    try:
+        from app.repositories.user_repository import UserRepository
+        from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+        from app.modules.mapping.invoice_mapping import map_invoice
+        from app.modules.email_processor.storage import cleanup_local_file_if_safe, ensure_local_file
+        from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
+        from app.main import CuenlyApp
+
+        # Garantizar archivo local (descarga de MinIO si corre en otro pod)
+        pdf_path = ensure_local_file(pdf_path, minio_key)
+        if not pdf_path:
+            return {"success": False, "message": "No se pudo acceder al archivo PDF", "invoice_count": 0}
+
+        date_obj = None
+        if date_str:
+            try:
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            except Exception:
+                pass
+
+        email_meta = {"sender": sender}
+        if date_obj:
+            email_meta["date"] = date_obj
+
+        # Verificar disponibilidad de IA
+        ai_block = _check_ai_block(owner_email)
+        if ai_block:
+            _store_pending_ai(owner_email, sender, date_obj, minio_key, "OPENAI_VISION", ai_block)
+            cleanup_local_file_if_safe(pdf_path, minio_key)
+            return {"success": True, "message": "PDF registrado como PENDING_AI", "reason_code": _ai_reason_code(ai_block), "invoice_count": 0}
+
+        try:
+            invoice_sync = CuenlyApp()
+            inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner_email)
+        except (OpenAIFatalError, OpenAIRetryableError) as e:
+            _store_pending_ai(owner_email, sender, date_obj, minio_key, "OPENAI_VISION", f"IA_NO_DISPONIBLE: {e}")
+            cleanup_local_file_if_safe(pdf_path, minio_key)
+            return {"success": True, "message": "PDF registrado como PENDING_AI por indisponibilidad de IA", "reason_code": "ai_unavailable", "invoice_count": 0}
+
+        if not inv:
+            cleanup_local_file_if_safe(pdf_path, minio_key)
+            return {"success": False, "message": "No se pudo extraer información del PDF", "reason_code": "extraction_failed", "invoice_count": 0}
+
+        if minio_key:
+            inv.minio_key = minio_key
+        try:
+            repo = MongoInvoiceRepository()
+            doc = map_invoice(inv, fuente="OPENAI_VISION", minio_key=minio_key or "")
+            if owner_email:
+                doc.header.owner_email = owner_email
+                for it in doc.items:
+                    it.owner_email = owner_email
+            repo.save_document(doc)
+        except Exception as e:
+            logger.error(f"❌ Error persistiendo PDF manual: {e}")
+
+        cleanup_local_file_if_safe(pdf_path, minio_key)
+        _set_current_job_progress("done", owner_email=owner_email)
+        return {"success": True, "message": "PDF procesado correctamente", "invoice_count": 1}
+
+    except Exception as e:
+        logger.error(f"❌ Error en job PDF manual: {e}", exc_info=True)
+        try:
+            from app.modules.email_processor.storage import cleanup_local_file_if_safe
+            cleanup_local_file_if_safe(pdf_path, minio_key)
+        except Exception:
+            pass
+        return {"success": False, "message": str(e), "invoice_count": 0}
+
+
+def process_manual_image_job(
+    owner_email: str,
+    img_path: str,
+    minio_key: str,
+    sender: str = "Carga manual (Imagen)",
+    date_str: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Job RQ para procesar una imagen subida manualmente.
+    """
+    logger.info(f"🖼️ Procesando imagen manual para {owner_email}: {img_path}")
+    _set_current_job_progress("starting", owner_email=owner_email)
+
+    try:
+        from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+        from app.modules.mapping.invoice_mapping import map_invoice
+        from app.modules.email_processor.storage import cleanup_local_file_if_safe, ensure_local_file
+        from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
+        from app.main import CuenlyApp
+
+        # Garantizar archivo local (descarga de MinIO si corre en otro pod)
+        img_path = ensure_local_file(img_path, minio_key)
+        if not img_path:
+            return {"success": False, "message": "No se pudo acceder a la imagen", "invoice_count": 0}
+
+        date_obj = None
+        if date_str:
+            try:
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            except Exception:
+                pass
+
+        email_meta = {"sender": sender}
+        if date_obj:
+            email_meta["date"] = date_obj
+
+        ai_block = _check_ai_block(owner_email)
+        if ai_block:
+            _store_pending_ai(owner_email, sender, date_obj, minio_key, "OPENAI_VISION_IMAGE", ai_block)
+            cleanup_local_file_if_safe(img_path, minio_key)
+            return {"success": True, "message": "Imagen registrada como PENDING_AI", "reason_code": _ai_reason_code(ai_block), "invoice_count": 0}
+
+        try:
+            invoice_sync = CuenlyApp()
+            inv = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner_email)
+        except (OpenAIFatalError, OpenAIRetryableError) as e:
+            _store_pending_ai(owner_email, sender, date_obj, minio_key, "OPENAI_VISION_IMAGE", f"IA_NO_DISPONIBLE: {e}")
+            cleanup_local_file_if_safe(img_path, minio_key)
+            return {"success": True, "message": "Imagen registrada como PENDING_AI", "reason_code": "ai_unavailable", "invoice_count": 0}
+
+        if not inv:
+            cleanup_local_file_if_safe(img_path, minio_key)
+            return {"success": False, "message": "No se pudo extraer factura de la imagen", "reason_code": "extraction_failed", "invoice_count": 0}
+
+        if minio_key:
+            inv.minio_key = minio_key
+        try:
+            repo = MongoInvoiceRepository()
+            doc = map_invoice(inv, fuente="OPENAI_VISION_IMAGE", minio_key=minio_key or "")
+            if owner_email:
+                doc.header.owner_email = owner_email
+                for it in doc.items:
+                    it.owner_email = owner_email
+            repo.save_document(doc)
+        except Exception as e:
+            logger.error(f"❌ Error persistiendo imagen manual: {e}")
+
+        cleanup_local_file_if_safe(img_path, minio_key)
+        _set_current_job_progress("done", owner_email=owner_email)
+        return {"success": True, "message": "Imagen procesada y almacenada", "invoice_count": 1}
+
+    except Exception as e:
+        logger.error(f"❌ Error en job imagen manual: {e}", exc_info=True)
+        try:
+            from app.modules.email_processor.storage import cleanup_local_file_if_safe
+            cleanup_local_file_if_safe(img_path, minio_key)
+        except Exception:
+            pass
+        return {"success": False, "message": str(e), "invoice_count": 0}
+
+
+def process_manual_xml_job(
+    owner_email: str,
+    xml_path: str,
+    minio_key: str,
+    sender: str = "Carga manual",
+    date_str: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Job RQ para procesar un XML subido manualmente.
+    """
+    logger.info(f"📋 Procesando XML manual para {owner_email}: {xml_path}")
+    _set_current_job_progress("starting", owner_email=owner_email)
+
+    try:
+        from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+        from app.modules.mapping.invoice_mapping import map_invoice
+        from app.modules.email_processor.storage import cleanup_local_file_if_safe, ensure_local_file
+        from app.main import CuenlyApp
+
+        # Garantizar archivo local (descarga de MinIO si corre en otro pod)
+        xml_path = ensure_local_file(xml_path, minio_key)
+        if not xml_path:
+            return {"success": False, "message": "No se pudo acceder al archivo XML", "invoice_count": 0}
+
+        date_obj = None
+        if date_str:
+            try:
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            except Exception:
+                pass
+
+        email_meta = {"sender": sender}
+        if date_obj:
+            email_meta["date"] = date_obj
+
+        try:
+            invoice_sync = CuenlyApp()
+            inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner_email)
+        except Exception as e:
+            logger.error(f"❌ Error extrayendo XML: {e}")
+            inv = None
+
+        if inv:
+            if minio_key:
+                inv.minio_key = minio_key
+            try:
+                repo = MongoInvoiceRepository()
+                doc = map_invoice(
+                    inv,
+                    fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION",
+                    minio_key=minio_key or "",
+                )
+                if owner_email:
+                    doc.header.owner_email = owner_email
+                    for it in doc.items:
+                        it.owner_email = owner_email
+                repo.save_document(doc)
+            except Exception as e:
+                logger.error(f"❌ Error persistiendo XML manual: {e}")
+            cleanup_local_file_if_safe(xml_path, minio_key)
+            _set_current_job_progress("done", owner_email=owner_email)
+            return {"success": True, "message": "Factura XML procesada y almacenada", "invoice_count": 1}
+
+        # XML no extrajo datos → verificar si puede hacer fallback IA
+        ai_block = _check_ai_block(owner_email)
+        if ai_block:
+            _store_pending_ai(owner_email, sender, date_obj, minio_key, "XML_UPLOAD", f"{ai_block} | XML requiere fallback de IA")
+            cleanup_local_file_if_safe(xml_path, minio_key)
+            return {"success": True, "message": "XML registrado como PENDING_AI", "reason_code": _ai_reason_code(ai_block), "invoice_count": 0}
+
+        cleanup_local_file_if_safe(xml_path, minio_key)
+        return {"success": False, "message": "No se pudo extraer información desde el XML", "reason_code": "extraction_failed", "invoice_count": 0}
+
+    except Exception as e:
+        logger.error(f"❌ Error en job XML manual: {e}", exc_info=True)
+        try:
+            from app.modules.email_processor.storage import cleanup_local_file_if_safe
+            cleanup_local_file_if_safe(xml_path, minio_key)
+        except Exception:
+            pass
+        return {"success": False, "message": str(e), "invoice_count": 0}
+
+
+# ── Helpers compartidos para jobs manuales ──────────────────────────────
+
+def _check_ai_block(owner_email: str) -> Optional[str]:
+    """Retorna razón de bloqueo IA o None si puede usar IA."""
+    try:
+        from app.repositories.user_repository import UserRepository
+        ai_check = UserRepository().can_use_ai(owner_email)
+        if ai_check.get("can_use", False):
+            return None
+        reason = str(ai_check.get("reason", "")).strip().lower()
+        message = str(ai_check.get("message", "No disponible")).strip()
+        if reason == "ai_limit_reached":
+            return f"LIMITE_IA: {message}"
+        return f"IA_NO_DISPONIBLE: {message}"
+    except Exception as e:
+        logger.warning(f"⚠️ Error verificando IA para {owner_email}: {e}")
+        return "IA_NO_DISPONIBLE: No fue posible validar disponibilidad de IA"
+
+
+def _ai_reason_code(ai_block_reason: Optional[str]) -> Optional[str]:
+    if not ai_block_reason:
+        return None
+    return "ai_limit_reached" if ai_block_reason.startswith("LIMITE_IA:") else "ai_unavailable"
+
+
+def _store_pending_ai(
+    owner_email: str,
+    sender: str,
+    date_obj: Optional[datetime],
+    minio_key: str,
+    fuente: str,
+    reason: str,
+) -> None:
+    """Registra upload manual bloqueado por IA en processed_emails + invoice_headers."""
+    import uuid as _uuid
+    try:
+        from app.modules.email_processor.processed_registry import _repo, build_key as build_processed_key
+        from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+        from app.modules.mapping.invoice_mapping import map_invoice
+        from app.models.models import InvoiceData
+
+        # 1) processed_emails (visibilidad UI)
+        try:
+            event_uid = f"manual_ai_pending_{_uuid.uuid4().hex}"
+            event_key = build_processed_key(event_uid, "manual_upload", owner_email)
+            base_reason = (reason or "Pendiente por IA").strip()
+            event_reason = f"{base_reason} | Manual: sin reproceso automático"[:500]
+            _repo.mark_processed(
+                key=event_key, status="pending", reason=event_reason,
+                owner_email=owner_email, account_email="manual_upload",
+                message_id=f"manual_pending_ai:{event_uid}",
+                subject=f"Carga manual pendiente de IA ({fuente})",
+                sender=(sender or "Carga manual")[:200],
+                email_date=date_obj or datetime.utcnow(),
+            )
+            _repo._get_collection().update_one(
+                {"_id": event_key},
+                {"$set": {"manual_upload": True, "fuente": fuente, "minio_key": minio_key or "", "retry_supported": False}},
+                upsert=False,
+            )
+        except Exception as qerr:
+            logger.error(f"❌ Error registrando pending manual en processed_emails: {qerr}")
+
+        # 2) invoice_headers (PENDING_AI)
+        pending_msg_id = f"manual_pending_ai:{_uuid.uuid4().hex}"
+        inv = InvoiceData(
+            numero_factura=f"PENDING_AI_{_uuid.uuid4().hex[:10]}",
+            ruc_emisor="UNKNOWN",
+            nombre_emisor=(sender or "Carga manual")[:100],
+            fecha=date_obj or datetime.utcnow(),
+            email_origen=owner_email,
+            message_id=pending_msg_id,
+            status="PENDING_AI",
+            processing_error=(reason or "Pendiente por IA")[:500],
+            fuente=fuente,
+            minio_key=minio_key or "",
+        )
+        doc = map_invoice(inv, fuente=fuente, minio_key=minio_key or "")
+        if owner_email:
+            doc.header.owner_email = owner_email
+            for it in doc.items:
+                it.owner_email = owner_email
+        doc.header.status = "PENDING_AI"
+        doc.header.processing_error = (reason or "Pendiente por IA")[:500]
+        MongoInvoiceRepository().save_document(doc)
+        logger.info("🕒 Upload manual PENDING_AI (owner=%s, fuente=%s)", owner_email, fuente)
+    except Exception as e:
+        logger.error(f"❌ Error guardando PENDING_AI manual: {e}")
+
+
 def cleanup_old_processed_emails_job(days: int = 30) -> Dict[str, Any]:
     """
     Job de limpieza de registros de correos procesados antiguos.

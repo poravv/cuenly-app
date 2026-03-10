@@ -791,6 +791,12 @@ async def get_task_status(job_id: str, user: Dict[str, Any] = Depends(_get_curre
         action = "process_emails_range"
     elif "process_single_email_from_uid_job" in func_name:
         action = "process_single_email"
+    elif "process_manual_pdf_job" in func_name:
+        action = "process_pdf_manual"
+    elif "process_manual_image_job" in func_name:
+        action = "process_image_manual"
+    elif "process_manual_xml_job" in func_name:
+        action = "upload_xml"
     elif "process_emails_job" in func_name:
         action = "process_emails"
 
@@ -1470,7 +1476,7 @@ async def enqueue_upload_pdf(
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
     , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
-    """Encola el procesamiento de un PDF manual y retorna job_id."""
+    """Encola el procesamiento de un PDF manual vía RQ (distribuido) y retorna job_id."""
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
 
@@ -1478,132 +1484,38 @@ async def enqueue_upload_pdf(
     pdf_minio_key = ""
     try:
         file_bytes = await file.read()
-        # Parsear fecha
         date_obj = None
         if date:
             try:
                 date_obj = datetime.strptime(date, "%Y-%m-%d")
             except Exception:
                 pass
-                
-        # Usar save_binary modernizado
+
         owner_email = (user.get('email') or '').lower()
         pdf_storage = save_binary(
-            file_bytes, 
-            file.filename, 
+            file_bytes,
+            file.filename,
             force_pdf=True,
             owner_email=owner_email,
             date_obj=date_obj
         )
         pdf_path = pdf_storage.local_path
         pdf_minio_key = pdf_storage.minio_key
-        
-        email_meta = {"sender": sender or "Carga manual"}
-        if date_obj:
-            email_meta["date"] = date_obj
 
-        # Si no hay cupo/disponibilidad IA, resolver inmediatamente sin pasar por la cola local
-        # para evitar bloqueo detrás de jobs largos de rango.
-        owner = (user.get('email') or '').lower()
-        ai_block_reason = _get_ai_block_reason(owner)
-        if ai_block_reason:
-            _store_manual_pending_ai(
-                owner_email=owner,
-                sender=email_meta.get("sender", "Carga manual"),
-                date_obj=email_meta.get("date"),
-                minio_key=pdf_minio_key,
-                fuente="OPENAI_VISION",
-                reason=ai_block_reason,
-            )
-            immediate_result = ProcessResult(
-                success=True,
-                message="PDF registrado como PENDING_AI por límite/disponibilidad de IA",
-                invoice_count=0,
-                reason_code=_get_ai_reason_code(ai_block_reason),
-                invoices=[],
-            )
-            cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
-            return {"job_id": _create_completed_task("process_pdf_manual", immediate_result)}
+        from app.worker.jobs import process_manual_pdf_job
+        from app.worker.queues import enqueue_job
 
-        def _runner():
-            try:
-                owner = (user.get('email') or '').lower()
-                ai_block_reason = _get_ai_block_reason(owner)
-                if ai_block_reason:
-                    _store_manual_pending_ai(
-                        owner_email=owner,
-                        sender=email_meta.get("sender", "Carga manual"),
-                        date_obj=email_meta.get("date"),
-                        minio_key=pdf_minio_key,
-                        fuente="OPENAI_VISION",
-                        reason=ai_block_reason,
-                    )
-                    return ProcessResult(
-                        success=True,
-                        message="PDF registrado como PENDING_AI por límite/disponibilidad de IA",
-                        invoice_count=0,
-                        reason_code=_get_ai_reason_code(ai_block_reason),
-                        invoices=[],
-                    )
-
-                try:
-                    inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner)
-                except (OpenAIFatalError, OpenAIRetryableError) as e:
-                    _store_manual_pending_ai(
-                        owner_email=owner,
-                        sender=email_meta.get("sender", "Carga manual"),
-                        date_obj=email_meta.get("date"),
-                        minio_key=pdf_minio_key,
-                        fuente="OPENAI_VISION",
-                        reason=f"IA_NO_DISPONIBLE: {str(e)}",
-                    )
-                    return ProcessResult(
-                        success=True,
-                        message="PDF registrado como PENDING_AI por indisponibilidad temporal de IA",
-                        invoice_count=0,
-                        reason_code="ai_unavailable",
-                        invoices=[],
-                    )
-
-                invoices = [inv] if inv else []
-                if invoices:
-                    # Asignar minio_key
-                    if pdf_minio_key and inv:
-                        inv.minio_key = pdf_minio_key
-                        
-                    try:
-                        repo = MongoInvoiceRepository()
-                        owner = (user.get('email') or '').lower()
-                        doc = map_invoice(
-                            inv,
-                            fuente="OPENAI_VISION",
-                            minio_key=(getattr(inv, "minio_key", "") or pdf_minio_key or ""),
-                        )
-                        if owner:
-                            try:
-                                doc.header.owner_email = owner
-                                for it in doc.items:
-                                    it.owner_email = owner
-                            except Exception:
-                                pass
-                        repo.save_document(doc)
-                    except Exception as e:
-                        logger.error(f"❌ Error persistiendo v2 (upload PDF): {e}")
-
-                if not invoices:
-                    return ProcessResult(
-                        success=False,
-                        message="No se pudo extraer información del PDF",
-                        invoice_count=0,
-                        reason_code="extraction_failed",
-                        invoices=[],
-                    )
-                return ProcessResult(success=True, message="PDF procesado correctamente", invoice_count=1, invoices=invoices)
-            finally:
-                cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
-
-        job_id = task_queue.enqueue("process_pdf_manual", _runner)
-        return {"job_id": job_id}
+        job = enqueue_job(
+            process_manual_pdf_job,
+            owner_email=owner_email,
+            pdf_path=pdf_path,
+            minio_key=pdf_minio_key,
+            sender=sender or "Carga manual",
+            date_str=date if date else None,
+            priority='high',
+            timeout='10m',
+        )
+        return {"job_id": job.id}
     except Exception as e:
         if pdf_path:
             cleanup_local_file_if_safe(pdf_path, pdf_minio_key)
@@ -1616,33 +1528,27 @@ async def upload_image(
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
     , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
-    """
-    Sube una imagen (JPG/PNG) para procesarla como factura (vía IA).
-    AHORA ASÍNCRONO: Retorna job_id.
-    """
+    """Sube una imagen (JPG/PNG) para procesarla como factura vía RQ (distribuido)."""
     allowed_exts = ('.jpg', '.jpeg', '.png', '.webp')
     if not (file.filename.lower().endswith(allowed_exts)):
         raise HTTPException(status_code=400, detail="Solo se aceptan imágenes (JPG, PNG, WEBP)")
-    
+
     img_path = ""
     img_minio_key = ""
     try:
-        # Parsear fecha
         date_obj = None
         if date:
             try:
                 date_obj = datetime.strptime(date, "%Y-%m-%d")
             except Exception:
                 pass
-                
-        # Guardar archivo usando save_binary (soporta MinIO + Optimización)
+
         file_bytes = await file.read()
         owner_email = (user.get('email') or '').lower()
-        
-        # Ejecutar save_binary en threadpool para no bloquear por MinIO
+
         img_storage = await run_in_threadpool(
             save_binary,
-            content=file_bytes, 
+            content=file_bytes,
             filename=file.filename,
             owner_email=owner_email,
             date_obj=date_obj
@@ -1650,117 +1556,20 @@ async def upload_image(
         img_path = img_storage.local_path
         img_minio_key = img_storage.minio_key
 
-        email_meta = {
-            "sender": sender or "Carga manual (Imagen)",
-        }
-        if date_obj:
-            email_meta["date"] = date_obj
+        from app.worker.jobs import process_manual_image_job
+        from app.worker.queues import enqueue_job
 
-        # Si IA está bloqueada, resolver inmediato (no encolar) para no quedar detrás
-        # de procesos largos en la cola local serial.
-        owner = (user.get('email') or '').lower()
-        ai_block_reason = _get_ai_block_reason(owner)
-        if ai_block_reason:
-            _store_manual_pending_ai(
-                owner_email=owner,
-                sender=email_meta.get("sender", "Carga manual (Imagen)"),
-                date_obj=email_meta.get("date"),
-                minio_key=img_minio_key,
-                fuente="OPENAI_VISION_IMAGE",
-                reason=ai_block_reason,
-            )
-            immediate_result = ProcessResult(
-                success=True,
-                message="Imagen registrada como PENDING_AI por límite/disponibilidad de IA",
-                invoice_count=0,
-                reason_code=_get_ai_reason_code(ai_block_reason),
-                invoices=[],
-            )
-            cleanup_local_file_if_safe(img_path, img_minio_key)
-            return {"job_id": _create_completed_task("process_image_manual", immediate_result)}
-
-        def _runner():
-            try:
-                owner = (user.get('email') or '').lower()
-                ai_block_reason = _get_ai_block_reason(owner)
-                if ai_block_reason:
-                    _store_manual_pending_ai(
-                        owner_email=owner,
-                        sender=email_meta.get("sender", "Carga manual (Imagen)"),
-                        date_obj=email_meta.get("date"),
-                        minio_key=img_minio_key,
-                        fuente="OPENAI_VISION_IMAGE",
-                        reason=ai_block_reason,
-                    )
-                    return ProcessResult(
-                        success=True,
-                        message="Imagen registrada como PENDING_AI por límite/disponibilidad de IA",
-                        invoice_count=0,
-                        invoices=[],
-                        reason_code=_get_ai_reason_code(ai_block_reason),
-                    )
-
-                # extract_invoice_data usa pdf_to_base64_first_page que ahora soporta imágenes
-                try:
-                    invoice_data = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner)
-                except (OpenAIFatalError, OpenAIRetryableError) as e:
-                    _store_manual_pending_ai(
-                        owner_email=owner,
-                        sender=email_meta.get("sender", "Carga manual (Imagen)"),
-                        date_obj=email_meta.get("date"),
-                        minio_key=img_minio_key,
-                        fuente="OPENAI_VISION_IMAGE",
-                        reason=f"IA_NO_DISPONIBLE: {str(e)}",
-                    )
-                    return ProcessResult(
-                        success=True,
-                        message="Imagen registrada como PENDING_AI por indisponibilidad temporal de IA",
-                        invoice_count=0,
-                        invoices=[],
-                        reason_code="ai_unavailable",
-                    )
-                invoices = [invoice_data] if invoice_data else []
-                
-                if invoices:
-                    # Asignar minio_key
-                    if img_minio_key and invoice_data:
-                        invoice_data.minio_key = img_minio_key
-                        
-                    try:
-                        repo = MongoInvoiceRepository()
-                        doc = map_invoice(invoice_data, fuente="OPENAI_VISION_IMAGE", minio_key=img_minio_key)
-                        if owner:
-                            try:
-                                doc.header.owner_email = owner
-                                for it in doc.items:
-                                    it.owner_email = owner
-                            except Exception:
-                                pass
-                        repo.save_document(doc)
-                    except Exception as e:
-                        logger.error(f"❌ Error persistiendo v2 (upload Image): {e}")
-
-                if not invoices:
-                    return ProcessResult(
-                        success=False,
-                        message="No se pudo extraer factura de la imagen",
-                        invoice_count=0,
-                        invoices=[],
-                        reason_code="extraction_failed",
-                    )
-
-                return ProcessResult(
-                    success=True,
-                    message=f"Imagen procesada y almacenada",
-                    invoice_count=1,
-                    invoices=invoices
-                )
-            finally:
-                cleanup_local_file_if_safe(img_path, img_minio_key)
-
-        # Encolar tarea en lugar de ejecutar síncronamente
-        job_id = task_queue.enqueue("process_image_manual", _runner)
-        return {"job_id": job_id}
+        job = enqueue_job(
+            process_manual_image_job,
+            owner_email=owner_email,
+            img_path=img_path,
+            minio_key=img_minio_key,
+            sender=sender or "Carga manual (Imagen)",
+            date_str=date if date else None,
+            priority='high',
+            timeout='10m',
+        )
+        return {"job_id": job.id}
 
     except Exception as e:
         if img_path:
@@ -1777,7 +1586,7 @@ async def enqueue_upload_xml(
     sender: Optional[str] = Form(None),
     date: Optional[str] = Form(None)
     , user: Dict[str, Any] = Depends(_get_current_user_with_trial_check)):
-    """Encola el procesamiento de un XML manual y retorna job_id."""
+    """Encola el procesamiento de un XML manual vía RQ (distribuido) y retorna job_id."""
     if not file.filename.lower().endswith('.xml'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos XML")
 
@@ -1785,8 +1594,6 @@ async def enqueue_upload_xml(
     xml_minio_key = ""
     try:
         file_bytes = await file.read()
-        
-        # Parse date
         date_obj = None
         if date:
             try:
@@ -1794,86 +1601,30 @@ async def enqueue_upload_xml(
             except Exception:
                 logger.warning(f"Formato de fecha incorrecto: {date}")
 
-        # Save binary with MinIO
         owner_email = (user.get('email') or '').lower()
         xml_storage = save_binary(
-            file_bytes, 
+            file_bytes,
             file.filename,
             owner_email=owner_email,
             date_obj=date_obj
         )
         xml_path = xml_storage.local_path
         xml_minio_key = xml_storage.minio_key
-        
-        email_meta = {"sender": sender or "Carga manual"}
-        if date_obj:
-            email_meta["date"] = date_obj
 
-        def _runner():
-            try:
-                owner = (user.get('email') or '').lower()
-                inv = invoice_sync.openai_processor.extract_invoice_data_from_xml(xml_path, email_meta, owner_email=owner)
-                invoices = [inv] if inv else []
-                if invoices:
-                    # Assign minio key
-                    if xml_minio_key and inv:
-                        inv.minio_key = xml_minio_key
-                        
-                    try:
-                        repo = MongoInvoiceRepository()
-                        owner = (user.get('email') or '').lower()
-                        doc = map_invoice(
-                            inv,
-                            fuente="XML_NATIVO" if getattr(inv, 'cdc', '') else "OPENAI_VISION",
-                            minio_key=(getattr(inv, "minio_key", "") or xml_minio_key or ""),
-                        )
-                        if owner:
-                            try:
-                                doc.header.owner_email = owner
-                                for it in doc.items:
-                                    it.owner_email = owner
-                            except Exception:
-                                pass
-                        repo.save_document(doc)
-                    except Exception as e:
-                        logger.error(f"❌ Error persistiendo (tasks upload XML): {e}")
-                    return ProcessResult(
-                        success=True,
-                        message="Factura XML procesada y almacenada",
-                        invoice_count=len(invoices),
-                        invoices=invoices,
-                    )
+        from app.worker.jobs import process_manual_xml_job
+        from app.worker.queues import enqueue_job
 
-                ai_block_reason = _get_ai_block_reason(owner)
-                if ai_block_reason:
-                    _store_manual_pending_ai(
-                        owner_email=owner,
-                        sender=email_meta.get("sender", "Carga manual"),
-                        date_obj=email_meta.get("date"),
-                        minio_key=xml_minio_key,
-                        fuente="XML_UPLOAD",
-                        reason=f"{ai_block_reason} | XML requiere fallback de IA",
-                    )
-                    return ProcessResult(
-                        success=True,
-                        message="XML registrado como PENDING_AI (sin cupo/disponibilidad IA para fallback)",
-                        invoice_count=0,
-                        invoices=[],
-                        reason_code=_get_ai_reason_code(ai_block_reason),
-                    )
-
-                return ProcessResult(
-                    success=False,
-                    message="No se pudo extraer información desde el XML",
-                    invoice_count=0,
-                    invoices=[],
-                    reason_code="extraction_failed",
-                )
-            finally:
-                cleanup_local_file_if_safe(xml_path, xml_minio_key)
-
-        job_id = task_queue.enqueue("upload_xml", _runner)
-        return {"job_id": job_id}
+        job = enqueue_job(
+            process_manual_xml_job,
+            owner_email=owner_email,
+            xml_path=xml_path,
+            minio_key=xml_minio_key,
+            sender=sender or "Carga manual",
+            date_str=date if date else None,
+            priority='high',
+            timeout='10m',
+        )
+        return {"job_id": job.id}
     except Exception as e:
         if xml_path:
             cleanup_local_file_if_safe(xml_path, xml_minio_key)

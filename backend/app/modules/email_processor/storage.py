@@ -307,6 +307,48 @@ def delete_local_temp_file(path: str) -> bool:
     return False
 
 
+def download_from_minio(minio_key: str, local_dir: Optional[str] = None) -> str:
+    """
+    Descarga un archivo de MinIO a disco local.
+    Retorna la ruta local o '' si falla.
+    Útil para workers RQ que no comparten filesystem con el backend.
+    """
+    if not minio_key or not Minio or not settings.MINIO_ACCESS_KEY:
+        return ""
+    try:
+        client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+            region=settings.MINIO_REGION,
+        )
+        base_dir = local_dir or ensure_dirs()
+        # Usar nombre del key como base del archivo local
+        fname = os.path.basename(minio_key)
+        local_path = os.path.join(base_dir, f"dl_{uuid.uuid4().hex[:8]}_{fname}")
+        client.fget_object(settings.MINIO_BUCKET, minio_key, local_path)
+        logger.info(f"⬇️ Descargado de MinIO: {minio_key} → {local_path}")
+        return local_path
+    except Exception as e:
+        logger.error(f"❌ Error descargando de MinIO ({minio_key}): {e}")
+        return ""
+
+
+def ensure_local_file(local_path: str, minio_key: str) -> str:
+    """
+    Garantiza que el archivo exista localmente.
+    Si no existe en disco (ej. worker RQ en otro pod), lo descarga de MinIO.
+    Retorna la ruta local usable o '' si no se pudo resolver.
+    """
+    if local_path and os.path.isfile(local_path):
+        return local_path
+    if minio_key:
+        logger.info(f"📥 Archivo local no encontrado ({local_path}), descargando de MinIO...")
+        return download_from_minio(minio_key)
+    return ""
+
+
 def cleanup_local_file_if_safe(path: str, minio_key: str = "") -> bool:
     """
     Limpia archivo temporal solo cuando es seguro.
