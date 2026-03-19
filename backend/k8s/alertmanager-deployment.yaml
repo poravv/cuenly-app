@@ -185,11 +185,27 @@ data:
       email_configs:
       - to: 'andres.vera@mindtechpy.net, andyvercha@gmail.com'
         subject: '⚠️ [WARNING] {{ .GroupLabels.alertname }}'
+        html: |
+          <h2>⚠️ Alerta Warning en Cuenly</h2>
+          {{ range .Alerts }}
+          <p><b>Alerta:</b> {{ .Annotations.summary }}</p>
+          <p><b>Descripción:</b> {{ .Annotations.description }}</p>
+          <p><b>Servicio:</b> {{ .Labels.service }}</p>
+          <hr>
+          {{ end }}
 
     - name: 'business-alerts'
       email_configs:
       - to: 'andres.vera@mindtechpy.net, andyvercha@gmail.com'
         subject: '📊 [BUSINESS] {{ .GroupLabels.alertname }}'
+        html: |
+          <h2>📊 Alerta de Negocio en Cuenly</h2>
+          {{ range .Alerts }}
+          <p><b>Alerta:</b> {{ .Annotations.summary }}</p>
+          <p><b>Descripción:</b> {{ .Annotations.description }}</p>
+          <p><b>Servicio:</b> {{ .Labels.service }}</p>
+          <hr>
+          {{ end }}
 
     inhibit_rules:
     - source_match:
