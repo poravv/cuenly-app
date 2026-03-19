@@ -43,32 +43,33 @@ route:
 receivers:
 - name: 'cuenly-team'
   email_configs:
-  - to: '${ALERTMANAGER_EMAIL_TO}'
+  - to: 'andres.vera@mindtechpy.net, andyvercha@gmail.com'
     subject: '[Cuenly] Alerta: {{ .GroupLabels.alertname }}'
-    body: |
+    html: |
+      <h2>Alerta Cuenly</h2>
       {{ range .Alerts }}
-      Alerta: {{ .Annotations.summary }}
-      Descripción: {{ .Annotations.description }}
-      Severidad: {{ .Labels.severity }}
-      Servicio: {{ .Labels.service }}
-      Tiempo: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+      <p><b>Alerta:</b> {{ .Annotations.summary }}</p>
+      <p><b>Descripcion:</b> {{ .Annotations.description }}</p>
+      <p><b>Severidad:</b> {{ .Labels.severity }}</p>
+      <p><b>Servicio:</b> {{ .Labels.service }}</p>
+      <p><b>Tiempo:</b> {{ .StartsAt.Format "2006-01-02 15:04:05" }}</p>
+      <hr>
       {{ end }}
 
 - name: 'critical-alerts'
   # Email inmediato para alertas críticas
   email_configs:
-  - to: '${ALERTMANAGER_EMAIL_TO}'
+  - to: 'andres.vera@mindtechpy.net, andyvercha@gmail.com'
     subject: '🚨 [CRÍTICO] {{ .GroupLabels.alertname }}'
-    body: |
-      ⚠️ ALERTA CRÍTICA EN CUENLY ⚠️
-      
+    html: |
+      <h2>ALERTA CRITICA EN CUENLY</h2>
       {{ range .Alerts }}
-      Problema: {{ .Annotations.summary }}
-      Detalles: {{ .Annotations.description }}
-      Servicio: {{ .Labels.service }}
-      Hora: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
-      
-      🔗 Runbook: {{ .Annotations.runbook_url }}
+      <p><b>Problema:</b> {{ .Annotations.summary }}</p>
+      <p><b>Detalles:</b> {{ .Annotations.description }}</p>
+      <p><b>Servicio:</b> {{ .Labels.service }}</p>
+      <p><b>Hora:</b> {{ .StartsAt.Format "2006-01-02 15:04:05" }}</p>
+      <p><b>Runbook:</b> {{ .Annotations.runbook_url }}</p>
+      <hr>
       {{ end }}
   
   # Slack para alertas críticas (opcional)
@@ -85,12 +86,12 @@ receivers:
 
 - name: 'warning-alerts'
   email_configs:
-  - to: '${ALERTMANAGER_EMAIL_TO}'
+  - to: 'andres.vera@mindtechpy.net, andyvercha@gmail.com'
     subject: '⚠️ [WARNING] {{ .GroupLabels.alertname }}'
 
 - name: 'business-alerts'
   email_configs:
-  - to: '${ALERTMANAGER_EMAIL_TO}'
+  - to: 'andres.vera@mindtechpy.net, andyvercha@gmail.com'
     subject: '📊 [BUSINESS] {{ .GroupLabels.alertname }}'
 
 # Inhibiciones (evitar spam de alertas relacionadas)
