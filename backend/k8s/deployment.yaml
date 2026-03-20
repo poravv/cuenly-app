@@ -14,7 +14,7 @@ metadata:
     prometheus.io/port: "8000"
     prometheus.io/path: "/metrics"
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -50,11 +50,11 @@ spec:
             name: backend-env-secrets
         resources:
           requests:
-            memory: "1Gi"      # Reducido para permitir scheduling en nodos pequeños
-            cpu: "250m"        # CPU request bajada a 0.25 para que quepan 2 replicas
+            memory: "512Mi"    # Request bajo, burstea según necesidad
+            cpu: "150m"        # 2 réplicas = 300m, deja espacio para rolling update
           limits:
-            memory: "4Gi"      # Límite
-            cpu: "1000m"       # Aumentado a 1 core completo
+            memory: "4Gi"      # Límite generoso para picos de procesamiento
+            cpu: "1500m"       # Hasta 1.5 cores bajo carga
         livenessProbe:
           httpGet:
             path: /health
@@ -123,7 +123,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: cuenly-backend
-  minReplicas: 1    # HPA escala a más réplicas según carga
+  minReplicas: 2    # Mínimo 2 réplicas para alta disponibilidad
   maxReplicas: 5    # Aumentado a 5 réplicas para picos de carga
   behavior:
     scaleUp:
