@@ -49,7 +49,7 @@ class ScheduledTasks:
             self.running = True
             
             logger.info("✅ Scheduler iniciado correctamente")
-            logger.info("📅 Reseteo de límites IA a las 00:01 (diario, filtra por aniversario)")
+            logger.info("📅 Reset IA post-cobro a las 00:01 (diario, solo si cobro exitoso)")
             logger.info("💳 Cobros recurrentes de suscripciones a las 00:00 (diario)")
             logger.info("🧹 Purga de archivos antiguos a las 03:00 (diario)")
             
@@ -73,26 +73,26 @@ class ScheduledTasks:
     
     def _check_and_execute_monthly_reset(self):
         """
-        Ejecuta el reseteo de límites IA como fallback diario.
-        El servicio filtra internamente: solo resetea usuarios cuyo
-        billing_day coincide con hoy y que no fueron reseteados ya
-        por el billing job.
+        Ejecuta el reseteo de límites IA post-cobro.
+        Solo resetea usuarios que tienen un cobro exitoso confirmado
+        este mes. Sin cobro = sin reset de IA.
         """
         try:
-            logger.info(f"🔄 Ejecutando reseteo fallback por aniversario (día {datetime.now().day})")
+            logger.info(f"🔄 Ejecutando reset post-cobro por aniversario (día {datetime.now().day})")
 
             result = self.monthly_reset_service.reset_monthly_limits()
 
             if result["success"]:
                 logger.info(
-                    f"✅ Reseteo fallback: {result.get('users_reset', 0)} reseteados, "
-                    f"{result.get('skipped', 0)} ya reseteados por billing"
+                    f"✅ Reset post-cobro: {result.get('users_reset', 0)} reseteados, "
+                    f"{result.get('skipped', 0)} ya reseteados, "
+                    f"{result.get('skipped_no_payment', 0)} sin cobro exitoso"
                 )
             else:
-                logger.error(f"❌ Error en reseteo fallback: {result.get('error', 'Error desconocido')}")
+                logger.error(f"❌ Error en reset post-cobro: {result.get('error', 'Error desconocido')}")
 
         except Exception as e:
-            logger.error(f"❌ Excepción durante reseteo fallback: {str(e)}")
+            logger.error(f"❌ Excepción durante reset post-cobro: {str(e)}")
     
     def get_status(self):
         """Obtiene el estado actual del scheduler"""

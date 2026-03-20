@@ -317,6 +317,35 @@ class SubscriptionRepository:
             logger.error(f"Error registrando transacción: {e}")
             return False
 
+    def has_successful_payment_this_month(
+        self,
+        user_email: str,
+        sub_id: Optional[str] = None
+    ) -> bool:
+        """
+        Verificar si existe una transacción exitosa este mes para el usuario.
+        Usado por MonthlyResetService para condicionar el reset de IA al cobro.
+        """
+        try:
+            today = datetime.utcnow()
+            month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+            query = {
+                "user_email": (user_email or "").lower(),
+                "status": "success",
+                "created_at": {"$gte": month_start}
+            }
+
+            if sub_id:
+                query["subscription_id"] = sub_id
+
+            payment = self.transactions_collection.find_one(query)
+            return payment is not None
+
+        except Exception as e:
+            logger.error(f"Error verificando pago exitoso de {user_email}: {e}")
+            return False
+
     # =====================================
     # GESTIÓN DE PLANES
     # ====================================='

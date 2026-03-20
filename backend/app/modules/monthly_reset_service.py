@@ -1,9 +1,9 @@
 """
-Servicio de reseteo mensual de límites de IA — red de seguridad.
+Servicio de reseteo mensual de límites de IA — post-cobro.
 
-El reseteo principal ocurre en el billing job (al cobrar exitosamente).
-Este servicio actúa como fallback: solo resetea usuarios cuyo billing_day
-coincide con hoy y que NO fueron reseteados ya por el billing job.
+El reseteo de IA SOLO ocurre si el billing job cobró exitosamente.
+Este servicio verifica que exista una transacción exitosa en el período
+actual antes de resetear. NO resetea sin cobro confirmado.
 """
 
 from datetime import datetime
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class MonthlyResetService:
-    """Servicio fallback para resetear límites mensuales de IA por aniversario."""
+    """Servicio de reseteo de IA condicionado a cobro exitoso."""
 
     def __init__(self):
         self.subscription_repo = SubscriptionRepository()
@@ -23,18 +23,19 @@ class MonthlyResetService:
 
     def reset_monthly_limits(self):
         """
-        Resetea límites de IA para suscripciones activas cuyo billing_day
-        coincide con hoy, solo si no fueron reseteadas ya este mes.
+        Resetea límites de IA SOLO para suscripciones cuyo billing_day
+        coincide con hoy Y que tienen un cobro exitoso registrado este mes.
+        Sin cobro exitoso = sin reset de IA.
         """
         try:
             today = datetime.utcnow()
             today_day = today.day
-            logger.info(f"🔄 Reseteo mensual fallback: verificando suscripciones con billing_day={today_day}")
+            logger.info(f"🔄 Verificando resets post-cobro: billing_day={today_day}")
 
             active_subscriptions = self.subscription_repo.get_active_subscriptions()
 
             if not active_subscriptions:
-                logger.info("ℹ️ No se encontraron suscripciones activas para resetear")
+                logger.info("ℹ️ No se encontraron suscripciones activas")
                 return {
                     "success": True,
                     "users_reset": 0,
@@ -42,39 +43,54 @@ class MonthlyResetService:
                 }
 
             users_reset = 0
-            skipped = 0
+            skipped_no_payment = 0
+            skipped_already_reset = 0
+            skipped_not_today = 0
             errors = []
 
             for subscription in active_subscriptions:
                 try:
                     user_email = subscription.get("user_email", "")
+                    sub_id = str(subscription.get("_id", ""))
                     billing_day = subscription.get("billing_day_of_month")
 
-                    # Si no tiene billing_day, usar día de started_at como fallback
                     if not billing_day:
                         started_at = subscription.get("started_at", subscription.get("created_at"))
                         billing_day = started_at.day if started_at else 1
 
-                    # Solo resetear si hoy es el día de aniversario
+                    # Solo procesar si hoy es el día de aniversario
                     if billing_day != today_day:
+                        skipped_not_today += 1
                         continue
 
-                    # Verificar si ya fue reseteado este mes (por el billing job)
+                    # Verificar si ya fue reseteado este mes
                     user = self.user_repo.get_by_email(user_email)
                     if user:
                         last_reset = user.get("ai_last_reset")
                         if last_reset and last_reset.month == today.month and last_reset.year == today.year:
-                            skipped += 1
+                            skipped_already_reset += 1
                             continue
 
-                    # Obtener límite de IA del plan
-                    ai_limit = subscription.get("plan_features", {}).get("ai_invoices_limit", 50)
+                    # CRÍTICO: Verificar que existe un cobro exitoso este mes
+                    has_payment = self.subscription_repo.has_successful_payment_this_month(
+                        user_email=user_email,
+                        sub_id=sub_id
+                    )
 
+                    if not has_payment:
+                        skipped_no_payment += 1
+                        logger.warning(
+                            f"⚠️ Sin cobro exitoso este mes para {user_email} — NO se resetea IA"
+                        )
+                        continue
+
+                    # Cobro confirmado → resetear IA
+                    ai_limit = subscription.get("plan_features", {}).get("ai_invoices_limit", 50)
                     reset_result = self.user_repo.reset_user_ai_limits(user_email, ai_limit)
 
                     if reset_result:
                         users_reset += 1
-                        logger.info(f"✅ Fallback reset: {user_email} (límite: {ai_limit})")
+                        logger.info(f"✅ Reset post-cobro: {user_email} (límite: {ai_limit})")
                     else:
                         errors.append(f"Error reseteando {user_email}")
 
@@ -83,7 +99,11 @@ class MonthlyResetService:
                     errors.append(error_msg)
                     logger.error(f"❌ {error_msg}")
 
-            message = f"Reseteo fallback: {users_reset} reseteados, {skipped} ya reseteados por billing"
+            message = (
+                f"Reset post-cobro: {users_reset} reseteados, "
+                f"{skipped_already_reset} ya reseteados, "
+                f"{skipped_no_payment} sin cobro exitoso"
+            )
             if errors:
                 message += f", {len(errors)} errores"
                 logger.warning(f"⚠️ {message}")
@@ -93,7 +113,8 @@ class MonthlyResetService:
             return {
                 "success": len(errors) == 0,
                 "users_reset": users_reset,
-                "skipped": skipped,
+                "skipped": skipped_already_reset,
+                "skipped_no_payment": skipped_no_payment,
                 "errors": errors,
                 "message": message
             }
