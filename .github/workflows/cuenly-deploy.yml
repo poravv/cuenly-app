@@ -871,20 +871,36 @@ jobs:
           kubectl patch deployment cuenly-backend -n ${{ env.NAMESPACE }} -p \
             "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"cuenly-backend\",\"image\":\"${EXPECTED_BACKEND_IMAGE}\"}]},\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"forceUpdate\":\"$(date +%s)\",\"gitSha\":\"${SHORT_SHA}\"}}}}}"
           
-          # Esperar que el rollout complete
+          # Esperar que el rollout complete con rollback automático si falla
           echo "⏳ Esperando rollout del backend..."
-          kubectl rollout status deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=600s
-          
+          if ! kubectl rollout status deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=300s; then
+            echo "❌ Rollout del backend falló. Diagnóstico:"
+            kubectl describe deployment cuenly-backend -n ${{ env.NAMESPACE }} || true
+            kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,tier=backend -o wide || true
+            kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.metadata.creationTimestamp' | tail -n 30 || true
+
+            for pod in $(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,tier=backend -o jsonpath='{.items[*].metadata.name}'); do
+              echo "=== Logs de $pod ==="
+              kubectl logs "$pod" -n ${{ env.NAMESPACE }} --tail=80 || true
+            done
+
+            echo "🔄 Haciendo rollback a la versión anterior..."
+            kubectl rollout undo deployment/cuenly-backend -n ${{ env.NAMESPACE }} || true
+            kubectl rollout status deployment/cuenly-backend -n ${{ env.NAMESPACE }} --timeout=120s || true
+            echo "⚠️ Rollback completado. La versión anterior fue restaurada."
+            exit 1
+          fi
+
           # Verificar que los pods estén usando la imagen correcta
           echo "🔍 Verificando imagen desplegada:"
           BACKEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,tier=backend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-backend")].image}{"\n"}{end}')
           echo "$BACKEND_IMAGES_BY_POD"
-          
+
           if [ -z "$BACKEND_IMAGES_BY_POD" ]; then
             echo "❌ Error: No se encontraron pods backend para validar imagen"
             exit 1
           fi
-          
+
           MISMATCHED_BACKEND=$(echo "$BACKEND_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_BACKEND_IMAGE" 'NF==2 && $2!=expected {print}')
           if [ -n "$MISMATCHED_BACKEND" ]; then
             echo "❌ Error: Algunos pods backend no tienen la imagen esperada"
@@ -893,7 +909,7 @@ jobs:
             echo "$MISMATCHED_BACKEND"
             exit 1
           fi
-          
+
           echo "✅ Backend desplegado correctamente con SHA: ${SHORT_SHA}"
 
       - name: Clean orphan worker resources
@@ -956,21 +972,21 @@ jobs:
           
           # Esperar que el rollout complete con diagnóstico automático si falla
           echo "⏳ Esperando rollout del worker..."
-          if ! kubectl rollout status deployment/cuenly-worker -n ${{ env.NAMESPACE }} --timeout=1200s; then
+          if ! kubectl rollout status deployment/cuenly-worker -n ${{ env.NAMESPACE }} --timeout=300s; then
             echo "❌ Rollout del worker falló o expiró. Diagnóstico:"
             kubectl describe deployment cuenly-worker -n ${{ env.NAMESPACE }} || true
-            kubectl get rs -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o wide || true
             kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o wide || true
-            kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.metadata.creationTimestamp' | tail -n 40 || true
-            
+            kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.metadata.creationTimestamp' | tail -n 30 || true
+
             for pod in $(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker -o jsonpath='{.items[*].metadata.name}'); do
-              echo "=== Describe $pod ==="
-              kubectl describe pod "$pod" -n ${{ env.NAMESPACE }} || true
-              echo "=== Logs actuales de $pod ==="
-              kubectl logs "$pod" -n ${{ env.NAMESPACE }} --tail=120 || true
-              echo "=== Logs previos de $pod ==="
-              kubectl logs "$pod" -n ${{ env.NAMESPACE }} --previous --tail=120 || true
+              echo "=== Logs de $pod ==="
+              kubectl logs "$pod" -n ${{ env.NAMESPACE }} --tail=80 || true
             done
+
+            echo "🔄 Haciendo rollback del worker a la versión anterior..."
+            kubectl rollout undo deployment/cuenly-worker -n ${{ env.NAMESPACE }} || true
+            kubectl rollout status deployment/cuenly-worker -n ${{ env.NAMESPACE }} --timeout=120s || true
+            echo "⚠️ Rollback completado. La versión anterior fue restaurada."
             exit 1
           fi
           

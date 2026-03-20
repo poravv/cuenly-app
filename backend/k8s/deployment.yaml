@@ -14,7 +14,7 @@ metadata:
     prometheus.io/port: "8000"
     prometheus.io/path: "/metrics"
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -123,7 +123,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: cuenly-backend
-  minReplicas: 2    # Mínimo 2 réplicas para alta disponibilidad
+  minReplicas: 1    # HPA escala a más réplicas según carga
   maxReplicas: 5    # Aumentado a 5 réplicas para picos de carga
   behavior:
     scaleUp:
