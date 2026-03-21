@@ -5,6 +5,7 @@ import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { UserService } from '../../services/user.service';
 import { NotificationService } from '../../services/notification.service';
+import { TransactionHistoryItem, PaginatedTransactions } from '../../models/transaction.model';
 
 interface SubscriptionPlan {
   _id: string;
@@ -46,6 +47,7 @@ interface PlanChangeRequest {
   reason?: string;
 }
 
+
 @Component({
   selector: 'app-subscription',
   templateUrl: './subscription.component.html',
@@ -81,6 +83,17 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
   // Estado de perfil incompleto
   showIncompleteProfileModal = false;
   missingProfileFields: string[] = [];
+
+  // Historial de transacciones (Pagos tab)
+  transactions: TransactionHistoryItem[] = [];
+  transactionsLoading = false;
+  transactionsError = false;
+  transactionsLoaded = false;
+  transactionsPage = 1;
+  transactionsPages = 0;
+  transactionsTotal = 0;
+  transactionsLimit = 20;
+  transactionsStatusFilter: string = '';
 
   constructor(
     private apiService: ApiService,
@@ -169,6 +182,9 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   setActiveTab(tab: string): void {
     this.activeTab = tab;
+    if (tab === 'payments' && !this.transactionsLoaded) {
+      this.loadTransactions();
+    }
   }
 
   get usagePercentage(): number {
@@ -424,6 +440,84 @@ export class SubscriptionComponent implements OnInit, OnDestroy {
 
   trackByHistoryId(index: number, item: SubscriptionHistory): string {
     return item._id;
+  }
+
+  trackByTransactionId(index: number, item: TransactionHistoryItem): string {
+    return item.id;
+  }
+
+  // ==================== PAGOS TAB ====================
+
+  loadTransactions(): void {
+    this.transactionsLoading = true;
+    this.transactionsError = false;
+
+    const status = this.transactionsStatusFilter || undefined;
+
+    this.apiService.getMyTransactions(this.transactionsPage, this.transactionsLimit, status)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response: PaginatedTransactions) => {
+          this.transactions = response.items;
+          this.transactionsTotal = response.total;
+          this.transactionsPage = response.page;
+          this.transactionsPages = response.pages;
+          this.transactionsLoaded = true;
+          this.transactionsLoading = false;
+        },
+        error: () => {
+          this.transactionsError = true;
+          this.transactionsLoading = false;
+        }
+      });
+  }
+
+  onTransactionsPageChange(page: number): void {
+    if (page < 1 || page > this.transactionsPages) return;
+    this.transactionsPage = page;
+    this.loadTransactions();
+  }
+
+  onTransactionsStatusFilterChange(status: string): void {
+    this.transactionsStatusFilter = status;
+    this.transactionsPage = 1;
+    this.loadTransactions();
+  }
+
+  getTransactionStatusBadgeClass(status: string): string {
+    switch (status) {
+      case 'success': return 'badge-success';
+      case 'failed': return 'badge-danger';
+      case 'pending': return 'badge-warning';
+      default: return 'badge-secondary';
+    }
+  }
+
+  getTransactionStatusText(status: string): string {
+    switch (status) {
+      case 'success': return 'Exitoso';
+      case 'failed': return 'Fallido';
+      case 'pending': return 'Pendiente';
+      default: return status;
+    }
+  }
+
+  formatTransactionDate(dateString: string): string {
+    const d = new Date(dateString);
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = d.getHours().toString().padStart(2, '0');
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  }
+
+  formatTransactionAmount(amount: number, currency: string): string {
+    if (!amount) return '0';
+    return new Intl.NumberFormat('es-PY', {
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0
+    }).format(amount) + ' ' + (currency || 'PYG');
   }
 
   goBack(): void {

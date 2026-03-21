@@ -571,6 +571,120 @@ $danger: #EF4444;
   }
 }
 
+// =========== TRANSACTIONS TABLE (PAGOS TAB) ===========
+
+.transactions-filter-bar {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.75rem 1.25rem;
+}
+
+.transactions-status-select {
+  width: auto;
+  min-width: 140px;
+  border-radius: 8px;
+  border-color: #e5e7eb;
+  font-size: 0.85rem;
+
+  &:focus {
+    border-color: $primary;
+    box-shadow: 0 0 0 0.2rem rgba($primary, 0.15);
+  }
+}
+
+.transactions-total-badge {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  background: #f3f4f6;
+  padding: 0.2rem 0.75rem;
+  border-radius: 20px;
+  margin-left: auto;
+}
+
+.transactions-section {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.transactions-table {
+  margin: 0;
+
+  thead th {
+    border: none;
+    color: #6b7280;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 0.75rem 1.25rem;
+    background: #fafafa;
+  }
+
+  tbody td {
+    border: none;
+    padding: 0.85rem 1.25rem;
+    color: #374151;
+    vertical-align: middle;
+    font-size: 0.88rem;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid #f3f4f6;
+    transition: background 0.15s ease;
+
+    &:last-child { border-bottom: none; }
+    &:hover { background: #fafafa; }
+
+    &.tx-status-success { border-left: 3px solid $success; }
+    &.tx-status-failed { border-left: 3px solid $danger; }
+    &.tx-status-pending { border-left: 3px solid $warning; }
+  }
+}
+
+.tx-reference {
+  font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 0.8rem;
+  background: #f3f4f6;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  color: #6b7280;
+}
+
+.tx-error-msg {
+  font-size: 0.75rem;
+  color: $danger;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.transactions-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid #f3f4f6;
+
+  .btn {
+    font-size: 0.82rem;
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 0.4rem 0.9rem;
+  }
+}
+
+.pagination-info {
+  font-size: 0.85rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
 // =========== EMPTY STATES ===========
 
 .empty-state {
@@ -768,6 +882,20 @@ $danger: #EF4444;
 
     thead th, tbody td {
       padding: 0.65rem 1rem;
+    }
+  }
+
+  .transactions-table {
+    font-size: 0.82rem;
+
+    thead th, tbody td {
+      padding: 0.65rem 0.75rem;
+    }
+  }
+
+  .transactions-filter-bar {
+    .d-flex {
+      gap: 0.5rem !important;
     }
   }
 

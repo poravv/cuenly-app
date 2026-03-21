@@ -62,6 +62,10 @@ class SubscriptionRepository:
             self.transactions_collection.create_index([("subscription_id", 1)])
             self.transactions_collection.create_index([("user_email", 1)])
             self.transactions_collection.create_index([("created_at", -1)])
+            # Índice compuesto para consultas paginadas del historial de transacciones
+            self.transactions_collection.create_index([
+                ("user_email", 1), ("status", 1), ("created_at", -1)
+            ])
 
             SubscriptionRepository._indexes_ensured = True
             logger.info("Índices de suscripciones creados/verificados")
@@ -345,6 +349,87 @@ class SubscriptionRepository:
         except Exception as e:
             logger.error(f"Error verificando pago exitoso de {user_email}: {e}")
             return False
+
+    # =====================================
+    # HISTORIAL DE TRANSACCIONES
+    # =====================================
+
+    def get_user_transaction_history(
+        self,
+        user_email: str,
+        page: int = 1,
+        limit: int = 20,
+        status: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Obtener historial paginado de transacciones de un usuario.
+        Siempre filtra por user_email (multi-tenant).
+        Retorna: {"items": [...], "total": int}
+        """
+        try:
+            self._ensure_indexes()
+            user_email = (user_email or "").lower()
+
+            # Filtro base: siempre multi-tenant
+            query: Dict[str, Any] = {"user_email": user_email}
+
+            # Filtro opcional por estado
+            if status:
+                query["status"] = status
+
+            # Filtro opcional por rango de fechas
+            if date_from or date_to:
+                date_filter: Dict[str, Any] = {}
+                if date_from:
+                    date_filter["$gte"] = date_from
+                if date_to:
+                    # Incluir todo el día final (23:59:59.999999)
+                    date_filter["$lte"] = date_to.replace(
+                        hour=23, minute=59, second=59, microsecond=999999
+                    )
+                query["created_at"] = date_filter
+
+            # Contar total de documentos con el filtro
+            total = self.transactions_collection.count_documents(query)
+
+            # Paginación
+            skip = (page - 1) * limit
+            cursor = (
+                self.transactions_collection
+                .find(query)
+                .sort("created_at", -1)
+                .skip(skip)
+                .limit(limit)
+            )
+
+            items = []
+            for doc in cursor:
+                # Truncar pagopar_order_hash a últimos 8 caracteres
+                order_hash = doc.get("pagopar_order_hash")
+                reference = order_hash[-8:] if order_hash and len(order_hash) >= 8 else order_hash
+
+                created_at = doc.get("created_at")
+                created_at_str = created_at.isoformat() if isinstance(created_at, datetime) else str(created_at) if created_at else None
+
+                items.append({
+                    "id": str(doc.get("_id", "")),
+                    "amount": doc.get("amount", 0),
+                    "currency": doc.get("currency", "PYG"),
+                    "status": doc.get("status", "pending"),
+                    "created_at": created_at_str,
+                    "attempt_number": doc.get("attempt_number", 1),
+                    "plan_name": doc.get("plan_name"),
+                    "reference": reference,
+                    "error_message": doc.get("error_message"),
+                })
+
+            return {"items": items, "total": total}
+
+        except Exception as e:
+            logger.error(f"Error obteniendo historial de transacciones de {user_email}: {e}")
+            return {"items": [], "total": 0}
 
     # =====================================
     # GESTIÓN DE PLANES

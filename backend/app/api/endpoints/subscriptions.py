@@ -2,9 +2,10 @@
 API endpoints públicos para gestión de suscripciones de usuarios.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from typing import List
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from typing import List, Optional
 import logging
+import math
 from datetime import datetime, timedelta
 
 from app.api.deps import _get_current_user
@@ -20,7 +21,9 @@ from app.models.subscription_models import (
     SubscriptionResponse,
     PaymentMethodResponse,
     CancelSubscriptionRequest,
-    PlanCode
+    PlanCode,
+    TransactionHistoryItem,
+    TransactionHistoryResponse,
 )
 
 router = APIRouter()
@@ -543,6 +546,91 @@ async def get_my_subscription(
     except Exception as e:
         logger.error(f"Error obteniendo suscripción: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/my-transactions", response_model=TransactionHistoryResponse)
+async def get_my_transactions(
+    page: int = Query(default=1, ge=1, description="Número de página"),
+    limit: int = Query(default=20, ge=1, le=100, description="Resultados por página (máx 100)"),
+    status: Optional[str] = Query(
+        default=None,
+        regex="^(success|failed|pending)$",
+        description="Filtrar por estado: success, failed, pending"
+    ),
+    date_from: Optional[str] = Query(default=None, description="Fecha inicio (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(default=None, description="Fecha fin (YYYY-MM-DD)"),
+    current_user: dict = Depends(_get_current_user)
+):
+    """
+    Obtener historial de transacciones de pago del usuario autenticado.
+    Filtrado multi-tenant por user_email del token.
+    """
+    try:
+        user_email = current_user.get("email")
+        if not user_email:
+            raise HTTPException(status_code=401, detail="Usuario no autenticado")
+
+        # Parsear fechas opcionales
+        parsed_date_from = None
+        parsed_date_to = None
+
+        if date_from:
+            try:
+                parsed_date_from = datetime.strptime(date_from, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=422,
+                    detail="date_from debe tener formato YYYY-MM-DD"
+                )
+
+        if date_to:
+            try:
+                parsed_date_to = datetime.strptime(date_to, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=422,
+                    detail="date_to debe tener formato YYYY-MM-DD"
+                )
+
+        # Validar que date_to >= date_from
+        if parsed_date_from and parsed_date_to and parsed_date_to < parsed_date_from:
+            raise HTTPException(
+                status_code=422,
+                detail="date_to debe ser mayor o igual a date_from"
+            )
+
+        # Consultar repositorio
+        result = sub_repo.get_user_transaction_history(
+            user_email=user_email,
+            page=page,
+            limit=limit,
+            status=status,
+            date_from=parsed_date_from,
+            date_to=parsed_date_to
+        )
+
+        total = result["total"]
+        pages = math.ceil(total / limit) if total > 0 else 0
+
+        # Mapear a DTOs
+        items = [TransactionHistoryItem(**item) for item in result["items"]]
+
+        return TransactionHistoryResponse(
+            items=items,
+            total=total,
+            page=page,
+            pages=pages,
+            limit=limit
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error obteniendo historial de transacciones: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error obteniendo historial de transacciones"
+        )
 
 
 @router.post("/cancel")

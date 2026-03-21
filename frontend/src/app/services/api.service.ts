@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { SystemStatus, ProcessResult, JobStatus, EmailConfig, EmailTestResult, TaskSubmitResponse, TaskStatusResponse, AutoRefreshPref } from '../models/invoice.model';
+import { PaginatedTransactions } from '../models/transaction.model';
 import { AuthService } from './auth.service';
 
 
@@ -572,6 +573,23 @@ export class ApiService {
       `/api/subscriptions/cancel`,
       {}
     );
+  }
+
+  // Historial de transacciones de pago del usuario
+  getMyTransactions(
+    page: number = 1,
+    limit: number = 20,
+    status?: string,
+    dateFrom?: string,
+    dateTo?: string
+  ): Observable<PaginatedTransactions> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('limit', limit.toString());
+    if (status) params = params.set('status', status);
+    if (dateFrom) params = params.set('date_from', dateFrom);
+    if (dateTo) params = params.set('date_to', dateTo);
+    return this.http.get<PaginatedTransactions>(`/api/subscriptions/my-transactions`, { params });
   }
 
   // Obtener métodos de pago

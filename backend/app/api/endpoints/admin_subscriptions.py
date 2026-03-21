@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import logging
+import math
 
 from app.api.deps import _get_current_user, _get_current_admin_user
 from app.repositories.subscription_repository import SubscriptionRepository
@@ -123,30 +124,44 @@ async def retry_charge(
 @router.get("/{sub_id}")
 async def get_subscription_details(
     sub_id: str,
+    tx_page: int = Query(default=1, ge=1, description="Página de transacciones"),
+    tx_limit: int = Query(default=20, ge=1, le=100, description="Transacciones por página (máx 100)"),
     current_user: dict = Depends(_get_current_admin_user)
 ):
-    """Obtener detalles completos de una suscripción específica."""
+    """Obtener detalles completos de una suscripción específica con transacciones paginadas."""
     from bson import ObjectId
     try:
         sub = sub_repo.subscriptions_collection.find_one({"_id": ObjectId(sub_id)})
         if not sub:
             raise HTTPException(status_code=404, detail="Suscripción no encontrada")
-        
+
         sub["_id"] = str(sub["_id"])
         payment_method = sub_repo.get_user_payment_method(sub.get("user_email"))
         sub["has_payment_method"] = bool(payment_method)
-        
-        if trans_repo:
-            try:
-                transactions = list(trans_repo.transactions_collection.find(
-                    {"subscription_id": sub_id}
-                ).sort("created_at", -1).limit(10))
-                for tx in transactions:
-                    tx["_id"] = str(tx.get("_id"))
-                sub["recent_transactions"] = transactions
-            except:
-                sub["recent_transactions"] = []
-        
+
+        # Consultar transacciones desde subscription_transactions (colección correcta)
+        try:
+            tx_query = {"subscription_id": sub_id}
+            tx_total = sub_repo.transactions_collection.count_documents(tx_query)
+            tx_skip = (tx_page - 1) * tx_limit
+            transactions = list(
+                sub_repo.transactions_collection
+                .find(tx_query)
+                .sort("created_at", -1)
+                .skip(tx_skip)
+                .limit(tx_limit)
+            )
+            for tx in transactions:
+                tx["_id"] = str(tx.get("_id"))
+            sub["recent_transactions"] = transactions
+            sub["transactions_total"] = tx_total
+            sub["transactions_pages"] = math.ceil(tx_total / tx_limit) if tx_total > 0 else 0
+        except Exception as e:
+            logger.warning(f"Error obteniendo transacciones de suscripción {sub_id}: {e}")
+            sub["recent_transactions"] = []
+            sub["transactions_total"] = 0
+            sub["transactions_pages"] = 0
+
         return sub
     except HTTPException:
         raise

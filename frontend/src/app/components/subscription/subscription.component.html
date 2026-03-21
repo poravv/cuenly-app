@@ -33,6 +33,9 @@
           <button class="tab-btn" [class.active]="activeTab === 'history'" (click)="setActiveTab('history')">
             <i class="bi bi-clock-history me-2"></i>Historial
           </button>
+          <button class="tab-btn" [class.active]="activeTab === 'payments'" (click)="setActiveTab('payments')">
+            <i class="bi bi-receipt me-2"></i>Pagos
+          </button>
         </div>
       </div>
     </div>
@@ -262,6 +265,129 @@
             <i class="bi bi-clock-history"></i>
             <h4>Sin historial</h4>
             <p>No hay registros de suscripciones anteriores.</p>
+          </div>
+        </div>
+
+        <!-- ==================== PAYMENTS TAB ==================== -->
+        <div *ngIf="activeTab === 'payments'">
+
+          <!-- Loading -->
+          <div *ngIf="transactionsLoading" class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Cargando...</span>
+            </div>
+            <p class="text-muted mt-2 mb-0">Cargando historial de pagos...</p>
+          </div>
+
+          <!-- Error state -->
+          <div *ngIf="transactionsError && !transactionsLoading" class="empty-state">
+            <i class="bi bi-exclamation-triangle"></i>
+            <h4>Error al cargar el historial de pagos</h4>
+            <p>No se pudo obtener la informacion. Intenta de nuevo.</p>
+            <button class="btn btn-primary mt-2" (click)="loadTransactions()">
+              <i class="bi bi-arrow-clockwise me-1"></i> Reintentar
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div *ngIf="!transactionsLoading && !transactionsError && transactionsLoaded">
+
+            <!-- Filter bar -->
+            <div class="transactions-filter-bar mb-3">
+              <div class="d-flex align-items-center gap-3 flex-wrap">
+                <label class="form-label mb-0 fw-semibold small text-muted">Filtrar por estado:</label>
+                <select class="form-select form-select-sm transactions-status-select"
+                  [ngModel]="transactionsStatusFilter"
+                  (ngModelChange)="onTransactionsStatusFilterChange($event)">
+                  <option value="">Todos</option>
+                  <option value="success">Exitoso</option>
+                  <option value="failed">Fallido</option>
+                  <option value="pending">Pendiente</option>
+                </select>
+                <span class="transactions-total-badge">{{ transactionsTotal }} pago(s)</span>
+              </div>
+            </div>
+
+            <!-- Table -->
+            <div *ngIf="transactions.length > 0" class="transactions-section">
+              <div class="table-responsive">
+                <table class="table transactions-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Monto</th>
+                      <th>Plan</th>
+                      <th>Estado</th>
+                      <th>Referencia</th>
+                      <th>Intento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let tx of transactions; trackBy: trackByTransactionId"
+                      [class]="'tx-row tx-status-' + tx.status">
+                      <td>
+                        <span class="date-chip">{{ formatTransactionDate(tx.created_at) }}</span>
+                      </td>
+                      <td>
+                        <strong>{{ formatTransactionAmount(tx.amount, tx.currency) }}</strong>
+                      </td>
+                      <td>
+                        <span *ngIf="tx.plan_name">{{ tx.plan_name }}</span>
+                        <span *ngIf="!tx.plan_name" class="text-muted">-</span>
+                      </td>
+                      <td>
+                        <span class="badge" [ngClass]="getTransactionStatusBadgeClass(tx.status)">
+                          {{ getTransactionStatusText(tx.status) }}
+                        </span>
+                        <div *ngIf="tx.status === 'failed' && tx.error_message" class="tx-error-msg mt-1"
+                          [title]="tx.error_message">
+                          {{ tx.error_message.length > 50 ? (tx.error_message | slice:0:50) + '...' : tx.error_message }}
+                        </div>
+                      </td>
+                      <td>
+                        <code *ngIf="tx.reference" class="tx-reference">{{ tx.reference }}</code>
+                        <span *ngIf="!tx.reference" class="text-muted">-</span>
+                      </td>
+                      <td class="text-center">
+                        {{ tx.attempt_number }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Pagination -->
+              <div *ngIf="transactionsPages > 1" class="transactions-pagination">
+                <button class="btn btn-sm btn-outline-secondary"
+                  [disabled]="transactionsPage <= 1"
+                  (click)="onTransactionsPageChange(transactionsPage - 1)">
+                  <i class="bi bi-chevron-left me-1"></i> Anterior
+                </button>
+                <span class="pagination-info">
+                  Pagina {{ transactionsPage }} de {{ transactionsPages }}
+                </span>
+                <button class="btn btn-sm btn-outline-secondary"
+                  [disabled]="transactionsPage >= transactionsPages"
+                  (click)="onTransactionsPageChange(transactionsPage + 1)">
+                  Siguiente <i class="bi bi-chevron-right ms-1"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Empty state: no transactions at all -->
+            <div *ngIf="transactions.length === 0 && !transactionsStatusFilter" class="empty-state">
+              <i class="bi bi-receipt"></i>
+              <h4>No tienes pagos registrados aun</h4>
+              <p>Cuando realices un pago, aparecera aqui.</p>
+            </div>
+
+            <!-- Empty state: filter returned nothing -->
+            <div *ngIf="transactions.length === 0 && transactionsStatusFilter" class="empty-state">
+              <i class="bi bi-funnel"></i>
+              <h4>No se encontraron pagos con los filtros seleccionados</h4>
+              <p>Intenta con otro filtro de estado.</p>
+            </div>
+
           </div>
         </div>
 

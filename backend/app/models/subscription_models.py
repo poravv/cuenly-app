@@ -181,6 +181,30 @@ class TransactionResponse(BaseModel):
     created_at: str
 
 
+class TransactionHistoryItem(BaseModel):
+    """DTO seguro para historial de transacciones del usuario.
+    Excluye campos sensibles: response_data, pagopar_order_id, subscription_id.
+    """
+    id: str
+    amount: float
+    currency: str = "PYG"
+    status: str  # success, failed, pending
+    created_at: str  # ISO 8601
+    attempt_number: int = 1
+    plan_name: Optional[str] = None
+    reference: Optional[str] = None  # últimos 8 caracteres de pagopar_order_hash
+    error_message: Optional[str] = None  # solo para transacciones fallidas
+
+
+class TransactionHistoryResponse(BaseModel):
+    """Response paginada para historial de transacciones."""
+    items: List[TransactionHistoryItem]
+    total: int
+    page: int
+    pages: int
+    limit: int
+
+
 class CancelSubscriptionRequest(BaseModel):
     """Request para cancelar suscripción."""
     reason: Optional[str] = None
