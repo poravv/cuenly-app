@@ -87,12 +87,17 @@ async def retry_charge(
              raise HTTPException(status_code=400, detail="User or Card not configured for automatic payment")
 
         amount = sub.get("plan_price", 0)
-        
+
+        db_user = user_repo.get_by_email(sub["user_email"]) or {}
+
         order_hash = await pagopar_service.create_order(
-            pagopar_user_id, 
-            amount, 
+            pagopar_user_id,
+            amount,
             f"Suscripción {sub['plan_name']}",
-            str(sub["_id"])
+            str(sub["_id"]),
+            buyer_name=db_user.get("name", ""),
+            buyer_email=sub["user_email"],
+            buyer_phone=db_user.get("phone", "")
         )
         
         if not order_hash:

@@ -247,13 +247,16 @@ async def subscribe(
                 identifier=pagopar_id_lookup,
                 amount=amount,
                 description=f"Suscripción {plan.get('name', 'Plan')} - Primer Mes",
-                ref_id=f"INIT-{safe_email}"
+                ref_id=f"INIT-{safe_email}",
+                buyer_name=db_user.get("name", "") if db_user else "",
+                buyer_email=user_email,
+                buyer_phone=db_user.get("phone", "") if db_user else ""
             )
-            
+
             if not order_hash:
                 logger.error(f"❌ Error creando pedido de cobro inicial para {user_email}")
                 raise HTTPException(status_code=500, detail="Error de comunicación con la pasarela de pagos.")
-                
+
             # 3. Procesar pago
             logger.info("💰 Procesando cobro inicial...")
             payment_success = await pagopar_service.process_payment(
@@ -261,11 +264,11 @@ async def subscribe(
                 order_hash=order_hash,
                 card_token=card_token
             )
-            
+
             if not payment_success:
                 logger.error(f"❌ Pago inicial rechazado para {user_email}")
                 raise HTTPException(status_code=400, detail="El pago inicial fue rechazado por la tarjeta.")
-                
+
             logger.info(f"✅ Pago inicial exitoso para {user_email}")
             # --- FIN COBRO INICIAL ---
             
@@ -425,12 +428,18 @@ async def confirm_card(
         # 2. Crear pedido
         import re
         safe_email = re.sub(r'[^a-zA-Z0-9]', '', user_email)[:10] if user_email else "USER"
-        
+
+        user_repo = UserRepository()
+        db_user = user_repo.get_by_email(user_email) or {}
+
         order_hash = await pagopar_service.create_order(
             identifier=pagopar_user_id,
             amount=amount,
             description=f"Suscripción {plan.get('name', 'Plan')} - Primer Mes",
-            ref_id=f"INIT-{safe_email}"
+            ref_id=f"INIT-{safe_email}",
+            buyer_name=db_user.get("name", ""),
+            buyer_email=user_email,
+            buyer_phone=db_user.get("phone", "")
         )
         
         if not order_hash:

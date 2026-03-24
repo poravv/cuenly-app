@@ -198,12 +198,36 @@ class PagoparService:
             logger.error(f"Error obteniendo alias_token para {identifier}: {e}")
             return None
 
+    @staticmethod
+    def _format_phone_py(phone: str) -> str:
+        """
+        Formatea un teléfono paraguayo al formato +595XXXXXXXXX.
+        Ejemplos:
+          '0992756462' -> '+595992756462'
+          '992756462'  -> '+595992756462'
+          '+595992756462' -> '+595992756462'
+          '' -> ''
+        """
+        if not phone:
+            return ""
+        phone = phone.strip().replace(" ", "").replace("-", "")
+        if phone.startswith("+595"):
+            return phone
+        if phone.startswith("595") and len(phone) >= 12:
+            return f"+{phone}"
+        if phone.startswith("0"):
+            phone = phone[1:]
+        return f"+595{phone}"
+
     async def create_order(
-        self, 
-        identifier: str, 
-        amount: float, 
-        description: str, 
-        ref_id: str
+        self,
+        identifier: str,
+        amount: float,
+        description: str,
+        ref_id: str,
+        buyer_name: str = "",
+        buyer_email: str = "",
+        buyer_phone: str = ""
     ) -> Optional[str]:
         """
         Crea un pedido usando la API V1.1 de Pagopar.
@@ -221,13 +245,14 @@ class PagoparService:
             raw_token = f"{self.private_key}{order_id}{amount_int}"
             token = hashlib.sha1(raw_token.encode('utf-8')).hexdigest()
             
-            # Buyer info mínimo requerido
+            # Buyer info — usar datos reales del usuario cuando estén disponibles
+            formatted_phone = self._format_phone_py(buyer_phone) if buyer_phone else ""
             buyer_info = {
                 "ruc": "",
-                "email": f"user{identifier}@cuenly.com",  # Email del usuario
+                "email": buyer_email or f"user{identifier}@cuenly.com",
                 "ciudad": "1",
-                "nombre": f"Usuario {identifier}",
-                "telefono": "+595981000000",
+                "nombre": buyer_name or f"Usuario {identifier}",
+                "telefono": formatted_phone or "+595981000000",
                 "direccion": "",
                 "documento": str(identifier),
                 "coordenadas": "",

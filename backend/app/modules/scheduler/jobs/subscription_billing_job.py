@@ -118,7 +118,13 @@ class SubscriptionBillingJob:
         user_email = sub.get("user_email")
         plan_name = sub.get("plan_name", "Plan")
         amount = sub.get("plan_price", 0)
-        
+
+        # Obtener datos reales del usuario para Pagopar
+        user_repo = UserRepository()
+        db_user = user_repo.get_by_email(user_email) or {}
+        buyer_name = db_user.get("name", "")
+        buyer_phone = db_user.get("phone", "")
+
         logger.info(f"💳 Procesando cobro: {user_email} - {plan_name} - {amount} PYG")
         
         try:
@@ -138,7 +144,10 @@ class SubscriptionBillingJob:
                 identifier=pagopar_user_id,
                 amount=amount,
                 description=f"Suscripción {plan_name} - {datetime.now().strftime('%B %Y')}",
-                ref_id=sub_id
+                ref_id=sub_id,
+                buyer_name=buyer_name,
+                buyer_email=user_email,
+                buyer_phone=buyer_phone
             )
             
             if not order_hash:
