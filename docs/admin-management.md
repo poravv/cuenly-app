@@ -1,7 +1,7 @@
 # Gestión de Administradores — CuenlyApp
 
 > Última revisión: 2026-04-29
-> Estado: Plan aprobado, pendiente implementación
+> Estado: ✅ COMPLETO — listo para deploy
 
 ---
 
@@ -177,7 +177,7 @@ La `FIREBASE_API_KEY` actual (`AIzaSyA...`) estuvo hardcodeada en el historial g
 | UI Angular /admin/admins | ✅ `frontend/src/app/components/admin-manage/` |
 | Firestore Security Rules deployadas | ✅ `firestore.rules` — cuenly-app |
 | BOOTSTRAP_ADMIN_EMAIL en GitHub Secrets | ✅ `andyvercha@gmail.com` |
-| FIREBASE_SERVICE_ACCOUNT_JSON | ⏳ **PENDIENTE** — ver instrucciones abajo |
+| FIREBASE_SERVICE_ACCOUNT_JSON | ✅ `cuenly-backend@cuenly-app.iam.gserviceaccount.com` — key generada y subida a GitHub Secrets |
 
 ### Pasos finales para activar
 
