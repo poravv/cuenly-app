@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { Router } from '@angular/router';
 import { ExportTemplateService } from '../../services/export-template.service';
 
@@ -7,13 +9,15 @@ import { ExportTemplateService } from '../../services/export-template.service';
   templateUrl: './template-preset-selector.component.html',
   styleUrls: ['./template-preset-selector.component.scss']
 })
-export class TemplatePresetSelectorComponent implements OnInit {
+export class TemplatePresetSelectorComponent implements OnInit, OnDestroy {
   presets: any = {};
   recommendations: any = {};
   loading = true;
   creating = false;
   selectedPreset: string | null = null;
   customName = '';
+
+  private destroy$ = new Subject<void>();
 
   constructor(
     private exportTemplateService: ExportTemplateService,
@@ -24,9 +28,14 @@ export class TemplatePresetSelectorComponent implements OnInit {
     this.loadPresets();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadPresets(): void {
     this.loading = true;
-    this.exportTemplateService.getTemplatePresets().subscribe({
+    this.exportTemplateService.getTemplatePresets().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response: any) => {
         this.presets = response.presets || {};
         this.recommendations = response.recommendations || {};
@@ -53,7 +62,7 @@ export class TemplatePresetSelectorComponent implements OnInit {
       name: this.customName.trim() || undefined
     };
 
-    this.exportTemplateService.createFromPreset(request).subscribe({
+    this.exportTemplateService.createFromPreset(request).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response: any) => {
         if (response.success) {
           // Redirigir al editor del template creado

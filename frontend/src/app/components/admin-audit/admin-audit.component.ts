@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 
@@ -7,7 +9,7 @@ import { NotificationService } from '../../services/notification.service';
   templateUrl: './admin-audit.component.html',
   styleUrls: ['./admin-audit.component.scss']
 })
-export class AdminAuditComponent implements OnInit {
+export class AdminAuditComponent implements OnInit, OnDestroy {
   loading = true;
   loadingAudit = false;
   auditLogs: any[] = [];
@@ -16,6 +18,8 @@ export class AdminAuditComponent implements OnInit {
   auditTotalPages = 0;
   auditTotal = 0;
   auditActionFilter = '';
+
+  private destroy$ = new Subject<void>();
 
   constructor(
     private apiService: ApiService,
@@ -26,9 +30,14 @@ export class AdminAuditComponent implements OnInit {
     this.loadAuditLogs();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadAuditLogs(): void {
     this.loadingAudit = true;
-    this.apiService.getAuditLogs(this.auditPage, this.auditPageSize, this.auditActionFilter || undefined).subscribe({
+    this.apiService.getAuditLogs(this.auditPage, this.auditPageSize, this.auditActionFilter || undefined).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         if (response.success) {
           this.auditLogs = response.logs;

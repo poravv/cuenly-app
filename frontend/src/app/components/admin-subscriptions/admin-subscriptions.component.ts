@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 
@@ -7,7 +9,7 @@ import { NotificationService } from '../../services/notification.service';
   templateUrl: './admin-subscriptions.component.html',
   styleUrls: ['./admin-subscriptions.component.scss']
 })
-export class AdminSubscriptionsComponent implements OnInit {
+export class AdminSubscriptionsComponent implements OnInit, OnDestroy {
   loading = true;
   loadingSubscriptions = false;
   subscriptions: any[] = [];
@@ -18,6 +20,8 @@ export class AdminSubscriptionsComponent implements OnInit {
   subscriptionsStatusFilter = 'all';
   dateNow = new Date().toISOString();
 
+  private destroy$ = new Subject<void>();
+
   constructor(
     private apiService: ApiService,
     private notificationService: NotificationService
@@ -27,11 +31,16 @@ export class AdminSubscriptionsComponent implements OnInit {
     this.loadSubscriptions();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadSubscriptions(): void {
     this.loadingSubscriptions = true;
     this.apiService.getAdminSubscriptions(
       this.subscriptionsPage, this.subscriptionsPageSize, this.subscriptionsStatusFilter
-    ).subscribe({
+    ).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         if (response.data) {
           this.subscriptions = response.data;
@@ -70,7 +79,7 @@ export class AdminSubscriptionsComponent implements OnInit {
         action: {
           label: 'Cobrar',
           handler: () => {
-            this.apiService.retrySubscriptionCharge(sub._id).subscribe({
+            this.apiService.retrySubscriptionCharge(sub._id).pipe(takeUntil(this.destroy$)).subscribe({
               next: (res) => {
                 if (res.success) {
                   this.notificationService.success('Cobro exitoso', 'Cobro realizado');

@@ -1,4 +1,6 @@
-import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
@@ -9,11 +11,13 @@ import { NotificationService } from '../../services/notification.service';
     styleUrls: ['./pagopar-result.component.scss'],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class PagoparResultComponent implements OnInit {
+export class PagoparResultComponent implements OnInit, OnDestroy {
     loading = true;
     orderStatus: any = null;
     error: string | null = null;
     hash: string | null = null;
+
+    private destroy$ = new Subject<void>();
 
     constructor(
         private route: ActivatedRoute,
@@ -34,9 +38,14 @@ export class PagoparResultComponent implements OnInit {
         }
     }
 
+    ngOnDestroy(): void {
+        this.destroy$.next();
+        this.destroy$.complete();
+    }
+
     validateOrder(): void {
         this.loading = true;
-        this.apiService.validatePagoparOrder(this.hash!).subscribe({
+        this.apiService.validatePagoparOrder(this.hash!).pipe(takeUntil(this.destroy$)).subscribe({
             next: (data) => {
                 this.orderStatus = data;
                 this.loading = false;

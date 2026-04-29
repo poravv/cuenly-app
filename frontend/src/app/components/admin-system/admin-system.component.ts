@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 
@@ -27,7 +29,7 @@ interface ResetStats {
   templateUrl: './admin-system.component.html',
   styleUrls: ['./admin-system.component.scss']
 })
-export class AdminSystemComponent implements OnInit {
+export class AdminSystemComponent implements OnInit, OnDestroy {
   // Queue
   queueStats: QueueStats | null = null;
   loadingQueueStats = false;
@@ -44,6 +46,8 @@ export class AdminSystemComponent implements OnInit {
   // Users for dropdown
   users: any[] = [];
 
+  private destroy$ = new Subject<void>();
+
   constructor(
     private apiService: ApiService,
     private notificationService: NotificationService
@@ -55,10 +59,15 @@ export class AdminSystemComponent implements OnInit {
     this.loadUsers();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   // Queue stats
   loadQueueStats(): void {
     this.loadingQueueStats = true;
-    this.apiService.getQueueStats().subscribe({
+    this.apiService.getQueueStats().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         if (response.success) {
           this.queueStats = response;
@@ -127,7 +136,7 @@ export class AdminSystemComponent implements OnInit {
   }
 
   loadUsers(): void {
-    this.apiService.getAdminUsers(1, 100, '').subscribe({
+    this.apiService.getAdminUsers(1, 100, '').pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         if (response.success) {
           this.users = response.users;

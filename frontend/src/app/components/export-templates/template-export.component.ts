@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ExportTemplateService } from '../../services/export-template.service';
 import { NotificationService } from '../../services/notification.service';
@@ -14,7 +16,7 @@ import {
   templateUrl: './template-export.component.html',
   styleUrls: ['./template-export.component.scss']
 })
-export class TemplateExportComponent implements OnInit {
+export class TemplateExportComponent implements OnInit, OnDestroy {
   templateId: string | null = null;
   selectedTemplate: ExportTemplate | null = null;
   templates: ExportTemplate[] = [];
@@ -30,6 +32,8 @@ export class TemplateExportComponent implements OnInit {
 
   filters: ExportFilters = {};
 
+  private destroy$ = new Subject<void>();
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -42,8 +46,13 @@ export class TemplateExportComponent implements OnInit {
     this.loadTemplates();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadTemplates(): void {
-    this.exportTemplateService.getTemplates().subscribe({
+    this.exportTemplateService.getTemplates().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response: TemplatesListResponse) => {
         this.templates = response.templates;
         
@@ -119,7 +128,7 @@ export class TemplateExportComponent implements OnInit {
       }
     });
 
-    this.exportTemplateService.exportWithTemplate(this.exportRequest).subscribe({
+    this.exportTemplateService.exportWithTemplate(this.exportRequest).pipe(takeUntil(this.destroy$)).subscribe({
       next: (blob: Blob) => {
         this.exportTemplateService.downloadExcelFile(blob, this.exportRequest.filename!);
         this.exporting = false;

@@ -1,5 +1,7 @@
 import { HttpClient } from '@angular/common/http';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 
 interface MonthlyStats {
@@ -35,7 +37,7 @@ interface MonthStatistics {
   templateUrl: './invoices-stats.component.html',
   styleUrls: ['./invoices-stats.component.scss']
 })
-export class InvoicesStatsComponent implements OnInit {
+export class InvoicesStatsComponent implements OnInit, OnDestroy {
   availableMonths: MonthlyStats[] = [];
   selectedMonth = '';
   selectedMonthStats: MonthStatistics | null = null;
@@ -44,17 +46,24 @@ export class InvoicesStatsComponent implements OnInit {
   loadingStats = false;
   error: string | null = null;
 
+  private destroy$ = new Subject<void>();
+
   constructor(private http: HttpClient) { }
 
   ngOnInit(): void {
     this.loadMonths();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadMonths(): void {
     this.loadingMonths = true;
     this.error = null;
 
-    this.http.get<{ success: boolean; months: MonthlyStats[] }>(`${environment.apiUrl}/invoices/months`).subscribe({
+    this.http.get<{ success: boolean; months: MonthlyStats[] }>(`${environment.apiUrl}/invoices/months`).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         const months = response?.months || [];
         this.availableMonths = months.sort((a, b) => b.year_month.localeCompare(a.year_month));
@@ -94,7 +103,7 @@ export class InvoicesStatsComponent implements OnInit {
 
     this.http.get<{ success: boolean; statistics: MonthStatistics }>(
       `${environment.apiUrl}/invoices/month/${yearMonth}/stats`
-    ).subscribe({
+    ).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         this.selectedMonthStats = response?.statistics || null;
       },
