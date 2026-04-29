@@ -14,6 +14,9 @@ import { AdminSubscriptionsComponent } from '../../components/admin-subscription
 import { AdminSystemComponent } from '../../components/admin-system/admin-system.component';
 import { AdminAuditComponent } from '../../components/admin-audit/admin-audit.component';
 
+// Admin management
+import { AdminManageComponent } from '../../components/admin-manage/admin-manage.component';
+
 // Shared components
 import { PlansManagementComponent } from '../../components/plans-management/plans-management.component';
 
@@ -29,6 +32,7 @@ import { AdminRoutingModule } from './admin-routing.module';
         AdminSubscriptionsComponent,
         AdminSystemComponent,
         AdminAuditComponent,
+        AdminManageComponent,
         PlansManagementComponent
     ],
     imports: [

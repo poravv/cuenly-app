@@ -1,0 +1,108 @@
+<div class="admin-manage-container">
+  <div class="section-header mb-3">
+    <h5 class="mb-0">Gestión de Administradores</h5>
+    <p class="text-muted small mb-0">
+      Los admins tienen acceso completo al panel de administración.
+    </p>
+  </div>
+
+  <!-- Estado de carga -->
+  <div *ngIf="loading" class="text-center py-4">
+    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+    <span class="ms-2 text-muted">Cargando admins...</span>
+  </div>
+
+  <!-- Error -->
+  <div *ngIf="error && !loading" class="alert alert-danger d-flex align-items-center">
+    <span>Error al cargar los administradores.</span>
+    <button class="btn btn-sm btn-outline-danger ms-auto" (click)="loadAdmins()">Reintentar</button>
+  </div>
+
+  <!-- Lista de admins -->
+  <div *ngIf="!loading && !error">
+    <div class="table-responsive mb-4">
+      <table class="table table-hover table-sm align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Email</th>
+            <th>Otorgado por</th>
+            <th>Fecha</th>
+            <th>Notas</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let admin of admins; trackBy: trackByEmail">
+            <td>
+              <span class="fw-medium">{{ admin.email }}</span>
+            </td>
+            <td>
+              <span class="text-muted small">{{ admin.granted_by }}</span>
+            </td>
+            <td>
+              <span class="text-muted small">
+                {{ admin.granted_at | date:'dd/MM/yyyy' }}
+              </span>
+            </td>
+            <td>
+              <span class="text-muted small">{{ admin.notes || '—' }}</span>
+            </td>
+            <td class="text-end">
+              <ng-container *ngIf="confirmRevokeEmail !== admin.email">
+                <button
+                  class="btn btn-sm btn-outline-danger"
+                  (click)="confirmRevoke(admin.email)"
+                  [disabled]="revoking">
+                  Revocar
+                </button>
+              </ng-container>
+              <ng-container *ngIf="confirmRevokeEmail === admin.email">
+                <span class="text-danger small me-2">¿Confirmar revocación?</span>
+                <button
+                  class="btn btn-sm btn-danger me-1"
+                  (click)="revokeAdmin(admin.email)"
+                  [disabled]="revoking">
+                  <span *ngIf="revoking" class="spinner-border spinner-border-sm me-1"></span>
+                  Sí, revocar
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" (click)="cancelRevoke()">
+                  Cancelar
+                </button>
+              </ng-container>
+            </td>
+          </tr>
+          <tr *ngIf="admins.length === 0">
+            <td colspan="5" class="text-center text-muted py-3">
+              No hay administradores registrados.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Agregar nuevo admin -->
+    <div class="add-admin-form">
+      <h6 class="mb-2">Agregar administrador</h6>
+      <div class="input-group" style="max-width: 420px;">
+        <input
+          type="email"
+          class="form-control form-control-sm"
+          placeholder="email@ejemplo.com"
+          [(ngModel)]="newAdminEmail"
+          (keydown.enter)="addAdmin()"
+          [disabled]="addingAdmin" />
+        <button
+          class="btn btn-primary btn-sm"
+          (click)="addAdmin()"
+          [disabled]="addingAdmin || !newAdminEmail.trim()">
+          <span *ngIf="addingAdmin" class="spinner-border spinner-border-sm me-1"></span>
+          Agregar
+        </button>
+      </div>
+      <div *ngIf="addError" class="text-danger small mt-1">{{ addError }}</div>
+      <p class="text-muted small mt-1 mb-0">
+        El usuario debe tener una cuenta activa en CuenlyApp.
+      </p>
+    </div>
+  </div>
+</div>

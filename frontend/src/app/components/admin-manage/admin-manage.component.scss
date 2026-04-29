@@ -1,0 +1,12 @@
+.admin-manage-container {
+  .section-header {
+    border-bottom: 1px solid var(--border-color, #dee2e6);
+    padding-bottom: 0.75rem;
+  }
+
+  .add-admin-form {
+    background: var(--bg-light, #f8f9fa);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+}

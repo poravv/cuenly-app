@@ -7,6 +7,7 @@ import { AdminPlansComponent } from '../../components/admin-plans/admin-plans.co
 import { AdminSubscriptionsComponent } from '../../components/admin-subscriptions/admin-subscriptions.component';
 import { AdminSystemComponent } from '../../components/admin-system/admin-system.component';
 import { AdminAuditComponent } from '../../components/admin-audit/admin-audit.component';
+import { AdminManageComponent } from '../../components/admin-manage/admin-manage.component';
 
 const routes: Routes = [
     {
@@ -20,6 +21,7 @@ const routes: Routes = [
             { path: 'suscripciones', component: AdminSubscriptionsComponent },
             { path: 'sistema', component: AdminSystemComponent },
             { path: 'auditoria', component: AdminAuditComponent },
+            { path: 'admins', component: AdminManageComponent },
             // Legacy redirect
             { path: 'plans', redirectTo: 'planes', pathMatch: 'full' }
         ]
