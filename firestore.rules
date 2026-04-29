@@ -1,0 +1,16 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // admins — solo Firebase Admin SDK (backend). Ningún cliente web puede leer ni escribir.
+    match /admins/{email} {
+      allow read, write: if false;
+    }
+
+    // Bloquear todo lo demás por defecto
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
