@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 from app.utils.firebase_auth import verify_firebase_token, extract_bearer_token
 from app.utils.trial_middleware import check_trial_limits_optional, check_trial_limits, check_ai_limits
 from app.repositories.user_repository import UserRepository
+from app.repositories.firestore_admin_repository import FirestoreAdminRepository
 from app.utils.observability import observability_logger
 from app.middleware.observability_middleware import BusinessEventLogger
 from app.config.settings import settings
@@ -98,16 +99,16 @@ def _get_current_user_with_ai_check(request: Request) -> Dict[str, Any]:
     return claims
 
 def _get_current_admin(request: Request) -> Dict[str, Any]:
-    """Valida token Firebase y verifica que sea admin. Lanza excepción si no es admin."""
+    """Valida token Firebase y verifica que sea admin en Firestore. Lanza excepción si no es admin."""
     claims = _get_current_user(request)
     if not claims:
         raise HTTPException(status_code=401, detail="Usuario no autenticado")
-    
-    # Verificar si es administrador
-    user_repo = UserRepository()
-    if not user_repo.is_admin(claims.get('email', '')):
+
+    # Verificar si es administrador consultando Firestore (con cache Redis)
+    admin_repo = FirestoreAdminRepository()
+    if not admin_repo.is_admin(claims.get('email', '')):
         raise HTTPException(status_code=403, detail="Acceso denegado. Se requieren permisos de administrador.")
-    
+
     return claims
     
 # Alias for compatibility if needed

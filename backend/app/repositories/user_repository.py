@@ -42,12 +42,17 @@ class UserRepository:
         is_new_user = existing_user is None
         
         # Determinar rol:
-        # 1. Si el email está en ADMIN_EMAILS (settings), siempre es admin.
-        # 2. Si ya tiene role='admin' en la DB (asignado por otro admin), se preserva.
+        # 1. Si el email está en Firestore como admin activo, siempre es admin.
+        # 2. Si ya tiene role='admin' en MongoDB (asignado previamente), se preserva.
         # 3. En cualquier otro caso, el rol es 'user'.
-        in_admin_list = email in settings.ADMIN_EMAILS
+        # El fallback conservador: si Firestore falla, preservar rol existente sin promover.
         existing_role = (existing_user or {}).get('role', 'user')
-        is_admin = in_admin_list or existing_role == 'admin'
+        try:
+            from app.repositories.firestore_admin_repository import FirestoreAdminRepository
+            is_firestore_admin = FirestoreAdminRepository().is_admin(email)
+        except Exception:
+            is_firestore_admin = False
+        is_admin = is_firestore_admin or existing_role == 'admin'
         role = 'admin' if is_admin else 'user'
         
         # Datos básicos del usuario que siempre se actualizan
@@ -443,9 +448,9 @@ class UserRepository:
 
     # Métodos de administración
     def is_admin(self, email: str) -> bool:
-        """Verifica si el usuario es administrador"""
-        user = self.get_by_email(email)
-        return user and user.get('role') == 'admin'
+        """Verifica si el usuario es administrador consultando Firestore (fuente de verdad)."""
+        from app.repositories.firestore_admin_repository import FirestoreAdminRepository
+        return FirestoreAdminRepository().is_admin(email)
 
     def get_all_users(self, page: int = 1, page_size: int = 20, search: str = "") -> Dict[str, Any]:
         """Obtiene todos los usuarios con paginación y búsqueda opcional (solo para admins)"""
