@@ -24,9 +24,9 @@ export class AdminLayoutComponent implements OnInit, OnDestroy {
     { path: 'usuarios', icon: 'bi-people', label: 'Usuarios' },
     { path: 'planes', icon: 'bi-credit-card', label: 'Planes' },
     { path: 'suscripciones', icon: 'bi-receipt', label: 'Suscripciones' },
+    { path: 'admins', icon: 'bi-person-badge', label: 'Admins' },
     { path: 'sistema', icon: 'bi-gear', label: 'Sistema' },
     { path: 'auditoria', icon: 'bi-shield-check', label: 'Auditoría' },
-    { path: 'admins', icon: 'bi-person-badge', label: 'Admins' },
   ];
 
   private routerSub!: Subscription;
