@@ -9,7 +9,7 @@ spec:
   resources:
     requests:
       storage: 50Gi    # Aumentado para multi-usuario
-  # storageClassName: longhorn  # eliminado — usar default del cluster
+  storageClassName: longhorn
 ---
 apiVersion: apps/v1
 kind: Deployment
