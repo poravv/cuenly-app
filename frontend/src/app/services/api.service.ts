@@ -646,6 +646,19 @@ export class ApiService {
     return this.http.get<any>(`${this.apiUrl}/pagopar/validation/orders/${orderHash}`);
   }
 
+  // Admin management
+  getAdminList(): Observable<{ admins: any[] }> {
+    return this.http.get<{ admins: any[] }>(`${this.apiUrl}/admin/admins`);
+  }
+
+  grantAdmin(targetEmail: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/admin/admins`, { target_email: targetEmail });
+  }
+
+  revokeAdmin(targetEmail: string): Observable<any> {
+    return this.http.delete<any>(`${this.apiUrl}/admin/admins/${encodeURIComponent(targetEmail)}`);
+  }
+
   // Admin Subscriptions
   getAdminSubscriptions(page: number = 1, pageSize: number = 20, status: string = 'active'): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/admin/subscriptions`, {
