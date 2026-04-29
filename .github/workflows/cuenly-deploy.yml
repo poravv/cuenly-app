@@ -511,6 +511,15 @@ jobs:
           fi
           echo "✅ FRONTEND_API_KEY configurado desde secrets"
 
+          # Validar FIREBASE_SERVICE_ACCOUNT_JSON — requerido para Firebase Admin SDK (gestión de admins)
+          # Configurar como secret en GitHub: Settings → Secrets → Actions → FIREBASE_SERVICE_ACCOUNT_JSON
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" ]; then
+            echo "ERROR: Secret FIREBASE_SERVICE_ACCOUNT_JSON no configurado en GitHub Secrets" >&2
+            echo "Crear service account en GCP con rol Cloud Datastore User y agregar el JSON (base64)" >&2
+            exit 1
+          fi
+          echo "✅ FIREBASE_SERVICE_ACCOUNT_JSON configurado"
+
           kubectl delete secret backend-env-secrets -n ${{ env.NAMESPACE }} --ignore-not-found=true
           kubectl create secret generic backend-env-secrets \
             --namespace=${{ env.NAMESPACE }} \
@@ -545,7 +554,9 @@ jobs:
             --from-literal=PAGOPAR_BASE_URL="${{ secrets.PAGOPAR_BASE_URL }}" \
             --from-literal=GOOGLE_OAUTH_CLIENT_ID="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
             --from-literal=GOOGLE_OAUTH_CLIENT_SECRET="${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}" \
-            --from-literal=GOOGLE_OAUTH_REDIRECT_URI="${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}"
+            --from-literal=GOOGLE_OAUTH_REDIRECT_URI="${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}" \
+            --from-literal=FIREBASE_SERVICE_ACCOUNT_JSON="${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" \
+            --from-literal=BOOTSTRAP_ADMIN_EMAIL="${{ secrets.BOOTSTRAP_ADMIN_EMAIL || '' }}"
             
       - name: Create/Update MongoDB secrets
         run: |
