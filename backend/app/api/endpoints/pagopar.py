@@ -317,21 +317,20 @@ async def pagopar_webhook(payload: Dict[str, Any] = Body(...)):
         # Si el pago fue exitoso, activar suscripción
         if pagado:
             from app.repositories.subscription_repository import SubscriptionRepository
-            from pymongo import MongoClient
+            from app.core.database import get_mongo_client
             from app.config.settings import settings
-            
+
             # Buscar orden pendiente
-            client = MongoClient(settings.MONGODB_URL)
-            db = client[settings.MONGODB_DATABASE]
-            
+            db = get_mongo_client()[settings.MONGODB_DATABASE]
+
             pending_order = db.pending_subscriptions.find_one({
                 "order_hash": hash_pedido,
                 "status": "pending"
             })
-            
+
             if pending_order:
                 logger.info(f"✅ Orden pendiente encontrada para {pending_order['user_email']}")
-                
+
                 # Activar suscripción
                 repo = SubscriptionRepository()
                 success = await repo.assign_plan_to_user(
@@ -340,7 +339,7 @@ async def pagopar_webhook(payload: Dict[str, Any] = Body(...)):
                     payment_method="pagopar",
                     payment_reference=hash_pedido
                 )
-                
+
                 if success:
                     # Marcar orden como completada
                     db.pending_subscriptions.update_one(

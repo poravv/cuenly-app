@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from pymongo import MongoClient
 import logging
 from app.config.settings import settings
+from app.core.database import get_mongo_client
 
 logger = logging.getLogger(__name__)
 
@@ -10,14 +10,10 @@ class TransactionRepository:
     _indexes_ensured: bool = False
 
     def __init__(self, conn_str: Optional[str] = None, db_name: Optional[str] = None):
-        self.conn_str = conn_str or settings.MONGODB_URL
         self.db_name = db_name or settings.MONGODB_DATABASE
-        self._client: Optional[MongoClient] = None
 
     def _get_db(self):
-        if not self._client:
-            self._client = MongoClient(self.conn_str, serverSelectionTimeoutMS=60000)
-        return self._client[self.db_name]
+        return get_mongo_client()[self.db_name]
 
     @property
     def transactions_collection(self):

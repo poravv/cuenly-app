@@ -1,9 +1,10 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
-from pymongo import MongoClient, ReturnDocument
+from pymongo import ReturnDocument
 from pymongo.collection import Collection
 from app.config.settings import settings
+from app.core.database import get_mongo_client
 from app.repositories.subscription_repository import SubscriptionRepository
 import logging
 
@@ -14,17 +15,15 @@ class UserRepository:
     _indexes_ensured: bool = False
 
     def __init__(self, conn_str: Optional[str] = None, db_name: Optional[str] = None, collection: str = "auth_users"):
-        self.conn_str = conn_str or settings.MONGODB_URL
         self.db_name = db_name or settings.MONGODB_DATABASE
         self.collection = collection
-        self._client: Optional[MongoClient] = None
+
+    @property
+    def _db(self):
+        return get_mongo_client()[self.db_name]
 
     def _coll(self) -> Collection:
-        if not self._client:
-            self._client = MongoClient(self.conn_str, serverSelectionTimeoutMS=60000)
-            self._client.admin.command('ping')
-        db = self._client[self.db_name]
-        coll = db[self.collection]
+        coll = self._db[self.collection]
         if not UserRepository._indexes_ensured:
             try:
                 coll.create_index('email', unique=True)

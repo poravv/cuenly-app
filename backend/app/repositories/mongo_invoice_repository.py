@@ -4,12 +4,12 @@ import re
 from typing import List, Optional
 from datetime import datetime
 
-from pymongo import MongoClient
 from pymongo.collection import Collection
 
 from app.models.invoice_v2 import InvoiceHeader, InvoiceDetail, InvoiceDocument
 from app.repositories.invoice_repository import InvoiceRepository
 from app.config.settings import settings
+from app.core.database import get_mongo_client
 
 logger = logging.getLogger(__name__)
 _CDC_TOKEN_RE = re.compile(r"\d{44}")
@@ -23,18 +23,12 @@ class MongoInvoiceRepository(InvoiceRepository):
                  database_name: Optional[str] = None,
                  headers_collection: str = "invoice_headers",
                  items_collection: str = "invoice_items") -> None:
-        self.conn_str = connection_string or settings.MONGODB_URL
         self.db_name = database_name or settings.MONGODB_DATABASE
         self.headers_collection_name = headers_collection
         self.items_collection_name = items_collection
-        self._client: Optional[MongoClient] = None
 
     def _get_db(self):
-        if not self._client:
-            self._client = MongoClient(self.conn_str, serverSelectionTimeoutMS=60000)
-            self._client.admin.command('ping')
-            logger.info("✅ Conectado a MongoDB (repo)")
-        return self._client[self.db_name]
+        return get_mongo_client()[self.db_name]
 
     def _ensure_indexes(self) -> None:
         """Crea índices una sola vez por proceso."""
@@ -394,8 +388,6 @@ class MongoInvoiceRepository(InvoiceRepository):
         self.replace_items(doc.header.id, new_items)
 
     def close(self):
-        try:
-            if self._client:
-                self._client.close()
-        except Exception:
-            pass
+        # No-op: el MongoClient es un singleton gestionado por app.core.database.
+        # No se debe cerrar entre requests.
+        pass

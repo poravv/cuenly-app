@@ -8,9 +8,10 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
-from pymongo import MongoClient, DESCENDING
+from pymongo import DESCENDING
 from bson import ObjectId
 from app.config.settings import settings
+from app.core.database import get_mongo_client
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +21,10 @@ class AuditRepository:
     _indexes_ensured: bool = False
 
     def __init__(self) -> None:
-        self._client: Optional[MongoClient] = None
+        pass
 
     def _get_collection(self):
-        if not self._client:
-            self._client = MongoClient(settings.MONGODB_URL, serverSelectionTimeoutMS=5000)
-        coll = self._client[settings.MONGODB_DATABASE][self.COLLECTION]
+        coll = get_mongo_client()[settings.MONGODB_DATABASE][self.COLLECTION]
         if not AuditRepository._indexes_ensured:
             try:
                 coll.create_index([("timestamp", DESCENDING)])

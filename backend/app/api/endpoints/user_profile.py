@@ -289,12 +289,10 @@ async def get_queue_events(
     email = (user.get("email") or "").lower()
     
     try:
-        from pymongo import MongoClient, DESCENDING
-        from app.config.settings import settings
-        
-        client = MongoClient(settings.MONGODB_URL)
-        db = client[settings.MONGODB_DATABASE]
-        coll = db.processed_emails
+        from pymongo import DESCENDING
+        from app.core.database import get_mongo_client
+
+        coll = get_mongo_client()[settings.MONGODB_DATABASE].processed_emails
         
         # Filtrar por owner_email y status problemáticos o pendientes
         query = {"owner_email": email}
@@ -633,7 +631,8 @@ async def stream_queue_events(
     import json
     import asyncio
     import hashlib
-    from pymongo import MongoClient, DESCENDING
+    from pymongo import DESCENDING
+    from app.core.database import get_mongo_client
 
     if not user:
         raise HTTPException(status_code=401, detail="Usuario no autenticado")
@@ -642,6 +641,8 @@ async def stream_queue_events(
 
     async def event_generator():
         last_data_hash: Optional[str] = None
+        # Obtener colección una sola vez antes del loop — el singleton no genera I/O adicional
+        coll = get_mongo_client()[settings.MONGODB_DATABASE].processed_emails
 
         while True:
             if await request.is_disconnected():
@@ -649,10 +650,6 @@ async def stream_queue_events(
                 break
 
             try:
-                client = MongoClient(settings.MONGODB_URL)
-                db = client[settings.MONGODB_DATABASE]
-                coll = db.processed_emails
-
                 query: Dict[str, Any] = {"owner_email": owner}
                 if status and status != "all":
                     query["status"] = status
@@ -702,8 +699,6 @@ async def stream_queue_events(
                     if "email_date" in doc and hasattr(doc["email_date"], "isoformat"):
                         doc["email_date"] = doc["email_date"].isoformat()
                     events.append(doc)
-
-                client.close()
 
                 # Recolectar jobs RQ activos (misma lógica que get_queue_events)
                 if status in {"all", "pending", "processing"}:
@@ -897,15 +892,12 @@ async def retry_queue_event(event_id: str, user: Dict[str, Any] = Depends(_get_c
     email = (user.get("email") or "").lower()
     
     try:
-        from pymongo import MongoClient
-        from app.config.settings import settings
+        from app.core.database import get_mongo_client
         from app.worker.queues import enqueue_job
         from app.worker.jobs import process_single_email_from_uid_job
         from datetime import datetime
-        
-        client = MongoClient(settings.MONGODB_URL)
-        db = client[settings.MONGODB_DATABASE]
-        coll = db.processed_emails
+
+        coll = get_mongo_client()[settings.MONGODB_DATABASE].processed_emails
         
         # Verificar que el evento pertenezca al usuario
         doc = coll.find_one({"_id": event_id, "owner_email": email})
