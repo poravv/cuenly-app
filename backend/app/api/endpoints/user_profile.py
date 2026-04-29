@@ -3,7 +3,7 @@ Endpoints de perfil de usuario
 Migrado desde api.py
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, List, Literal
 from datetime import datetime
 import logging
@@ -38,7 +38,7 @@ class UpdateProcessingStartDatePayload(BaseModel):
 
 class CancelActiveJobsPayload(BaseModel):
     scope: Literal["all", "single_email", "range", "full_sync"] = "all"
-    max_jobs: int = 500
+    max_jobs: int = Field(default=500, ge=1, le=2000)
 
 
 @router.get("")
@@ -274,10 +274,10 @@ async def debug_user_info(request: Request, user: Dict[str, Any] = Depends(_get_
 
 @router.get("/queue-events")
 async def get_queue_events(
-    page: int = 1, 
-    page_size: int = 50, 
-    status: str = "all", 
-    user: Dict[str, Any] = Depends(_get_current_user)
+    page: int = Query(default=1, ge=1, le=10000),
+    page_size: int = Query(default=50, ge=1, le=200),
+    status: str = "all",
+    user: Dict[str, Any] = Depends(_get_current_user),
 ):
     """
     Obtiene los eventos pendientes (procesamientos fallidos o pausados por IA) del usuario.
@@ -621,7 +621,7 @@ async def stream_queue_events(
     request: Request,
     token: Optional[str] = Query(default=None),
     status: str = Query(default="all"),
-    page_size: int = Query(default=20),
+    page_size: int = Query(default=20, ge=1, le=100),
     user: Dict[str, Any] = Depends(_get_sse_user),
 ):
     """
