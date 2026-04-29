@@ -11,6 +11,7 @@ import logging
 from app.api.deps import _get_current_user, _get_current_user_with_trial_info
 from app.config.settings import settings
 from app.repositories.user_repository import UserRepository
+from app.repositories.firestore_admin_repository import FirestoreAdminRepository
 from app.utils.validators import SecurityValidators
 
 router = APIRouter()
@@ -69,13 +70,16 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
         except Exception as e:
             logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
     
-    # Verificar si es admin
+    # Verificar si es admin consultando Firestore (fuente de verdad)
     is_admin = False
     if db_user:
         is_admin = db_user.get('role') == 'admin'
     else:
-        # Fallback: verificar contra lista de admins configurada
-        is_admin = user.get('email', '').lower() in settings.ADMIN_EMAILS
+        # Fallback: verificar contra Firestore si no hay registro en MongoDB
+        try:
+            is_admin = FirestoreAdminRepository().is_admin(user.get('email', ''))
+        except Exception:
+            is_admin = False
     
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {

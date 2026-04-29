@@ -9,10 +9,10 @@ import logging
 
 from app.api.deps import _get_current_user, _get_current_admin_user
 from app.repositories.user_repository import UserRepository
+from app.repositories.firestore_admin_repository import FirestoreAdminRepository
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.repositories.audit_repository import get_audit_repo
-from app.config.settings import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -76,8 +76,8 @@ async def admin_update_user_role(
         if user_email.lower() == admin.get("email", "").lower():
             raise HTTPException(status_code=400, detail="No puedes cambiar tu propio rol")
 
-        # No permitir quitar admin a emails configurados en ADMIN_EMAILS
-        if user_email.lower() in settings.ADMIN_EMAILS and request.role != 'admin':
+        # No permitir quitar admin a emails que son admins activos en Firestore
+        if FirestoreAdminRepository().is_admin(user_email) and request.role != 'admin':
             raise HTTPException(status_code=400, detail="No se puede cambiar el rol de un administrador configurado en el sistema")
 
         old_role = (target_user or {}).get('role', 'user')
@@ -124,8 +124,8 @@ async def admin_update_user_status(
         if user_email.lower() == admin.get("email", "").lower():
             raise HTTPException(status_code=400, detail="No puedes suspenderte a ti mismo")
 
-        # No permitir suspender a admins configurados en ADMIN_EMAILS
-        if user_email.lower() in settings.ADMIN_EMAILS and request.status == 'suspended':
+        # No permitir suspender a admins activos en Firestore
+        if FirestoreAdminRepository().is_admin(user_email) and request.status == 'suspended':
             raise HTTPException(status_code=400, detail="No se puede suspender a un administrador configurado en el sistema")
 
         old_status = (target_user or {}).get('status', 'active')

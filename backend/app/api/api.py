@@ -1,4 +1,4 @@
-from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues, admin_ai_limits, admin_scheduler, admin_audit, admin_export_templates
+from app.api.endpoints import pagopar, admin_subscriptions, subscriptions, admin_users, admin_plans, user_profile, queues, admin_ai_limits, admin_scheduler, admin_audit, admin_export_templates, admin_manage
 from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File, Form, Query, Body
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -237,12 +237,13 @@ class ProcessRangeRequest(BaseModel):
 
 
 from app.api.deps import (
-    _get_current_user, 
+    _get_current_user,
     _get_current_user_with_trial_info,
     _get_current_user_with_trial_check,
     _get_current_user_with_ai_check,
     _get_current_admin
 )
+from app.repositories.firestore_admin_repository import FirestoreAdminRepository
 
 # Tarea en segundo plano para procesar correos
 def process_emails_task():
@@ -320,14 +321,17 @@ async def get_user_profile(request: Request, user: Dict[str, Any] = Depends(_get
         except Exception as e:
             logger.warning(f"No se pudo obtener fecha de inicio de procesamiento: {e}")
     
-    # Verificar si es admin
+    # Verificar si es admin consultando Firestore (fuente de verdad)
     is_admin = False
     if db_user:
         is_admin = db_user.get('role') == 'admin'
     else:
-        # Fallback: verificar contra lista de admins configurada
-        is_admin = user.get('email', '').lower() in settings.ADMIN_EMAILS
-    
+        # Fallback: verificar contra Firestore si no hay registro en MongoDB
+        try:
+            is_admin = FirestoreAdminRepository().is_admin(user.get('email', ''))
+        except Exception:
+            is_admin = False
+
     # Usar datos de la DB si están disponibles, sino usar claims del token
     return {
         "email": db_user.get('email') if db_user else user.get('email'),
@@ -3455,8 +3459,8 @@ async def admin_update_user_role(
         if not target_user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
-        # No permitir cambiar el rol de admins protegidos
-        if user_email.lower() in settings.ADMIN_EMAILS and request.role != 'admin':
+        # No permitir cambiar el rol de admins activos en Firestore
+        if FirestoreAdminRepository().is_admin(user_email) and request.role != 'admin':
             raise HTTPException(status_code=400, detail="No se puede cambiar el rol del administrador principal")
         
         success = user_repo.update_user_role(user_email, request.role)
@@ -3488,8 +3492,8 @@ async def admin_update_user_status(
         if not target_user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
-        # No permitir suspender admins protegidos
-        if user_email.lower() in settings.ADMIN_EMAILS and request.status == 'suspended':
+        # No permitir suspender admins activos en Firestore
+        if FirestoreAdminRepository().is_admin(user_email) and request.status == 'suspended':
             raise HTTPException(status_code=400, detail="No se puede suspender al administrador principal")
         
         success = user_repo.update_user_status(user_email, request.status)
