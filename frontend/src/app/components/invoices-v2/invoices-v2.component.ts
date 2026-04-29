@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { NotificationService } from '../../services/notification.service';
 import { ApiService } from '../../services/api.service';
 
@@ -7,7 +9,7 @@ import { ApiService } from '../../services/api.service';
   templateUrl: './invoices-v2.component.html',
   styleUrls: ['./invoices-v2.component.scss']
 })
-export class InvoicesV2Component implements OnInit {
+export class InvoicesV2Component implements OnInit, OnDestroy {
   loading = false;
   error: string | null = null;
 
@@ -40,6 +42,8 @@ export class InvoicesV2Component implements OnInit {
   deleteInfo: any = null;
   canDownload: boolean = true;
 
+  private destroy$ = new Subject<void>();
+
   constructor(
     private api: ApiService,
     private notificationService: NotificationService
@@ -55,8 +59,13 @@ export class InvoicesV2Component implements OnInit {
     this.checkSubscriptionPermissions();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   checkSubscriptionPermissions(): void {
-    this.api.getMySubscription().subscribe({
+    this.api.getMySubscription().pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         if (res.success && res.subscription) {
           const planCode = res.subscription.plan_code;
@@ -86,7 +95,7 @@ export class InvoicesV2Component implements OnInit {
       ruc_receptor: this.rucReceptor || undefined,
       emisor_nombre: this.emisorNombre || undefined,
       sort_by: this.sortBy,
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         this.headers = res?.data || [];
         this.total = res?.total || 0;
@@ -168,7 +177,7 @@ export class InvoicesV2Component implements OnInit {
     if (this.expanded[id] && !this.itemsCache[id]) {
       this.itemsLoading[id] = true;
       this.itemsError[id] = null;
-      this.api.getV2InvoiceById(id).subscribe({
+      this.api.getV2InvoiceById(id).pipe(takeUntil(this.destroy$)).subscribe({
         next: (res) => {
           this.itemsCache[id] = res?.items || [];
           this.itemsLoading[id] = false;
@@ -317,7 +326,7 @@ export class InvoicesV2Component implements OnInit {
 
     if (headerIds.length === 1) {
       // Eliminación individual
-      this.api.getV2DeleteInfo(headerIds[0]).subscribe({
+      this.api.getV2DeleteInfo(headerIds[0]).pipe(takeUntil(this.destroy$)).subscribe({
         next: (info) => {
           this.deleteInfo = info;
           this.showDeleteConfirm = true;
@@ -330,7 +339,7 @@ export class InvoicesV2Component implements OnInit {
       });
     } else {
       // Eliminación en lote
-      this.api.getV2BulkDeleteInfo(headerIds).subscribe({
+      this.api.getV2BulkDeleteInfo(headerIds).pipe(takeUntil(this.destroy$)).subscribe({
         next: (info) => {
           this.deleteInfo = info;
           this.showDeleteConfirm = true;
@@ -352,7 +361,7 @@ export class InvoicesV2Component implements OnInit {
 
     if (headerIds.length === 1) {
       // Eliminación individual
-      this.api.deleteV2Invoice(headerIds[0]).subscribe({
+      this.api.deleteV2Invoice(headerIds[0]).pipe(takeUntil(this.destroy$)).subscribe({
         next: (result) => {
           this.showDeleteConfirm = false;
           this.selectedHeaders.clear();
@@ -368,7 +377,7 @@ export class InvoicesV2Component implements OnInit {
       });
     } else {
       // Eliminación en lote
-      this.api.deleteV2InvoicesBulk(headerIds).subscribe({
+      this.api.deleteV2InvoicesBulk(headerIds).pipe(takeUntil(this.destroy$)).subscribe({
         next: (result) => {
           this.showDeleteConfirm = false;
           this.selectedHeaders.clear();
@@ -413,7 +422,7 @@ export class InvoicesV2Component implements OnInit {
     this.notificationService.info('Descargando archivo...', 'Procesando');
 
     // Descargar con autenticación y abrir en nueva pestaña
-    this.api.downloadInvoiceFile(headerId).subscribe({
+    this.api.downloadInvoiceFile(headerId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (blob) => {
         const url = window.URL.createObjectURL(blob);
         window.open(url, '_blank');

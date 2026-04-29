@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 
@@ -38,7 +40,7 @@ interface QueueStats {
   templateUrl: './admin-dashboard.component.html',
   styleUrls: ['./admin-dashboard.component.scss']
 })
-export class AdminDashboardComponent implements OnInit {
+export class AdminDashboardComponent implements OnInit, OnDestroy {
 
   // Estados de carga
   loading = true;
@@ -80,6 +82,8 @@ export class AdminDashboardComponent implements OnInit {
   // Resultado de estadísticas filtradas
   filteredStats: any = null;
 
+  private destroy$ = new Subject<void>();
+
   constructor(
     private apiService: ApiService,
     private notificationService: NotificationService
@@ -87,6 +91,11 @@ export class AdminDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadData();
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   // =====================================
@@ -100,7 +109,7 @@ export class AdminDashboardComponent implements OnInit {
   }
 
   loadStats(): void {
-    this.apiService.getAdminStats().subscribe({
+    this.apiService.getAdminStats().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         if (response.success) {
           this.userStats    = response.user_stats;
@@ -118,7 +127,7 @@ export class AdminDashboardComponent implements OnInit {
 
   loadQueueStats(): void {
     this.loadingQueueStats = true;
-    this.apiService.getQueueStats().subscribe({
+    this.apiService.getQueueStats().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         if (response.success) {
           this.queueStats = response;
@@ -136,7 +145,7 @@ export class AdminDashboardComponent implements OnInit {
    * No requiere paginación completa: se trae la primera página grande.
    */
   loadUsers(): void {
-    this.apiService.getAdminUsers(1, 100, '').subscribe({
+    this.apiService.getAdminUsers(1, 100, '').pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         if (response.success) {
           this.users = response.users;

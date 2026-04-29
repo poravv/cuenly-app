@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { UserService, UserProfile } from '../../services/user.service';
 import { AuthService } from '../../services/auth.service';
 
@@ -42,8 +44,11 @@ import { AuthService } from '../../services/auth.service';
     }
   `]
 })
-export class TrialBannerComponent implements OnInit {
+export class TrialBannerComponent implements OnInit, OnDestroy {
   userProfile: UserProfile | null = null;
+
+  private destroy$ = new Subject<void>();
+  private refreshInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private userService: UserService,
@@ -52,11 +57,11 @@ export class TrialBannerComponent implements OnInit {
 
   ngOnInit(): void {
     // Solo cargar si el usuario está autenticado
-    this.authService.user$.subscribe(user => {
+    this.authService.user$.pipe(takeUntil(this.destroy$)).subscribe(user => {
       if (user) {
         this.loadUserProfile();
         // Reaccionar a actualizaciones globales del perfil
-        this.userService.userProfile$.subscribe(p => {
+        this.userService.userProfile$.pipe(takeUntil(this.destroy$)).subscribe(p => {
           if (p) {
             this.userProfile = p;
           }
@@ -65,11 +70,11 @@ export class TrialBannerComponent implements OnInit {
         this.userProfile = null;
       }
     });
-    
+
     // Actualización periódica para asegurar consistencia
-    setInterval(() => {
+    this.refreshInterval = setInterval(() => {
       if (this.userProfile?.is_trial) {
-        this.userService.refreshUserProfile().subscribe({
+        this.userService.refreshUserProfile().pipe(takeUntil(this.destroy$)).subscribe({
           next: () => {
             // Refresh completed
           },
@@ -81,8 +86,16 @@ export class TrialBannerComponent implements OnInit {
     }, 30000); // Cada 30 segundos si es usuario de prueba
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+  }
+
   private loadUserProfile(): void {
-    this.userService.getUserProfile().subscribe({
+    this.userService.getUserProfile().pipe(takeUntil(this.destroy$)).subscribe({
       next: (profile) => {
         this.userProfile = profile;
       },

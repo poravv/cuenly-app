@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { Router } from '@angular/router';
 import { ExportTemplateService } from '../../services/export-template.service';
 import { NotificationService } from '../../services/notification.service';
@@ -9,10 +11,12 @@ import { ExportTemplate } from '../../models/export-template.model';
   templateUrl: './export-templates.component.html',
   styleUrls: ['./export-templates.component.scss']
 })
-export class ExportTemplatesComponent implements OnInit {
+export class ExportTemplatesComponent implements OnInit, OnDestroy {
   templates: ExportTemplate[] = [];
   loading = true;
   error = '';
+
+  private destroy$ = new Subject<void>();
 
   constructor(
     private exportTemplateService: ExportTemplateService,
@@ -24,11 +28,16 @@ export class ExportTemplatesComponent implements OnInit {
     this.loadTemplates();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadTemplates(): void {
     this.loading = true;
     this.error = '';
 
-    this.exportTemplateService.getTemplates().subscribe({
+    this.exportTemplateService.getTemplates().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         // Sort: system templates first, then user templates
         this.templates = (response.templates || []).sort((a, b) => {
@@ -67,7 +76,7 @@ export class ExportTemplatesComponent implements OnInit {
         action: {
           label: 'Duplicar',
           handler: () => {
-            this.exportTemplateService.duplicateTemplate(template.id!, suggested).subscribe({
+            this.exportTemplateService.duplicateTemplate(template.id!, suggested).pipe(takeUntil(this.destroy$)).subscribe({
               next: (response) => {
                 this.notificationService.success(
                   response.message || 'Template duplicado correctamente',
@@ -97,7 +106,7 @@ export class ExportTemplatesComponent implements OnInit {
         action: {
           label: 'Establecer',
           handler: () => {
-            this.exportTemplateService.setDefaultTemplate(template.id!).subscribe({
+            this.exportTemplateService.setDefaultTemplate(template.id!).pipe(takeUntil(this.destroy$)).subscribe({
               next: (response) => {
                 this.notificationService.success(
                   response.message || 'Template establecido como predeterminado',
@@ -127,7 +136,7 @@ export class ExportTemplatesComponent implements OnInit {
         action: {
           label: 'Eliminar',
           handler: () => {
-            this.exportTemplateService.deleteTemplate(template.id!).subscribe({
+            this.exportTemplateService.deleteTemplate(template.id!).pipe(takeUntil(this.destroy$)).subscribe({
               next: (response) => {
                 this.notificationService.success(
                   response.message || 'Template eliminado correctamente',

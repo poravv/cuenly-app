@@ -1,9 +1,10 @@
-import { Component, OnInit, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { HttpClient } from '@angular/common/http';
-import { forkJoin, finalize } from 'rxjs';
+import { forkJoin, finalize, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 import { ObservabilityService } from '../../services/observability.service';
 import { UserService } from '../../services/user.service';
@@ -67,7 +68,7 @@ interface SystemStatus {
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, OnDestroy {
   @ViewChild(BaseChartDirective) chart: BaseChartDirective | undefined;
 
   // Chart Configuration - Monthly Trend
@@ -166,6 +167,7 @@ export class DashboardComponent implements OnInit {
   Math = Math;
   canDownload: boolean = true;
 
+  private destroy$ = new Subject<void>();
   private apiUrl = environment.apiUrl;
 
   constructor(
@@ -192,8 +194,13 @@ export class DashboardComponent implements OnInit {
     this.checkSubscriptionPermissions();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   checkSubscriptionPermissions(): void {
-    this.api.getMySubscription().subscribe({
+    this.api.getMySubscription().pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         if (res.success && res.subscription) {
           const planCode = res.subscription.plan_code;
@@ -218,7 +225,7 @@ export class DashboardComponent implements OnInit {
       const recent$ = this.http.get<{ success: boolean, invoices: RecentInvoice[] }>(`${this.apiUrl}/dashboard/recent-invoices`);
       const status$ = this.http.get<{ success: boolean, status: SystemStatus }>(`${this.apiUrl}/dashboard/system-status`);
 
-      forkJoin([stats$, monthly$, topEmisors$, recent$, status$]).subscribe({
+      forkJoin([stats$, monthly$, topEmisors$, recent$, status$]).pipe(takeUntil(this.destroy$)).subscribe({
         next: ([statsRes, monthlyRes, topRes, recentRes, statusRes]) => {
           if (statsRes.success) this.stats = statsRes.stats;
           if (monthlyRes.success) {
@@ -380,6 +387,7 @@ export class DashboardComponent implements OnInit {
     );
 
     this.api.processEmails(false).pipe(
+      takeUntil(this.destroy$),
       finalize(() => {
         this.processing = false;
       })
@@ -529,7 +537,7 @@ export class DashboardComponent implements OnInit {
     this.notificationService.info('Generando enlace...', 'Procesando');
 
     // Obtener URL presignada de MinIO y abrir en nueva pestaña
-    this.api.downloadInvoice(id).subscribe({
+    this.api.downloadInvoice(id).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         if (res.success && res.download_url) {
           window.open(res.download_url, '_blank');

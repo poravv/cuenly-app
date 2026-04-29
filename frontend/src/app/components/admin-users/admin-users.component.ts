@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { ObservabilityService } from '../../services/observability.service';
@@ -23,7 +25,7 @@ interface User {
   templateUrl: './admin-users.component.html',
   styleUrls: ['./admin-users.component.scss']
 })
-export class AdminUsersComponent implements OnInit {
+export class AdminUsersComponent implements OnInit, OnDestroy {
   loading = true;
   loadingUsers = false;
   users: User[] = [];
@@ -32,6 +34,7 @@ export class AdminUsersComponent implements OnInit {
   pageSize = 20;
   totalPages = 0;
   userSearchTerm = '';
+  private destroy$ = new Subject<void>();
   private _searchDebounce: any = null;
 
   constructor(
@@ -45,9 +48,14 @@ export class AdminUsersComponent implements OnInit {
     this.loadUsers();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadUsers(): void {
     this.loadingUsers = true;
-    this.apiService.getAdminUsers(this.currentPage, this.pageSize, this.userSearchTerm).subscribe({
+    this.apiService.getAdminUsers(this.currentPage, this.pageSize, this.userSearchTerm).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         if (response.success) {
           this.users = response.users;
@@ -87,7 +95,7 @@ export class AdminUsersComponent implements OnInit {
               audit_trail: true
             });
 
-            this.apiService.updateUserRole(user.email, newRole).subscribe({
+            this.apiService.updateUserRole(user.email, newRole).pipe(takeUntil(this.destroy$)).subscribe({
               next: (response) => {
                 if (response.success) {
                   this.observability.warn('Role changed successfully', 'AdminUsersComponent', {
@@ -153,7 +161,7 @@ export class AdminUsersComponent implements OnInit {
         action: {
           label: 'Confirmar',
           handler: () => {
-            this.apiService.updateUserStatus(user.email, newStatus).subscribe({
+            this.apiService.updateUserStatus(user.email, newStatus).pipe(takeUntil(this.destroy$)).subscribe({
               next: (response) => {
                 if (response.success) {
                   user.status = newStatus;

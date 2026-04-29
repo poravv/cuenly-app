@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ExportTemplateService } from '../../services/export-template.service';
 import { NotificationService } from '../../services/notification.service';
@@ -18,7 +20,7 @@ import {
   templateUrl: './template-editor.component.html',
   styleUrls: ['./template-editor.component.scss']
 })
-export class TemplateEditorComponent implements OnInit {
+export class TemplateEditorComponent implements OnInit, OnDestroy {
   templateId: string | null = null;
   isEditMode = false;
   loading = true;
@@ -45,6 +47,8 @@ export class TemplateEditorComponent implements OnInit {
   GroupingType = GroupingType;
   CalculatedFieldType = CalculatedFieldType;
 
+  private destroy$ = new Subject<void>();
+
   constructor(
     private route: ActivatedRoute,
     private router: Router,
@@ -55,9 +59,9 @@ export class TemplateEditorComponent implements OnInit {
   ngOnInit(): void {
     this.templateId = this.route.snapshot.paramMap.get('id');
     this.isEditMode = !!this.templateId;
-    
+
     this.loadAvailableFields();
-    
+
     if (this.isEditMode) {
       this.loadTemplate();
     } else {
@@ -65,8 +69,13 @@ export class TemplateEditorComponent implements OnInit {
     }
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadAvailableFields(): void {
-    this.exportTemplateService.getAvailableFields().subscribe({
+    this.exportTemplateService.getAvailableFields().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response: AvailableFieldsResponse) => {
         this.availableFields = response.fields || {};
         // Ya no hay campos calculados
@@ -90,7 +99,7 @@ export class TemplateEditorComponent implements OnInit {
   loadTemplate(): void {
     if (!this.templateId) return;
 
-    this.exportTemplateService.getTemplate(this.templateId).subscribe({
+    this.exportTemplateService.getTemplate(this.templateId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (template: ExportTemplate) => {
         // Defensive: system templates should not be edited directly
         if (template.is_system) {
@@ -349,7 +358,7 @@ export class TemplateEditorComponent implements OnInit {
       ? this.exportTemplateService.updateTemplate(this.templateId!, this.template)
       : this.exportTemplateService.createTemplate(this.template);
 
-    operation.subscribe({
+    operation.pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         this.notificationService.success(
           response.message || 'Template guardado correctamente',

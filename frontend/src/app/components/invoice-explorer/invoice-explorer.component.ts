@@ -1,4 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { ApiService } from '../../services/api.service';
@@ -40,7 +42,7 @@ interface MonthStatistics {
   templateUrl: './invoice-explorer.component.html',
   styleUrls: ['./invoice-explorer.component.scss']
 })
-export class InvoiceExplorerComponent implements OnInit {
+export class InvoiceExplorerComponent implements OnInit, OnDestroy {
   availableMonths: MonthlyStats[] = [];
   selectedMonth: string = '';
   monthStatistics: MonthStatistics | null = null;
@@ -59,6 +61,8 @@ export class InvoiceExplorerComponent implements OnInit {
 
   // Descargas de Excel eliminadas
 
+  private destroy$ = new Subject<void>();
+
   constructor(private http: HttpClient, private api: ApiService, private notificationService: NotificationService) { }
 
   ngOnInit(): void {
@@ -66,8 +70,13 @@ export class InvoiceExplorerComponent implements OnInit {
     this.checkSubscriptionPermissions();
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   checkSubscriptionPermissions(): void {
-    this.api.getMySubscription().subscribe({
+    this.api.getMySubscription().pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         if (res.success && res.subscription) {
           // Si hay suscripción, verificar feature
@@ -152,7 +161,7 @@ export class InvoiceExplorerComponent implements OnInit {
 
   loadV2Headers(yearMonth?: string): void {
     const ym = yearMonth || this.selectedMonth;
-    this.api.getV2Headers({ page: this.v2Page, page_size: this.v2PageSize, year_month: ym }).subscribe({
+    this.api.getV2Headers({ page: this.v2Page, page_size: this.v2PageSize, year_month: ym }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         this.v2Headers = res?.data || [];
         this.v2Total = res?.total || 0;
@@ -177,7 +186,7 @@ export class InvoiceExplorerComponent implements OnInit {
     this.v2Header = null;
     this.v2Items = [];
 
-    this.api.getV2InvoiceById(headerId).subscribe({
+    this.api.getV2InvoiceById(headerId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         if (this.expandedInvoiceId === headerId) { // Verificar que siga siendo el seleccionado
           this.v2Header = res?.header || null;
@@ -309,7 +318,7 @@ export class InvoiceExplorerComponent implements OnInit {
     this.notificationService.info('Descargando archivo...', 'Procesando');
 
     // Descargar con autenticación y abrir en nueva pestaña
-    this.api.downloadInvoiceFile(headerId).subscribe({
+    this.api.downloadInvoiceFile(headerId).pipe(takeUntil(this.destroy$)).subscribe({
       next: (blob) => {
         const url = window.URL.createObjectURL(blob);
         window.open(url, '_blank');
