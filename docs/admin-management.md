@@ -162,3 +162,46 @@ La `FIREBASE_API_KEY` actual (`AIzaSyA...`) estuvo hardcodeada en el historial g
 - El `AdminGuard` del frontend — sigue llamando `GET /api/admin/check`
 - El `admin_audit_log` en MongoDB — se extiende, no se reemplaza
 - El campo `role` en `auth_users` MongoDB — se sincroniza desde Firestore en cada login
+
+---
+
+## Estado de implementación (2026-04-29)
+
+| Componente | Estado |
+|-----------|--------|
+| Firebase Admin SDK instalado | ✅ `backend/requirements.txt` |
+| FirestoreAdminRepository | ✅ `backend/app/repositories/firestore_admin_repository.py` |
+| `_get_current_admin` migrado a Firestore | ✅ `backend/app/api/deps.py` |
+| `settings.ADMIN_EMAILS` eliminado | ✅ |
+| Endpoints /api/admin/admins | ✅ `backend/app/api/endpoints/admin_manage.py` |
+| UI Angular /admin/admins | ✅ `frontend/src/app/components/admin-manage/` |
+| Firestore Security Rules deployadas | ✅ `firestore.rules` — cuenly-app |
+| BOOTSTRAP_ADMIN_EMAIL en GitHub Secrets | ✅ `andyvercha@gmail.com` |
+| FIREBASE_SERVICE_ACCOUNT_JSON | ⏳ **PENDIENTE** — ver instrucciones abajo |
+
+### Pasos finales para activar
+
+1. **Crear service account en GCP** (5 min):
+   ```
+   GCP Console → IAM & Admin → Service Accounts → + Create
+   Nombre: cuenly-backend
+   Email: cuenly-backend@cuenly-app.iam.gserviceaccount.com
+   Rol: Cloud Datastore User
+   → Keys → Add Key → JSON → Descargar
+   ```
+
+2. **Agregar a GitHub Secrets** (2 min):
+   ```bash
+   # Desde la terminal, con el archivo descargado:
+   gh secret set FIREBASE_SERVICE_ACCOUNT_JSON \
+     --body "$(base64 -i cuenly-backend-key.json)" \
+     --repo poravv/cuenly-app
+   ```
+
+3. **Ejecutar el pipeline de deploy** — el backend arrancará y creará automáticamente el documento `admins/andyvercha@gmail.com` en Firestore.
+
+### Verificar en Firebase Console
+Una vez deployado, verificar en:
+`Firebase Console → cuenly-app → Firestore Database → admins/andyvercha@gmail.com`
+
+El documento debe tener `revoked: false` y `granted_by: "bootstrap"`.
