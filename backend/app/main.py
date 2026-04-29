@@ -452,13 +452,15 @@ class CuenlyApp:
                     nr = sched.get('next_run')
                     if isinstance(nr, (int, float)): self._job_status.next_run_ts = int(nr)
                     elif next_iso: self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp())
-                except Exception: pass
+                except Exception as e:
+                    logger.debug("Error convirtiendo timestamp next_run: %s", e)
 
                 try:
                     lr = sched.get('last_run')
                     if isinstance(lr, (int, float)): self._job_status.last_run_ts = int(lr)
                     elif last_iso: self._job_status.last_run_ts = int(datetime.fromisoformat(last_iso).timestamp())
-                except Exception: pass
+                except Exception as e:
+                    logger.debug("Error convirtiendo timestamp last_run: %s", e)
 
                 self._job_status.interval_minutes = int(sched.get('interval_minutes', self._job_status.interval_minutes))
                 self._job_status.last_result = sched.get('last_result')
@@ -469,7 +471,8 @@ class CuenlyApp:
                     self._job_status.next_run = next_iso
                     try:
                         self._job_status.next_run_ts = int(datetime.fromisoformat(next_iso).timestamp()) if next_iso else None
-                    except Exception: pass
+                    except Exception as e:
+                        logger.debug("Error convirtiendo timestamp: %s", e)
 
         # 4. Watchdog: si está running pero el siguiente run está muy vencido, marcar como detenido
         try:
@@ -482,11 +485,13 @@ class CuenlyApp:
                     try:
                         if hasattr(self.email_processor, 'stop_scheduled_job'):
                             self.email_processor.stop_scheduled_job()
-                    except Exception: pass
+                    except Exception as e:
+                        logger.warning("Watchdog: error verificando estado del scheduler: %s", e)
                     self._job_status.running = False
                     self._job_status.next_run = None
                     self._job_status.next_run_ts = None
-        except Exception: pass
+        except Exception as e:
+            logger.warning("Watchdog: error verificando estado del scheduler: %s", e)
         
         return self._job_status
 

@@ -1129,8 +1129,12 @@ class EmailProcessor:
                     doc.header.owner_email = self.owner_email
                     for item in doc.items:
                         item.owner_email = self.owner_email
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(
+                        "Error asignando owner_email=%s a factura: %s",
+                        self.owner_email, e, exc_info=True
+                    )
+                    raise
             
             repo.save_document(doc)
             logger.info(f"✅ Factura guardada con status={status}")
