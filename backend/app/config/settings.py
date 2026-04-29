@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # Auth / Multi-tenant
     AUTH_REQUIRE: bool = os.getenv("AUTH_REQUIRE", "true").lower() in ("1", "true", "yes")
     FIREBASE_PROJECT_ID: str = os.getenv("FIREBASE_PROJECT_ID", "cuenly-app")
+    # JSON de cuenta de servicio Firebase Admin (base64 o JSON directo).
+    # Si está vacío, se usa GOOGLE_APPLICATION_CREDENTIALS (ADC).
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
+    # Email del admin inicial creado en Firestore si la colección está vacía.
+    # Solo actúa si no existe ningún admin en Firestore al arrancar.
+    BOOTSTRAP_ADMIN_EMAIL: str = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "")
     MULTI_TENANT_ENFORCE: bool = os.getenv("MULTI_TENANT_ENFORCE", "true").lower() in ("1", "true", "yes")
     
     # Security - Frontend API Key
