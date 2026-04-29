@@ -145,6 +145,30 @@ app.include_router(admin_audit.router, prefix="/admin/audit", tags=["Admin Audit
 app.include_router(admin_export_templates.router, prefix="/admin/export-templates/system", tags=["Admin Export Templates"])
 
 
+async def _bootstrap_admin() -> None:
+    """Crea el admin inicial en Firestore si la colección está vacía."""
+    bootstrap_email = getattr(settings, "BOOTSTRAP_ADMIN_EMAIL", "")
+    if not bootstrap_email:
+        return
+
+    try:
+        from app.repositories.firestore_admin_repository import FirestoreAdminRepository
+        repo = FirestoreAdminRepository()
+        if repo.has_any_admin():
+            logger.debug("Bootstrap admin: ya existe al menos un admin en Firestore, omitiendo")
+            return
+
+        success = repo.grant_admin(
+            email=bootstrap_email,
+            granted_by="bootstrap",
+            notes="Admin inicial creado por BOOTSTRAP_ADMIN_EMAIL",
+        )
+        if success:
+            logger.info("Bootstrap admin creado: %s", bootstrap_email)
+    except Exception as e:
+        logger.warning("Bootstrap admin falló (no crítico): %s", e)
+
+
 # Startup event para inicializar servicios
 @app.on_event("startup")
 async def startup_event():
@@ -160,13 +184,15 @@ async def startup_event():
     try:
         from app.modules.scheduler.async_jobs import async_job_manager
         from app.modules.scheduler.job_handlers import handle_full_sync_job, handle_retry_skipped_job
-        
+
         async_job_manager.register_handler("full_sync", handle_full_sync_job)
         async_job_manager.register_handler("retry_skipped", handle_retry_skipped_job)
         async_job_manager.start_worker()
         logger.info("✅ AsyncJobWorker iniciado correctamente")
     except Exception as e:
         logger.error(f"❌ Error iniciando AsyncJobWorker: {e}")
+
+    await _bootstrap_admin()
 
 # Instancia global del procesador
 invoice_sync = CuenlyApp()
