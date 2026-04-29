@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
   ExportTemplate,
@@ -96,10 +96,9 @@ export class ExportTemplateService {
     return this.http.get<any>(`${this.baseUrl}/export-templates/calculated-fields/preview`);
   }
 
-  /**
-   * Obtener templates predefinidos inteligentes
-   */
-  // Ya no hay presets predefinidos - solo templates personalizados
+  getTemplatePresets(): Observable<{ presets: any; recommendations: any }> {
+    return of({ presets: {}, recommendations: {} });
+  }
 
   /**
    * Crear template a partir de preset inteligente
