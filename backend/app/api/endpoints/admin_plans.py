@@ -8,10 +8,23 @@ from typing import Dict, Any, Optional
 import logging
 
 from app.api.deps import _get_current_user, _get_current_admin_user
+from app.core.redis_client import get_redis_client
 from app.repositories.subscription_repository import SubscriptionRepository
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+PLANS_CACHE_KEY = "cuenly:plans:active"
+
+
+def _invalidate_plans_cache() -> None:
+    """Elimina el cache de planes activos en Redis. Silencioso si Redis no está disponible."""
+    try:
+        redis = get_redis_client()
+        redis.delete(PLANS_CACHE_KEY)
+        logger.info("Cache de planes invalidado")
+    except Exception as e:
+        logger.warning("No se pudo invalidar cache de planes: %s", e)
 
 
 class PlanCreateRequest(BaseModel):
@@ -76,7 +89,9 @@ async def admin_create_plan(
         success = await repo.create_plan(plan.dict())
         if not success:
             raise HTTPException(status_code=500, detail="Error creando plan")
-        
+
+        _invalidate_plans_cache()
+
         return {
             "success": True,
             "message": f"Plan '{plan.name}' creado exitosamente"
@@ -109,7 +124,9 @@ async def admin_update_plan(
         success = await repo.update_plan(plan_code, update_data)
         if not success:
             raise HTTPException(status_code=500, detail="Error actualizando plan")
-        
+
+        _invalidate_plans_cache()
+
         return {
             "success": True,
             "message": f"Plan '{plan_code}' actualizado exitosamente"
@@ -133,7 +150,9 @@ async def admin_delete_plan(
         success = await repo.delete_plan(plan_code)
         if not success:
             raise HTTPException(status_code=404, detail="Plan no encontrado")
-        
+
+        _invalidate_plans_cache()
+
         return {
             "success": True,
             "message": f"Plan '{plan_code}' eliminado exitosamente"

@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from typing import List, Optional
 import logging
 import math
+import json
 from datetime import datetime, timedelta
 
 from app.api.deps import _get_current_user
 from app.config.settings import settings
+from app.core.redis_client import get_redis_client
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.repositories.user_repository import UserRepository
 from app.services.pagopar_service import PagoparService
@@ -33,16 +35,31 @@ sub_repo = SubscriptionRepository()
 pagopar_service = PagoparService()
 user_repo = UserRepository()
 
+PLANS_CACHE_KEY = "cuenly:plans:active"
+PLANS_CACHE_TTL = 300  # 5 minutos
+
 
 @router.get("/plans", response_model=List[PlanResponse])
 async def get_plans():
     """
     Obtener lista de planes de suscripción disponibles.
     No requiere autenticación.
+    Resultado cacheado en Redis por 5 minutos para evitar queries innecesarias a MongoDB.
     """
+    # Intentar desde cache Redis
+    try:
+        redis = get_redis_client()
+        cached = redis.get(PLANS_CACHE_KEY)
+        if cached:
+            logger.debug("Cache hit: planes desde Redis")
+            return json.loads(cached)
+    except Exception as e:
+        logger.warning("No se pudo leer cache de planes desde Redis: %s", e)
+
+    # Cache miss o Redis no disponible — consultar MongoDB
     try:
         plans = await sub_repo.get_all_plans(include_inactive=False)
-        
+
         result = []
         for plan in plans:
             result.append(PlanResponse(
@@ -56,11 +73,20 @@ async def get_plans():
                 features=plan.get("features", {}),
                 active=plan.get("active", True)
             ))
-        
+
+        # Guardar en cache (serializar con default=str para ObjectId/datetime)
+        try:
+            redis = get_redis_client()
+            serialized = json.dumps([p.dict() for p in result], default=str)
+            redis.setex(PLANS_CACHE_KEY, PLANS_CACHE_TTL, serialized)
+            logger.debug("Planes guardados en cache Redis (TTL %ss)", PLANS_CACHE_TTL)
+        except Exception as e:
+            logger.warning("No se pudo guardar cache de planes en Redis: %s", e)
+
         return result
-        
+
     except Exception as e:
-        logger.error(f"Error obteniendo planes: {e}")
+        logger.error("Error obteniendo planes: %s", e)
         raise HTTPException(status_code=500, detail="Error obteniendo planes")
 
 
