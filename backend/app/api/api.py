@@ -143,6 +143,7 @@ app.include_router(admin_ai_limits.router, prefix="/admin/ai-limits", tags=["Adm
 app.include_router(admin_scheduler.router, prefix="/admin/scheduler", tags=["Admin Scheduler"])
 app.include_router(admin_audit.router, prefix="/admin/audit", tags=["Admin Audit"])
 app.include_router(admin_export_templates.router, prefix="/admin/export-templates/system", tags=["Admin Export Templates"])
+app.include_router(admin_manage.router, prefix="/admin/admins", tags=["Admin Management"])
 
 
 async def _bootstrap_admin() -> None:
