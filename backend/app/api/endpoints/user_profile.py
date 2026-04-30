@@ -3,8 +3,8 @@ Endpoints de perfil de usuario
 Migrado desde api.py
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional, List, Literal
+from pydantic import BaseModel
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import logging
 
@@ -37,9 +37,6 @@ class UpdateProcessingStartDatePayload(BaseModel):
     start_date: Optional[str] = None  # ISO format date, si es None usa fecha actual
 
 
-class CancelActiveJobsPayload(BaseModel):
-    scope: Literal["all", "single_email", "range", "full_sync"] = "all"
-    max_jobs: int = Field(default=500, ge=1, le=2000)
 
 
 @router.get("")

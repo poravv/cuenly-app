@@ -16,6 +16,11 @@ from app.repositories.user_repository import UserRepository
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+class CancelActiveJobsPayload(BaseModel):
+    scope: Literal["all", "single_email", "range", "full_sync"] = "all"
+    max_jobs: int = Field(default=500, ge=1, le=2000)
+
 @router.get("/queue-events")
 async def get_queue_events(
     page: int = Query(default=1, ge=1, le=10000),
