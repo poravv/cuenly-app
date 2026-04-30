@@ -2,7 +2,7 @@
 Endpoints de procesamiento de correos, cola de tareas y control de jobs.
 Movido desde api.py — no se modificó la lógica.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime
