@@ -15,7 +15,7 @@ from app.repositories.user_repository import UserRepository
 from app.utils.observability import observability_logger
 from app.utils.security import validate_frontend_key
 from app.api.routers.export_templates import FrontendLogsPayload
-from app.modules.email_processor.config_store import db_list_configs
+from app.modules.email_processor.config_store import list_configs as db_list_configs
 from app.modules.scheduler.task_queue import task_queue
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 import time

@@ -12,7 +12,7 @@ from app.repositories.user_repository import UserRepository
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.config.settings import settings
 from app.modules.mongo_query_service import get_mongo_query_service
-from app.modules.email_processor.config_store import db_list_configs
+from app.modules.email_processor.config_store import list_configs as db_list_configs
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
