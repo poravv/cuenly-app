@@ -4,7 +4,7 @@ Movido desde api.py — no se modificó la lógica.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Body
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import logging
@@ -18,6 +18,9 @@ from app.config.settings import settings
 from app.repositories.user_repository import UserRepository
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.modules.mongo_query_service import get_mongo_query_service
+from app.models.models import InvoiceData, ProductoFactura
+from app.utils.validators import SecurityValidators, log_security_event
+from app.api.routers.plans import _resolve_minio_key_strict
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

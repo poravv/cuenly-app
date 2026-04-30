@@ -11,6 +11,7 @@ import logging
 
 from app.api.deps import _get_current_user
 from app.repositories.user_repository import UserRepository
+from app.api.routers.invoices import _mongo_doc_to_invoice_data
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

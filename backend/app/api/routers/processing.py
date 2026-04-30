@@ -17,7 +17,7 @@ from app.api.deps import (
     _get_current_admin,
 )
 from app.config.settings import settings
-from app.models.models import ProcessResult, JobStatus, MultiEmailConfig
+from app.models.models import ProcessResult, JobStatus, MultiEmailConfig, InvoiceData
 from app.repositories.user_repository import UserRepository
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.modules.mapping.invoice_mapping import map_invoice
