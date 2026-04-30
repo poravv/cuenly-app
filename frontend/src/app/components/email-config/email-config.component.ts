@@ -2,6 +2,13 @@ import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { EmailConfig, EmailTestResult, EmailConfigsResponse } from '../../models/invoice.model';
+import {
+  cloneConfig,
+  parseSynonymsByLine,
+  synonymsToText,
+  getSynonymSummary,
+  mergeSearchTerms,
+} from './email-config.utils';
 
 interface SearchTermPreset {
   id: string;
@@ -359,7 +366,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   applySearchPresetToNew(presetId: string): void {
     const preset = this.searchTermPresets.find((p) => p.id === presetId);
     if (!preset) return;
-    this.newConfig.search_terms = this.mergeSearchTerms(this.newConfig.search_terms || [], preset.terms);
+    this.newConfig.search_terms = mergeSearchTerms(this.newConfig.search_terms || [], preset.terms);
   }
 
   trackByIndex(index: number): number {
@@ -374,9 +381,9 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const obs = isExisting
       ? this.apiService.testEmailConfigById(config.id!)
       : (() => {
-        const temp = this.cloneConfig(config);
+        const temp = cloneConfig(config);
         temp.search_terms = (temp.search_terms || []).filter((t: string) => (t || '').trim() !== '');
-        temp.search_synonyms = this.parseSynonymsByLine(this.newSynonymsText);
+        temp.search_synonyms = parseSynonymsByLine(this.newSynonymsText);
         temp.fallback_sender_match = !!temp.fallback_sender_match;
         temp.fallback_attachment_match = !!temp.fallback_attachment_match;
         return this.apiService.testEmailConfig(temp);
@@ -436,9 +443,9 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const payload = this.cloneConfig(this.newConfig);
+    const payload = cloneConfig(this.newConfig);
     payload.search_terms = (payload.search_terms || []).filter(term => (term || '').trim() !== '');
-    payload.search_synonyms = this.parseSynonymsByLine(this.newSynonymsText);
+    payload.search_synonyms = parseSynonymsByLine(this.newSynonymsText);
     payload.fallback_sender_match = !!payload.fallback_sender_match;
     payload.fallback_attachment_match = !!payload.fallback_attachment_match;
     this.savingNew = true;
@@ -575,74 +582,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     );
   }
 
-  private cloneConfig(cfg: EmailConfig): EmailConfig {
-    return JSON.parse(JSON.stringify(cfg));
-  }
-
-  private parseSynonymsText(raw: string): string[] {
-    return (raw || '')
-      .split(/[\n,;]+/)
-      .map((v: string) => (v || '').trim())
-      .filter((v: string) => !!v);
-  }
-
-  private parseSynonymsByLine(raw: string): { [key: string]: string[] } {
-    const result: { [key: string]: string[] } = {};
-    const lines = (raw || '')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => !!line);
-
-    lines.forEach((line) => {
-      const parts = line.split(':');
-      if (parts.length < 2) return;
-
-      const base = (parts.shift() || '').trim();
-      const variants = this.parseSynonymsText(parts.join(':'));
-      if (!base || !variants.length) return;
-
-      const uniqueVariants: string[] = [];
-      const seen = new Set<string>();
-      variants.forEach((variant) => {
-        const key = variant.toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
-        uniqueVariants.push(variant);
-      });
-
-      if (uniqueVariants.length) {
-        result[base] = uniqueVariants;
-      }
-    });
-
-    return result;
-  }
-
-  private synonymsToText(value: EmailConfig['search_synonyms']): string {
-    if (!value || Array.isArray(value)) return '';
-
-    const lines = Object.keys(value)
-      .map((base) => {
-        const cleanBase = (base || '').trim();
-        const variants = ((value as { [key: string]: string[] })[base] || [])
-          .map((variant) => (variant || '').trim())
-          .filter((variant) => !!variant);
-        if (!cleanBase || !variants.length) return '';
-        return `${cleanBase}: ${variants.join(', ')}`;
-      })
-      .filter((line) => !!line);
-
-    return lines.join('\n');
-  }
-
   getSynonymSummary(config: EmailConfig): string {
-    if (!config.search_synonyms || Array.isArray(config.search_synonyms)) {
-      return 'Sin grupos configurados';
-    }
-    const groups = Object.keys(config.search_synonyms)
-      .filter((base) => !!(base || '').trim());
-    if (!groups.length) return 'Sin grupos configurados';
-    return `${groups.length} grupo(s)`;
+    return getSynonymSummary(config);
   }
 
   editSynonymsText: { [key: string]: string } = {};
@@ -653,13 +594,13 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     if (!cfg || !cfg.id) return;
     const key = this.keyFor(i, cfg);
     this.editing[key] = true;
-    const copy = this.cloneConfig(cfg);
+    const copy = cloneConfig(cfg);
     copy.password = '';
     copy.search_synonyms = copy.search_synonyms || {};
     copy.fallback_sender_match = !!copy.fallback_sender_match;
     copy.fallback_attachment_match = !!copy.fallback_attachment_match;
     this.editData[key] = copy;
-    this.editSynonymsText[key] = this.synonymsToText(copy.search_synonyms);
+    this.editSynonymsText[key] = synonymsToText(copy.search_synonyms);
     this.editAdvancedOpen[key] = !!this.editSynonymsText[key];
     delete this.testResults[key];
     delete this.testing[key];
@@ -683,7 +624,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const id = cfg.id;
     const key = this.keyFor(i, cfg);
     const editedData = this.editData[key];
-    const normalizedSynonyms = this.parseSynonymsByLine(this.editSynonymsText[key] || '');
+    const normalizedSynonyms = parseSynonymsByLine(this.editSynonymsText[key] || '');
 
     this.saving[key] = true;
 
@@ -709,7 +650,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       });
     } else {
       // Password auth: usar PUT con payload completo
-      const payload = this.cloneConfig(editedData);
+      const payload = cloneConfig(editedData);
       payload.search_terms = (payload.search_terms || []).filter((t: string) => (t || '').trim() !== '');
       payload.search_synonyms = normalizedSynonyms;
       payload.fallback_sender_match = !!payload.fallback_sender_match;
@@ -743,7 +684,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     if (!this.editData[key]) return;
     const preset = this.searchTermPresets.find((p) => p.id === presetId);
     if (!preset) return;
-    this.editData[key].search_terms = this.mergeSearchTerms(this.editData[key].search_terms || [], preset.terms);
+    this.editData[key].search_terms = mergeSearchTerms(this.editData[key].search_terms || [], preset.terms);
   }
 
   testEditedConfiguration(key: string): void {
@@ -751,7 +692,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     if (!cfg) return;
     this.testing[key] = true;
     cfg.search_terms = (cfg.search_terms || []).filter(t => (t || '').trim() !== '');
-    cfg.search_synonyms = this.parseSynonymsByLine(this.editSynonymsText[key] || '');
+    cfg.search_synonyms = parseSynonymsByLine(this.editSynonymsText[key] || '');
     cfg.fallback_sender_match = !!cfg.fallback_sender_match;
     cfg.fallback_attachment_match = !!cfg.fallback_attachment_match;
     this.apiService.testEmailConfig(cfg).subscribe({
@@ -763,21 +704,4 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     });
   }
 
-  private mergeSearchTerms(existing: string[], additions: string[]): string[] {
-    const normalized = (existing || [])
-      .map((t) => (t || '').trim())
-      .filter((t) => !!t);
-
-    const seen = new Set(normalized.map((t) => t.toLowerCase()));
-    (additions || []).forEach((term) => {
-      const clean = (term || '').trim();
-      if (!clean) return;
-      const key = clean.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      normalized.push(clean);
-    });
-
-    return normalized;
-  }
 }
