@@ -9,8 +9,9 @@ import {
   EmailConfig,
   EmailTestResult,
 } from '../../models/invoice.model';
-import { interval, Subscription, startWith, switchMap } from 'rxjs';
+import { interval, Subscription } from 'rxjs';
 import { ObservabilityService } from '../../services/observability.service';
+import { InvoiceTaskPollingService } from '../../services/invoice-task-polling.service';
 
 @Component({
   selector: 'app-invoice-processing',
@@ -71,7 +72,8 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   constructor(
     private apiService: ApiService,
     private cdr: ChangeDetectorRef,
-    private observability: ObservabilityService
+    private observability: ObservabilityService,
+    private taskPolling: InvoiceTaskPollingService
   ) {
     const saved = localStorage.getItem('cuenlyapp:autoRefresh');
     this.autoRefresh = (saved === 'true' || saved === 'True' || saved === '1');
@@ -279,10 +281,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   private startProcessingTaskPolling(jobId: string): void {
     this.clearProcessingPolling();
 
-    this.processingPolling = interval(2000).pipe(
-      startWith(0),
-      switchMap(() => this.apiService.getTaskStatus(jobId))
-    ).subscribe({
+    this.processingPolling = this.taskPolling.pollTask(jobId, 2000).subscribe({
       next: (job: TaskStatusResponse | any) => {
         const status = String(job?.status || '').toLowerCase();
         const hasResult = job?.result !== undefined && job?.result !== null;
@@ -847,10 +846,7 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
       };
     }
 
-    this.dateRangePolling = interval(2500).pipe(
-      startWith(0),
-      switchMap(() => this.apiService.getTaskStatus(jobId))
-    ).subscribe({
+    this.dateRangePolling = this.taskPolling.pollTask(jobId, 2500).subscribe({
       next: (job: TaskStatusResponse | any) => {
         const status = String(job?.status || '').toLowerCase();
         const message = (job?.message || job?.error || '').toString();

@@ -1,0 +1,704 @@
+"""
+Endpoints de cola de eventos de procesamiento (SSE y operaciones de cola).
+Separado de user_profile.py para aislar la lógica SSE.
+"""
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional, List, Literal
+from datetime import datetime
+import logging
+
+from app.api.deps import _get_current_user, _get_current_user_with_trial_check
+from app.config.settings import settings
+from app.repositories.user_repository import UserRepository
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+@router.get("/queue-events")
+async def get_queue_events(
+    page: int = Query(default=1, ge=1, le=10000),
+    page_size: int = Query(default=50, ge=1, le=200),
+    status: str = "all",
+    user: Dict[str, Any] = Depends(_get_current_user),
+):
+    """
+    Obtiene los eventos pendientes (procesamientos fallidos o pausados por IA) del usuario.
+    Soporta paginación y filtrado por estado.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+         
+    email = (user.get("email") or "").lower()
+    
+    try:
+        from pymongo import DESCENDING
+        from app.core.database import get_mongo_client
+
+        coll = get_mongo_client()[settings.MONGODB_DATABASE].processed_emails
+        
+        # Filtrar por owner_email y status problemáticos o pendientes
+        query = {"owner_email": email}
+        
+        if status and status != "all":
+            query["status"] = status
+        else:
+            # Por defecto mostrar todos los que no son éxitos directos (o todos si se prefiere)
+            # El usuario pidió poder filtrar, así que si es "all" no filtramos por status
+            # pero el comportamiento original filtraba por estos:
+            if status == "all":
+                 query["status"] = {
+                     "$in": [
+                         "skipped_ai_limit",
+                         "skipped_ai_limit_unread",
+                         "pending_ai_unread",
+                         "pending",
+                         "processing",
+                         "retry_requested",
+                         "failed",
+                         "error",
+                         "missing_metadata",
+                     ]
+                 }
+        
+        # Contar total para paginación
+        total = coll.count_documents(query)
+        
+        skip = (page - 1) * page_size
+        cursor = coll.find(query).sort("processed_at", DESCENDING).skip(skip).limit(page_size)
+        events = []
+        retryable_statuses = {
+            "skipped_ai_limit",
+            "skipped_ai_limit_unread",
+            "pending_ai_unread",
+            "failed",
+            "error",
+            "missing_metadata",
+        }
+        for doc in cursor:
+            # Señal explícita para frontend: eventos manuales (uploads) no son reintentables por UID IMAP.
+            is_manual = bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload"
+            retry_supported = doc.get("retry_supported")
+            can_retry = (
+                (doc.get("status") in retryable_statuses)
+                and (not is_manual)
+                and (retry_supported is not False)
+            )
+            doc["can_retry"] = bool(can_retry)
+            if not can_retry and is_manual:
+                doc["retry_disabled_reason"] = "Evento manual: no aplica reintento"
+
+            doc["_id"] = str(doc["_id"])
+            if "processed_at" in doc and hasattr(doc["processed_at"], "isoformat"):
+                doc["processed_at"] = doc["processed_at"].isoformat()
+            if "last_retry_at" in doc and hasattr(doc["last_retry_at"], "isoformat"):
+                doc["last_retry_at"] = doc["last_retry_at"].isoformat()
+            if "email_date" in doc and hasattr(doc["email_date"], "isoformat"):
+                doc["email_date"] = doc["email_date"].isoformat()
+            events.append(doc)
+
+        # En clúster con múltiples réplicas, un job RQ de alto nivel puede estar corriendo
+        # aunque aún no existan documentos procesados en Mongo. Exponerlo como evento sintético
+        # evita que la cola aparezca vacía durante discovery inicial.
+        def _collect_active_owner_jobs(owner_email: str, requested_status: str) -> list[dict]:
+            try:
+                from rq.job import Job
+                from rq.registry import StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry
+                from app.worker.queues import get_queue
+
+                candidate_ids = set()
+                queue_sources: Dict[str, str] = {}
+                conn = None
+
+                for qname in ("high", "default"):
+                    q = get_queue(qname)
+                    conn = q.connection
+                    try:
+                        for jid in (q.get_job_ids() or []):
+                            candidate_ids.add(jid)
+                            queue_sources.setdefault(jid, qname)
+                    except Exception:
+                        pass
+
+                    for registry_cls in (StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry):
+                        try:
+                            reg = registry_cls(queue=q, connection=conn)
+                            for jid in (reg.get_job_ids() or []):
+                                candidate_ids.add(jid)
+                                queue_sources.setdefault(jid, qname)
+                        except Exception:
+                            continue
+
+                if conn is None:
+                    return []
+
+                def _build_reason_from_progress(default_reason: str, progress_payload: Optional[Dict[str, Any]]) -> str:
+                    if not isinstance(progress_payload, dict):
+                        return default_reason
+
+                    queued = int(progress_payload.get("queued_count") or 0)
+                    skipped = int(progress_payload.get("skipped_existing") or 0)
+                    requeued = int(progress_payload.get("requeued_errors") or 0)
+                    matches = int(progress_payload.get("discovered_matches") or 0)
+                    stage = str(progress_payload.get("stage") or "").strip().lower()
+
+                    if stage in {"fanout_discovery_complete", "fanout_streaming", "fanout_batch", "fanout_streaming_done", "fanout_done"}:
+                        parts = [f"Se encontraron {matches} correos"]
+                        if queued > 0:
+                            parts.append(f"{queued} en cola de procesamiento")
+                        if skipped > 0:
+                            parts.append(f"{skipped} ya procesados anteriormente")
+                        if requeued > 0:
+                            parts.append(f"{requeued} reintentando por error previo")
+                        return "Procesando historico: " + ", ".join(parts) + "."
+                    if stage == "fanout_no_matches":
+                        return "Procesando histórico: no hay nuevos correos para encolar en este rango."
+                    if stage == "starting":
+                        return "Inicializando procesamiento histórico..."
+                    return default_reason
+
+                synthetic_events = []
+                for job_id in candidate_ids:
+                    try:
+                        job = Job.fetch(job_id, connection=conn)
+                        kwargs = job.kwargs or {}
+                        args = list(getattr(job, "args", ()) or ())
+                        func_name = str(getattr(job, "func_name", "") or "")
+
+                        # owner_email puede venir por kwargs (range/manual) o por args (single UID).
+                        candidate_owner = str(kwargs.get("owner_email", "")).lower().strip()
+                        if not candidate_owner and "process_single_email_from_uid_job" in func_name and len(args) >= 2:
+                            candidate_owner = str(args[1] or "").lower().strip()
+                        if not candidate_owner and "process_emails_range_job" in func_name and len(args) >= 1:
+                            candidate_owner = str(args[0] or "").lower().strip()
+                        if not candidate_owner and "process_emails_job" in func_name and len(args) >= 1:
+                            candidate_owner = str(args[0] or "").lower().strip()
+
+                        if candidate_owner != owner_email:
+                            continue
+
+                        if "process_emails_range_job" in func_name:
+                            action = "process_emails_range"
+                            subject = "Procesamiento por rango"
+                            email_uid = str(job.id)
+                        elif "process_emails_job" in func_name:
+                            action = "process_emails"
+                            subject = "Procesamiento manual"
+                            email_uid = str(job.id)
+                        elif "process_single_email_from_uid_job" in func_name:
+                            action = "process_single_email"
+                            uid_from_kw = kwargs.get("email_uid")
+                            uid_from_args = args[2] if len(args) >= 3 else None
+                            uid_val = uid_from_kw if uid_from_kw else uid_from_args
+                            email_uid = str(uid_val) if uid_val is not None else str(job.id)
+                            subject = f"Procesamiento de correo UID {email_uid}"
+                        else:
+                            continue
+
+                        raw_status = str(job.get_status(refresh=True) or "").lower().strip()
+                        if "." in raw_status:
+                            raw_status = raw_status.split(".")[-1]
+
+                        if raw_status in {"queued", "deferred", "scheduled"}:
+                            mapped_status = "pending"
+                        elif raw_status in {"started", "running", "busy"}:
+                            mapped_status = "processing"
+                        elif raw_status in {"failed", "stopped", "canceled", "cancelled"}:
+                            mapped_status = "error"
+                        else:
+                            continue
+
+                        if requested_status != "all" and requested_status != mapped_status:
+                            continue
+
+                        ts = job.started_at or job.created_at
+                        processed_at = ts.isoformat() if hasattr(ts, "isoformat") else None
+                        job_meta = dict(getattr(job, "meta", {}) or {})
+                        progress = job_meta.get("progress") if isinstance(job_meta.get("progress"), dict) else None
+                        if mapped_status == "processing":
+                            default_reason = "Procesando correo..."
+                        elif mapped_status == "error":
+                            exc_str = str(getattr(job, "exc_info", "") or "")
+                            latest = getattr(job, "latest_result", None)
+                            if latest and hasattr(latest, "exc_string"):
+                                exc_str = str(latest.exc_string or exc_str)
+                            if "AbandonedJobError" in exc_str:
+                                default_reason = "Tarea interrumpida por reinicio del servidor. Puedes reintentar."
+                            elif "timeout" in exc_str.lower() or "timedout" in exc_str.lower():
+                                default_reason = "La tarea excedio el tiempo maximo. Puedes reintentar."
+                            elif exc_str.strip():
+                                default_reason = "Error al procesar. Puedes reintentar."
+                            else:
+                                default_reason = "Error al procesar."
+                        else:
+                            default_reason = "En cola, pendiente de procesamiento"
+                        reason = _build_reason_from_progress(default_reason, progress)
+
+                        synthetic_events.append({
+                            "_id": f"rq::{job.id}",
+                            "owner_email": owner_email,
+                            "account_email": "system",
+                            "email_uid": email_uid,
+                            "status": mapped_status,
+                            "reason": reason,
+                            "subject": subject,
+                            "sender": "Sistema",
+                            "processed_at": processed_at,
+                            "can_retry": False,
+                            "retry_supported": False,
+                            "job_id": str(job.id),
+                            "job_action": action,
+                            "source": f"rq_{queue_sources.get(job.id, 'unknown')}",
+                        })
+                    except Exception:
+                        continue
+
+                synthetic_events.sort(key=lambda item: str(item.get("processed_at") or ""), reverse=True)
+                return synthetic_events
+            except Exception as e:
+                logger.warning(f"No se pudieron recolectar jobs activos RQ para {owner_email}: {e}")
+                return []
+
+        if page == 1 and status in {"all", "pending", "processing"}:
+            synthetic = _collect_active_owner_jobs(email, status)
+            if synthetic:
+                events = (synthetic + events)[:page_size]
+                total += len(synthetic)
+            
+        return {
+            "success": True, 
+            "events": events,
+            "pagination": {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "pages": (total + page_size - 1) // page_size
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching queue events for {email}: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching queue events")
+
+@router.post("/queue-events/cancel-active")
+async def cancel_active_queue_events(
+    payload: CancelActiveJobsPayload,
+    user: Dict[str, Any] = Depends(_get_current_user),
+):
+    """
+    Cancela en bloque jobs activos del usuario autenticado en RQ.
+    Permite filtrar por tipo de job para evitar cancelar más de lo necesario.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+
+    owner_email = (user.get("email") or "").lower().strip()
+    if not owner_email:
+        raise HTTPException(status_code=400, detail="Usuario inválido")
+
+    try:
+        from app.worker.queues import cancel_active_owner_jobs
+
+        scope_to_filters: Dict[str, Optional[tuple[str, ...]]] = {
+            "all": None,
+            "single_email": ("process_single_email_from_uid_job",),
+            "range": ("process_emails_range_job",),
+            "full_sync": ("process_emails_job",),
+        }
+        func_filters = scope_to_filters.get(payload.scope, None)
+        safe_max_jobs = max(1, min(int(payload.max_jobs or 500), 2000))
+
+        result = cancel_active_owner_jobs(
+            owner_email=owner_email,
+            func_filters=func_filters,
+            max_jobs=safe_max_jobs,
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        logger.error(f"Error cancelando jobs activos para {owner_email}: {e}")
+        raise HTTPException(status_code=500, detail="No se pudieron cancelar jobs activos")
+
+async def _get_sse_user(request: Request, token: Optional[str] = Query(default=None)) -> Dict[str, Any]:
+    """
+    Dependencia de autenticación para endpoints SSE.
+    Acepta el token JWT vía query param porque EventSource del navegador
+    no puede enviar cabeceras personalizadas (como Authorization: Bearer).
+    Fallback: lee el header Authorization estándar si no hay query param.
+    """
+    if token:
+        from app.utils.firebase_auth import verify_firebase_token
+        try:
+            claims = verify_firebase_token(token)
+        except HTTPException:
+            raise HTTPException(status_code=401, detail="Token inválido")
+
+        try:
+            user_repo = UserRepository()
+            user_repo.upsert_user({
+                "email": claims.get("email"),
+                "uid": claims.get("user_id"),
+                "name": claims.get("name"),
+                "picture": claims.get("picture") or claims.get("photoURL"),
+            })
+            db_user = user_repo.get_by_email(claims.get("email"))
+            if db_user and db_user.get("status") == "suspended":
+                raise HTTPException(status_code=403, detail="Tu cuenta está suspendida. Contacta al administrador.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"SSE auth upsert warning: {e}")
+
+        return {
+            "email": claims.get("email"),
+            "uid": claims.get("user_id"),
+            "name": claims.get("name"),
+        }
+
+    # Fallback: intentar con header Bearer estándar
+    return _get_current_user(request)
+
+
+@router.get("/queue-events/stream")
+async def stream_queue_events(
+    request: Request,
+    token: Optional[str] = Query(default=None),
+    status: str = Query(default="all"),
+    page_size: int = Query(default=20, ge=1, le=100),
+    user: Dict[str, Any] = Depends(_get_sse_user),
+):
+    """
+    SSE stream para actualizaciones en tiempo real de la cola de procesamiento.
+    Emite eventos 'queue-update' cuando los datos cambian y 'heartbeat' cada 3 s
+    cuando no hay cambios, para mantener la conexión viva.
+    """
+    from sse_starlette.sse import EventSourceResponse
+    import json
+    import asyncio
+    import hashlib
+    from pymongo import DESCENDING
+    from app.core.database import get_mongo_client
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+
+    owner = (user.get("email") or "").lower()
+
+    async def event_generator():
+        last_data_hash: Optional[str] = None
+        # Obtener colección una sola vez antes del loop — el singleton no genera I/O adicional
+        coll = get_mongo_client()[settings.MONGODB_DATABASE].processed_emails
+
+        while True:
+            if await request.is_disconnected():
+                logger.debug(f"SSE desconectado para {owner}")
+                break
+
+            try:
+                query: Dict[str, Any] = {"owner_email": owner}
+                if status and status != "all":
+                    query["status"] = status
+                else:
+                    query["status"] = {
+                        "$in": [
+                            "skipped_ai_limit",
+                            "skipped_ai_limit_unread",
+                            "pending_ai_unread",
+                            "pending",
+                            "processing",
+                            "retry_requested",
+                            "failed",
+                            "error",
+                            "missing_metadata",
+                        ]
+                    }
+
+                total = coll.count_documents(query)
+                cursor = coll.find(query).sort("processed_at", DESCENDING).limit(page_size)
+
+                retryable_statuses = {
+                    "skipped_ai_limit",
+                    "skipped_ai_limit_unread",
+                    "pending_ai_unread",
+                    "failed",
+                    "error",
+                    "missing_metadata",
+                }
+                events: List[Dict[str, Any]] = []
+                for doc in cursor:
+                    is_manual = bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload"
+                    retry_supported = doc.get("retry_supported")
+                    can_retry = (
+                        (doc.get("status") in retryable_statuses)
+                        and (not is_manual)
+                        and (retry_supported is not False)
+                    )
+                    doc["can_retry"] = bool(can_retry)
+                    if not can_retry and is_manual:
+                        doc["retry_disabled_reason"] = "Evento manual: no aplica reintento"
+                    doc["_id"] = str(doc["_id"])
+                    if "processed_at" in doc and hasattr(doc["processed_at"], "isoformat"):
+                        doc["processed_at"] = doc["processed_at"].isoformat()
+                    if "last_retry_at" in doc and hasattr(doc["last_retry_at"], "isoformat"):
+                        doc["last_retry_at"] = doc["last_retry_at"].isoformat()
+                    if "email_date" in doc and hasattr(doc["email_date"], "isoformat"):
+                        doc["email_date"] = doc["email_date"].isoformat()
+                    events.append(doc)
+
+                # Recolectar jobs RQ activos (misma lógica que get_queue_events)
+                if status in {"all", "pending", "processing"}:
+                    try:
+                        from rq.job import Job
+                        from rq.registry import StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry
+                        from app.worker.queues import get_queue
+
+                        candidate_ids: set = set()
+                        queue_sources: Dict[str, str] = {}
+                        conn = None
+
+                        for qname in ("high", "default"):
+                            q = get_queue(qname)
+                            conn = q.connection
+                            try:
+                                for jid in (q.get_job_ids() or []):
+                                    candidate_ids.add(jid)
+                                    queue_sources.setdefault(jid, qname)
+                            except Exception:
+                                pass
+                            for registry_cls in (StartedJobRegistry, DeferredJobRegistry, ScheduledJobRegistry):
+                                try:
+                                    reg = registry_cls(queue=q, connection=conn)
+                                    for jid in (reg.get_job_ids() or []):
+                                        candidate_ids.add(jid)
+                                        queue_sources.setdefault(jid, qname)
+                                except Exception:
+                                    continue
+
+                        synthetic_events: List[Dict[str, Any]] = []
+                        if conn is not None:
+                            for job_id in candidate_ids:
+                                try:
+                                    job = Job.fetch(job_id, connection=conn)
+                                    kwargs = job.kwargs or {}
+                                    args = list(getattr(job, "args", ()) or ())
+                                    func_name = str(getattr(job, "func_name", "") or "")
+
+                                    candidate_owner = str(kwargs.get("owner_email", "")).lower().strip()
+                                    if not candidate_owner and "process_single_email_from_uid_job" in func_name and len(args) >= 2:
+                                        candidate_owner = str(args[1] or "").lower().strip()
+                                    if not candidate_owner and "process_emails_range_job" in func_name and len(args) >= 1:
+                                        candidate_owner = str(args[0] or "").lower().strip()
+                                    if not candidate_owner and "process_emails_job" in func_name and len(args) >= 1:
+                                        candidate_owner = str(args[0] or "").lower().strip()
+
+                                    if candidate_owner != owner:
+                                        continue
+
+                                    if "process_emails_range_job" in func_name:
+                                        action = "process_emails_range"
+                                        subject = "Procesamiento por rango"
+                                        email_uid = str(job.id)
+                                    elif "process_emails_job" in func_name:
+                                        action = "process_emails"
+                                        subject = "Procesamiento manual"
+                                        email_uid = str(job.id)
+                                    elif "process_single_email_from_uid_job" in func_name:
+                                        action = "process_single_email"
+                                        uid_from_kw = kwargs.get("email_uid")
+                                        uid_from_args = args[2] if len(args) >= 3 else None
+                                        uid_val = uid_from_kw if uid_from_kw else uid_from_args
+                                        email_uid = str(uid_val) if uid_val is not None else str(job.id)
+                                        subject = f"Procesamiento de correo UID {email_uid}"
+                                    else:
+                                        continue
+
+                                    raw_status = str(job.get_status(refresh=True) or "").lower().strip()
+                                    if "." in raw_status:
+                                        raw_status = raw_status.split(".")[-1]
+
+                                    if raw_status in {"queued", "deferred", "scheduled"}:
+                                        mapped_status = "pending"
+                                    elif raw_status in {"started", "running", "busy"}:
+                                        mapped_status = "processing"
+                                    elif raw_status in {"failed", "stopped", "canceled", "cancelled"}:
+                                        mapped_status = "error"
+                                    else:
+                                        continue
+
+                                    if status != "all" and status != mapped_status:
+                                        continue
+
+                                    ts = job.started_at or job.created_at
+                                    processed_at = ts.isoformat() if hasattr(ts, "isoformat") else None
+                                    job_meta = dict(getattr(job, "meta", {}) or {})
+                                    progress = job_meta.get("progress") if isinstance(job_meta.get("progress"), dict) else None
+
+                                    if mapped_status == "processing":
+                                        default_reason = "Procesando correo..."
+                                    elif mapped_status == "error":
+                                        exc_str = str(getattr(job, "exc_info", "") or "")
+                                        latest = getattr(job, "latest_result", None)
+                                        if latest and hasattr(latest, "exc_string"):
+                                            exc_str = str(latest.exc_string or exc_str)
+                                        if "AbandonedJobError" in exc_str:
+                                            default_reason = "Tarea interrumpida por reinicio del servidor. Puedes reintentar."
+                                        elif "timeout" in exc_str.lower() or "timedout" in exc_str.lower():
+                                            default_reason = "La tarea excedio el tiempo maximo. Puedes reintentar."
+                                        elif exc_str.strip():
+                                            default_reason = "Error al procesar. Puedes reintentar."
+                                        else:
+                                            default_reason = "Error al procesar."
+                                    else:
+                                        default_reason = "En cola, pendiente de procesamiento"
+                                    if isinstance(progress, dict):
+                                        queued_c = int(progress.get("queued_count") or 0)
+                                        skipped_c = int(progress.get("skipped_existing") or 0)
+                                        requeued_c = int(progress.get("requeued_errors") or 0)
+                                        matches_c = int(progress.get("discovered_matches") or 0)
+                                        stage_c = str(progress.get("stage") or "").strip().lower()
+                                        if stage_c in {"fanout_discovery_complete", "fanout_streaming", "fanout_batch", "fanout_streaming_done", "fanout_done"}:
+                                            parts_c = [f"Se encontraron {matches_c} correos"]
+                                            if queued_c > 0:
+                                                parts_c.append(f"{queued_c} en cola de procesamiento")
+                                            if skipped_c > 0:
+                                                parts_c.append(f"{skipped_c} ya procesados anteriormente")
+                                            if requeued_c > 0:
+                                                parts_c.append(f"{requeued_c} reintentando por error previo")
+                                            default_reason = "Procesando historico: " + ", ".join(parts_c) + "."
+                                        elif stage_c == "fanout_no_matches":
+                                            default_reason = "Procesando histórico: no hay nuevos correos para encolar en este rango."
+                                        elif stage_c == "starting":
+                                            default_reason = "Inicializando procesamiento histórico..."
+
+                                    synthetic_events.append({
+                                        "_id": f"rq::{job.id}",
+                                        "owner_email": owner,
+                                        "account_email": "system",
+                                        "email_uid": email_uid,
+                                        "status": mapped_status,
+                                        "reason": default_reason,
+                                        "subject": subject,
+                                        "sender": "Sistema",
+                                        "processed_at": processed_at,
+                                        "can_retry": False,
+                                        "retry_supported": False,
+                                        "job_id": str(job.id),
+                                        "job_action": action,
+                                        "source": f"rq_{queue_sources.get(job.id, 'unknown')}",
+                                    })
+                                except Exception:
+                                    continue
+
+                        if synthetic_events:
+                            synthetic_events.sort(key=lambda item: str(item.get("processed_at") or ""), reverse=True)
+                            events = (synthetic_events + events)[:page_size]
+                            total += len(synthetic_events)
+
+                    except Exception as e:
+                        logger.warning(f"SSE: no se pudieron recolectar jobs RQ para {owner}: {e}")
+
+                data = {
+                    "success": True,
+                    "events": events,
+                    "pagination": {
+                        "total": total,
+                        "page": 1,
+                        "pages": max(1, (total + page_size - 1) // page_size),
+                    },
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+
+                data_hash = hashlib.md5(json.dumps(data, default=str).encode()).hexdigest()
+
+                if data_hash != last_data_hash:
+                    last_data_hash = data_hash
+                    yield {"event": "queue-update", "data": json.dumps(data, default=str)}
+                else:
+                    yield {"event": "heartbeat", "data": "{}"}
+
+            except Exception as e:
+                logger.error(f"SSE error para {owner}: {e}")
+                yield {"event": "error", "data": json.dumps({"error": str(e)})}
+
+            await asyncio.sleep(3)
+
+    from sse_starlette.sse import EventSourceResponse
+    return EventSourceResponse(event_generator())
+
+
+@router.post("/queue-events/{event_id}/retry")
+async def retry_queue_event(event_id: str, user: Dict[str, Any] = Depends(_get_current_user)):
+    """
+    Re-intenta un evento fallido o pausado empujándolo a la cola de RQ nuevamente.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+        
+    email = (user.get("email") or "").lower()
+    
+    try:
+        from app.core.database import get_mongo_client
+        from app.worker.queues import enqueue_job
+        from app.worker.jobs import process_single_email_from_uid_job
+        from datetime import datetime
+
+        coll = get_mongo_client()[settings.MONGODB_DATABASE].processed_emails
+        
+        # Verificar que el evento pertenezca al usuario
+        doc = coll.find_one({"_id": event_id, "owner_email": email})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Evento no encontrado")
+
+        # Eventos manuales se exponen para visibilidad, pero no son reintentables por UID IMAP.
+        if bool(doc.get("manual_upload")) or doc.get("account_email") == "manual_upload" or doc.get("retry_supported") is False:
+            raise HTTPException(
+                status_code=400,
+                detail="Este evento manual no admite reintento desde la cola de correos"
+            )
+
+        allowed_statuses = {"skipped_ai_limit", "skipped_ai_limit_unread", "failed", "error", "missing_metadata"}
+        if doc.get("status") not in allowed_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Estado no reintentable: {doc.get('status')}"
+            )
+            
+        owner = doc.get("owner_email")
+        account = doc.get("account_email")
+        uid = doc.get("email_uid")
+        msg_id = doc.get("message_id")
+
+        if not owner or not account or not uid:
+            raise HTTPException(
+                status_code=400,
+                detail="Evento incompleto para reintento (owner/account/uid requeridos)"
+            )
+        
+        # Actualizar estado a retry_requested (estado explícitamente reintentable)
+        coll.update_one(
+            {"_id": event_id},
+            {"$set": {
+                "status": "retry_requested",
+                "reason": "Reintento manual por usuario",
+                "last_retry_at": datetime.utcnow()
+            }}
+        )
+        
+        # Encolar a RQ
+        job = enqueue_job(
+            process_single_email_from_uid_job,
+            account,
+            owner,
+            uid
+        )
+
+        logger.info(
+            f"🔄 Usuario {email} solicitó reintento manual para evento {event_id}. "
+            f"Job {job.id} (account={account}, uid={uid}, msg_id={msg_id})"
+        )
+        return {"success": True, "message": "Evento reencolado exitosamente"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrying queue event {event_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

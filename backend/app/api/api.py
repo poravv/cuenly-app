@@ -66,6 +66,7 @@ from app.api.endpoints import (
     admin_users,
     admin_plans,
     user_profile,
+    queue_events,
     queues,
     admin_ai_limits,
     admin_scheduler,
@@ -80,6 +81,7 @@ app.include_router(subscriptions.router,            prefix="/subscriptions",    
 app.include_router(admin_users.router,              prefix="/admin/users",                      tags=["Admin Users"])
 app.include_router(admin_plans.router,              prefix="/admin/plans",                      tags=["Admin Plans"])
 app.include_router(user_profile.router,             prefix="/user",                             tags=["User Profile"])
+app.include_router(queue_events.router,             prefix="/user",                             tags=["Queue Events"])
 app.include_router(queues.router,                   prefix="/admin/queues",                     tags=["Admin Queues"])
 app.include_router(admin_ai_limits.router,          prefix="/admin/ai-limits",                  tags=["Admin AI Limits"])
 app.include_router(admin_scheduler.router,          prefix="/admin/scheduler",                  tags=["Admin Scheduler"])
