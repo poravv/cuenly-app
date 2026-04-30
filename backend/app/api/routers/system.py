@@ -3,6 +3,7 @@ Endpoints de sistema: health checks, cache, métricas, logs y observabilidad.
 Movido desde api.py — no se modificó la lógica.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 from datetime import datetime

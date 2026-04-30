@@ -3,7 +3,7 @@ Endpoints de templates de exportación y exportación personalizada a Excel.
 Movido desde api.py — no se modificó la lógica.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime

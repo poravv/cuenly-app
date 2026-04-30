@@ -3,7 +3,7 @@ Endpoints de configuración de cuentas de correo IMAP y OAuth Google.
 Movido desde api.py — no se modificó la lógica.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Body, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime

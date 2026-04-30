@@ -2,7 +2,7 @@
 Endpoints de dashboard y preferencias de UI.
 Movido desde api.py — no se modificó la lógica.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 import logging
