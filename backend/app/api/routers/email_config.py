@@ -11,6 +11,7 @@ import uuid
 import logging
 
 from app.api.deps import _get_current_user
+from app.api.state import invoice_sync
 from app.models.models import MultiEmailConfig, EmailConfigUpdate
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.modules.email_processor.config_store import (

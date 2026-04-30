@@ -10,6 +10,9 @@ import logging
 from app.api.deps import _get_current_user, _get_current_admin
 from app.repositories.user_repository import UserRepository
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+from app.config.settings import settings
+from app.modules.mongo_query_service import get_mongo_query_service
+from app.modules.email_processor.config_store import db_list_configs
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -183,29 +186,6 @@ async def get_dashboard_system_status(user: Dict[str, Any] = Depends(_get_curren
         # Return partial success to avoid frontend blanking out everything if possible, 
         # but frontend checks success=True. 
         return {"success": False, "status": {"openai_configured": False, "email_configured": False}}
-
-def start():
-    """Inicia el servidor API."""
-    # Guardar tiempo de inicio
-    app.state.start_time = time.time()
-    
-    # Iniciar scheduler para tareas programadas
-    try:
-        from app.services.scheduler import start_background_scheduler
-        start_background_scheduler()
-        logger.info("🚀 Scheduler de tareas programadas iniciado")
-    except Exception as e:
-        logger.error(f"❌ Error iniciando scheduler: {e}")
-    
-    uvicorn.run(
-        "app.api.api:app",
-        host=settings.API_HOST,
-        port=settings.API_PORT,
-        reload=True
-    )
-
-if __name__ == "__main__":
-    start()
 
 # -----------------------------
 # Preferencias (UI / Auto‑refresh) - Storage en memoria

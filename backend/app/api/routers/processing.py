@@ -16,6 +16,7 @@ from app.api.deps import (
     _get_current_user_with_ai_check,
     _get_current_admin,
 )
+from app.utils.firebase_auth import extract_bearer_token, verify_firebase_token
 from app.config.settings import settings
 from app.models.models import ProcessResult, JobStatus, MultiEmailConfig, InvoiceData
 from app.repositories.user_repository import UserRepository

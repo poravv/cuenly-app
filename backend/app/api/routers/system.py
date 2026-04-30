@@ -13,6 +13,14 @@ from app.api.deps import _get_current_user, _get_current_admin
 from app.config.settings import settings
 from app.repositories.user_repository import UserRepository
 from app.utils.observability import observability_logger
+from app.utils.security import validate_frontend_key
+from app.api.routers.export_templates import FrontendLogsPayload
+from app.modules.email_processor.config_store import db_list_configs
+from app.modules.scheduler.task_queue import task_queue
+from app.modules.scheduler.processing_lock import PROCESSING_LOCK
+import time
+import uvicorn
+from app.main import CuenlyApp
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -378,7 +386,7 @@ async def force_system_restart(admin: Dict[str, Any] = Depends(_get_current_admi
         raise HTTPException(status_code=500, detail=f"Error en reinicio: {str(e)}")
 
 @router.get("/system/health")
-async def get_system_health(admin: Dict[str, Any] = Depends(_get_current_admin)):
+async def get_system_health(request: Request, admin: Dict[str, Any] = Depends(_get_current_admin)):
     """
     Endpoint de salud del sistema con información detallada.
     Requiere permisos de administrador.
@@ -394,7 +402,7 @@ async def get_system_health(admin: Dict[str, Any] = Depends(_get_current_admin))
         health_info = {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
-            "uptime_seconds": time.time() - getattr(app.state, 'start_time', time.time()),
+            "uptime_seconds": time.time() - getattr(request.app.state, 'start_time', time.time()),
             
             # Estado de threads
             "active_threads": threading.active_count(),

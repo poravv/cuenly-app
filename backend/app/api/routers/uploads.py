@@ -25,6 +25,7 @@ from app.modules.email_processor.storage import save_binary, cleanup_local_file_
 from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
 from app.utils.security import validate_frontend_key
 from app.utils.observability import observability_logger
+from app.api.state import invoice_sync
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
