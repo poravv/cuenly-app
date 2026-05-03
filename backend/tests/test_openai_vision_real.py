@@ -1,13 +1,19 @@
 """
-Test REAL de extracción con OpenAI Vision.
-Envía los PDFs e imágenes del directorio example/ a la API de OpenAI
-y verifica que la data extraída sea correcta y mapee al mismo esquema.
+INTEGRACIÓN REAL — Test de extracción con OpenAI Vision (GPT-4o).
 
-Para los 3 PDFs que tienen XML par, compara contra los valores del XML.
-Para los demás PDFs e imágenes, verifica que produzcan InvoiceData válido.
+ADVERTENCIA: Este test consume créditos de OpenAI. NO se ejecuta en CI/CD automático.
+Correr solo cuando se necesite validar la extracción real contra PDFs de ejemplo.
 
-IMPORTANTE: Este test consume créditos de OpenAI. Correr solo cuando sea necesario.
-Usar: PYTHONPATH=backend python3 -m pytest backend/tests/test_openai_vision_real.py -v -s
+Uso:
+    PYTHONPATH=backend python3 -m pytest backend/tests/test_openai_vision_real.py -v -s
+
+Requisitos:
+    - Variable de entorno OPENAI_API_KEY con una clave válida (sk-...).
+    - Archivos de ejemplo en el directorio example/ en la raíz del proyecto.
+
+Todos los tests del módulo tienen skip automático si OPENAI_API_KEY no está configurada.
+Para el equivalente con Gemini 2.5 Flash, ver la suite de unit tests sin red en
+test_ai_client_factory.py (tarea 5.1–5.3 de la migración GPT-4o → Gemini).
 """
 import os
 import sys
