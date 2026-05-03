@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from app.config.settings import settings
 from .config import OpenAIConfig
-from .clients import make_openai_client
+from .clients import make_ai_client, OpenAIChatClient
 from .pdf_text import extract_text_with_fallbacks
 from .image_utils import pdf_to_base64_first_page, ocr_from_base64_image
 from .prompts import build_text_prompt, build_image_prompt, build_xml_prompt, build_image_prompt_v2, messages_user_only, messages_user_with_image
@@ -12,6 +12,7 @@ from .json_utils import extract_and_normalize_json
 from .cdc import validate_and_enhance_with_cdc
 from .cache import OpenAICache
 from app.utils.extended_metrics import extended_metrics
+from app.modules.email_processor.errors import AIFatalError, AIRetryableError
 import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,10 @@ class OpenAIProcessor:
         if not cfg.api_key:
             logger.warning("API key de OpenAI no configurada. El procesador no podrá llamar a OpenAI.")
         self.cfg = cfg
-        self.client = make_openai_client(cfg.api_key)
+        # Cliente principal: Gemini o OpenAI según AI_PROVIDER
+        self._client = make_ai_client(settings)
+        # Cliente fallback siempre apunta a OpenAI
+        self._fallback_client = OpenAIChatClient(cfg.api_key)
         
         # Inicializar Redis Cache para respuestas OpenAI (con fallback graceful)
         try:
@@ -59,7 +63,7 @@ class OpenAIProcessor:
         4) Cachear resultado
         5) Contar uso de IA para trial users
         """
-        from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
+        # AIFatalError / AIRetryableError already imported at module level
         
         ai_slot_reserved = False
         try:
@@ -139,21 +143,21 @@ class OpenAIProcessor:
                     pass
             error_msg = str(e).lower()
             
-            # Detectar errores fatales de OpenAI
+            # Detectar errores fatales de IA
             if any(fatal in error_msg for fatal in [
                 "invalid api key", "api key", "authentication", "unauthorized",
                 "insufficient quota", "quota exceeded", "billing", "error fatal"
             ]):
-                logger.error(f"❌ Error FATAL de OpenAI: {e}")
-                raise OpenAIFatalError(f"Error fatal de OpenAI: {e}")
-                
+                logger.error("Error FATAL de IA: %s", e)
+                raise AIFatalError(f"Error fatal de IA: {e}")
+
             # Detectar errores transitorios
             elif any(retryable in error_msg for retryable in [
-                "timeout", "rate limit", "too many requests", "connection", 
+                "timeout", "rate limit", "too many requests", "connection",
                 "network", "server error", "503", "502", "504"
             ]):
-                logger.warning(f"⚠️ Error transitorio de OpenAI: {e}")
-                raise OpenAIRetryableError(f"Error transitorio de OpenAI: {e}")
+                logger.warning("Error transitorio de IA: %s", e)
+                raise AIRetryableError(f"Error transitorio de IA: {e}")
             
             # Otros errores - log y devolver None
             logger.exception("❌ Error inesperado en extract_invoice_data: %s", e)
@@ -238,15 +242,15 @@ class OpenAIProcessor:
                         fields_present = list(native.keys()) if isinstance(native, dict) else []
                         missing = [k for k in ['fecha','numero_factura','ruc_emisor'] if not (native or {}).get(k)]
                         logger.info(
-                            "Parser nativo no suficiente, fallback a OpenAI | cdc_en_Id=%s | faltantes=%s | presentes=%s",
+                            "Parser nativo no suficiente, fallback a IA | cdc_en_Id=%s | faltantes=%s | presentes=%s",
                             bool(cdc_probe), missing, fields_present[:12]
                         )
                     except Exception:
-                        logger.info("Parser nativo no suficiente, fallback a OpenAI")
+                        logger.info("Parser nativo no suficiente, fallback a IA")
             except Exception as e:
-                logger.warning("Parser nativo falló: %s. Se usa OpenAI como fallback", e)
+                logger.warning("Parser nativo falló: %s. Se usa IA como fallback", e)
 
-            # 2) Fallback: usar OpenAI con prompt XML
+            # 2) Fallback: usar IA con prompt XML
             # RESERVA ATÓMICA antes de usar IA
             xml_ai_slot_reserved = False
             if owner_email:
@@ -270,23 +274,23 @@ class OpenAIProcessor:
             messages = messages_user_only(prompt)
 
             try:
-                raw = self.client.chat_json(
+                raw = self._client.chat_json(
                     model=self.cfg.model,
                     messages=messages,
                     temperature=self.cfg.temperature,
                     max_tokens=self.cfg.max_tokens,
                 )
-            except Exception as openai_err:
-                # Liberar slot si OpenAI falla
+            except Exception as ai_err:
+                # Liberar slot si la IA falla
                 if xml_ai_slot_reserved and owner_email:
                     try:
                         user_repo.release_ai_slot(owner_email)
                     except Exception:
                         pass
-                raise openai_err
+                raise ai_err
 
             data = extract_and_normalize_json(raw)
-            logger.info("Datos extraídos del XML (OpenAI): %s", data)
+            logger.info("Datos extraídos del XML (IA fallback): %s", data)
             
             # Forzar CDC desde atributo Id si está presente
             cdc_id = _extract_cdc_id(xml_content)
@@ -294,10 +298,8 @@ class OpenAIProcessor:
                 data['cdc'] = cdc_id
             invoice = _coerce_invoice_model(data, email_metadata)
             invoice = validate_and_enhance_with_cdc(invoice)
-            # Aceptamos resultado OpenAI aunque el CDC falte; registramos advertencia.
-            # Aceptamos resultado OpenAI aunque el CDC falte; registramos advertencia.
             if not _is_valid_cdc(getattr(invoice, 'cdc', '')):
-                logger.warning("CDC no detectado/ inválido tras OpenAI XML. Se mantiene resultado OpenAI.")
+                logger.warning("CDC no detectado/ inválido tras IA XML fallback. Se mantiene resultado.")
             
             # Marcar uso de IA para XML fallback
             if hasattr(invoice, '__dict__'):
@@ -324,7 +326,7 @@ class OpenAIProcessor:
         prompt = build_text_prompt(text)
         messages = messages_user_only(prompt)
 
-        raw = self.client.chat_json(
+        raw = self._client.chat_json(
             model=self.cfg.model,
             messages=messages,
             temperature=self.cfg.temperature,
@@ -352,12 +354,28 @@ class OpenAIProcessor:
             prompt = prompt + "\n\nTexto OCR preliminar (ayuda, si aplica):\n" + ocr_text[:4000]
         messages = messages_user_with_image(prompt, base64_img)
 
-        raw = self.client.chat_json(
-            model=self.cfg.model,
-            messages=messages,
-            temperature=0.1 if not ocr_text else self.cfg.temperature,  # más determinista para imagen
-            max_tokens=self.cfg.max_tokens,
-        )
+        temperature = 0.1 if not ocr_text else self.cfg.temperature
+        try:
+            raw = self._client.chat_json(
+                model=self.cfg.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=self.cfg.max_tokens,
+            )
+            provider = settings.AI_PROVIDER
+        except AIFatalError as e:
+            if settings.AI_PROVIDER == "openai":
+                # Ya estamos en OpenAI; no hay fallback disponible
+                raise
+            logger.warning("Proveedor IA primario falló, usando OpenAI como fallback: %s", e)
+            raw = self._fallback_client.chat_json(
+                model=self.cfg.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=self.cfg.max_tokens,
+            )
+            provider = "openai"
+
         try:
             data = extract_and_normalize_json(raw)
             # Detectar esquema v2 (cabecera + items)
@@ -367,8 +385,9 @@ class OpenAIProcessor:
             else:
                 invoice = _coerce_invoice_model(data, email_metadata)
             invoice = validate_and_enhance_with_cdc(invoice)
-            # Estimar costo de OpenAI Vision (~$0.01 por imagen con GPT-4o vision)
-            extended_metrics.update_openai_cost_estimate(0.01)
+            # Gemini 2.5 Flash: ~$0.002/imagen; GPT-4o Vision: ~$0.01/imagen
+            cost = 0.01 if provider == "openai" else 0.002
+            extended_metrics.update_ai_cost_estimate(cost, provider=provider)
             return invoice
         except Exception as e:
             logger.warning("Fallo procesando JSON de imagen (v2/v1): %s", e)
