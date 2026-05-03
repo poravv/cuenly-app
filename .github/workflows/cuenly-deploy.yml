@@ -396,6 +396,8 @@ jobs:
             --from-literal=MONGODB_DATABASE="${{ secrets.MONGODB_DATABASE }}" \
             --from-literal=MONGODB_COLLECTION="${{ secrets.MONGODB_COLLECTION }}" \
             --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --from-literal=GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
+            --from-literal=AI_PROVIDER="${{ secrets.AI_PROVIDER || 'gemini' }}" \
             --from-literal=API_HOST="${{ secrets.API_HOST }}" \
             --from-literal=API_PORT="${{ secrets.API_PORT }}" \
             --from-literal=LOG_LEVEL="${{ secrets.LOG_LEVEL }}" \
