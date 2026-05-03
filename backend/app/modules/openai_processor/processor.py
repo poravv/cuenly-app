@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from app.config.settings import settings
-from .config import OpenAIConfig
+from .config import OpenAIConfig, GeminiConfig
 from .clients import make_ai_client, OpenAIChatClient
 from .pdf_text import extract_text_with_fallbacks
 from .image_utils import pdf_to_base64_first_page, ocr_from_base64_image
@@ -39,6 +39,14 @@ class OpenAIProcessor:
         self._client = make_ai_client(settings)
         # Cliente fallback siempre apunta a OpenAI
         self._fallback_client = OpenAIChatClient(cfg.api_key)
+        # Modelo y límite de tokens del proveedor activo
+        if settings.AI_PROVIDER != "openai" and getattr(settings, "GEMINI_API_KEY", ""):
+            _gcfg = GeminiConfig(api_key=settings.GEMINI_API_KEY)
+            self._active_model = _gcfg.model
+            self._active_max_tokens = _gcfg.max_output_tokens
+        else:
+            self._active_model = cfg.model
+            self._active_max_tokens = cfg.max_tokens
         
         # Inicializar Redis Cache para respuestas OpenAI (con fallback graceful)
         try:
@@ -275,10 +283,10 @@ class OpenAIProcessor:
 
             try:
                 raw = self._client.chat_json(
-                    model=self.cfg.model,
+                    model=self._active_model,
                     messages=messages,
                     temperature=self.cfg.temperature,
-                    max_tokens=self.cfg.max_tokens,
+                    max_tokens=self._active_max_tokens,
                 )
             except Exception as ai_err:
                 # Liberar slot si la IA falla
@@ -327,10 +335,10 @@ class OpenAIProcessor:
         messages = messages_user_only(prompt)
 
         raw = self._client.chat_json(
-            model=self.cfg.model,
+            model=self._active_model,
             messages=messages,
             temperature=self.cfg.temperature,
-            max_tokens=self.cfg.max_tokens,
+            max_tokens=self._active_max_tokens,
         )
         try:
             data = extract_and_normalize_json(raw)
@@ -357,10 +365,10 @@ class OpenAIProcessor:
         temperature = 0.1 if not ocr_text else self.cfg.temperature
         try:
             raw = self._client.chat_json(
-                model=self.cfg.model,
+                model=self._active_model,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=self.cfg.max_tokens,
+                max_tokens=self._active_max_tokens,
             )
             provider = settings.AI_PROVIDER
         except AIFatalError as e:
