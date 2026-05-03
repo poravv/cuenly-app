@@ -2,12 +2,16 @@
   {
     "context": [
       "/api/**",
+      "/dashboard/**",
+      "/logs/**",
+      "/pagopar/**",
       "/process-direct",
       "/process-direct/**",
       "/process",
       "/user/**",
       "/admin/**",
       "/v2/**",
+      "/status",
       "/status/**",
       "/upload/**",
       "/upload-xml/**",
@@ -27,6 +31,9 @@
     "target": "http://localhost:8000",
     "secure": false,
     "changeOrigin": true,
-    "logLevel": "warn"
+    "logLevel": "warn",
+    "pathRewrite": {
+      "^/api": ""
+    }
   }
 ]

@@ -1,282 +1,135 @@
-# Documentación Técnica y Arquitectura de CuenlyApp
+# Arquitectura Técnica CuenlyApp
 
-Esta documentación detalla la arquitectura técnica, estructura de datos, componentes del sistema, integración de pagos e infraestructura de Cuenly.
+## Resumen
 
----
+CuenlyApp es una aplicación Angular + FastAPI con persistencia MongoDB, colas Redis/RQ y autenticación Firebase. El backend expone APIs REST para procesamiento de facturas, configuración de correos, consultas, administración y suscripciones Pagopar.
 
-## 🏗️ 1. Arquitectura General del Sistema
-
-El sistema utiliza una arquitectura de microservicios contenerizada con Kubernetes en producción y Docker en desarrollo.
+## Componentes
 
 ```mermaid
-graph TD
-    User["Usuario (Navegador)"] -->|HTTPS| Frontend["Frontend (Angular 17)"]
-    Frontend -->|HTTP REST| Backend["Backend (FastAPI)"]
-    
-    subgraph "Backend Services"
-        Backend -->|Persistencia| MongoDB[("MongoDB")]
-        Backend -->|Cache & Colas| Redis[("Redis")]
-        Backend -->|Object Storage| MinIO[("MinIO (S3)")]
-        Backend -->|Procesamiento IA| OpenAI["OpenAI API (GPT-4o)"]
-        
-        Backend -->|Jobs Internos| SchedulerThread["ScheduledJobRunner (Threads)"]
-        Backend -->|Jobs Pesados| AsyncJobWorker["AsyncJobManager (Threads)"]
-    end
-    
-    subgraph "External Workers"
-        Worker["RQ Worker"] -->|Consume colas high/default/low| Redis
-        KEDA["KEDA ScaledObject"] -->|Autoscaling| Worker
-    end
-    
-    Backend -->|IMAP| EmailServers["Servidores de Correo (Gmail/Outlook)"]
-    Frontend -->|Autenticación| Firebase["Firebase Auth/Analytics"]
+flowchart LR
+  Browser["Angular SPA"] --> Nginx["Nginx proxy"]
+  Nginx --> API["FastAPI"]
+  API --> Mongo["MongoDB"]
+  API --> Redis["Redis"]
+  Redis --> Worker["RQ Worker"]
+  Worker --> Mongo
+  Worker --> MinIO["MinIO/S3"]
+  API --> Firebase["Firebase Auth"]
+  API --> Pagopar["Pagopar/Bancard"]
+  Worker --> OpenAI["OpenAI"]
 ```
 
-### 1.1 Diagrama de Frontend (Angular 17)
+## Backend
 
-```mermaid
-graph TB
-    subgraph "🅰️ Angular Application"
-        APP[App Component] --> ROUTER[Router / Guards]
-        APP --> NOTIFICATION[Notification Container]
-    end
-    
-    ROUTER --> PUBLIC[Public: Login, Trial]
-    ROUTER --> MAIN[Main: Dashboard, Invoices Grid]
-    ROUTER --> TOOLS[Tools: Email, Templates, Subscription]
-    ROUTER --> ADMIN[Admin: Users, Plans, AI Limits]
-    
-    MAIN --> API_SERVICE[API Service]
-    TOOLS --> API_SERVICE
-    ADMIN --> API_SERVICE
-    
-    API_SERVICE --> BACKEND[FastAPI Backend]
-    PUBLIC --> FIREBASE_EXT[Firebase Auth]
-```
+Punto de entrada: `backend/app/api/api.py`.
 
-### 1.2 Diagrama de Backend (FastAPI / Python 3.11)
+Routers activos:
 
-```mermaid
-graph TB
-    API[FastAPI Main App] --> ENDPOINTS[Endpoints: /user, /process, /invoices, /admin]
-    ENDPOINTS --> DISCOVERY[Discovery Engine: Fast Metadata Scan]
-    DISCOVERY --> FANOUT[Fan-out: RQ Tasks Queue]
-    FANOUT --> WORKER[RQ Worker: Content Fetch & AI]
-    WORKER --> SERVICES[Services: OpenAI, Email, Scheduler, Billing]
-    SERVICES --> REPOS[Repositories: users, invoices, subscriptions]
-    REPOS --> MONGODB[(MongoDB cuenlyapp_warehouse)]
-```
+- Procesamiento y tareas: `/process`, `/process-direct`, `/tasks/*`, `/jobs/*`, `/job/*`.
+- Uploads: `/upload`, `/upload-xml`, `/upload-image`, `/tasks/upload-pdf`, `/tasks/upload-xml`.
+- Facturas: `/v2/invoices/*`, `/invoices/*`, `/export/*`.
+- Configuración de correo: `/email-config*`, `/email-configs*`.
+- Usuario: `/user/*` y aliases puntuales `/api/user/profile`.
+- Colas visibles al usuario: `/user/queue-events`, `/user/queue-events/stream`, `/user/queue-events/{id}/retry`.
+- Suscripciones: `/subscriptions/*`.
+- Pagopar legacy: `/pagopar/*`.
+- Admin: `/admin/*`.
+- Sistema: `/health`, `/status`, `/metrics`, `/logs/frontend`.
 
----
+Autenticación:
 
-## 🗄️ 2. Estructura de Base de Datos (MongoDB)
+- La mayoría de endpoints protegidos usan Firebase Bearer token mediante `_get_current_user`.
+- Endpoints administrativos usan `_get_current_admin` y validan Firestore `admins`.
+- Endpoints de procesamiento manual sensibles validan además `X-Frontend-Key`.
+- SSE usa token en query param porque `EventSource` no permite headers custom.
 
-```mermaid
-erDiagram
-    AUTH_USERS ||--o{ USER_SUBSCRIPTIONS : "has"
-    SUBSCRIPTION_PLANS ||--o{ USER_SUBSCRIPTIONS : "defines"
-    AUTH_USERS ||--o{ INVOICE_HEADERS : "owns"
-    INVOICE_HEADERS ||--o{ INVOICE_ITEMS : "contains"
-    AUTH_USERS ||--o{ EXPORT_TEMPLATES : "creates"
-    AUTH_USERS ||--o{ EMAIL_CONFIGS : "configures"
+## Frontend
 
-    AUTH_USERS {
-        ObjectId _id PK
-        string email UK
-        string role "admin/user"
-        int ai_invoices_processed
-        boolean is_trial_user
-    }
-    SUBSCRIPTION_PLANS {
-        ObjectId _id PK
-        string name
-        float price
-        int ai_invoices_limit
-    }
-    INVOICE_HEADERS {
-        ObjectId _id PK
-        string numero_factura
-        float monto_total
-        float iva_10
-        datetime processed_at
-    }
-    INVOICE_ITEMS {
-        string descripcion
-        float precio_total
-    }
-```
+Puntos principales:
 
----
+- API client general: `frontend/src/app/services/api.service.ts`.
+- Perfil, cola y acciones de usuario: `frontend/src/app/services/user.service.ts`.
+- Auth Firebase: `frontend/src/app/services/auth.service.ts`.
+- Interceptores: `auth.interceptor.ts`, `trial.interceptor.ts`, `observability.interceptor.ts`.
 
-## 🚀 3. Procesamiento y Extracción de Datos
+Convención operativa:
 
-### 3.1 Arquitectura de Alto Rendimiento (Fan-out)
-Para evitar bloqueos en el backend, el procesamiento se divide en dos fases:
-- **Fase de Descubrimiento (Discovery)**: El API busca UIDs de correos, descarga metadatos básicos (Asunto, Remitente, Fecha) en bloque y registra el correo como `pending` en MongoDB. Esta fase toma segundos.
-- **Fase de Fan-out**: Cada correo descubierto se encola como una tarea independiente en **RQ (Redis Queue)**.
-- **Fase de Procesamiento**: Los Workers procesan cada tarea: descargan el contenido completo (FETCH), extraen adjuntos y ejecutan la lógica de IA.
+- `environment.apiUrl` debe quedar vacío en local/prod con proxy.
+- Las rutas relativas permiten que `AuthInterceptor` agregue `Authorization`.
+- `/api/*` se usa como alias público del frontend y se reescribe a `/*` en proxy/nginx.
 
-### 3.2 Optimización IMAP y Conexiones
-- **Connection Pooling**: Se mantiene un pool de conexiones IMAP persistentes para evitar el overhead del handshake SSL en cada request (reducción del 70% en tiempo de conexión).
-- **Gestión de Estados**: El sistema garantiza que las conexiones reutilizadas se encuentren en estado `SELECTED` (vía `SELECT "INBOX"`) antes de cualquier operación de lectura.
-- **Prioridad XML**: El sistema intenta leer archivos XML primero usando un parser nativo SIFEN (para Facturación Electrónica en Paraguay). Si falla o falta data, usa GPT-4o como respaldo.
-- **Imágenes / PDF**: Se extraen los adjuntos (o se descargan desde enlaces), se almacenan los originales en MinIO (bucket privado) y se usa GPT-4o Vision para pasarlos a estructura JSON.
-- **Seguridad de Archivos**: Uso de `python-magic` (Magic Numbers) para validar que no sean ejecutables o scripts maliciosos ocultos bajo extensiones `.pdf`.
-- **Descubrimiento progresivo por lotes**: el matcher IMAP puede ir emitiendo tandas y encolando de forma incremental para mejorar el tiempo al primer evento visible en cola.
+Proxy:
 
-### 3.3 Idempotencia Global (Anti-Duplicados)
-- **Reserva atómica por correo (`processed_emails`)**:
-  - Antes de procesar un UID, el sistema realiza un `claim` atómico (`status=processing`) en `processed_emails`.
-  - Si el correo ya estaba reservado/procesado por cualquier método (botones manual, async o rango), se omite.
-  - Solo estados explícitamente reintentables (`skipped_ai_limit`, `skipped_ai_limit_unread`, `retry_requested`) pueden reclamarse de nuevo.
-- **Control por `Message-ID`**:
-  - Se guarda el `message_id` RFC822 del correo.
-  - Si aparece otro correo con el mismo `Message-ID` para el mismo owner, se marca como duplicado y se evita reproceso.
-- **No duplicación en Mongo (`invoice_headers` / `invoice_items`)**:
-  - Persistencia canónica por `owner_email + cdc` (prioridad principal).
-  - Fallback por `owner_email + message_id` cuando no hay CDC.
-  - Índice único parcial en `(owner_email, cdc)` para reforzar unicidad en base de datos.
-  - En caso de reingreso del mismo documento, se actualiza (`upsert`) el registro existente en lugar de crear uno nuevo.
+- Local Angular: `frontend/proxy.conf.json`.
+- Docker/Kubernetes: `frontend/nginx.template.conf`.
+- El compose estándar y CI usan `frontend/Dockerfile.proxy`.
+- `/logs/frontend`, `/dashboard/*` y `/pagopar/*` deben quedar cubiertos por proxy para no caer en el fallback SPA.
 
-### 3.4 Estados operativos de cola y IA
-- **Procesamiento IMAP (correo)**:
-  - Estados reintentables por sistema: `skipped_ai_limit`, `skipped_ai_limit_unread`, `retry_requested`.
-  - Si un correo requiere IA y no hay cupo/disponibilidad, se pausa sin marcar como éxito falso de extracción.
-- **Carga manual (`/tasks/upload-pdf`, `/tasks/upload-xml`, `/upload-image`)**:
-  - Si IA no está disponible, se registra evento en `processed_emails` con `status=pending` y marca de **sin reproceso automático**.
-  - También se persiste tracking en `invoice_headers` con `status=PENDING_AI`.
-- **`reason_code` estable para frontend**:
-  - `ai_limit_reached`
-  - `ai_unavailable`
-  - `extraction_failed`
+## Colas y Procesamiento
 
-### 3.5 Pipeline de archivos: staging local -> MinIO
-- El backend usa staging local en `TEMP_PDF_DIR` (por defecto `./data/temp_pdfs`) para recibir/normalizar archivos.
-- Luego sube el original a MinIO (`minio_key`) como almacenamiento fuente.
-- Al finalizar, limpia el archivo local mediante `cleanup_local_file_if_safe` para evitar duplicar almacenamiento.
-- Para descarga y visualización se utiliza **solo** `minio_key` persistido y validado contra la factura; no se hace “matching heurístico” de archivos.
+RQ usa tres colas Redis:
 
-### 3.6 Endpoints de archivo (contrato)
-- `GET /invoices/{invoice_id}/download`:
-  - Retorna URL firmada (presigned) para abrir/descargar desde MinIO.
-  - Respuesta JSON con `success`, `download_url`, `filename`, `content_type`.
-- `GET /invoices/{invoice_id}/file`:
-  - Devuelve streaming proxy desde backend para evitar problemas de CORS/redirección en cliente.
-  - Responde `404` cuando `minio_key` no existe o no valida con el registro de factura.
+- `high`: acciones manuales, rango histórico y jobs urgentes.
+- `default`: procesamiento normal.
+- `low`: tareas de baja prioridad.
 
-### 3.7 Endpoints de procesamiento (contrato resumido)
-- `POST /jobs/process-range`:
-  - Encola procesamiento por rango de fechas (histórico), con búsqueda `ALL` en el período indicado.
-  - El job responde rápido con `job_id`; el trabajo pesado se refleja en la cola/eventos.
-- `POST /user/queue-events/cancel-active`:
-  - Cancela en bloque jobs activos de RQ del usuario autenticado.
-  - Soporta `scope` para controlar granularidad:
-    - `all`
-    - `single_email` (`process_single_email_from_uid_job`)
-    - `range` (`process_emails_range_job`)
-    - `full_sync` (`process_emails_job`)
-  - Soporta `max_jobs` para acotar cuántos jobs se intentan cancelar por request.
-- `POST /tasks/upload-pdf`, `POST /tasks/upload-xml`, `POST /upload-image`:
-  - Encolan o resuelven inmediatamente según disponibilidad de IA.
-  - Si no hay IA, retornan resultado exitoso de registro con `reason_code` y persisten `PENDING_AI` para trazabilidad.
-- `GET /tasks/{job_id}`:
-  - Entrega estado del job (`queued`, `started`, `done`, `error`) y resultado asociado.
+Archivos clave:
 
-### 3.8 Comportamiento de cola RQ al reinicio (operación)
-- Redis es persistente por diseño: si existen jobs pendientes en `rq:queue:*`, el worker los retomará al reiniciar.
-- Esto no implica necesariamente que se haya disparado un job nuevo de automatización; puede ser drenado de cola existente.
-- Para detener jobs bajo control del usuario:
-  - Cancelación individual: `POST /tasks/{job_id}/cancel`
-  - Cancelación masiva por usuario: `POST /user/queue-events/cancel-active`
-- En entornos locales de prueba, si se requiere arranque limpio de cola, vaciar Redis del entorno antes de levantar worker.
+- Worker: `backend/worker.py`.
+- Encolado/estado/cancelación: `backend/app/worker/queues.py`.
+- Jobs ejecutables: `backend/app/worker/jobs.py`.
+- Cola local legacy: `backend/app/modules/scheduler/task_queue.py`.
 
----
+Flujos principales:
 
-## 💳 4. Integración Detallada con PAGOPAR (Suscripciones)
+- `POST /tasks/process`: encola procesamiento de correos del usuario.
+- `POST /jobs/process-range`: cancela jobs de rango previos del mismo usuario y encola uno nuevo.
+- `GET /tasks/{job_id}`: normaliza estados RQ a `queued`, `running`, `done`, `error`.
+- `POST /tasks/{job_id}/cancel`: cancela jobs en cola o solicita stop remoto si están corriendo.
+- `GET /user/queue-events/stream`: expone eventos Mongo + jobs RQ sintéticos para que la UI no aparezca vacía durante discovery.
 
-El sistema soporta cobros recurrentes en Paraguay usando la pasarela **Pagopar (Bancard)** mediante un esquema de Catastro de Tarjetas.
+## Pagos y Suscripciones
 
-### 4.1. Flujo de Activación
-1. **Frontend**: El usuario elige un plan y llama al endpoint `/subscriptions/subscribe`.
-2. **Backend**:
-   - Genera token: `sha1(PRIVATE_KEY + "PAGO-RECURRENTE")`.
-   - Crea un cliente (endpoint `/agregar-cliente/`).
-   - Solicita inicio de catastro (endpoint `/agregar-tarjeta/`).
-   - Retorna un `form_id` al frontend.
-3. **Frontend**: Carga el script de Bancard Checkout usando el `form_id` en un iframe.
-4. **Al completarse (Confirmación)**: El frontend llama a `/subscriptions/confirm-card`, el backend confirma con Pagopar (`/confirmar-tarjeta/`) y activa el plan en la base de datos (`USER_SUBSCRIPTIONS.status = 'ACTIVE'`).
+Suscripciones:
 
-### 4.2. Job de Cobro Diario (Cron)
-1. **Condición**: Un script diario revisa `user_subscriptions` donde `status = 'ACTIVE'` y `next_billing_date <= hoy`.
-2. **Ejecución (por usuario)**:
-   - Se crea y firma un nuevo ticket de venta `VENTA-COMERCIO`. Hash: `sha1(PRIVATE_KEY + ID_PEDIDO + MONTO)`.
-   - Llama a `/listar-tarjeta/` para conseguir un `alias_token` (válido por 15 min).
-   - Llama a `/pagar/` usando el `alias_token` y el hash del ticket.
-3. **Manejo de Respuestas**:
-   - Éxito: Se cobra la cuota inicial de forma síncrona y se actualiza `next_billing_date` sumando 30 días.
-   - Fallo: Se aborta la operación.
+- Públicas: `/subscriptions/plans`, `/subscriptions/ensure-customer`, `/subscriptions/subscribe`, `/subscriptions/confirm-card`.
+- Usuario: `/subscriptions/my-subscription`, `/subscriptions/my-transactions`, `/subscriptions/payment-methods`, `/subscriptions/cancel`.
+- Admin: `/admin/subscriptions/*`.
 
-### 4.2. Job de Cobro Diario (Cron)
-1. **Condición**: Un script diario revisa `user_subscriptions` donde `status = 'ACTIVE'` y `next_billing_date <= hoy`.
-2. **Ejecución (por usuario)**:
-   - Se crea y firma un nuevo ticket de venta `VENTA-COMERCIO`. Hash: `sha1(PRIVATE_KEY + ID_PEDIDO + MONTO)`.
-   - Llama a `/listar-tarjeta/` para conseguir un `alias_token` (válido por 15 min).
-   - Llama a `/pagar/` usando el `alias_token` y el hash del ticket.
-3. **Manejo de Respuestas**:
-   - Éxito: Se actualiza `next_billing_date` sumando 30 días.
-   - Fallo: Se marca como `PAST_DUE` (moroso). Puede tener reintentos programados (ej. día 1, 3 y 7).
+Pagopar:
 
----
+- Servicio: `backend/app/services/pagopar_service.py`.
+- Endpoints legacy/diagnóstico: `backend/app/api/endpoints/pagopar.py`.
+- Billing recurrente: `backend/app/modules/scheduler/jobs/subscription_billing_job.py`.
 
-## 🛡️ 5. Seguridad y Despliegue en Kubernetes
+El cobro inicial se intenta de forma síncrona al suscribirse si ya existe tarjeta. Si no hay tarjeta, se inicia catastro y la confirmación activa la suscripción y registra la primera transacción.
 
-El despliegue está administrado mediante **GitHub Actions** (`cuenly-deploy.yml`), el cual actualiza contenedores, aplica rate limiting y sincroniza variables (secrets).
+El billing recurrente corre diariamente, toma suscripciones `active`/`past_due` con `next_billing_date <= now`, crea pedido Pagopar, obtiene `alias_token`, cobra y registra transacción. Usa lock Redis para evitar ejecución simultánea entre pods.
 
-### 5.1 Entorno de Red y Endpoints Seguros
-- **API Key**: Las rutas críticas (`/process`, etc.) requieren `X-Frontend-Key` que coincide con el `FRONTEND_API_KEY` inyectado vía Secret en Kubernetes.
-- **Rate Limiting Global (Nginx Ingress)**: 
-  - Login: 5 req/min.
-  - Procesamiento pesado: 1 req/5 min.
-  - Ocurrencias concurrentes IP limitadas a 20.
-- **Cabeceras SSL/TLS**: HSTS, Protección XSS (`mode=block`), `nosniff`, etc. Solo admite CORS de `https://app.cuenly.com`.
-- **Database Isolation**: NetworkPolicies aíslan a MongoDB para que solo el backend pueda hacer consultas. Ninguna exposición exterior.
+## Base de Datos
 
-### 5.2 Comandos de Despliegue Rápido (Manuales)
+MongoDB principal: `settings.MONGODB_DATABASE`.
+
+Colecciones críticas:
+
+- `auth_users`: perfil, trial, límites IA.
+- `invoice_headers`, `invoice_items`: facturas v2.
+- `processed_emails`: idempotencia y eventos de cola.
+- `email_configs`: cuentas IMAP/OAuth.
+- `subscription_plans`, `user_subscriptions`, `payment_methods`, `subscription_transactions`: planes y pagos.
+
+## Riesgos Auditados
+
+- Frontend debe mantener rutas relativas; rutas absolutas evitan el interceptor de auth.
+- `/api/*` debe reescribirse en todos los proxies para no depender de aliases incompletos en backend.
+- Los jobs de rango deben evitar solapamiento por usuario; el backend cancela jobs activos previos.
+- Billing recurrente debe correr con lock Redis; si Redis cae, el fallback asume single-pod.
+- `environment.sample.ts` debe incluir `frontendApiKey` para que builds de referencia no queden desalineados.
+
+## Verificación Rápida
+
 ```bash
-SHORT_SHA=<sha_corto>
-# Actualizar el backend
-kubectl set image deployment/cuenly-backend cuenly-backend=ghcr.io/poravv/cuenly-app-backend:sha-${SHORT_SHA} -n cuenly-backend
-kubectl rollout status deployment/cuenly-backend -n cuenly-backend
-
-# Frontend
-kubectl set image deployment/cuenly-frontend cuenly-frontend=ghcr.io/poravv/cuenly-app-frontend:sha-${SHORT_SHA} -n cuenly-frontend
+python3 -m py_compile backend/app/api/api.py backend/app/api/routers/processing.py backend/app/api/endpoints/subscriptions.py backend/app/api/endpoints/pagopar.py
+cd frontend && npm run build
 ```
-
----
-
-## 📊 6. Observabilidad, Monitoreo y Logs Persistentes
-
-Todo el tráfico, recursos de CPU y logs están integrados en Grafana / Prometheus / Loki en el namespace `cuenly-monitoring`.
-
-- **Retención de 30 Días Garantizada**: Loki (5GB) y Prometheus (8GB) usan **PersistentVolumeClaims** de clase Longhorn. Si el pod/nodo reinicia, no se pierden métricas ni historial de requests.
-- **Firebase Analytics**: Integración en Frontend Angular para trazabilidad de usuario final (backend no envía eventos a Firebase).
-- **AlertManager SMTP**: Notifica en caso de colas colapsadas o CPU al 100%.
-
-> **Ubicación de ConfigMaps**: *k8s-monitoring/simple-monitoring-stack.yaml*.
-
----
-
-## 🐳 7. Docker Compose y Perfiles (Local)
-- **Stack local estándar**:
-  - `docker compose up -d --build`
-  - Frontend: `http://localhost:4200`
-- **Stack dev aislado (opcional)**:
-  - `docker compose --profile dev up -d --build mongodb-dev redis-dev backend-dev frontend-dev`
-  - Frontend dev: `http://localhost:4300`
-  - Backend dev: `http://localhost:8001`
-- **Objetivo del ajuste**:
-  - Evitar confusión con perfiles “default” no activados automáticamente.
-  - Evitar colisión de puertos entre stack estándar y stack dev.
-- **Notas operativas**:
-  - El stack estándar usa `frontend` en `:4200` y backend por proxy Nginx.
-  - El perfil `dev` usa puertos alternos (`frontend-dev :4300`, `backend-dev :8001`) para ejecución paralela sin choque.

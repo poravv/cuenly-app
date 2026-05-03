@@ -147,7 +147,7 @@ export class ObservabilityService {
   }
 
   private sendLogsToBackend(logs: FrontendLogEntry[]): void {
-    if (!this.apiUrl || logs.length === 0) return;
+    if (logs.length === 0) return;
 
     const headers = new HttpHeaders({
       'Content-Type': 'application/json',

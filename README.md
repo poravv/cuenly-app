@@ -1,89 +1,55 @@
 # CuenlyApp
 
-Bienvenido a **CuenlyApp**, el producto estrella automatizado para extraer información de facturas a partir de correos electrónicos y consolidarla en archivos Excel. Cuenly simplifica la contabilidad ahorrando tiempo valioso, con procesamiento Inteligente mediante IA y control exhaustivo de transacciones.
+CuenlyApp procesa facturas recibidas por correo o carga manual, extrae datos con XML SIFEN o IA cuando corresponde, guarda la información en MongoDB y permite consultar/exportar resultados desde Angular.
 
-🎯 **Estado actual**: Sistema robusto, con subscripciones activas mediante Pagopar, notificaciones UI modernas y seguridad en Kubernetes.
+## Stack
 
----
+- Backend: FastAPI, MongoDB, Redis/RQ, Firebase Auth, OpenAI, MinIO.
+- Frontend: Angular, Firebase Web SDK, Bootstrap.
+- Pagos: Pagopar/Bancard para suscripciones y cobros recurrentes.
+- Operación: Docker Compose local, Kubernetes + GitHub Actions en producción.
 
-## 📚 Documentación Centralizada
+## Documentación
 
-Para no tener demasiados archivos `.md` sueltos, la documentación de Cuenly está estructurada en únicamente **tres archivos base**. 
+- [Índice de documentación](docs/README.md)
+- [Arquitectura técnica](docs/documentacion-tecnica.md)
+- [Funcionalidad del producto](docs/documentacion-funcional.md)
+- [Pagopar y suscripciones](docs/pagopar/pagopar-integration.md)
+- [Verificación de billing](docs/billing-verification.md)
+- [Disaster recovery](docs/DISASTER-RECOVERY.md)
 
-Asegúrate de consultar estos archivos según tu rol o la tarea a realizar:
+## Desarrollo Local
 
-1. 🚀 **[Este Archivo] README.md**: Información general de configuración e introducción al proyecto.
-2. 📖 **[documentacion-funcional.md](docs/documentacion-funcional.md)**: Aquí encontrarás **TODOS** los aspectos de negocio y funcionales de Cuenly.
-   - Qué hace el producto.
-   - Detalle de cómo se extrae y prioriza el cobro mensual, exportación de Excel, etc.
-   - Sistema de notificaciones moderno (Toast UI).
-   - Control de trial (Freemium, Pro, Suscripciones).
-3. ⚙️ **[documentacion-tecnica.md](docs/documentacion-tecnica.md)**: Aquí encontrarás toda la arquitectura de sistemas:
-   - Diagramas Mermaid de Backend y Frontend.
-   - Estructura de Base de Datos.
-   - **Información completa de integración de pagos con Pagopar (Paso a Paso de Bancard y suscripciones).**
-   - Cómo lidiar con métricas de Prometheus, Loki, y Security in Kubernetes.
+Requisitos: Python 3.11+, Node.js 18+, Docker, Docker Compose y credenciales en `backend/.env` + `frontend/src/environments/environment.ts`.
 
----
+```bash
+docker compose up -d --build
+```
 
-## 📋 Requisitos Previos
+URLs:
 
-### Para Desarrollo
-- **Python 3.11+** - Backend.
-- **Node.js 18+** - Frontend Angular 17.
-- **Docker & Docker Compose** - Para orquestar bases de datos.
-- **Tesseract OCR** - IA vision (fallback).
+- Frontend: `http://localhost:4200`
+- Backend vía proxy: `http://localhost:4200/docs`
+- Backend directo dentro del stack: `backend:8000`
 
-### Para Producción
-- **Kubernetes cluster**
-- **Firebase project** (Auth / Analytics)
-- **OpenAI API Key**
-- **SMTP server** (Envío de correos de Alerta)
-- **Claves Privadas/Públicas Pagopar** (Cobros locales)
+Stack aislado de desarrollo:
 
-### Nota de Analytics (Firebase)
-- **Firebase Analytics se usa solo en Frontend** (eventos de navegación/uso desde Angular).
-- El backend no envía eventos a Firebase Analytics; su observabilidad va por logs/métricas internas.
+```bash
+docker compose --profile dev up -d --build mongodb-dev redis-dev backend-dev frontend-dev
+```
 
----
+URLs del perfil dev:
 
-## 🛠️ Instalación Rápida (Local)
+- Frontend: `http://localhost:4300`
+- Backend: `http://localhost:8001/docs`
 
-1. Clona el repositorio:
-   ```bash
-   git clone https://github.com/poravv/cuenly-app.git
-   cd cuenly-app
-   ```
+## Verificaciones
 
-2. Configura las variables de entorno en un archivo `.env` en la raíz (Backend) y tu `environment.ts` (Frontend). Es fundamental incluir `OPENAI_API_KEY` y claves de Firebase/Pagopar.
-   - Para tracking de usuario en Firebase, verifica `measurementId` en `frontend/src/environments/environment.ts`.
-   
-3. Inicia los contenedores (stack local estándar):
-   ```bash
-   docker compose up -d --build
-   ```
+```bash
+cd backend && python -m pytest
+cd frontend && npm run build
+```
 
-   Stack dev aislado (opcional, sin pisar puertos del stack estándar):
-   ```bash
-   docker compose --profile dev up -d --build mongodb-dev redis-dev backend-dev frontend-dev
-   ```
+## Producción
 
-4. Accede:
-   - Frontend en `http://localhost:4200`
-   - Backend API Docs (vía proxy) en `http://localhost:4200/docs`
-   - Stack dev aislado: Frontend `http://localhost:4300`, Backend `http://localhost:8001/docs`
-
----
-
-## 🚀 Despliegue en Producción
-
-Los deployments se gestionan de forma limpia **vía GitHub Actions (CI/CD)**.
-Al hacer un push a `main`, se trigerean workflows automáticos que actualizan la imagen de Kubernetes.
-Existen configuraciones robustas de **Rate Limiting, Ingress seguro y aislamiento de pods**. Consulta `documentacion-tecnica.md` para ver los detalles.
-
----
-
-## 📞 Soporte y Roadmap
-
-- Para consultas sobre pagos paraguayos y validación de tokens, dirígete a `documentacion-tecnica.md` en la sección "PAGOPAR".
-- Si requieres comprender cómo interactúa el backend con el frontend, revisa los flujos de "Trial" y "Suscripción" en `documentacion-funcional.md`.
+El despliegue se realiza por GitHub Actions. La imagen frontend se construye con `frontend/Dockerfile.proxy`, que usa `nginx.template.conf` y reescribe `/api/*` hacia el backend. Las rutas Angular deben usar rutas relativas para que autenticación, proxy y SSE funcionen igual en local y producción.

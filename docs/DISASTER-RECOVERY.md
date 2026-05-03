@@ -1,174 +1,75 @@
-# Disaster Recovery — CuenlyApp
+# Disaster Recovery
 
-> Última actualización: 2026-02-28
+## Prioridad
 
-## 1. Restaurar MongoDB desde Backup
+1. Restaurar MongoDB.
+2. Verificar Redis/RQ.
+3. Verificar MinIO/S3.
+4. Reiniciar backend, worker y frontend.
+5. Validar salud y flujos críticos.
 
-### Prerequisitos
-- Acceso al PVC de backups o directorio donde se almacenan
-- `mongorestore` disponible
-- URI de conexión a MongoDB destino
+## MongoDB
 
-### Procedimiento
-1. Identificar el backup más reciente:
-   ```bash
-   ls -lt /backups/mongodb_* | head -5
-   ```
+Restaurar backup:
 
-2. Restaurar:
-   ```bash
-   mongorestore --uri="${MONGODB_URL}" --gzip --drop /backups/mongodb_YYYYMMDD_HHMMSS/
-   ```
-   - `--drop`: Elimina colecciones existentes antes de restaurar
-   - `--gzip`: Los backups están comprimidos
-
-3. Verificar integridad:
-   ```bash
-   mongosh "${MONGODB_URL}" --eval "db.auth_users.countDocuments({})"
-   mongosh "${MONGODB_URL}" --eval "db.invoice_headers.countDocuments({})"
-   ```
-
-## 2. Reiniciar Stack Completo
-
-### Desarrollo (Docker Compose)
 ```bash
-cd /path/to/cuenly
-docker compose down -v        # Detener todo (NO USAR -v si quieres preservar datos)
-docker compose up -d --build  # Reconstruir y levantar
-docker compose logs -f        # Verificar logs
+mongorestore --uri "$MONGODB_URL" --drop /backup/cuenlyapp_warehouse
 ```
 
-### Producción (Kubernetes)
-```bash
-# Reiniciar deployments
-kubectl rollout restart deployment/cuenly-backend -n cuenly
-kubectl rollout restart deployment/cuenly-frontend -n cuenly
-kubectl rollout restart deployment/cuenly-worker -n cuenly
+Validar colecciones:
 
-# Verificar pods
-kubectl get pods -n cuenly
-
-# Verificar logs
-kubectl logs -f deployment/cuenly-backend -n cuenly
+```javascript
+db.auth_users.countDocuments()
+db.invoice_headers.countDocuments()
+db.processed_emails.countDocuments()
+db.user_subscriptions.countDocuments()
 ```
 
-## 3. MongoDB Corrupto
+## Redis/RQ
 
-### Signos de corrupción
-- Errores `WiredTiger` en logs de MongoDB
-- Queries retornan resultados inconsistentes
-- Índices rotos (errores `IndexKeyTooLong` o duplicados inesperados)
+Redis contiene colas y locks, no la fuente de verdad de facturas.
 
-### Procedimiento
-1. **Detener** todos los servicios que escriben a MongoDB:
-   ```bash
-   kubectl scale deployment/cuenly-backend --replicas=0 -n cuenly
-   kubectl scale deployment/cuenly-worker --replicas=0 -n cuenly
-   ```
+Si se pierde Redis:
 
-2. **Intentar reparar** (solo si es corrupción menor):
-   ```bash
-   mongosh "${MONGODB_URL}" --eval "db.repairDatabase()"
-   ```
+- Jobs en curso pueden quedar huérfanos.
+- El usuario puede relanzar procesos por rango.
+- La idempotencia principal queda en `processed_emails` y facturas MongoDB.
 
-3. **Si la reparación falla**, restaurar desde backup:
-   - Seguir sección 1 de este documento
-   - Las facturas procesadas entre el último backup y la corrupción se perderán
-   - Los correos se pueden reprocesar (idempotencia via `processed_emails`)
+Comandos:
 
-4. **Recrear índices** después de restaurar:
-   ```bash
-   # Los índices se recrean automáticamente al iniciar el backend
-   # gracias al flag _indexes_ensured en cada repository
-   kubectl rollout restart deployment/cuenly-backend -n cuenly
-   ```
-
-5. **Reactivar** servicios:
-   ```bash
-   kubectl scale deployment/cuenly-backend --replicas=2 -n cuenly
-   kubectl scale deployment/cuenly-worker --replicas=3 -n cuenly
-   ```
-
-## 4. Restaurar MinIO (Archivos Originales)
-
-### Si MinIO se pierde
-- Los archivos originales (PDFs, XMLs) se pierden
-- Las facturas extraídas en MongoDB **NO se pierden** (datos están en `invoice_headers`)
-- Para re-subir archivos: reprocesar correos desde IMAP (los correos siguen en el servidor de correo)
-
-### Procedimiento
-1. Levantar nuevo MinIO:
-   ```bash
-   kubectl apply -f k8s-monitoring/minio-deployment.yaml -n cuenly
-   ```
-2. Crear bucket:
-   ```bash
-   mc alias set cuenly https://minpoint.mindtechpy.net $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
-   mc mb cuenly/bk-invoice
-   ```
-3. Reprocesar correos para re-subir archivos originales
-
-## 5. Incidentes Comunes
-
-| Síntoma | Causa Probable | Acción |
-|---------|----------------|--------|
-| Backend no inicia | MongoDB no disponible | Verificar pod MongoDB, URI de conexión |
-| Worker no procesa | Redis no disponible | Verificar pod Redis, `REDIS_HOST` |
-| Facturas no se extraen | OpenAI API key inválida o quota agotada | Verificar `OPENAI_API_KEY`, balance en dashboard OpenAI |
-| Login falla | Firebase config incorrecta | Verificar `FIREBASE_PROJECT_ID`, certificados |
-| Cobros no se ejecutan | SMTP no configurado o Pagopar keys inválidas | Verificar `PAGOPAR_*` env vars, `SMTP_*` env vars |
-| Cola llena sin procesar | Worker caído o Redis lleno | `kubectl logs deployment/cuenly-worker`, verificar memoria Redis |
-
-## 6. Recuperación de Correos no Procesados
-
-### Si la cola de RQ se pierde
-- Los correos IMAP no se procesaron (siguen en el servidor)
-- La colección `processed_emails` contiene un registro de idempotencia por correo
-- Si se borra accidentalmente `processed_emails`, los correos se reprocesarán
-
-### Procedimiento
 ```bash
-# Si la cola RQ se pierde, los trabajos quedan huérfanos pero no se pierden datos
-
-# Restaurar processed_emails desde backup si fue borrada
-mongorestore --uri="${MONGODB_URL}" --gzip --nsInclude="cuenly.processed_emails" /backups/mongodb_YYYYMMDD_HHMMSS/
-
-# Luego, reprocesar con las mismas opciones (desde/hasta, términos de búsqueda)
+redis-cli keys "rq:*"
+redis-cli get cuenly:billing_job_lock
 ```
 
-## 7. Contactos de Emergencia
+## MinIO/S3
 
-| Rol | Contacto | Disponibilidad |
-|-----|----------|----------------|
-| Administrador Técnico | andyvercha@gmail.com | 24/7 |
-| Infraestructura | (definir) | (definir) |
-| Proveedor Cloud | (definir) | (definir) |
-| OpenAI Support | https://platform.openai.com/account/billing/limits | 24/7 |
+Validar bucket configurado en `MINIO_BUCKET` y claves originales (`minio_key`) desde `invoice_headers`.
 
-## 8. Testing del Plan de Recuperación
+## Kubernetes
 
-### Recomendación
-- **Mensualmente**: Simular restauración de backup en ambiente de staging
-- **Trimestralmente**: Ejecutar full disaster recovery drill
-- **Después de cambios mayores**: Validar que backups incluyen nuevas colecciones
+```bash
+kubectl rollout restart deploy/cuenly-backend -n cuenly-backend
+kubectl rollout restart deploy/cuenly-worker -n cuenly-backend
+kubectl rollout restart deploy/cuenly-frontend -n cuenly-frontend
 
-### Checklist de Testing
-- [ ] Validar que el backup se crea exitosamente
-- [ ] Verificar tamaño y edad del backup más reciente
-- [ ] Restaurar a base de datos de prueba
-- [ ] Verificar integridad de documentos (count, índices)
-- [ ] Confirmar que la aplicación inicia con datos restaurados
-- [ ] Validar que usuarios pueden loguearse y ver sus facturas
-- [ ] Verificar que pueden procesar nuevos correos post-restauración
+kubectl get pods -n cuenly-backend
+kubectl get pods -n cuenly-frontend
+```
 
-## 9. Métricas a Monitorear
+## Health Checks
 
-Para evitar incidentes, monitorear:
-- Salud de MongoDB: conexión, tamaño, queries lentas
-- Espacio de respaldo (alertar si < 10% disponible)
-- Éxito/fallo de backups automáticos (CronJob)
-- Edad del backup más reciente (alertar si > 24 horas)
-- Redis memory (alertar si > 80%)
-- OpenAI API quota y rate limits
+```bash
+curl -fsS https://app.cuenly.com/health
+curl -fsS https://app.cuenly.com/status
+```
 
-Sugerencia: Agregar alertas en Prometheus/AlertManager para estos KPIs.
+## Flujos a Probar
+
+- Login.
+- Cargar perfil.
+- Consultar facturas.
+- Procesar un XML.
+- Ver cola de procesos.
+- Consultar suscripción actual.
+- Consultar historial de pagos.

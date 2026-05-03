@@ -226,11 +226,12 @@ services:
   frontend-dev:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.proxy
     container_name: cuenlyapp-frontend-dev
     restart: unless-stopped
     environment:
       - TZ=America/Asuncion
+      - BACKEND_HOST=backend-dev:8000
     ports:
       - "4300:80"
     volumes:

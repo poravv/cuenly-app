@@ -1,207 +1,31 @@
-# Gestión de Administradores — CuenlyApp
+# Gestión de Administradores
 
-> Última revisión: 2026-04-29
-> Estado: ✅ COMPLETO — listo para deploy
+## Fuente de Verdad
 
----
+Los permisos admin se validan contra Firestore en la colección `admins`. MongoDB puede guardar rol para UI, pero el backend usa Firestore como control principal.
 
-## Estado actual
+## Bootstrap
 
-Los admins se definen en la variable de entorno `ADMIN_EMAILS` en `backend/app/config/settings.py`, con `andyvercha@gmail.com` hardcodeado como fallback. Agregar un admin nuevo requiere redeploy.
+Variable opcional:
 
-**Archivos relevantes hoy:**
-- `backend/app/config/settings.py:56-69` — definición de `ADMIN_EMAILS`
-- `backend/app/api/deps.py:100-114` — `_get_current_admin()`
-- `backend/app/repositories/user_repository.py:445-448` — `is_admin()`
-
----
-
-## Arquitectura objetivo: Firestore `admins`
-
-La lista canónica de admins vive en **Firestore** (proyecto `cuenly-app`), colección `admins`. El backend la lee via **Firebase Admin SDK** con cache Redis de 60 segundos. El frontend nunca escribe Firestore directamente.
-
-```
-Firebase Console / Frontend Admin UI
-          ↓ POST /api/admin/admins
-     FastAPI Backend
-          ↓ Firebase Admin SDK
-     Firestore: admins/{email}
-          ↓ cache 60s
-     Redis: admin:lookup:{email}
+```env
+BOOTSTRAP_ADMIN_EMAIL=admin@dominio.com
 ```
 
-### Estructura de documento Firestore
+Al arrancar, si no existe ningún admin en Firestore, el backend crea ese correo como admin inicial.
 
-```json
-// admins/{email}
-{
-  "email": "admin@ejemplo.com",
-  "granted_by": "andyvercha@gmail.com",
-  "granted_at": "2026-04-29T00:00:00Z",
-  "revoked": false,
-  "revoked_by": null,
-  "revoked_at": null,
-  "notes": "Admin principal",
-  "uid": "firebase-uid-opcional"
-}
-```
+## Endpoints
 
-### Firestore Security Rules
+- `GET /admin/check`
+- `GET /admin/admins`
+- `POST /admin/admins`
+- `DELETE /admin/admins/{email}`
 
-```javascript
-// Solo el Firebase Admin SDK (backend) puede leer/escribir admins
-match /admins/{email} {
-  allow read, write: if false;
-}
-```
+Todos requieren Firebase Bearer token de un admin existente, excepto el bootstrap automático.
 
----
+## Operación Segura
 
-## Protocolo de seguridad
-
-### Bootstrap del primer admin
-
-1. Configurar `BOOTSTRAP_ADMIN_EMAIL=andyvercha@gmail.com` en los secrets de Kubernetes
-2. Al arrancar el backend por primera vez, si Firestore no tiene ningún admin activo, crea el documento de bootstrap automáticamente
-3. Una vez que existe al menos un admin activo, `BOOTSTRAP_ADMIN_EMAIL` se ignora
-4. La variable puede removerse del secret después del primer deploy exitoso
-
-### Agregar un admin (desde frontend o Firebase Console)
-
-**Vía API (frontend):**
-```
-POST /api/admin/admins
-Authorization: Bearer <JWT del admin actual>
-{ "target_email": "nuevo@ejemplo.com" }
-```
-
-**Validaciones del backend:**
-- El solicitante debe ser admin activo en Firestore
-- `target_email` no puede ser el propio solicitante (no auto-promoción)
-- `target_email` debe existir en `auth_users` MongoDB (usuario registrado)
-- `target_email` no debe tener ya un documento activo en Firestore
-
-**Vía Firebase Console:**  
-Crear documento manualmente en `admins/{email}` con `revoked: false`. El backend lo detecta en el próximo request (cache TTL: 60s).
-
-### Revocar un admin
-
-```
-DELETE /api/admin/admins/{target_email}
-Authorization: Bearer <JWT del admin actual>
-```
-
-**Validaciones:**
-- No auto-revocación
-- No se puede revocar al último admin activo (protección anti-lockout)
-- La revocación es soft-delete: `revoked: true`, el documento histórico se preserva
-
-### Audit log
-
-Todas las operaciones se registran en `admin_audit_log` (MongoDB):
-
-| Acción | Cuándo |
-|--------|--------|
-| `admin_bootstrap` | Creación del primer admin |
-| `admin_granted` | Nuevo admin promovido |
-| `admin_revoked` | Admin revocado |
-
----
-
-## Plan de implementación — 5 fases (~12-14h)
-
-| Fase | Qué hace | Esfuerzo | Riesgo | Archivos nuevos |
-|------|----------|----------|--------|-----------------|
-| **1** | Instalar `firebase-admin>=6.2.0` + singleton `FirebaseAdminClient` | 2-3h | Bajo | `backend/app/core/firebase_admin_client.py` |
-| **2** | `FirestoreAdminRepository` + cache Redis 60s + lógica bootstrap | 3-4h | Bajo | `backend/app/repositories/firestore_admin_repository.py`, `backend/app/core/startup.py` |
-| **3** | Migrar `_get_current_admin` y `is_admin()` para leer Firestore | 2-3h | Medio | modifica `deps.py`, `user_repository.py` |
-| **4** | Endpoints `GET/POST/DELETE /api/admin/admins` + UI Angular | 3-4h | Bajo | `backend/app/api/endpoints/admin_manage.py` |
-| **5** | Eliminar `settings.ADMIN_EMAILS` del codebase | 2h | Bajo | modifica `settings.py`, `admin_users.py`, `api.py` |
-
-**Orden crítico para Fase 3:** Crear el documento de bootstrap en Firestore ANTES de desplegar la Fase 3. Si se despliega sin el documento, `andyvercha@gmail.com` pierde acceso admin hasta que se ejecute el bootstrap.
-
----
-
-## Secrets de GitHub y Kubernetes a configurar
-
-| Secret | Destino | Descripción |
-|--------|---------|-------------|
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | GitHub Secrets + `backend-env-secrets` K8s | JSON de service account con rol `Cloud Datastore User` en proyecto `cuenly-app`. Codificar en base64. |
-| `BOOTSTRAP_ADMIN_EMAIL` | `backend-env-secrets` K8s | `andyvercha@gmail.com`. Temporal — remover después del primer deploy. |
-| `FIREBASE_API_KEY` | GitHub Secrets (ya existe) | Actualizar si se rota la Web API Key. |
-
-### Crear service account en GCP
-
-1. Ir a [GCP Console → IAM → Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts?project=cuenly-app)
-2. Crear cuenta: `cuenly-backend@cuenly-app.iam.gserviceaccount.com`
-3. Asignar rol: `Cloud Datastore User` (Firestore read/write)
-4. Generar clave JSON → descargar
-5. Codificar: `base64 -i clave.json | tr -d '\n'`
-6. Agregar como secret `FIREBASE_SERVICE_ACCOUNT_JSON` en GitHub y en K8s
-
----
-
-## Rotación de Firebase Web API Key
-
-La `FIREBASE_API_KEY` actual (`AIzaSyA...`) estuvo hardcodeada en el historial git.
-
-**Recomendación:** Antes de rotar, agregar restricción de referer HTTP en GCP Console → APIs & Services → Credentials → editar la API Key → agregar `app.cuenly.com/*` como referer autorizado. Esto mitiga el abuso sin riesgo de romper el login.
-
-**Si se decide rotar:**
-1. GCP Console → APIs & Services → Credentials → Regenerar la clave
-2. Actualizar `FIREBASE_API_KEY` en GitHub Actions Secrets
-3. El CI/CD inyecta el nuevo valor automáticamente en el próximo build
-4. Verificar en producción que el login con Google sigue funcionando
-
----
-
-## Lo que NO cambia
-
-- El flujo de verificación JWT Firebase (`verify_firebase_token()`) — no se toca
-- Los 55 endpoints que usan `Depends(_get_current_admin_user)` — firma idéntica
-- El `AdminGuard` del frontend — sigue llamando `GET /api/admin/check`
-- El `admin_audit_log` en MongoDB — se extiende, no se reemplaza
-- El campo `role` en `auth_users` MongoDB — se sincroniza desde Firestore en cada login
-
----
-
-## Estado de implementación (2026-04-29)
-
-| Componente | Estado |
-|-----------|--------|
-| Firebase Admin SDK instalado | ✅ `backend/requirements.txt` |
-| FirestoreAdminRepository | ✅ `backend/app/repositories/firestore_admin_repository.py` |
-| `_get_current_admin` migrado a Firestore | ✅ `backend/app/api/deps.py` |
-| `settings.ADMIN_EMAILS` eliminado | ✅ |
-| Endpoints /api/admin/admins | ✅ `backend/app/api/endpoints/admin_manage.py` |
-| UI Angular /admin/admins | ✅ `frontend/src/app/components/admin-manage/` |
-| Firestore Security Rules deployadas | ✅ `firestore.rules` — cuenly-app |
-| BOOTSTRAP_ADMIN_EMAIL en GitHub Secrets | ✅ `andyvercha@gmail.com` |
-| FIREBASE_SERVICE_ACCOUNT_JSON | ✅ `cuenly-backend@cuenly-app.iam.gserviceaccount.com` — key generada y subida a GitHub Secrets |
-
-### Pasos finales para activar
-
-1. **Crear service account en GCP** (5 min):
-   ```
-   GCP Console → IAM & Admin → Service Accounts → + Create
-   Nombre: cuenly-backend
-   Email: cuenly-backend@cuenly-app.iam.gserviceaccount.com
-   Rol: Cloud Datastore User
-   → Keys → Add Key → JSON → Descargar
-   ```
-
-2. **Agregar a GitHub Secrets** (2 min):
-   ```bash
-   # Desde la terminal, con el archivo descargado:
-   gh secret set FIREBASE_SERVICE_ACCOUNT_JSON \
-     --body "$(base64 -i cuenly-backend-key.json)" \
-     --repo poravv/cuenly-app
-   ```
-
-3. **Ejecutar el pipeline de deploy** — el backend arrancará y creará automáticamente el documento `admins/andyvercha@gmail.com` en Firestore.
-
-### Verificar en Firebase Console
-Una vez deployado, verificar en:
-`Firebase Console → cuenly-app → Firestore Database → admins/andyvercha@gmail.com`
-
-El documento debe tener `revoked: false` y `granted_by: "bootstrap"`.
+- Mantener al menos un admin activo.
+- Auditar cambios en `/admin/audit`.
+- No depender de Firebase Web API Key como secreto; la autorización real es por token + Firestore admins.
+- Revocar admins desde la UI o endpoint, no editando roles MongoDB manualmente.
