@@ -3,6 +3,8 @@ import { ApiService } from '../../services/api.service';
 import { NotificationService } from '../../services/notification.service';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 @Component({
     selector: 'app-payment-methods',
@@ -11,6 +13,7 @@ import { ActivatedRoute, Router } from '@angular/router';
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PaymentMethodsComponent implements OnInit, OnDestroy {
+    private destroy$ = new Subject<void>();
     loading = false;
     cards: any[] = [];
 
@@ -33,7 +36,10 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
         this.loadCards();
     }
 
-    ngOnDestroy(): void { }
+    ngOnDestroy(): void {
+        this.destroy$.next();
+        this.destroy$.complete();
+    }
 
     trackByCardAlias(_index: number, card: any): string {
         return card.alias_token || String(_index);
@@ -52,7 +58,7 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
     loadCards(): void {
         this.loading = true;
         this.cdr.markForCheck();
-        this.apiService.getCards().subscribe({
+        this.apiService.getCards().pipe(takeUntil(this.destroy$)).subscribe({
             next: (data) => {
                 this.cards = data;
                 this.loading = false;
@@ -82,7 +88,7 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
         const urlTree = this.router.createUrlTree(['/payment-methods'], { queryParams: currentParams });
         const returnUrl = window.location.origin + this.router.serializeUrl(urlTree);
 
-        this.apiService.confirmCard(returnUrl).subscribe({
+        this.apiService.confirmCard(returnUrl).pipe(takeUntil(this.destroy$)).subscribe({
             next: () => {
                 this.loadCards();
                 this.notificationService.success('Tarjeta confirmada correctamente');
@@ -119,7 +125,7 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
         const urlTree = this.router.createUrlTree([returnPaths], { queryParams: currentParams });
         const returnUrl = window.location.origin + this.router.serializeUrl(urlTree);
 
-        this.apiService.initAddCard(returnUrl, 'uPay').subscribe({
+        this.apiService.initAddCard(returnUrl, 'uPay').pipe(takeUntil(this.destroy$)).subscribe({
             next: (res) => {
                 const url = `https://www.pagopar.com/upay-iframe/?id-form=${res.hash}`;
                 this.iframeUrl = this.sanitizer.bypassSecurityTrustResourceUrl(url);
@@ -146,7 +152,7 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
 
         this.loading = true;
         this.cdr.markForCheck();
-        this.apiService.deleteCard(card.alias_token).subscribe({
+        this.apiService.deleteCard(card.alias_token).pipe(takeUntil(this.destroy$)).subscribe({
             next: () => {
                 this.notificationService.success('Tarjeta eliminada');
                 this.loadCards();
@@ -165,7 +171,7 @@ export class PaymentMethodsComponent implements OnInit, OnDestroy {
 
         this.loading = true;
         this.cdr.markForCheck();
-        this.apiService.testPay(card.alias_token, orderHash).subscribe({
+        this.apiService.testPay(card.alias_token, orderHash).pipe(takeUntil(this.destroy$)).subscribe({
             next: () => {
                 this.notificationService.success('Pago de prueba exitoso');
                 this.loading = false;

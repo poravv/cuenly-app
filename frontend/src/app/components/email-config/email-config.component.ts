@@ -9,6 +9,8 @@ import {
   getSynonymSummary,
   mergeSearchTerms,
 } from './email-config.utils';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 interface SearchTermPreset {
   id: string;
@@ -83,6 +85,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     { id: 'servicios', label: 'Servicios', terms: ['servicio', 'suscripcion', 'plan'] }
   ];
 
+  private destroy$ = new Subject<void>();
+
   constructor(
     private apiService: ApiService,
     private notificationService: NotificationService
@@ -100,6 +104,8 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     window.removeEventListener('message', this.handleOAuthMessage.bind(this));
   }
 
@@ -138,7 +144,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   }
 
   checkGoogleOAuthStatus(): void {
-    this.apiService.getGoogleOAuthStatus().subscribe({
+    this.apiService.getGoogleOAuthStatus().pipe(takeUntil(this.destroy$)).subscribe({
       next: (status) => {
         this.googleOAuthConfigured = status.configured;
       },
@@ -150,7 +156,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
   loadConfigs(): void {
     this.loading = true; this.error = null;
-    this.apiService.getEmailConfigs().subscribe({
+    this.apiService.getEmailConfigs().pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp: EmailConfigsResponse) => {
         this.emailConfigs = (resp.configs || []).map((cfg: EmailConfig) => ({
           ...cfg,
@@ -253,7 +259,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
 
     this.oauthLoading = true;
 
-    this.apiService.initiateGoogleOAuth().subscribe({
+    this.apiService.initiateGoogleOAuth().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         // Open Google OAuth in a popup window
         const width = 600;
@@ -314,7 +320,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       token_expiry: oauthData.token_expiry,
       name: `Gmail - ${oauthData.gmail_address}`,
       search_terms: ['factura', 'invoice', 'comprobante', 'electronico']
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         this.pendingOAuthData = null;
         this.showAddForm = false;
@@ -335,7 +341,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
   refreshOAuthToken(config: EmailConfig): void {
     if (!config.id) return;
 
-    this.apiService.refreshOAuthToken(config.id).subscribe({
+    this.apiService.refreshOAuthToken(config.id).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         this.notificationService.success('Token OAuth actualizado', 'Token Renovado');
         this.loadConfigs();
@@ -389,7 +395,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         return this.apiService.testEmailConfig(temp);
       })();
 
-    obs.subscribe({
+    obs.pipe(takeUntil(this.destroy$)).subscribe({
       next: (result: EmailTestResult) => {
         this.testResults[testIndex] = result;
         this.testing[testIndex] = false;
@@ -410,7 +416,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     const cfg = this.emailConfigs[index];
     if (!cfg || !cfg.id) { return; }
     const enabled = !!event?.target?.checked;
-    this.apiService.setEmailConfigEnabled(cfg.id, enabled).subscribe({
+    this.apiService.setEmailConfigEnabled(cfg.id, enabled).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         this.emailConfigs[index].enabled = resp.enabled;
       },
@@ -451,7 +457,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     this.savingNew = true;
 
     // Guardar en backend
-    this.apiService.createEmailConfig(payload).subscribe({
+    this.apiService.createEmailConfig(payload).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.newConfig = this.createEmptyConfig();
         this.newSynonymsText = '';
@@ -467,7 +473,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         }
 
         this.notificationService.info('Procesando correos en este momento...', 'Procesamiento');
-        this.apiService.processEmails(false).subscribe({
+        this.apiService.processEmails(false).pipe(takeUntil(this.destroy$)).subscribe({
           next: (result: any) => {
             if (!result?.success) {
               this.notificationService.warning(
@@ -525,7 +531,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
               this.emailConfigs.splice(index, 1);
               return;
             }
-            this.apiService.deleteEmailConfig(cfg.id).subscribe({
+            this.apiService.deleteEmailConfig(cfg.id).pipe(takeUntil(this.destroy$)).subscribe({
               next: () => {
                 this.emailConfigs.splice(index, 1);
                 delete this.testResults[index];
@@ -637,7 +643,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
         fallback_attachment_match: !!editedData.fallback_attachment_match
       };
 
-      this.apiService.patchEmailConfig(id, partialPayload).subscribe({
+      this.apiService.patchEmailConfig(id, partialPayload).pipe(takeUntil(this.destroy$)).subscribe({
         next: () => {
           this.emailConfigs[i] = { ...cfg, ...partialPayload };
           this.saving[key] = false;
@@ -657,7 +663,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
       payload.fallback_attachment_match = !!payload.fallback_attachment_match;
       if (!payload.password) delete (payload as any).password;
 
-      this.apiService.updateEmailConfig(id, payload as EmailConfig).subscribe({
+      this.apiService.updateEmailConfig(id, payload as EmailConfig).pipe(takeUntil(this.destroy$)).subscribe({
         next: () => {
           this.emailConfigs[i] = { ...cfg, ...payload };
           this.saving[key] = false;
@@ -695,7 +701,7 @@ export class EmailConfigComponent implements OnInit, OnDestroy {
     cfg.search_synonyms = parseSynonymsByLine(this.editSynonymsText[key] || '');
     cfg.fallback_sender_match = !!cfg.fallback_sender_match;
     cfg.fallback_attachment_match = !!cfg.fallback_attachment_match;
-    this.apiService.testEmailConfig(cfg).subscribe({
+    this.apiService.testEmailConfig(cfg).pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => { this.testResults[key] = res; this.testing[key] = false; },
       error: (err) => {
         this.testResults[key] = { success: false, message: 'Error al conectar', connection_test: false, login_test: false };

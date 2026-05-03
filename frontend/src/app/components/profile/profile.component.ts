@@ -1,7 +1,8 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { UserService, UserProfile } from '../../services/user.service';
 import { NotificationService } from '../../services/notification.service';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 @Component({
     selector: 'app-profile',
@@ -9,6 +10,7 @@ import { Observable } from 'rxjs';
     styleUrls: ['./profile.component.scss']
 })
 export class ProfileComponent implements OnInit, OnDestroy {
+    private destroy$ = new Subject<void>();
     profile: UserProfile | null = null;
     editProfile: Partial<UserProfile> = {};
     saving = false;
@@ -23,7 +25,7 @@ export class ProfileComponent implements OnInit, OnDestroy {
     ngOnInit(): void {
         this.userService.setEditingProfile(true);
 
-        this.userService.userProfile$.subscribe(profile => {
+        this.userService.userProfile$.pipe(takeUntil(this.destroy$)).subscribe(profile => {
             if (profile) {
                 this.profile = profile;
                 // Solo inicializar el formulario si está vacío o si es la primera carga
@@ -49,6 +51,8 @@ export class ProfileComponent implements OnInit, OnDestroy {
     }
 
     ngOnDestroy(): void {
+        this.destroy$.next();
+        this.destroy$.complete();
         this.userService.setEditingProfile(false);
     }
 

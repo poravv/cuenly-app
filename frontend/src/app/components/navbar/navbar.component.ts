@@ -9,6 +9,8 @@ import { User } from 'firebase/auth';
 import { Router } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
 import { FileTransferService } from '../../services/file-transfer.service';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 @Component({
   selector: 'app-navbar',
@@ -23,6 +25,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
   uploadMessage = '';
   uploadedInvoiceId?: string;
 
+  private destroy$ = new Subject<void>();
   private intervalId: any;
   user: User | null = null;
   userProfile: UserProfile | null = null;
@@ -51,7 +54,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
     this.cachedAvatarUrl = this.avatarCache.getCachedAvatar();
 
     // Reaccionar a cambios de autenticación
-    this.auth.user$.subscribe(u => {
+    this.auth.user$.pipe(takeUntil(this.destroy$)).subscribe(u => {
       this.user = u;
       if (u) {
         this.loadStatus();
@@ -69,7 +72,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
     });
 
     // Suscribirse a cambios de perfil publicados por UserService
-    this.userService.userProfile$.subscribe(profile => {
+    this.userService.userProfile$.pipe(takeUntil(this.destroy$)).subscribe(profile => {
       if (profile) {
         this.userProfile = profile;
       }
@@ -77,6 +80,8 @@ export class NavbarComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     if (this.intervalId) clearInterval(this.intervalId);
   }
 
