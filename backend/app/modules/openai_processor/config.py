@@ -14,6 +14,6 @@ class OpenAIConfig:
 class GeminiConfig:
     """Configuración para el procesador de facturas vía Gemini 2.5 Flash."""
     api_key: str
-    model: str = "gemini-2.5-flash-preview-04-17"
+    model: str = "gemini-2.5-flash"
     temperature: float = 0.3
     max_output_tokens: int = 4000

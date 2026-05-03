@@ -85,9 +85,8 @@ class GeminiChatClient:
 
     def __init__(self, api_key: str) -> None:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            self._genai = genai
+            from google import genai
+            self._client = genai.Client(api_key=api_key)
         except Exception as e:
             logger.error("No se pudo inicializar Gemini SDK: %s", e)
             raise
@@ -102,21 +101,19 @@ class GeminiChatClient:
     def chat_json(self, model: str, messages: List[Dict[str, Any]], temperature: float, max_tokens: int) -> str:
         """Llamada a Gemini con salida JSON forzada vía response_mime_type."""
         try:
+            from google.genai import types
             system_instruction, contents = self._openai_to_gemini_parts(messages)
 
-            generation_config = {
-                "response_mime_type": "application/json",
-                "max_output_tokens": max_tokens,
-                "temperature": temperature,
-            }
-
-            gemini_model = self._genai.GenerativeModel(
-                model_name=model,
-                system_instruction=system_instruction,
-                generation_config=generation_config,
+            response = self._client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    max_output_tokens=max_tokens,
+                    temperature=temperature,
+                    system_instruction=system_instruction,
+                ),
             )
-
-            response = gemini_model.generate_content(contents)
             return response.text or ""
 
         except Exception as e:
@@ -139,10 +136,10 @@ class GeminiChatClient:
 
     def _openai_to_gemini_parts(
         self, messages: List[Dict[str, Any]]
-    ) -> tuple[str | None, List[Dict[str, Any]]]:
+    ) -> tuple[str | None, list]:
         """Convierte mensajes formato OpenAI a system_instruction + contents de Gemini."""
         system_instruction: str | None = None
-        contents: List[Dict[str, Any]] = []
+        contents = []
 
         for msg in messages:
             role = msg.get("role", "user")
@@ -152,31 +149,30 @@ class GeminiChatClient:
                 system_instruction = content if isinstance(content, str) else str(content)
                 continue
 
-            gemini_role = "model" if role == "assistant" else "user"
-
             if isinstance(content, str):
-                parts = [{"text": content}]
+                contents.append(content)
             elif isinstance(content, list):
+                from google.genai import types
                 parts = []
                 for item in content:
                     if item.get("type") == "text":
-                        parts.append({"text": item["text"]})
+                        parts.append(types.Part.from_text(text=item["text"]))
                     elif item.get("type") == "image_url":
                         url: str = item.get("image_url", {}).get("url", "")
                         if url.startswith("data:"):
-                            # data:image/jpeg;base64,<b64data>
                             header, b64data = url.split(",", 1)
                             mime_type = header.split(":")[1].split(";")[0]
-                            parts.append({
-                                "inline_data": {
-                                    "mime_type": mime_type,
-                                    "data": b64data,
-                                }
-                            })
+                            import base64
+                            parts.append(types.Part.from_bytes(
+                                data=base64.b64decode(b64data),
+                                mime_type=mime_type,
+                            ))
+                contents.append(types.Content(
+                    role="user" if role != "assistant" else "model",
+                    parts=parts,
+                ))
             else:
-                parts = [{"text": str(content)}]
-
-            contents.append({"role": gemini_role, "parts": parts})
+                contents.append(str(content))
 
         return system_instruction, contents
 
