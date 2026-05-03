@@ -352,17 +352,22 @@ class ExtendedMetricsCollector:
         except Exception as e:
             self.logger.error(f"Error recording email processed: {e}")
 
-    def update_openai_cost_estimate(self, cost_usd: float):
-        """Actualiza estimación de costo de OpenAI"""
+    def update_ai_cost_estimate(self, cost_usd: float, provider: str = "gemini"):
+        """Actualiza estimación de costo de IA."""
         try:
             OPENAI_COST_ESTIMATE.inc(cost_usd)
 
-            self.logger.debug(f"OpenAI cost incremented by ${cost_usd}", extra={
+            self.logger.debug(f"AI cost incremented by ${cost_usd} (provider={provider})", extra={
                 'cost_usd': cost_usd,
-                'metric_type': 'openai_cost_estimate'
+                'provider': provider,
+                'metric_type': 'ai_cost_estimate'
             })
         except Exception as e:
-            self.logger.error(f"Error updating OpenAI cost estimate: {e}")
+            self.logger.error(f"Error updating AI cost estimate: {e}")
+
+    # deprecated alias — eliminar próximo sprint
+    def update_openai_cost_estimate(self, cost_usd: float):
+        self.update_ai_cost_estimate(cost_usd, provider="openai")
 
     def update_queue_depth(self, queue_name: str, depth: int):
         """Actualiza profundidad de la cola RQ"""

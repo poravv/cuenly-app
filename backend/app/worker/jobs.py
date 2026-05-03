@@ -414,7 +414,7 @@ def process_manual_pdf_job(
         from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
         from app.modules.mapping.invoice_mapping import map_invoice
         from app.modules.email_processor.storage import cleanup_local_file_if_safe, ensure_local_file
-        from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
+        from app.modules.email_processor.errors import AIFatalError, AIRetryableError
         from app.main import CuenlyApp
 
         # Garantizar archivo local (descarga de MinIO si corre en otro pod)
@@ -443,7 +443,7 @@ def process_manual_pdf_job(
         try:
             invoice_sync = CuenlyApp()
             inv = invoice_sync.openai_processor.extract_invoice_data(pdf_path, email_meta, owner_email=owner_email)
-        except (OpenAIFatalError, OpenAIRetryableError) as e:
+        except (AIFatalError, AIRetryableError) as e:
             _store_pending_ai(owner_email, sender, date_obj, minio_key, "OPENAI_VISION", f"IA_NO_DISPONIBLE: {e}")
             cleanup_local_file_if_safe(pdf_path, minio_key)
             return {"success": True, "message": "PDF registrado como PENDING_AI por indisponibilidad de IA", "reason_code": "ai_unavailable", "invoice_count": 0}
@@ -496,7 +496,7 @@ def process_manual_image_job(
         from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
         from app.modules.mapping.invoice_mapping import map_invoice
         from app.modules.email_processor.storage import cleanup_local_file_if_safe, ensure_local_file
-        from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
+        from app.modules.email_processor.errors import AIFatalError, AIRetryableError
         from app.main import CuenlyApp
 
         # Garantizar archivo local (descarga de MinIO si corre en otro pod)
@@ -524,7 +524,7 @@ def process_manual_image_job(
         try:
             invoice_sync = CuenlyApp()
             inv = invoice_sync.openai_processor.extract_invoice_data(img_path, email_meta, owner_email=owner_email)
-        except (OpenAIFatalError, OpenAIRetryableError) as e:
+        except (AIFatalError, AIRetryableError) as e:
             _store_pending_ai(owner_email, sender, date_obj, minio_key, "OPENAI_VISION_IMAGE", f"IA_NO_DISPONIBLE: {e}")
             cleanup_local_file_if_safe(img_path, minio_key)
             return {"success": True, "message": "Imagen registrada como PENDING_AI", "reason_code": "ai_unavailable", "invoice_count": 0}

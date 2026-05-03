@@ -22,7 +22,7 @@ from app.modules.mapping.invoice_mapping import map_invoice
 from app.modules.scheduler.processing_lock import PROCESSING_LOCK
 from app.modules.scheduler.task_queue import task_queue
 from app.modules.email_processor.storage import save_binary, cleanup_local_file_if_safe
-from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError
+from app.modules.email_processor.errors import AIFatalError, AIRetryableError
 from app.utils.security import validate_frontend_key
 from app.utils.observability import observability_logger
 from app.api.state import invoice_sync
@@ -119,7 +119,7 @@ async def upload_pdf(
                         email_meta,
                         owner_email=owner,
                     )
-                except (OpenAIFatalError, OpenAIRetryableError) as e:
+                except (AIFatalError, AIRetryableError) as e:
                     _store_manual_pending_ai(
                         owner_email=owner,
                         sender=email_meta.get("sender", "Carga manual"),

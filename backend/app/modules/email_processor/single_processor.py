@@ -17,7 +17,7 @@ from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
 from app.modules.mapping.invoice_mapping import map_invoice
 from app.utils.extended_metrics import extended_metrics
 
-from app.modules.email_processor.errors import OpenAIFatalError, OpenAIRetryableError, SkipEmailKeepUnread
+from app.modules.email_processor.errors import AIFatalError, AIRetryableError, SkipEmailKeepUnread
 
 from .imap_client import IMAPClient, decode_mime_header
 from .link_extractor import extract_links_from_message
@@ -799,13 +799,13 @@ class EmailProcessor:
                             batch_invoices.append(invoice)
                             result.invoice_count += 1
                             logger.debug(f"✅ Factura procesada: {invoice.numero_factura}")
-                    except OpenAIFatalError as e:
+                    except AIFatalError as e:
                         logger.warning(
-                            f"⚠️ Error FATAL de OpenAI en correo {eid}: {e}. "
+                            f"⚠️ Error FATAL de IA en correo {eid}: {e}. "
                             "Se mantiene NO LEÍDO para reintento controlado."
                         )
-                    except OpenAIRetryableError as e:
-                        logger.warning(f"⚠️ Error transitorio de OpenAI en correo {eid}: {e}. Se omitirá este correo en esta corrida.")
+                    except AIRetryableError as e:
+                        logger.warning(f"⚠️ Error transitorio de IA en correo {eid}: {e}. Se omitirá este correo en esta corrida.")
                         # No marcar como leído para reintentar luego
                     except SkipEmailKeepUnread:
                          logger.info(f"🛑 Correo {eid} omitido y preservado como NO LEÍDO (SkipEmailKeepUnread signal).")
@@ -1035,7 +1035,7 @@ class EmailProcessor:
                                 inv.minio_key = storage_result.minio_key
                             self._mark_email_processed(email_id, "link_pdf", message_id=real_msg_id, reason="Factura extraída de enlace (URL) en el cuerpo")
                             return inv
-                    except (OpenAIFatalError, OpenAIRetryableError):
+                    except (AIFatalError, AIRetryableError):
                         raise
                     except Exception as e:
                         logger.warning(f"⚠️ Error procesando link PDF de {email_id}: {e}")
@@ -1056,8 +1056,8 @@ class EmailProcessor:
             self._store_failed_invoice(email_id, reason, metadata)
             return None
 
-        except OpenAIFatalError as e:
-            reason = f"OpenAI no disponible (fatal): {str(e)[:350]}"
+        except AIFatalError as e:
+            reason = f"IA no disponible (fatal): {str(e)[:350]}"
             self._mark_email_processed(
                 email_id,
                 "pending_ai_unread",
@@ -1066,12 +1066,12 @@ class EmailProcessor:
             )
             self._store_failed_invoice(email_id, reason, metadata or {}, status="PENDING_AI")
             logger.warning(
-                f"⚠️ Correo {email_id} pasa a PENDING_AI por error fatal de OpenAI; "
+                f"⚠️ Correo {email_id} pasa a PENDING_AI por error fatal de IA; "
                 "se preserva NO LEÍDO para reintento."
             )
             raise SkipEmailKeepUnread(reason)
-        except OpenAIRetryableError as e:
-            reason = f"OpenAI temporalmente no disponible: {str(e)[:350]}"
+        except AIRetryableError as e:
+            reason = f"IA temporalmente no disponible: {str(e)[:350]}"
             self._mark_email_processed(
                 email_id,
                 "pending_ai_unread",
@@ -1080,7 +1080,7 @@ class EmailProcessor:
             )
             self._store_failed_invoice(email_id, reason, metadata or {}, status="PENDING_AI")
             logger.warning(
-                f"⚠️ Correo {email_id} pasa a PENDING_AI por error transitorio de OpenAI; "
+                f"⚠️ Correo {email_id} pasa a PENDING_AI por error transitorio de IA; "
                 "se preserva NO LEÍDO para reintento."
             )
             raise SkipEmailKeepUnread(reason)
