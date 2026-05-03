@@ -9,6 +9,7 @@ requests==2.31.0
 python-multipart==0.0.7
 aiofiles==23.2.1
 openai>=1.40.0
+google-generativeai>=0.8.0
 schedule==1.2.1
 python-dateutil==2.8.2
 PyMuPDF==1.23.8

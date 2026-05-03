@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
+    # AI Provider (gemini | openai)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "gemini")
+
     # MongoDB
     MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://cuenlyapp:cuenlyapp2025_seguro@mongodb:27017/cuenlyapp_warehouse?authSource=admin")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "cuenlyapp_warehouse")

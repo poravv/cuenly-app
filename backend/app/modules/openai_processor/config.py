@@ -8,3 +8,12 @@ class OpenAIConfig:
     model: str = "gpt-4o"           # gpt-4o-mini no tiene precisión suficiente para facturas
     temperature: float = 0.3       # más conservador para extracción
     max_tokens: int = 4000         # suficiente para facturas con muchos items
+
+
+@dataclass(frozen=True)
+class GeminiConfig:
+    """Configuración para el procesador de facturas vía Gemini 2.5 Flash."""
+    api_key: str
+    model: str = "gemini-2.5-flash-preview-04-17"
+    temperature: float = 0.3
+    max_output_tokens: int = 4000
