@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+import json
 import logging
 
 from app.api.deps import _get_current_user, _get_current_admin
@@ -17,6 +18,20 @@ import re
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Clave y TTL compartidos con admin_plans.py (invalidación ya está en ese módulo)
+PLANS_CACHE_KEY = "cuenly:plans:active"
+PLANS_CACHE_TTL = 3600  # 1 hora — los planes son semi-estáticos
+
+
+def _get_redis():
+    """Obtiene cliente Redis; retorna None si no está disponible."""
+    try:
+        from app.core.redis_client import get_redis_client
+        return get_redis_client()
+    except Exception as e:
+        logger.warning("Redis no disponible para cache de planes: %s", e)
+        return None
 
 @router.get("/admin/stats")
 async def admin_get_stats(admin: Dict[str, Any] = Depends(_get_current_admin)):
@@ -174,15 +189,28 @@ class SubscriptionCreateRequest(BaseModel):
 async def get_public_plans():
     """Obtiene todos los planes activos - API pública para integración externa"""
     try:
+        redis = _get_redis()
+        if redis:
+            cached = redis.get(PLANS_CACHE_KEY)
+            if cached:
+                logger.debug("Cache HIT para planes activos")
+                return json.loads(cached)
+
         from app.repositories.subscription_repository import SubscriptionRepository
         repo = SubscriptionRepository()
         plans = await repo.get_all_plans(include_inactive=False)
-        
-        return {
+
+        result = {
             "success": True,
             "data": plans,
             "count": len(plans)
         }
+
+        if redis:
+            redis.setex(PLANS_CACHE_KEY, PLANS_CACHE_TTL, json.dumps(result, default=str))
+            logger.debug("Planes activos guardados en cache (TTL %ds)", PLANS_CACHE_TTL)
+
+        return result
     except Exception as e:
         logger.error(f"Error obteniendo planes públicos: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo planes")
@@ -214,15 +242,27 @@ async def list_public_plans():
     """
     Lista los planes públicos activos disponibles para suscripción.
     """
+    redis = _get_redis()
+    if redis:
+        cached = redis.get(PLANS_CACHE_KEY)
+        if cached:
+            logger.debug("Cache HIT para planes activos (/plans)")
+            return json.loads(cached)
+
     repo = SubscriptionRepository()
-    # Solo planes activos para usuarios normales
     plans = await repo.get_all_plans(include_inactive=False)
-    
-    return {
-        "success": True, 
+
+    result = {
+        "success": True,
         "data": plans,
         "count": len(plans)
     }
+
+    if redis:
+        redis.setex(PLANS_CACHE_KEY, PLANS_CACHE_TTL, json.dumps(result, default=str))
+        logger.debug("Planes activos guardados en cache (/plans, TTL %ds)", PLANS_CACHE_TTL)
+
+    return result
 
 
 _CDC_TOKEN_RE = re.compile(r"\d{44}")

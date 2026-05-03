@@ -5,6 +5,7 @@ Migrado desde api.py
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
+import json
 import logging
 
 from app.api.deps import _get_current_user, _get_current_admin_user
@@ -15,6 +16,16 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 PLANS_CACHE_KEY = "cuenly:plans:active"
+PLANS_CACHE_TTL = 3600  # 1 hora — los planes son semi-estáticos
+
+
+def _get_redis():
+    """Obtiene cliente Redis; retorna None si no está disponible."""
+    try:
+        return get_redis_client()
+    except Exception as e:
+        logger.warning("Redis no disponible para cache de planes: %s", e)
+        return None
 
 
 def _invalidate_plans_cache() -> None:
@@ -203,12 +214,24 @@ async def list_public_plans(
     """
     Lista los planes públicos activos disponibles para suscripción.
     """
+    redis = _get_redis()
+    if redis:
+        cached = redis.get(PLANS_CACHE_KEY)
+        if cached:
+            logger.debug("Cache HIT para planes activos (/admin/plans/public)")
+            return json.loads(cached)
+
     repo = SubscriptionRepository()
-    # Solo planes activos para usuarios normales
     plans = await repo.get_all_plans(include_inactive=False)
-    
-    return {
-        "success": True, 
+
+    result = {
+        "success": True,
         "data": plans,
         "count": len(plans)
     }
+
+    if redis:
+        redis.setex(PLANS_CACHE_KEY, PLANS_CACHE_TTL, json.dumps(result, default=str))
+        logger.debug("Planes activos guardados en cache (/admin/plans/public, TTL %ds)", PLANS_CACHE_TTL)
+
+    return result
