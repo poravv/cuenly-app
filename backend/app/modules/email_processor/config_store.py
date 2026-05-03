@@ -5,11 +5,11 @@ import hashlib
 import os
 from typing import List, Dict, Any, Optional
 
-from pymongo import MongoClient
 from pymongo.collection import Collection
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.config.settings import settings
+from app.core.database import get_mongo_client
 
 logger = logging.getLogger(__name__)
 
@@ -117,24 +117,9 @@ def _encrypt_payload_secrets(payload: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
-def _get_client() -> MongoClient:
-    mongo_url = getattr(settings, "MONGODB_URL", None) or "mongodb://localhost:27017/"
-    client = MongoClient(
-        mongo_url,
-        serverSelectionTimeoutMS=60000,
-        connectTimeoutMS=60000,
-        socketTimeoutMS=120000,
-        maxPoolSize=30,  # Aumentado para mejor concurrencia
-        minPoolSize=3,   # Mínimo más alto para conexiones ready
-    )
-    # smoke test
-    client.admin.command("ping")
-    return client
-
-
 def _get_collection() -> Collection:
-    client = _get_client()
     db_name = getattr(settings, "MONGODB_DATABASE", "cuenlyapp_warehouse")
+    client = get_mongo_client()
     db = client[db_name]
     coll = db[COLLECTION_NAME]
     try:

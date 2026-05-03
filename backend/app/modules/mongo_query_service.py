@@ -9,11 +9,11 @@ from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 import calendar
 
-from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from bson import ObjectId
 
 from app.config.export_config import get_mongodb_config
+from app.core.database import get_mongo_client
 from app.models.models import InvoiceData
 
 logger = logging.getLogger(__name__)
@@ -25,33 +25,10 @@ class MongoQueryService:
     
     def __init__(self, connection_string: Optional[str] = None):
         config = get_mongodb_config()
-        self.connection_string = connection_string or config["connection_string"]
         self.database_name = config["database"]
         # Forzar colección v2 como única fuente de verdad
         self.collection_name = "invoice_headers"
-        
-        self._client: Optional[MongoClient] = None
         logger.info("MongoQueryService inicializado: %s", self.database_name)
-
-    def _get_client(self) -> MongoClient:
-        """Obtiene cliente MongoDB con conexión lazy"""
-        if not self._client:
-            try:
-                self._client = MongoClient(
-                    self.connection_string,
-                    serverSelectionTimeoutMS=60000,
-                    connectTimeoutMS=60000,
-                    socketTimeoutMS=120000,
-                    maxPoolSize=50,
-                    minPoolSize=5
-                )
-                # Test conexión
-                self._client.admin.command('ping')
-                logger.info("✅ Conexión MongoDB establecida para consultas")
-            except Exception as e:
-                logger.error("❌ Error conectando a MongoDB: %s", e)
-                raise
-        return self._client
 
     def _is_v2(self) -> bool:
         return True
@@ -64,7 +41,7 @@ class MongoQueryService:
             Lista de meses con formato [{"year_month": "2025-01", "count": 45, "total_amount": 1500000}, ...]
         """
         try:
-            client = self._get_client()
+            client = get_mongo_client()
             db = client[self.database_name]
             collection = db[self.collection_name]
 
@@ -152,7 +129,7 @@ class MongoQueryService:
             Lista de facturas completas del mes
         """
         try:
-            client = self._get_client()
+            client = get_mongo_client()
             db = client[self.database_name]
             collection = db[self.collection_name]
             
@@ -209,7 +186,7 @@ class MongoQueryService:
             Diccionario con estadísticas completas del mes
         """
         try:
-            client = self._get_client()
+            client = get_mongo_client()
             db = client[self.database_name]
             collection = db[self.collection_name]
             
@@ -388,7 +365,7 @@ class MongoQueryService:
             Lista de facturas que coinciden con los criterios
         """
         try:
-            client = self._get_client()
+            client = get_mongo_client()
             db = client[self.database_name]
             collection = db[self.collection_name]
             
@@ -482,7 +459,7 @@ class MongoQueryService:
             Diccionario con actividad reciente
         """
         try:
-            client = self._get_client()
+            client = get_mongo_client()
             db = client[self.database_name]
             collection = db[self.collection_name]
             
@@ -535,7 +512,7 @@ class MongoQueryService:
         Equivalente al MetricsController de la arquitectura Enterprise.
         """
         try:
-            client = self._get_client()
+            client = get_mongo_client()
             db = client[self.database_name]
             collection = db[self.collection_name]
 
@@ -573,7 +550,7 @@ class MongoQueryService:
         Incluye processing_error para diagnóstico.
         """
         try:
-            client = self._get_client()
+            client = get_mongo_client()
             db = client[self.database_name]
             collection = db[self.collection_name]
 
@@ -611,7 +588,7 @@ class MongoQueryService:
         Útil para el dashboard Enterprise.
         """
         try:
-            client = self._get_client()
+            client = get_mongo_client()
             db = client[self.database_name]
             collection = db[self.collection_name]
 
@@ -652,17 +629,6 @@ class MongoQueryService:
         except Exception as e:
             logger.error("Error obteniendo processing stats: %s", e)
             return {"error": str(e)}
-
-    def close_connection(self):
-        if self._client:
-            self._client.close()
-            self._client = None
-            logger.info("🔌 Conexión MongoDB cerrada")
-
-    def __del__(self):
-        """Limpieza automática"""
-        self.close_connection()
-
 
 # Instancia global para reutilización
 _query_service: Optional[MongoQueryService] = None

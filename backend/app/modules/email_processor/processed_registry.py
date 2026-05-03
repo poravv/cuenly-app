@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime
 
-from pymongo import MongoClient
 try:
     from pymongo.errors import DuplicateKeyError
 except Exception:  # pragma: no cover - fallback para tests con stubs de pymongo
@@ -9,6 +8,7 @@ except Exception:  # pragma: no cover - fallback para tests con stubs de pymongo
         pass
 
 from app.config.settings import settings
+from app.core.database import get_mongo_client
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +23,14 @@ class MongoProcessedEmailRepository:
     _indexes_ensured: bool = False
 
     def __init__(self):
-        self._client = None
         self._db_name = settings.MONGODB_DATABASE
-        self._conn_str = settings.MONGODB_URL
 
         # Cache local simple para evitar hits excesivos a Mongo en la misma ejecución
         # Key: _id, Value: reservado/procesado
         self._local_cache = {}
 
     def _get_collection(self):
-        if not self._client:
-            self._client = MongoClient(self._conn_str)
-        coll = self._client[self._db_name].processed_emails
+        coll = get_mongo_client()[self._db_name].processed_emails
         if not MongoProcessedEmailRepository._indexes_ensured:
             try:
                 coll.create_index("status")

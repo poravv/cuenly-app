@@ -3,8 +3,9 @@ import time
 import threading
 from datetime import datetime
 from typing import Optional, Dict, Any, Callable
-from pymongo import MongoClient, ASCENDING
+from pymongo import ASCENDING
 from app.config.settings import settings
+from app.core.database import get_mongo_client
 
 logger = logging.getLogger(__name__)
 
@@ -14,18 +15,14 @@ class AsyncJobManager:
     Permite encolar tareas pesadas (como sync histórico) y procesarlas en background.
     """
     def __init__(self):
-        self._client = None
         self._db_name = settings.MONGODB_DATABASE
-        self._conn_str = settings.MONGODB_URL
         self._listening = False
         self._thread = None
         # Registro de funciones handlers
         self._handlers: Dict[str, Callable] = {}
 
     def _get_collection(self):
-        if not self._client:
-            self._client = MongoClient(self._conn_str)
-        return self._client[self._db_name].jobs
+        return get_mongo_client()[self._db_name].jobs
 
     def register_handler(self, job_type: str, handler: Callable):
         """Registra una función para manejar un tipo de trabajo."""
