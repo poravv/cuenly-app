@@ -192,45 +192,47 @@
           </div>
 
           <div *ngIf="!jobLoading && jobStatus">
-            <!-- Fila superior: estado + botón -->
-            <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
-              <div class="d-flex align-items-center gap-3">
-                <span class="badge fs-6 px-4 py-2" [ngClass]="jobStatus.running ? 'bg-success' : 'bg-secondary'">
-                  <i class="bi bi-{{jobStatus.running ? 'play-circle' : 'pause-circle'}} me-2"></i>
-                  {{ jobStatus.running ? 'ACTIVA' : 'INACTIVA' }}
-                </span>
-                <div *ngIf="jobStatus.running" class="text-muted small">
-                  <span>Próxima: <strong class="text-info">{{ nextRunDisplay() }}</strong></span>
-                  <span class="ms-3">Última: <strong>{{ jobStatus.last_run ? formatParaguayDateTime(jobStatus.last_run) : 'Nunca' }}</strong></span>
+            <div class="row justify-content-center">
+              <div class="col-lg-5 col-md-7">
+                <!-- Estado e info -->
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                  <span class="badge fs-6 px-4 py-2" [ngClass]="jobStatus.running ? 'bg-success' : 'bg-secondary'">
+                    <i class="bi bi-{{jobStatus.running ? 'play-circle' : 'pause-circle'}} me-2"></i>
+                    {{ jobStatus.running ? 'ACTIVA' : 'INACTIVA' }}
+                  </span>
+                  <div class="text-muted small text-end">
+                    <div *ngIf="jobStatus.running">Próxima: <strong class="text-info">{{ nextRunDisplay() }}</strong></div>
+                    <div>Última: <strong>{{ jobStatus.last_run ? formatParaguayDateTime(jobStatus.last_run) : 'Nunca' }}</strong></div>
+                  </div>
                 </div>
-                <div *ngIf="!jobStatus.running" class="text-muted small">
-                  Última ejecución: <strong>{{ jobStatus.last_run ? formatParaguayDateTime(jobStatus.last_run) : 'Nunca' }}</strong>
-                </div>
-              </div>
-              <div class="d-flex align-items-center gap-2">
                 <!-- Intervalo -->
-                <div class="input-group" style="width: 200px;">
-                  <select class="form-select form-select-sm" [ngModel]="jobIntervalInput"
-                    (ngModelChange)="onJobIntervalChange($event)">
-                    <option *ngFor="let opt of intervalOptions" [ngValue]="opt">Cada {{ opt }} min</option>
-                  </select>
-                  <button class="btn btn-sm btn-outline-secondary" (click)="applyJobInterval()"
-                    [disabled]="loading || jobLoading || isProcessingBlocked"
-                    title="Aplicar intervalo">
-                    <i class="bi bi-check"></i>
-                  </button>
+                <div class="mb-4">
+                  <label class="form-label fw-semibold">Intervalo de revisión</label>
+                  <div class="input-group">
+                    <select class="form-select form-select-lg" [ngModel]="jobIntervalInput"
+                      (ngModelChange)="onJobIntervalChange($event)">
+                      <option *ngFor="let opt of intervalOptions" [ngValue]="opt">Cada {{ opt }} minutos</option>
+                    </select>
+                    <button class="btn btn-outline-secondary" (click)="applyJobInterval()"
+                      [disabled]="loading || jobLoading || isProcessingBlocked"
+                      title="Aplicar intervalo">
+                      <i class="bi bi-check"></i>
+                    </button>
+                  </div>
                 </div>
                 <!-- Botón principal -->
-                <button *ngIf="!jobStatus.running" class="btn btn-success px-4"
-                  [disabled]="!hasConfiguredEmail || loading || jobLoading || isProcessingBlocked"
-                  [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para activar la automatización' : null"
-                  (click)="startJob()">
-                  <i class="bi bi-play-fill me-2"></i>Activar
-                </button>
-                <button *ngIf="jobStatus.running" class="btn btn-danger px-4"
-                  [disabled]="loading || jobLoading || isProcessingBlocked" (click)="stopJob()">
-                  <i class="bi bi-stop-fill me-2"></i>Detener
-                </button>
+                <div class="d-grid">
+                  <button *ngIf="!jobStatus.running" class="btn btn-success btn-lg py-3 fw-semibold"
+                    [disabled]="!hasConfiguredEmail || loading || jobLoading || isProcessingBlocked"
+                    [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para activar la automatización' : null"
+                    (click)="startJob()">
+                    <i class="bi bi-play-fill me-2"></i>Activar automatización
+                  </button>
+                  <button *ngIf="jobStatus.running" class="btn btn-danger btn-lg py-3 fw-semibold"
+                    [disabled]="loading || jobLoading || isProcessingBlocked" (click)="stopJob()">
+                    <i class="bi bi-stop-fill me-2"></i>Detener automatización
+                  </button>
+                </div>
               </div>
             </div>
           </div>
