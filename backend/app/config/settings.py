@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # Job
     JOB_INTERVAL_MINUTES: int = int(os.getenv("JOB_INTERVAL_MINUTES", 60))
+    JOB_LOOKBACK_DAYS: int = int(os.getenv("JOB_LOOKBACK_DAYS", 35))  # Ventana de búsqueda del scheduler automático (días hacia atrás)
     # Por seguridad, NO restaurar el job de automatización al reiniciar
     # salvo que se habilite explícitamente.
     JOB_RESTORE_ON_BOOT: bool = os.getenv("JOB_RESTORE_ON_BOOT", "false").lower() in ("1", "true", "yes")

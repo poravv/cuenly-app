@@ -207,7 +207,7 @@
         <div class="card-body">
           <div class="d-flex align-items-center">
             <div class="flex-grow-1">
-              <p class="text-muted fw-semibold mb-1">OpenAI</p>
+              <p class="text-muted fw-semibold mb-1">IA</p>
               <h3 class="fw-bold mb-0">{{ status.openai_configured ? 'OK' : 'NO' }}</h3>
               <small [ngClass]="status.openai_configured ? 'text-success' : 'text-danger'">
                 <i class="bi bi-{{status.openai_configured ? 'check-circle' : 'x-circle'}} me-1"></i>
@@ -220,160 +220,6 @@
     </div>
   </div>
 
-  <div class="row g-4">
-    <!-- Panel de Acciones Rápidas -->
-    <div class="col-xl-8">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white border-0 pb-0">
-          <div class="d-flex align-items-center">
-            <i class="bi bi-lightning-charge text-primary fs-5 me-3"></i>
-            <div>
-              <h5 class="card-title mb-1 fw-bold">Acciones de Procesamiento</h5>
-              <p class="text-muted mb-0 small">Gestiona tus procesos de extracción de facturas</p>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <div class="d-grid">
-                <button class="btn btn-success btn-lg py-3"
-                  [disabled]="!hasConfiguredEmail || loading || (jobStatus?.running === true) || isProcessingBlocked"
-                  [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para habilitar esta acción' : null"
-                  (click)="processEmails(true)">
-                  <div class="d-flex align-items-center justify-content-center">
-                    <i class="bi bi-envelope-check fs-6 me-2"></i>
-                    <div class="text-start">
-                      <div class="fw-bold">Procesar Correos</div>
-                      <small class="opacity-75">Ejecutar extracción ahora</small>
-                      <!-- <small class="d-block mt-1 text-warning" *ngIf="jobStatus?.running">
-                        <i class="bi bi-info-circle me-1"></i>Pausado por automatización
-                      </small> -->
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <div class="col-md-4">
-              <div class="d-grid">
-                <a class="btn btn-outline-primary py-3" routerLink="/facturas/subir">
-                  <i class="bi bi-file-earmark-text me-2"></i>
-                  <div>Subir PDF / Imagen</div>
-                </a>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="d-grid">
-                <a class="btn btn-outline-primary py-3" routerLink="/facturas/subir-xml">
-                  <i class="bi bi-file-code me-2"></i>
-                  <div>Subir XML</div>
-                </a>
-              </div>
-            </div>
-
-            <div class="col-12" *ngIf="!hasConfiguredEmail">
-              <div class="alert alert-warning border-0 mb-0 py-2 px-3 small">
-                <i class="bi bi-info-circle me-1"></i>
-                Configura una cuenta de correo para habilitar el procesamiento manual.
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Panel de Estado del Proceso -->
-    <div class="col-xl-4">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-header bg-white border-0 pb-0">
-          <div class="d-flex align-items-center">
-            <i class="bi bi-activity text-info fs-5 me-3"></i>
-            <div>
-              <h5 class="card-title mb-1 fw-bold">Estado del Proceso</h5>
-              <p class="text-muted mb-0 small">Resultado de la última ejecución</p>
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <!-- Loading State -->
-          <div *ngIf="loading" class="text-center py-4">
-            <div class="spinner-border text-primary mb-3" role="status">
-              <span class="visually-hidden">Procesando...</span>
-            </div>
-            <h6 class="fw-semibold">Procesando correos...</h6>
-            <p class="text-muted small mb-0">Esto puede tomar unos momentos</p>
-          </div>
-
-          <!-- Success/Error State -->
-          <div *ngIf="!loading && processingResult" class="text-center py-2">
-            <div class="mb-3">
-              <div class="process-status-icon"
-                [ngClass]="processingResult.success ? 'process-status-icon--success' : 'process-status-icon--error'">
-                <i class="bi" [ngClass]="processingResult.success ? 'bi-check-lg' : 'bi-exclamation-lg'"></i>
-              </div>
-            </div>
-            <h6 class="fw-semibold mb-2" [ngClass]="processingResult.success ? 'text-success' : 'text-danger'">
-              {{ processingResult.success ? 'Proceso Completado' : 'Error en Proceso' }}
-            </h6>
-            <p class="text-muted small mb-3">{{ processingResult.message }}</p>
-
-            <div *ngIf="processingResult.invoice_count && processingResult.invoice_count > 0"
-              class="bg-light rounded-3 p-3">
-              <div class="fw-bold text-primary fs-5">{{ processingResult.invoice_count }}</div>
-              <div class="small text-muted">Facturas procesadas</div>
-            </div>
-          </div>
-
-          <!-- Error State - Trial Expirado -->
-          <div *ngIf="!loading && !processingResult && error?.includes('🚫')" class="alert alert-warning border-0 mx-3">
-            <div class="d-flex align-items-start">
-              <i class="bi bi-hourglass-split text-warning me-2 fs-5"></i>
-              <div class="flex-grow-1">
-                <h6 class="alert-heading mb-2">Período de Prueba Expirado</h6>
-                <p class="mb-2">{{ (error || '').replace('🚫 ', '') }}</p>
-                <div class="d-flex gap-2">
-                  <button class="btn btn-sm btn-warning" routerLink="/cuenta/suscripcion">
-                    <i class="bi bi-credit-card me-1"></i>Ver Planes
-                  </button>
-                  <button class="btn btn-sm btn-outline-secondary" (click)="error = null">
-                    <i class="bi bi-x me-1"></i>Cerrar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Error State General -->
-          <div *ngIf="!loading && !processingResult && error && !error?.includes('🚫')"
-            class="alert alert-danger border-0 mx-3">
-            <div class="d-flex align-items-start">
-              <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
-              <div>
-                <strong>Error:</strong> {{ error }}
-                <div class="mt-2 small">
-                  <button class="btn btn-sm btn-outline-danger" (click)="error = null">
-                    <i class="bi bi-x me-1"></i>Cerrar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Empty State -->
-          <div *ngIf="!loading && !processingResult" class="text-center py-4">
-            <div
-              class="bg-light bg-opacity-50 rounded-circle d-inline-flex align-items-center justify-content-center mb-3"
-              style="width: 60px; height: 60px;">
-              <i class="bi bi-envelope-open text-muted fs-4"></i>
-            </div>
-            <h6 class="fw-semibold text-muted">Listo para procesar</h6>
-            <p class="text-muted small mb-0">Haz clic en "Procesar Correos" para comenzar la extracción</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Panel de Automatización Avanzada -->
   <div class="row mt-4">
@@ -388,16 +234,10 @@
                 <p class="text-muted mb-0 small">Control avanzado del procesamiento automático</p>
               </div>
             </div>
-            <div class="d-flex gap-2">
-              <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="autoRefreshSwitch" [(ngModel)]="autoRefresh"
-                  (ngModelChange)="onAutoRefreshToggle($event)">
-                <label class="form-check-label text-muted small" for="autoRefreshSwitch">Auto-actualizar</label>
-              </div>
-            </div>
           </div>
         </div>
         <div class="card-body">
+          <p class="text-muted small mb-0">Revisa los últimos 35 días de tu bandeja, incluyendo correos leídos. Los ya procesados no se duplican.</p>
           <div *ngIf="jobLoading" class="d-flex justify-content-center py-4">
             <div class="spinner-border text-warning" role="status">
               <span class="visually-hidden">Cargando...</span>
@@ -488,17 +328,6 @@
                   <div class="form-text">Opciones permitidas: 5, 10, 15 y 20 minutos.</div>
                 </div>
 
-                <!-- Frecuencia de actualización del panel -->
-                <div class="mb-3">
-                  <label class="form-label fw-semibold small">Actualización del Panel</label>
-                  <select class="form-select" [ngModel]="autoRefreshIntervalMs"
-                    (ngModelChange)="setAutoRefreshInterval($event)">
-                    <option [ngValue]="15000">Cada 15 segundos</option>
-                    <option [ngValue]="30000">Cada 30 segundos</option>
-                    <option [ngValue]="60000">Cada 60 segundos</option>
-                  </select>
-                </div>
-
                 <!-- Información adicional -->
                 <div class="bg-white rounded-3 p-3">
                   <div class="row text-center">
@@ -561,8 +390,8 @@
           <div class="d-flex align-items-center">
             <i class="bi bi-calendar-range text-primary fs-5 me-3"></i>
             <div>
-              <h5 class="card-title mb-1 fw-bold">Procesamiento por Rango</h5>
-              <p class="text-muted mb-0 small">Procesa tus correos leídos y no leídos por rango de fechas.</p>
+              <h5 class="card-title mb-1 fw-bold">Procesar ahora</h5>
+              <p class="text-muted mb-0 small">Procesa leídos y no leídos en el rango seleccionado. Los ya procesados no se duplican.</p>
             </div>
           </div>
         </div>

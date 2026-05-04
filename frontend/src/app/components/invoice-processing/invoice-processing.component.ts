@@ -67,7 +67,6 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   ];
 
   private storageHandler: any;
-  private savePrefTimer: any = null;
 
   constructor(
     private apiService: ApiService,
@@ -86,8 +85,18 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     // Cargar rango de fechas y resultado guardado
     const savedStartDate = localStorage.getItem('cuenlyapp:dateRangeStart');
     const savedEndDate = localStorage.getItem('cuenlyapp:dateRangeEnd');
-    if (savedStartDate) this.dateRangeStart = savedStartDate;
-    if (savedEndDate) this.dateRangeEnd = savedEndDate;
+    if (savedStartDate) {
+      this.dateRangeStart = savedStartDate;
+    } else {
+      const start = new Date();
+      start.setDate(start.getDate() - 35);
+      this.dateRangeStart = start.toISOString().split('T')[0];
+    }
+    if (savedEndDate) {
+      this.dateRangeEnd = savedEndDate;
+    } else {
+      this.dateRangeEnd = new Date().toISOString().split('T')[0];
+    }
 
     const savedResult = localStorage.getItem('cuenlyapp:dateRangeResult');
     if (savedResult) {
@@ -656,15 +665,6 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
     localStorage.setItem('cuenlyapp:autoRefresh', 'false');
   }
 
-  setAutoRefreshInterval(ms: number): void {
-    this.autoRefreshIntervalMs = Math.max(5000, Number(ms) || 30000);
-    localStorage.setItem('cuenlyapp:autoRefreshInterval', String(this.autoRefreshIntervalMs));
-    if (this.autoRefresh) {
-      this.startAutoRefresh();
-    }
-    this.scheduleSavePref();
-  }
-
   applyJobInterval(): void {
     if (this.loading) {
       this.jobError = 'No puedes cambiar el intervalo mientras hay un procesamiento manual en curso.';
@@ -965,23 +965,6 @@ export class InvoiceProcessingComponent implements OnInit, OnDestroy {
   onJobIntervalChange(val: any): void {
     this.jobIntervalTouched = true;
     this.jobIntervalInput = this.getValidInterval(Number(val));
-  }
-
-  onAutoRefreshToggle(enabled: boolean): void {
-    localStorage.setItem('cuenlyapp:autoRefresh', enabled ? 'true' : 'false');
-    if (enabled) this.startAutoRefresh(); else this.stopAutoRefresh();
-    this.scheduleSavePref();
-  }
-
-  private scheduleSavePref(): void {
-    if (this.savePrefTimer) {
-      clearTimeout(this.savePrefTimer);
-      this.savePrefTimer = null;
-    }
-    this.savePrefTimer = setTimeout(() => {
-      this.apiService.setAutoRefreshPref(this.autoRefresh, this.autoRefreshIntervalMs)
-        .subscribe({ next: () => { }, error: () => { } });
-    }, 300);
   }
 
   formatYearMonth(yearMonth: string): string {

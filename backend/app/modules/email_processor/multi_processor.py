@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+from datetime import datetime, timedelta
 from typing import List, Tuple, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -550,9 +551,20 @@ class MultiEmailProcessor:
             logger.info("start_scheduled_job: ya en ejecución")
             return {"ok": True, "message": "El job ya está en ejecución."}
 
+        def _scheduled_target():
+            end_date = datetime.utcnow()
+            start_date = end_date - timedelta(days=settings.JOB_LOOKBACK_DAYS)
+            return self.process_all_emails(
+                start_date=start_date,
+                end_date=end_date,
+                force_search_criteria_all=True,
+                fanout_batch_size=50,
+                disable_fanout_account_cap=False,
+            )
+
         self._scheduler = ScheduledJobRunner(
             interval_minutes=interval,
-            target=self.process_all_emails,
+            target=_scheduled_target,
             should_continue=should_continue,
         )
         self._scheduler.start()
