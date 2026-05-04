@@ -204,7 +204,7 @@
 
             <div class="mb-4">
               <label class="form-label fw-semibold">Intervalo de revisión</label>
-              <div class="input-group input-group-lg">
+              <div class="input-group">
                 <select class="form-select" [ngModel]="jobIntervalInput" (ngModelChange)="onJobIntervalChange($event)">
                   <option *ngFor="let opt of intervalOptions" [ngValue]="opt">Cada {{ opt }} minutos</option>
                 </select>
