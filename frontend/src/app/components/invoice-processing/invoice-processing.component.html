@@ -168,78 +168,69 @@
 
 
 
-  <!-- Panel de Automatización Avanzada -->
-  <div class="row mt-4">
-    <div class="col-12">
-      <div class="card border-0 shadow-sm">
+  <!-- Los 2 modos de procesamiento lado a lado -->
+  <div class="row g-4 mt-2">
+
+    <!-- Card: Automatización -->
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
         <div class="card-header bg-white border-0 pb-0">
-          <div class="d-flex align-items-center justify-content-between">
-            <div class="d-flex align-items-center">
-              <i class="bi bi-robot text-warning fs-5 me-3"></i>
-              <div>
-                <h5 class="card-title mb-1 fw-bold">Automatización Inteligente</h5>
-                <p class="text-muted mb-0 small">Control avanzado del procesamiento automático</p>
-              </div>
+          <div class="d-flex align-items-center">
+            <i class="bi bi-robot text-warning fs-5 me-3"></i>
+            <div>
+              <h5 class="card-title mb-1 fw-bold">Automatización</h5>
+              <p class="text-muted mb-0 small">Revisa los últimos 35 días automáticamente. Los ya procesados no se duplican.</p>
             </div>
           </div>
         </div>
-        <div class="card-body">
-          <p class="text-muted small mb-0">Revisa los últimos 35 días de tu bandeja, incluyendo correos leídos. Los ya procesados no se duplican.</p>
+        <div class="card-body d-flex flex-column">
           <div *ngIf="jobLoading" class="d-flex justify-content-center py-4">
             <div class="spinner-border text-warning" role="status">
               <span class="visually-hidden">Cargando...</span>
             </div>
           </div>
 
-          <div *ngIf="!jobLoading && jobStatus">
-            <div class="row justify-content-center">
-              <div class="col-lg-5 col-md-7">
-                <!-- Estado e info -->
-                <div class="d-flex align-items-center justify-content-between mb-3">
-                  <span class="badge fs-6 px-4 py-2" [ngClass]="jobStatus.running ? 'bg-success' : 'bg-secondary'">
-                    <i class="bi bi-{{jobStatus.running ? 'play-circle' : 'pause-circle'}} me-2"></i>
-                    {{ jobStatus.running ? 'ACTIVA' : 'INACTIVA' }}
-                  </span>
-                  <div class="text-muted small text-end">
-                    <div *ngIf="jobStatus.running">Próxima: <strong class="text-info">{{ nextRunDisplay() }}</strong></div>
-                    <div>Última: <strong>{{ jobStatus.last_run ? formatParaguayDateTime(jobStatus.last_run) : 'Nunca' }}</strong></div>
-                  </div>
-                </div>
-                <!-- Intervalo -->
-                <div class="mb-4">
-                  <label class="form-label fw-semibold">Intervalo de revisión</label>
-                  <div class="input-group">
-                    <select class="form-select form-select-lg" [ngModel]="jobIntervalInput"
-                      (ngModelChange)="onJobIntervalChange($event)">
-                      <option *ngFor="let opt of intervalOptions" [ngValue]="opt">Cada {{ opt }} minutos</option>
-                    </select>
-                    <button class="btn btn-outline-secondary" (click)="applyJobInterval()"
-                      [disabled]="loading || jobLoading || isProcessingBlocked"
-                      title="Aplicar intervalo">
-                      <i class="bi bi-check"></i>
-                    </button>
-                  </div>
-                </div>
-                <!-- Botón principal -->
-                <div class="d-grid">
-                  <button *ngIf="!jobStatus.running" class="btn btn-success btn-lg py-3 fw-semibold"
-                    [disabled]="!hasConfiguredEmail || loading || jobLoading || isProcessingBlocked"
-                    [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para activar la automatización' : null"
-                    (click)="startJob()">
-                    <i class="bi bi-play-fill me-2"></i>Activar automatización
-                  </button>
-                  <button *ngIf="jobStatus.running" class="btn btn-danger btn-lg py-3 fw-semibold"
-                    [disabled]="loading || jobLoading || isProcessingBlocked" (click)="stopJob()">
-                    <i class="bi bi-stop-fill me-2"></i>Detener automatización
-                  </button>
-                </div>
+          <div *ngIf="!jobLoading && jobStatus" class="d-flex flex-column flex-grow-1">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+              <span class="badge fs-6 px-3 py-2" [ngClass]="jobStatus.running ? 'bg-success' : 'bg-secondary'">
+                <i class="bi bi-{{jobStatus.running ? 'play-circle' : 'pause-circle'}} me-2"></i>
+                {{ jobStatus.running ? 'ACTIVA' : 'INACTIVA' }}
+              </span>
+              <div class="text-muted small text-end">
+                <div *ngIf="jobStatus.running">Próxima: <strong class="text-info">{{ nextRunDisplay() }}</strong></div>
+                <div>Última: <strong>{{ jobStatus.last_run ? formatParaguayDateTime(jobStatus.last_run) : 'Nunca' }}</strong></div>
               </div>
+            </div>
+
+            <div class="mb-4">
+              <label class="form-label fw-semibold">Intervalo de revisión</label>
+              <div class="input-group input-group-lg">
+                <select class="form-select" [ngModel]="jobIntervalInput" (ngModelChange)="onJobIntervalChange($event)">
+                  <option *ngFor="let opt of intervalOptions" [ngValue]="opt">Cada {{ opt }} minutos</option>
+                </select>
+                <button class="btn btn-outline-secondary" (click)="applyJobInterval()"
+                  [disabled]="loading || jobLoading || isProcessingBlocked" title="Aplicar">
+                  <i class="bi bi-check-lg"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="d-grid mt-auto">
+              <button *ngIf="!jobStatus.running" class="btn btn-success btn-lg py-3 fw-semibold"
+                [disabled]="!hasConfiguredEmail || loading || jobLoading || isProcessingBlocked"
+                [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para activar la automatización' : null"
+                (click)="startJob()">
+                <i class="bi bi-play-fill me-2"></i>Activar automatización
+              </button>
+              <button *ngIf="jobStatus.running" class="btn btn-danger btn-lg py-3 fw-semibold"
+                [disabled]="loading || jobLoading || isProcessingBlocked" (click)="stopJob()">
+                <i class="bi bi-stop-fill me-2"></i>Detener automatización
+              </button>
             </div>
           </div>
 
-          <!-- Error de automatización - Trial Expirado -->
           <div *ngIf="jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción')"
-            class="alert alert-warning border-0 mt-3">
+            class="alert alert-warning border-0 mt-3 mb-0">
             <div class="d-flex align-items-start">
               <i class="bi bi-hourglass-split text-warning me-2 fs-5"></i>
               <div class="flex-grow-1">
@@ -256,23 +247,17 @@
               </div>
             </div>
           </div>
-
-          <!-- Error de automatización - General -->
-          <div
-            *ngIf="jobError && !(jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción'))"
-            class="alert alert-danger border-0 mt-3">
-            <i class="bi bi-exclamation-triangle me-2"></i>
-            {{ jobError }}
+          <div *ngIf="jobError && !(jobError?.includes('trial') || jobError?.includes('Trial') || jobError?.includes('suscripción'))"
+            class="alert alert-danger border-0 mt-3 mb-0">
+            <i class="bi bi-exclamation-triangle me-2"></i>{{ jobError }}
           </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Procesamiento por Rango -->
-  <div *ngIf="!jobLoading && jobStatus" class="row mt-5">
-    <div class="col-12">
-      <div class="card border-0 shadow-sm">
+    <!-- Card: Procesar ahora -->
+    <div class="col-lg-6" *ngIf="!jobLoading && jobStatus">
+      <div class="card border-0 shadow-sm h-100">
         <div class="card-header bg-white border-0 pb-0">
           <div class="d-flex align-items-center">
             <i class="bi bi-calendar-range text-primary fs-5 me-3"></i>
@@ -282,107 +267,95 @@
             </div>
           </div>
         </div>
-        <div class="card-body">
-          <div class="row justify-content-center">
-            <div class="col-lg-5 col-md-7">
-              <div class="mb-3">
-                <label class="form-label fw-semibold">Fecha inicio</label>
-                <input type="date" class="form-control form-control-lg" [(ngModel)]="dateRangeStart"
-                  (ngModelChange)="onDateRangeStartChange($event)"
-                  [disabled]="!hasConfiguredEmail || dateRangeLoading || isProcessingBlocked">
-              </div>
-              <div class="mb-4">
-                <label class="form-label fw-semibold">Fecha fin</label>
-                <input type="date" class="form-control form-control-lg" [(ngModel)]="dateRangeEnd"
-                  (ngModelChange)="onDateRangeEndChange($event)"
-                  [disabled]="!hasConfiguredEmail || dateRangeLoading || isProcessingBlocked">
-              </div>
-              <div class="d-grid gap-2">
-                <button class="btn btn-primary btn-lg py-3 fw-semibold" (click)="processDateRange()"
-                  [disabled]="!hasConfiguredEmail || dateRangeLoading || !dateRangeStart || !dateRangeEnd || isProcessingBlocked"
-                  [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para habilitar este procesamiento' : null">
-                  <span *ngIf="!dateRangeLoading">
-                    <i class="bi bi-play-circle-fill me-2"></i>Procesar ahora
-                  </span>
-                  <span *ngIf="dateRangeLoading">
-                    <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
-                  </span>
-                </button>
-                <button
-                  *ngIf="isDateRangeTaskActive && dateRangeJobId"
-                  class="btn btn-outline-danger btn-lg fw-semibold"
-                  (click)="cancelDateRangeTask()"
-                  [disabled]="dateRangeCancelLoading || dateRangeCancelRequested">
-                  <span *ngIf="!dateRangeCancelLoading && !dateRangeCancelRequested">
-                    <i class="bi bi-stop-circle me-2"></i>Cancelar proceso
-                  </span>
-                  <span *ngIf="dateRangeCancelLoading">
-                    <span class="spinner-border spinner-border-sm me-2"></span>Cancelando...
-                  </span>
-                  <span *ngIf="dateRangeCancelRequested && !dateRangeCancelLoading">
-                    <i class="bi bi-hourglass-split me-2"></i>Cancelación solicitada
-                  </span>
-                </button>
-              </div>
+        <div class="card-body d-flex flex-column">
+          <div class="row g-3 mb-4">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Fecha inicio</label>
+              <input type="date" class="form-control form-control-lg" [(ngModel)]="dateRangeStart"
+                (ngModelChange)="onDateRangeStartChange($event)"
+                [disabled]="!hasConfiguredEmail || dateRangeLoading || isProcessingBlocked">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">Fecha fin</label>
+              <input type="date" class="form-control form-control-lg" [(ngModel)]="dateRangeEnd"
+                (ngModelChange)="onDateRangeEndChange($event)"
+                [disabled]="!hasConfiguredEmail || dateRangeLoading || isProcessingBlocked">
             </div>
           </div>
 
-          <div class="alert alert-warning border-0 mt-4 mb-0 py-2 px-3 small" *ngIf="!hasConfiguredEmail">
+          <div class="d-grid gap-2 mt-auto">
+            <button class="btn btn-primary btn-lg py-3 fw-semibold" (click)="processDateRange()"
+              [disabled]="!hasConfiguredEmail || dateRangeLoading || !dateRangeStart || !dateRangeEnd || isProcessingBlocked"
+              [attr.title]="!hasConfiguredEmail ? 'Configura una cuenta de correo para habilitar este procesamiento' : null">
+              <span *ngIf="!dateRangeLoading">
+                <i class="bi bi-play-circle-fill me-2"></i>Procesar ahora
+              </span>
+              <span *ngIf="dateRangeLoading">
+                <span class="spinner-border spinner-border-sm me-2"></span>Procesando...
+              </span>
+            </button>
+            <button *ngIf="isDateRangeTaskActive && dateRangeJobId" class="btn btn-outline-danger btn-lg fw-semibold"
+              (click)="cancelDateRangeTask()" [disabled]="dateRangeCancelLoading || dateRangeCancelRequested">
+              <span *ngIf="!dateRangeCancelLoading && !dateRangeCancelRequested">
+                <i class="bi bi-stop-circle me-2"></i>Cancelar proceso
+              </span>
+              <span *ngIf="dateRangeCancelLoading">
+                <span class="spinner-border spinner-border-sm me-2"></span>Cancelando...
+              </span>
+              <span *ngIf="dateRangeCancelRequested && !dateRangeCancelLoading">
+                <i class="bi bi-hourglass-split me-2"></i>Cancelación solicitada
+              </span>
+            </button>
+          </div>
+
+          <div class="alert alert-warning border-0 mt-3 mb-0 py-2 px-3 small" *ngIf="!hasConfiguredEmail">
             <i class="bi bi-info-circle me-1"></i>
             Configura una cuenta de correo para habilitar el procesamiento.
           </div>
 
-          <div *ngIf="dateRangeNotice" class="alert alert-warning mt-4 mb-0">
-            <i class="bi bi-info-circle-fill me-2"></i>
-            {{ dateRangeNotice }}
+          <div *ngIf="dateRangeNotice" class="alert alert-warning mt-3 mb-0">
+            <i class="bi bi-info-circle-fill me-2"></i>{{ dateRangeNotice }}
           </div>
 
-          <!-- Resultado del procesamiento -->
-          <div *ngIf="dateRangeResult" class="alert alert-light mt-4 mb-0">
+          <div *ngIf="dateRangeResult" class="alert alert-light mt-3 mb-0">
             <div class="d-flex align-items-center justify-content-between">
               <div>
-                <i class="bi me-2"
-                  [ngClass]="isDateRangeTaskActive ? 'bi-hourglass-split text-warning' : 'bi-check-circle-fill text-success'"></i>
+                <i class="bi me-2" [ngClass]="isDateRangeTaskActive ? 'bi-hourglass-split text-warning' : 'bi-check-circle-fill text-success'"></i>
                 <strong *ngIf="dateRangeResult.job_id && isDateRangeTaskActive">Tarea en progreso:</strong>
                 <span *ngIf="dateRangeResult.job_id && isDateRangeTaskActive">
-                  El proceso está ejecutándose. Podés ver el progreso en
-                  <a routerLink="/automatizacion/cola" class="alert-link">Cola de Eventos</a>.
+                  Ejecutándose. Seguí el avance en <a routerLink="/automatizacion/cola" class="alert-link">Cola de Eventos</a>.
                 </span>
                 <strong *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">Correos encolados:</strong>
                 <span *ngIf="dateRangeResult.job_id && !isDateRangeTaskActive">
                   <ng-container *ngIf="(dateRangeResult.queued_count || 0) > 0; else completedInvoicesRange">
-                    {{ dateRangeResult.queued_count || 0 }} correos en cola. Los workers están extrayendo las facturas —
-                    <a routerLink="/automatizacion/cola" class="alert-link">ver progreso en Cola</a>.
+                    {{ dateRangeResult.queued_count || 0 }} en cola —
+                    <a routerLink="/automatizacion/cola" class="alert-link">ver progreso</a>.
                   </ng-container>
                   <ng-template #completedInvoicesRange>
                     {{ dateRangeResult.invoice_count || 0 }} facturas procesadas.
                   </ng-template>
                 </span>
-                <strong *ngIf="!dateRangeResult.job_id">Procesamiento completado:</strong>
+                <strong *ngIf="!dateRangeResult.job_id">Completado:</strong>
                 <span *ngIf="!dateRangeResult.job_id">
                   <ng-container *ngIf="(dateRangeResult.queued_count || 0) > 0; else completedInvoicesDirect">
-                    {{ dateRangeResult.queued_count || 0 }} correos en cola. Las facturas aparecerán progresivamente —
-                    <a routerLink="/automatizacion/cola" class="alert-link">ver Cola de Procesamiento</a>.
+                    {{ dateRangeResult.queued_count || 0 }} en cola —
+                    <a routerLink="/automatizacion/cola" class="alert-link">ver Cola</a>.
                   </ng-container>
                   <ng-template #completedInvoicesDirect>
                     {{ dateRangeResult.invoice_count || 0 }} facturas procesadas.
                   </ng-template>
                 </span>
               </div>
-              <button class="btn btn-sm btn-outline-secondary" (click)="clearDateRangeResult()">
+              <button class="btn btn-sm btn-outline-secondary ms-2 flex-shrink-0" (click)="clearDateRangeResult()">
                 <i class="bi bi-x"></i>
               </button>
             </div>
           </div>
 
-          <!-- Error -->
-          <div *ngIf="dateRangeError" class="alert alert-danger mt-4 mb-0">
+          <div *ngIf="dateRangeError" class="alert alert-danger mt-3 mb-0">
             <div class="d-flex align-items-center justify-content-between">
-              <div>
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                {{ dateRangeError }}
-              </div>
-              <button class="btn btn-sm btn-outline-danger" (click)="dateRangeError = null">
+              <div><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ dateRangeError }}</div>
+              <button class="btn btn-sm btn-outline-danger ms-2 flex-shrink-0" (click)="dateRangeError = null">
                 <i class="bi bi-x"></i>
               </button>
             </div>
@@ -390,6 +363,7 @@
         </div>
       </div>
     </div>
+
   </div>
 
   <!-- Últimas facturas con diseño mejorado -->
