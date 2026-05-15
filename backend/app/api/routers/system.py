@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 from app.api.state import invoice_sync
 
 
+@router.get("/healthz")
+async def liveness():
+    """Liveness probe: solo verifica que el proceso esté vivo. Sin checks de dependencias."""
+    return {"status": "alive"}
+
+
 @router.get("/health")
 async def health_check():
     """

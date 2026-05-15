@@ -27,6 +27,10 @@ def get_mongo_client() -> MongoClient:
             maxPoolSize=50,
             minPoolSize=5,
             serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=30000,
+            retryWrites=True,
+            retryReads=True,
         )
         logger.info("MongoClient singleton inicializado")
     return _client

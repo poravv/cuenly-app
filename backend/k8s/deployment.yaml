@@ -57,13 +57,13 @@ spec:
             cpu: "1500m"       # Hasta 1.5 cores bajo carga
         livenessProbe:
           httpGet:
-            path: /health
+            path: /healthz
             port: http
           initialDelaySeconds: 180   # Más tiempo para inicialización con EmailProcessor
-          periodSeconds: 30          # Verificar cada 30 segundos
-          timeoutSeconds: 30         # Timeout más largo para procesos intensivos
-          failureThreshold: 5        # Permitir más fallos antes de reiniciar
-          successThreshold: 1        # Una respuesta exitosa confirma salud
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 5
+          successThreshold: 1
         readinessProbe:
           httpGet:
             path: /health

@@ -64,6 +64,19 @@ spec:
         ports:
         - containerPort: 27017
           name: mongo
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - >-
+                mongosh --quiet
+                -u "$MONGO_INITDB_ROOT_USERNAME"
+                -p "$MONGO_INITDB_ROOT_PASSWORD"
+                --authenticationDatabase admin
+                --eval "db.adminCommand({ shutdown: 1, force: true, timeoutSecs: 30 })"
+                || true
         volumeMounts:
         - name: mongodb-storage
           mountPath: /data/db
