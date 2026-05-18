@@ -5,9 +5,8 @@ from typing import Any, Dict, Optional
 from app.config.settings import settings
 from .config import OpenAIConfig, GeminiConfig
 from .clients import make_ai_client, OpenAIChatClient
-from .pdf_text import extract_text_with_fallbacks
-from .image_utils import pdf_to_base64_first_page, ocr_from_base64_image
-from .prompts import build_text_prompt, build_image_prompt, build_xml_prompt, build_image_prompt_v2, messages_user_only, messages_user_with_image
+from .image_utils import pdf_to_base64_first_page
+from .prompts import build_xml_prompt, build_image_prompt_v2, messages_user_only, messages_user_with_image
 from .json_utils import extract_and_normalize_json
 from .cdc import validate_and_enhance_with_cdc
 from .cache import OpenAICache
@@ -66,10 +65,9 @@ class OpenAIProcessor:
         """
         Estrategia simplificada (segura) con cache inteligente:
         1) Verificar cache primero
-        2) Procesar como Imagen (OCR/Vision) → OpenAI
-        3) Filtro de 'Nota de Remisión'
-        4) Cachear resultado
-        5) Contar uso de IA para trial users
+        2) Procesar como Imagen (Vision) → Gemini/OpenAI
+        3) Cachear resultado
+        4) Contar uso de IA para trial users
         """
         # AIFatalError / AIRetryableError already imported at module level
         
@@ -321,48 +319,12 @@ class OpenAIProcessor:
             return None
 
     # ----------------------------------------------------------- Estrategias --
-    def _process_as_text(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None):
-        text = extract_text_with_fallbacks(pdf_path, try_ocr_first_page=True)
-        if not text:
-            return None
-
-        # filtro Nota de Remisión
-        if any(kw in text.lower() for kw in ["remisión", "nota de remisión", "remisión electrónica", "remisión de mercaderías"]):
-            logger.warning("Documento detectado como Nota de Remisión. Se omite.")
-            return None
-
-        prompt = build_text_prompt(text)
-        messages = messages_user_only(prompt)
-
-        raw = self._client.chat_json(
-            model=self._active_model,
-            messages=messages,
-            temperature=self.cfg.temperature,
-            max_tokens=self._active_max_tokens,
-        )
-        try:
-            data = extract_and_normalize_json(raw)
-            invoice = _coerce_invoice_model(data, email_metadata)
-            invoice = validate_and_enhance_with_cdc(invoice)
-            return invoice
-        except Exception as e:
-            logger.warning("Fallo procesando JSON de texto: %s", e)
-            return None
-
     def _process_as_image(self, pdf_path: str, email_metadata: Optional[Dict[str, Any]] = None):
         base64_img = pdf_to_base64_first_page(pdf_path)
-        # OCR rápido como complemento del prompt v2 (se adjunta como texto adicional)
-        ocr_text = ocr_from_base64_image(base64_img)
-        if ocr_text and any(kw in ocr_text.lower() for kw in ["nota de remisión", "remisión electrónica", "nota de entrega", "remisión de mercaderías"]):
-            logger.warning("Documento detectado como Nota de Remisión. Se omite.")
-            return None
-
         prompt = build_image_prompt_v2()
-        if ocr_text:
-            prompt = prompt + "\n\nTexto OCR preliminar (ayuda, si aplica):\n" + ocr_text[:4000]
         messages = messages_user_with_image(prompt, base64_img)
 
-        temperature = 0.1 if not ocr_text else self.cfg.temperature
+        temperature = self.cfg.temperature
         try:
             raw = self._client.chat_json(
                 model=self._active_model,

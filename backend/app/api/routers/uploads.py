@@ -30,6 +30,16 @@ from app.api.state import invoice_sync
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+
+def _check_upload_size(content: bytes, filename: str = "") -> None:
+    if len(content) > _MAX_UPLOAD_BYTES:
+        size_mb = len(content) / (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"El archivo '{filename}' supera el límite de 20MB ({size_mb:.1f}MB recibido)"
+        )
+
 # Helpers compartidos con processing.py
 from app.api.rate_limit import rate_limit as _rate_limit
 from app.api.routers.processing import (
@@ -66,13 +76,14 @@ async def upload_pdf(
     try:
         # Leer contenido
         content = await file.read()
-        
+        _check_upload_size(content, file.filename)
+
         # Guardar binario (Local + MinIO)
         owner = (user.get('email') or '').lower()
         storage_result = await run_in_threadpool(
             save_binary,
-            content=content, 
-            filename=file.filename, 
+            content=content,
+            filename=file.filename,
             force_pdf=True,
             owner_email=owner
         )
@@ -196,13 +207,14 @@ async def upload_xml(
     try:
         # Leer contenido
         content = await file.read()
-        
+        _check_upload_size(content, file.filename)
+
         # Guardar binario (Local + MinIO)
         owner = (user.get('email') or '').lower()
         storage_result = await run_in_threadpool(
             save_binary,
-            content=content, 
-            filename=file.filename, 
+            content=content,
+            filename=file.filename,
             force_pdf=False,
             owner_email=owner
         )
@@ -300,6 +312,7 @@ async def enqueue_upload_pdf(
     pdf_minio_key = ""
     try:
         file_bytes = await file.read()
+        _check_upload_size(file_bytes, file.filename)
         date_obj = None
         if date:
             try:
@@ -360,6 +373,7 @@ async def upload_image(
                 pass
 
         file_bytes = await file.read()
+        _check_upload_size(file_bytes, file.filename)
         owner_email = (user.get('email') or '').lower()
 
         img_storage = await run_in_threadpool(
@@ -410,6 +424,7 @@ async def enqueue_upload_xml(
     xml_minio_key = ""
     try:
         file_bytes = await file.read()
+        _check_upload_size(file_bytes, file.filename)
         date_obj = None
         if date:
             try:

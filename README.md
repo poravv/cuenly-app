@@ -4,7 +4,7 @@ CuenlyApp procesa facturas recibidas por correo o carga manual, extrae datos con
 
 ## Stack
 
-- Backend: FastAPI, MongoDB, Redis/RQ, Firebase Auth, OpenAI, MinIO.
+- Backend: FastAPI, MongoDB, Redis/RQ, Firebase Auth, Gemini 2.5 Flash (fallback OpenAI), MinIO.
 - Frontend: Angular, Firebase Web SDK, Bootstrap.
 - Pagos: Pagopar/Bancard para suscripciones y cobros recurrentes.
 - Operación: Docker Compose local, Kubernetes + GitHub Actions en producción.

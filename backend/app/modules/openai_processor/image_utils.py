@@ -40,7 +40,7 @@ def pdf_to_base64_first_page(doc_path: str) -> str:
         doc = fitz.open(doc_path)
         page = doc[0]
         # Matrix(2, 2) ~ 144dpi, Matrix(3, 3) ~ 216dpi
-        # Usamos 2.5 para balance entre calidad OCR y tamaño
+        # 2.5 da buen balance entre calidad de imagen y tamaño de tokens para vision IA
         pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
         img_bytes = pix.tobytes("jpeg")
         doc.close()
@@ -48,21 +48,3 @@ def pdf_to_base64_first_page(doc_path: str) -> str:
     except Exception as e:
         logger.error("Error convirtiendo documento a imagen base64: %s", e)
         raise
-
-def ocr_from_base64_image(base64_image: str, lang: str = "spa") -> str:
-    """
-    OCR sobre imagen base64 (JPEG/PNG).
-    Requiere Pillow + pytesseract + tesseract binario.
-    """
-    try:
-        import io
-        import pytesseract
-        from PIL import Image
-
-        image_bytes = base64.b64decode(base64_image)
-        img = Image.open(io.BytesIO(image_bytes))
-        text = pytesseract.image_to_string(img, lang=lang)
-        return text.strip()
-    except Exception as e:
-        logger.error("Error en OCR base64: %s", e)
-        return ""

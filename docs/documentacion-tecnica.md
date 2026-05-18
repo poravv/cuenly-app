@@ -17,7 +17,8 @@ flowchart LR
   Worker --> MinIO["MinIO/S3"]
   API --> Firebase["Firebase Auth"]
   API --> Pagopar["Pagopar/Bancard"]
-  Worker --> OpenAI["OpenAI"]
+  Worker --> Gemini["Gemini 2.5 Flash"]
+  Worker --> OpenAI["OpenAI (fallback)"]
 ```
 
 ## Backend
@@ -88,6 +89,22 @@ Flujos principales:
 - `GET /tasks/{job_id}`: normaliza estados RQ a `queued`, `running`, `done`, `error`.
 - `POST /tasks/{job_id}/cancel`: cancela jobs en cola o solicita stop remoto si están corriendo.
 - `GET /user/queue-events/stream`: expone eventos Mongo + jobs RQ sintéticos para que la UI no aparezca vacía durante discovery.
+
+## Procesamiento de Archivos con IA
+
+El módulo vive en `backend/app/modules/openai_processor/`.
+
+**Flujo activo (imagen → Gemini):**
+
+1. `pdf_to_base64_first_page()` en `image_utils.py` convierte el PDF o imagen a JPEG base64 vía PyMuPDF (fitz).
+2. La imagen se envía directamente a Gemini 2.5 Flash mediante `GeminiChatClient` en `clients.py`.
+3. Si Gemini falla con error fatal, se reintenta con OpenAI como fallback.
+
+**Sin OCR:** el pipeline no usa Tesseract, pdfplumber, pdfminer ni PyPDF2. Gemini lee el texto de la imagen directamente, lo que reduce uso de RAM y elimina errores de reconocimiento previos al prompt.
+
+**Validación de tamaño en uploads:** todos los endpoints de `backend/app/api/routers/uploads.py` rechazan archivos mayores a 20MB con HTTP 413 antes de guardar en disco o MinIO. El límite está definido en `_MAX_UPLOAD_BYTES`.
+
+Endpoints afectados: `POST /upload`, `/upload-xml`, `/upload-image`, `/tasks/upload-pdf`, `/tasks/upload-xml`.
 
 ## Pagos y Suscripciones
 
