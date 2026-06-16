@@ -130,7 +130,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Extract metadata
         id: meta
@@ -303,7 +303,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Extract metadata
         id: meta
@@ -349,7 +349,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Setup kubectl context
         run: |
@@ -359,15 +359,6 @@ jobs:
         run: |
           kubectl get ns ${{ env.NAMESPACE }} || kubectl create ns ${{ env.NAMESPACE }}
           
-      - name: Create/Update image pull secret
-        run: |
-          kubectl create secret docker-registry ghcr-secret \
-            --docker-server=${{ env.REGISTRY }} \
-            --docker-username=${{ github.actor }} \
-            --docker-password=${{ secrets.GHCR_PAT }} \
-            --namespace=${{ env.NAMESPACE }} \
-            --dry-run=client -o yaml | kubectl apply -f -
-            
       - name: Create/Update backend secrets
         run: |
           set -euo pipefail
@@ -967,7 +958,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Build frontend image if needed
         run: |
@@ -977,15 +968,6 @@ jobs:
         run: |
           kubectl apply -f frontend/k8s/namespace.yaml
           
-      - name: Create/Update image pull secret
-        run: |
-          kubectl create secret docker-registry ghcr-secret \
-            --docker-server=${{ env.REGISTRY }} \
-            --docker-username=${{ github.actor }} \
-            --docker-password=${{ secrets.GHCR_PAT }} \
-            --namespace=${{ env.NAMESPACE }} \
-            --dry-run=client -o yaml | kubectl apply -f -
-            
       - name: Deploy frontend infrastructure
         run: |
           # Aplicar backend proxy service primero
