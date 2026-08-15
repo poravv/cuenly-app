@@ -346,10 +346,6 @@ export class ApiService {
     return this.http.post<any>(`${this.apiUrl}/v2/invoices/bulk-delete`, { header_ids: headerIds });
   }
 
-  downloadInvoice(invoiceId: string): Observable<{ success: boolean, download_url: string, filename?: string, content_type?: string, message?: string }> {
-    return this.http.get<{ success: boolean, download_url: string, filename?: string, content_type?: string, message?: string }>(`${this.apiUrl}/invoices/${invoiceId}/download`);
-  }
-
   /**
    * Descarga el archivo directamente con autenticación (streaming)
    */

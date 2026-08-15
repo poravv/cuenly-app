@@ -6,27 +6,24 @@ Preserva la información procesada en la base de datos MongoDB.
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
-from minio import Minio
 
 from app.config.settings import settings
 from app.repositories.mongo_invoice_repository import MongoInvoiceRepository
+from app.modules.email_processor.storage import get_minio_client
 
 logger = logging.getLogger(__name__)
 
 class DataRetentionJob:
     """Job para purgar archivos originales de MinIO según la política de retención."""
-    
+
     def __init__(self):
         self.repo = MongoInvoiceRepository()
-        self.minio_client: Optional[Minio] = None
+        self.minio_client = None
         if settings.MINIO_ACCESS_KEY:
-            self.minio_client = Minio(
-                settings.MINIO_ENDPOINT,
-                access_key=settings.MINIO_ACCESS_KEY,
-                secret_key=settings.MINIO_SECRET_KEY,
-                secure=settings.MINIO_SECURE,
-                region=settings.MINIO_REGION
-            )
+            try:
+                self.minio_client = get_minio_client()
+            except RuntimeError as e:
+                logger.error(f"❌ Cliente MinIO no disponible: {e}")
 
     async def run(self, days: int = 365):
         """

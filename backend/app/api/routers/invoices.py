@@ -21,6 +21,7 @@ from app.modules.mongo_query_service import get_mongo_query_service
 from app.models.models import InvoiceData, ProductoFactura
 from app.utils.validators import SecurityValidators, log_security_event, ValidationError
 from app.api.routers.plans import _resolve_minio_key_strict
+from app.modules.email_processor.storage import get_minio_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -589,132 +590,6 @@ async def v2_get_bulk_delete_info(
         logger.error(f"Error obteniendo información de eliminación en lote: {e}")
         raise HTTPException(status_code=500, detail="Error obteniendo información")
 
-@router.get("/invoices/{invoice_id}/download")
-async def get_invoice_download_url(
-    invoice_id: str,
-    user: Dict[str, Any] = Depends(_get_current_user)
-):
-    """Genera una URL firmada para descargar la factura."""
-    try:
-        repo = MongoInvoiceRepository()
-        from datetime import timedelta
-        
-        # Buscar factura
-        # MongoInvoiceRepository es para v1/v2 mapping, usemos metodo directo si no existe get_header
-        header = repo._headers().find_one({"_id": invoice_id})
-        if not header:
-            # Fallback a ObjectId si no es string
-            try:
-                from bson import ObjectId
-                header = repo._headers().find_one({"_id": ObjectId(invoice_id)})
-            except:
-                pass
-                
-        if not header:
-            raise HTTPException(status_code=404, detail="Factura no encontrada")
-        
-        # Verificar ownership
-        owner = (user.get('email') or '').lower()
-        if header.get("owner_email") != owner:
-            # Si el usuario es admin, permitir
-            user_repo = UserRepository()
-            if not user_repo.is_admin(owner):
-                raise HTTPException(status_code=403, detail="Acceso denegado")
-        
-        # Verificar si el plan del usuario permite descarga desde MinIO
-        from app.repositories.subscription_repository import SubscriptionRepository
-        sub_repo = SubscriptionRepository()
-        subscription = await sub_repo.get_user_active_subscription(owner)
-        
-        # Permitir a admins o si el plan lo permite
-        user_repo = UserRepository()
-        is_admin = user_repo.is_admin(owner)
-        
-        if not is_admin:
-            if not subscription:
-                # Si no hay suscripción activa, es un usuario FREE/Trial
-                # Por defecto, si queremos restringir el Trial también, bloqueamos aquí
-                raise HTTPException(
-                    status_code=403, 
-                    detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
-                )
-            
-            # Obtener features del plan
-            plan_code = subscription.get("plan_code")
-            plan = await sub_repo.get_plan_by_code(plan_code)
-            if plan and plan.get("features"):
-                if not plan["features"].get("minio_storage", True):
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
-                    )
-
-        # Generar Signed URL
-        # Re-importar para asegurar acceso si no estamos en scope gol
-        try:
-            from minio import Minio
-            from urllib.parse import urlencode
-        except ImportError:
-            return {"success": False, "message": "Librería MinIO no instalada"}
-
-        if not Minio or not settings.MINIO_ACCESS_KEY:
-             return {"success": False, "message": "Almacenamiento seguro no configurado"}
-             
-        client = Minio(
-            settings.MINIO_ENDPOINT,
-            access_key=settings.MINIO_ACCESS_KEY,
-            secret_key=settings.MINIO_SECRET_KEY,
-            secure=settings.MINIO_SECURE,
-            region=settings.MINIO_REGION
-        )
-
-        minio_key = _resolve_minio_key_strict(header, client)
-        if not minio_key:
-            return {"success": False, "message": "Archivo no disponible en el almacenamiento seguro"}
-        
-        # Determinar Content-Type basado en la extensión del archivo
-        filename = minio_key.split("/")[-1]
-        lname = filename.lower()
-        if lname.endswith(".pdf"):
-            content_type = "application/pdf"
-        elif lname.endswith(".xml"):
-            content_type = "application/xml"
-        elif lname.endswith((".jpg", ".jpeg")):
-            content_type = "image/jpeg"
-        elif lname.endswith(".png"):
-            content_type = "image/png"
-        elif lname.endswith(".webp"):
-            content_type = "image/webp"
-        else:
-            content_type = "application/octet-stream"
-        
-        # Generar URL presignada con headers de respuesta para compatibilidad HTTPS
-        # response_headers fuerza al servidor a devolver estos headers
-        response_headers = {
-            "response-content-type": content_type,
-            "response-content-disposition": f"inline; filename=\"{filename}\""
-        }
-        
-        url = client.get_presigned_url(
-            "GET",
-            settings.MINIO_BUCKET,
-            minio_key,
-            expires=timedelta(hours=1),
-            response_headers=response_headers
-        )
-        
-        return {
-            "success": True,
-            "download_url": url,
-            "filename": filename,
-            "content_type": content_type
-        }
-        
-    except Exception as e:
-        logger.error(f"Error generando download url: {e}")
-        raise HTTPException(status_code=500, detail="Error descarga")
-
-
 @router.get("/invoices/{invoice_id}/file")
 async def get_invoice_file_direct(
     invoice_id: str,
@@ -773,21 +648,14 @@ async def get_invoice_file_direct(
                         detail="Tu plan actual no permite la descarga de archivos originales. Actualiza tu plan para habilitar esta función."
                     )
 
-        try:
-            from minio import Minio
-        except ImportError:
-            raise HTTPException(status_code=500, detail="MinIO no instalado")
-
         if not settings.MINIO_ACCESS_KEY:
             raise HTTPException(status_code=500, detail="MinIO no configurado")
-             
-        client = Minio(
-            settings.MINIO_ENDPOINT,
-            access_key=settings.MINIO_ACCESS_KEY,
-            secret_key=settings.MINIO_SECRET_KEY,
-            secure=settings.MINIO_SECURE,
-            region=settings.MINIO_REGION
-        )
+
+        try:
+            client = get_minio_client()
+        except RuntimeError as e:
+            logger.error(f"Cliente MinIO no disponible: {e}")
+            raise HTTPException(status_code=500, detail="MinIO no configurado")
 
         minio_key = _resolve_minio_key_strict(header, client)
         if not minio_key:

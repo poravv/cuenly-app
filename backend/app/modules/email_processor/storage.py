@@ -5,6 +5,7 @@ import uuid
 import hashlib
 import logging
 import io
+import functools
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Tuple, Optional, Union
@@ -25,6 +26,7 @@ except ImportError:
     logger.warning("python-magic not installed, file validation disabled")
 
 from app.config.settings import settings
+from app.core.retry import storage_retry
 
 logger = logging.getLogger(__name__)
 
@@ -188,19 +190,64 @@ def _resolve_base_dir() -> str:
     # Intentar usar el configurado; si no se puede escribir, usar fallback
     return ensure_dirs()
 
+
+@functools.lru_cache(maxsize=1)
+def get_minio_client() -> "Minio":
+    """Crea (una sola vez, cacheado) el cliente MinIO a partir de settings.
+
+    Lanza RuntimeError con mensaje claro si MinIO no está disponible o configurado,
+    en lugar de fallar más abajo con un error críptico.
+    """
+    if not Minio:
+        raise RuntimeError("Librería minio no instalada")
+    if not settings.MINIO_ENDPOINT:
+        raise RuntimeError("MINIO_ENDPOINT no configurado")
+    return Minio(
+        settings.MINIO_ENDPOINT,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=settings.MINIO_SECURE,
+        region=settings.MINIO_REGION,
+    )
+
+
+_bucket_ensured = False
+
+
+def ensure_bucket() -> None:
+    """Garantiza que el bucket configurado exista. Se ejecuta una sola vez por proceso."""
+    global _bucket_ensured
+    if _bucket_ensured:
+        return
+    client = get_minio_client()
+    if not client.bucket_exists(settings.MINIO_BUCKET):
+        try:
+            client.make_bucket(settings.MINIO_BUCKET)
+        except S3Error as e:
+            if e.code not in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+                raise
+    _bucket_ensured = True
+
+
+@storage_retry
+def _put_object(client: "Minio", object_name: str, content: bytes, ctype: str) -> None:
+    client.put_object(
+        settings.MINIO_BUCKET,
+        object_name,
+        io.BytesIO(content),
+        len(content),
+        content_type=ctype
+    )
+
+
 def upload_to_minio(content: bytes, filename: str, owner_email: Optional[str] = None, date_obj: Optional[datetime] = None) -> Tuple[str, str]:
     """Sube archivo a MinIO y retorna (key, url). Si falla retorna ('', '')."""
     if not Minio or not settings.MINIO_ACCESS_KEY:
         return "", ""
 
     try:
-        client = Minio(
-            settings.MINIO_ENDPOINT,
-            access_key=settings.MINIO_ACCESS_KEY,
-            secret_key=settings.MINIO_SECRET_KEY,
-            secure=settings.MINIO_SECURE,
-            region=settings.MINIO_REGION
-        )
+        client = get_minio_client()
+        ensure_bucket()
 
         # Structure: /YYYY/user_id/month/filename
         # user_id sanitizado
@@ -209,15 +256,12 @@ def upload_to_minio(content: bytes, filename: str, owner_email: Optional[str] = 
         year = dt.strftime("%Y")
         month = dt.strftime("%m")
         clean_fname = sanitize_filename(filename)
-        
+
         # Generar nombre único si es necesario, pero intentamos mantener nombre original si se puede
         # Agregamos timestamp minúsculo al principio para evitar colisiones en nombres comunes
         ts_small = datetime.now().strftime("%d%H%M")
         object_name = f"{year}/{clean_user}/{month}/{ts_small}_{clean_fname}"
 
-        if not client.bucket_exists(settings.MINIO_BUCKET):
-            client.make_bucket(settings.MINIO_BUCKET)
-        
         # Determine Content-Type
         lname = filename.lower()
         if lname.endswith(".pdf"):
@@ -233,18 +277,11 @@ def upload_to_minio(content: bytes, filename: str, owner_email: Optional[str] = 
         else:
             ctype = "application/octet-stream"
 
-        # Upload
-        client.put_object(
-            settings.MINIO_BUCKET,
-            object_name,
-            io.BytesIO(content),
-            len(content),
-            content_type=ctype
-        )
-        
+        _put_object(client, object_name, content, ctype)
+
         logger.info(f"☁️ Subido a MinIO: {object_name}")
         return object_name, "" # URL will be generated on demand via presigned url
-        
+
     except Exception as e:
         logger.error(f"❌ MinIO upload error: {e}")
         return "", ""
@@ -307,6 +344,11 @@ def delete_local_temp_file(path: str) -> bool:
     return False
 
 
+@storage_retry
+def _fget_object(client: "Minio", minio_key: str, local_path: str) -> None:
+    client.fget_object(settings.MINIO_BUCKET, minio_key, local_path)
+
+
 def download_from_minio(minio_key: str, local_dir: Optional[str] = None) -> str:
     """
     Descarga un archivo de MinIO a disco local.
@@ -316,18 +358,12 @@ def download_from_minio(minio_key: str, local_dir: Optional[str] = None) -> str:
     if not minio_key or not Minio or not settings.MINIO_ACCESS_KEY:
         return ""
     try:
-        client = Minio(
-            settings.MINIO_ENDPOINT,
-            access_key=settings.MINIO_ACCESS_KEY,
-            secret_key=settings.MINIO_SECRET_KEY,
-            secure=settings.MINIO_SECURE,
-            region=settings.MINIO_REGION,
-        )
+        client = get_minio_client()
         base_dir = local_dir or ensure_dirs()
         # Usar nombre del key como base del archivo local
         fname = os.path.basename(minio_key)
         local_path = os.path.join(base_dir, f"dl_{uuid.uuid4().hex[:8]}_{fname}")
-        client.fget_object(settings.MINIO_BUCKET, minio_key, local_path)
+        _fget_object(client, minio_key, local_path)
         logger.info(f"⬇️ Descargado de MinIO: {minio_key} → {local_path}")
         return local_path
     except Exception as e:
