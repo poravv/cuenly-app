@@ -399,11 +399,11 @@ jobs:
             --from-literal=AUTH_REQUIRE="${{ secrets.AUTH_REQUIRE }}" \
             --from-literal=FIREBASE_PROJECT_ID="${{ secrets.FIREBASE_PROJECT_ID }}" \
             --from-literal=MULTI_TENANT_ENFORCE="${{ secrets.MULTI_TENANT_ENFORCE }}" \
-            --from-literal=MINIO_ENDPOINT="${{ secrets.MINIO_ENDPOINT }}" \
-            --from-literal=MINIO_ACCESS_KEY="${{ secrets.MINIO_ACCESS_KEY }}" \
-            --from-literal=MINIO_SECRET_KEY="${{ secrets.MINIO_SECRET_KEY }}" \
+            --from-literal=MINIO_ENDPOINT="minio-service.cuenly-backend.svc.cluster.local:9000" \
+            --from-literal=MINIO_ACCESS_KEY="${{ secrets.MINIO_ROOT_USER }}" \
+            --from-literal=MINIO_SECRET_KEY="${{ secrets.MINIO_ROOT_PASSWORD }}" \
             --from-literal=MINIO_BUCKET="${{ secrets.MINIO_BUCKET }}" \
-            --from-literal=MINIO_SECURE="${{ secrets.MINIO_SECURE }}" \
+            --from-literal=MINIO_SECURE="false" \
             --from-literal=MINIO_REGION="${{ secrets.MINIO_REGION }}" \
             --from-literal=FRONTEND_API_KEY="${FRONTEND_API_KEY_VALUE}" \
             --from-literal=REDIS_HOST="cuenly-redis-service" \
@@ -430,7 +430,23 @@ jobs:
             --from-literal=mongodb-root-password="${{ secrets.MONGODB_ROOT_PASSWORD }}" \
             --from-literal=mongodb-database="${{ secrets.MONGODB_DATABASE }}"
           echo "✅ Secrets de MongoDB creados correctamente"
-            
+
+      - name: Create/Update MinIO credentials secret
+        run: |
+          set -euo pipefail
+
+          if [ -z "${{ secrets.MINIO_ROOT_USER }}" ] || [ -z "${{ secrets.MINIO_ROOT_PASSWORD }}" ]; then
+            echo "ERROR: Secrets MINIO_ROOT_USER / MINIO_ROOT_PASSWORD no configurados en GitHub Secrets" >&2
+            exit 1
+          fi
+
+          kubectl delete secret minio-credentials -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl create secret generic minio-credentials \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=MINIO_ROOT_USER="${{ secrets.MINIO_ROOT_USER }}" \
+            --from-literal=MINIO_ROOT_PASSWORD="${{ secrets.MINIO_ROOT_PASSWORD }}"
+          echo "✅ Secret minio-credentials creado correctamente"
+
       - name: Create/Update AlertManager secrets
         if: ${{ false }}
         run: |
@@ -494,7 +510,55 @@ jobs:
           kubectl apply -f backend/k8s/mongodb-simple.yaml -n ${{ env.NAMESPACE }}
           kubectl rollout status deployment/mongodb -n ${{ env.NAMESPACE }} --timeout=300s
           kubectl wait --for=condition=ready pod -l app=mongodb -n ${{ env.NAMESPACE }} --timeout=300s
-          
+
+      - name: Deploy MinIO
+        run: |
+          set -euo pipefail
+          echo "🚀 Desplegando MinIO interno (PVC + Deployment + Service + NetworkPolicy)..."
+          kubectl apply -f backend/k8s/minio.yaml -n ${{ env.NAMESPACE }}
+          kubectl rollout status deployment/minio -n ${{ env.NAMESPACE }} --timeout=300s
+
+      - name: Migrate legacy MinIO data
+        env:
+          MINIO_LEGACY_ENDPOINT: ${{ secrets.MINIO_LEGACY_ENDPOINT }}
+          MINIO_LEGACY_ACCESS_KEY: ${{ secrets.MINIO_LEGACY_ACCESS_KEY }}
+          MINIO_LEGACY_SECRET_KEY: ${{ secrets.MINIO_LEGACY_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          echo "🔄 Preparando migración de datos legacy de MinIO (si aplica)..."
+
+          # El MinIO legacy (minpoint.mindtechpy.net) fue dado de baja; estos secrets solo se setean si aparece un endpoint legacy recuperable para migrar datos.
+          if [ -z "$MINIO_LEGACY_ENDPOINT" ]; then
+            echo "ℹ️ Sin MinIO legacy configurado — skip migración"
+            exit 0
+          fi
+
+          # Asegurar que el secret temporal con credenciales legacy se borre siempre,
+          # tanto si el job termina bien como si falla.
+          cleanup() {
+            kubectl delete secret minio-legacy-credentials -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          }
+          trap cleanup EXIT
+
+          kubectl delete secret minio-legacy-credentials -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl create secret generic minio-legacy-credentials \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=OLD_MINIO_ENDPOINT="$MINIO_LEGACY_ENDPOINT" \
+            --from-literal=OLD_MINIO_ACCESS_KEY="$MINIO_LEGACY_ACCESS_KEY" \
+            --from-literal=OLD_MINIO_SECRET_KEY="$MINIO_LEGACY_SECRET_KEY"
+
+          kubectl delete job minio-migrate-legacy -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl apply -f backend/k8s/minio-migration-job.yaml -n ${{ env.NAMESPACE }}
+
+          echo "⏳ Esperando finalización del job de migración..."
+          if ! kubectl wait --for=condition=complete job/minio-migrate-legacy -n ${{ env.NAMESPACE }} --timeout=600s; then
+            echo "❌ Job de migración de MinIO falló o no completó a tiempo. Diagnóstico:"
+            kubectl describe job minio-migrate-legacy -n ${{ env.NAMESPACE }} || true
+            kubectl logs job/minio-migrate-legacy -n ${{ env.NAMESPACE }} --tail=200 || true
+            exit 1
+          fi
+          echo "✅ Migración de datos legacy completada"
+
       - name: Apply NetworkPolicies and Security Configurations
         run: |
           # NetworkPolicies existentes
