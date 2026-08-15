@@ -873,20 +873,37 @@ jobs:
           set -euo pipefail
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
           NEW_IMAGE="${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}"
-
-          sed -i -E "s#image: ghcr\.io/poravv/cuenly-app-backend:[A-Za-z0-9_.-]+#image: ${NEW_IMAGE}#" \
-            backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml
-
-          if git diff --quiet -- backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml; then
-            echo "ℹ️ Git ya tenía el tag ${SHORT_SHA}, nada que commitear"
-            exit 0
-          fi
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml
-          git commit -m "chore(k8s): pin backend/worker image to sha-${SHORT_SHA} [skip ci]"
-          git push origin HEAD:${{ github.ref_name }}
+
+          # Retry con fetch+reset: si el remoto avanzó desde el checkout (otro
+          # run/push en el medio), el primer push queda rechazado
+          # (non-fast-forward). Cada intento parte de origin/HEAD fresco y
+          # reaplica el sed, así que no hay merge/rebase que pueda conflictuar.
+          for attempt in $(seq 1 5); do
+            sed -i -E "s#image: ghcr\.io/poravv/cuenly-app-backend:[A-Za-z0-9_.-]+#image: ${NEW_IMAGE}#" \
+              backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml
+
+            if git diff --quiet -- backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml; then
+              echo "ℹ️ Git ya tenía el tag ${SHORT_SHA}, nada que commitear"
+              exit 0
+            fi
+
+            git add backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml
+            git commit -m "chore(k8s): pin backend/worker image to sha-${SHORT_SHA} [skip ci]"
+
+            if git push origin HEAD:${{ github.ref_name }}; then
+              echo "✅ Tag pinneado en Git"
+              exit 0
+            fi
+
+            echo "⏳ Intento $attempt/5: push rechazado (el remoto avanzó), sincronizando y reintentando..."
+            git fetch origin ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+          done
+
+          echo "❌ No se pudo pushear el pin de imagen tras 5 intentos"
+          exit 1
 
       - name: Remove old backend ingress (now handled by frontend)
         run: |
