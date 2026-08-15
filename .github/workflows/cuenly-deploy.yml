@@ -601,9 +601,21 @@ jobs:
           EXPECTED_BACKEND_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
           echo "📦 Preparando imagen: ${EXPECTED_BACKEND_IMAGE}"
           
-          # Verificar que la imagen backend existe antes de desplegar
-          if ! docker manifest inspect "${EXPECTED_BACKEND_IMAGE}" > /dev/null 2>&1; then
-            echo "❌ Error: imagen backend no encontrada en GHCR: ${EXPECTED_BACKEND_IMAGE}"
+          # Verificar que la imagen backend existe antes de desplegar.
+          # Retry: GHCR a veces tarda en propagar el manifest recién pusheado
+          # (visto varias veces: el push termina ok pero el inspect inmediato
+          # devuelve "not found" por unos minutos).
+          IMAGE_FOUND=false
+          for attempt in $(seq 1 5); do
+            if docker manifest inspect "${EXPECTED_BACKEND_IMAGE}" > /dev/null 2>&1; then
+              IMAGE_FOUND=true
+              break
+            fi
+            echo "⏳ Intento $attempt/5: imagen no encontrada todavía en GHCR, reintentando en 15s..."
+            sleep 15
+          done
+          if [ "$IMAGE_FOUND" != "true" ]; then
+            echo "❌ Error: imagen backend no encontrada en GHCR tras 5 intentos: ${EXPECTED_BACKEND_IMAGE}"
             exit 1
           fi
           
@@ -675,17 +687,29 @@ jobs:
             exit 1
           fi
 
-          # Verificar que los pods estén usando la imagen correcta
+          # Verificar que los pods estén usando la imagen correcta.
+          # Retry: el pod viejo puede seguir "Running" hasta ~15s (preStop)
+          # mientras termina, apareciendo como mismatch transitorio aunque
+          # el rollout ya haya completado con éxito.
           echo "🔍 Verificando imagen desplegada:"
-          BACKEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,tier=backend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-backend")].image}{"\n"}{end}')
-          echo "$BACKEND_IMAGES_BY_POD"
+          MISMATCHED_BACKEND=""
+          for attempt in $(seq 1 6); do
+            BACKEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,tier=backend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-backend")].image}{"\n"}{end}')
+            echo "$BACKEND_IMAGES_BY_POD"
 
-          if [ -z "$BACKEND_IMAGES_BY_POD" ]; then
-            echo "❌ Error: No se encontraron pods backend para validar imagen"
-            exit 1
-          fi
+            if [ -z "$BACKEND_IMAGES_BY_POD" ]; then
+              echo "❌ Error: No se encontraron pods backend para validar imagen"
+              exit 1
+            fi
 
-          MISMATCHED_BACKEND=$(echo "$BACKEND_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_BACKEND_IMAGE" 'NF==2 && $2!=expected {print}')
+            MISMATCHED_BACKEND=$(echo "$BACKEND_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_BACKEND_IMAGE" 'NF==2 && $2!=expected {print}')
+            if [ -z "$MISMATCHED_BACKEND" ]; then
+              break
+            fi
+            echo "⏳ Intento $attempt/6: pods con imagen vieja (probablemente terminando), reintentando en 10s..."
+            sleep 10
+          done
+
           if [ -n "$MISMATCHED_BACKEND" ]; then
             echo "❌ Error: Algunos pods backend no tienen la imagen esperada"
             echo "Imagen esperada: $EXPECTED_BACKEND_IMAGE"
@@ -734,9 +758,19 @@ jobs:
           SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
           EXPECTED_WORKER_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
           
-          # Verificar que la imagen worker (backend) existe antes de desplegar
-          if ! docker manifest inspect "${EXPECTED_WORKER_IMAGE}" > /dev/null 2>&1; then
-            echo "❌ Error: imagen worker no encontrada en GHCR: ${EXPECTED_WORKER_IMAGE}"
+          # Verificar que la imagen worker (backend) existe antes de desplegar.
+          # Retry: mismo flake de propagación de GHCR que en el backend.
+          IMAGE_FOUND=false
+          for attempt in $(seq 1 5); do
+            if docker manifest inspect "${EXPECTED_WORKER_IMAGE}" > /dev/null 2>&1; then
+              IMAGE_FOUND=true
+              break
+            fi
+            echo "⏳ Intento $attempt/5: imagen no encontrada todavía en GHCR, reintentando en 15s..."
+            sleep 15
+          done
+          if [ "$IMAGE_FOUND" != "true" ]; then
+            echo "❌ Error: imagen worker no encontrada en GHCR tras 5 intentos: ${EXPECTED_WORKER_IMAGE}"
             exit 1
           fi
           
@@ -802,17 +836,28 @@ jobs:
           kubectl wait --for=delete pod -n ${{ env.NAMESPACE }} -l app=cuenly-worker --field-selector=status.phase!=Running --timeout=60s 2>/dev/null || true
           sleep 15
           
-          # Verificar imagen del worker en todos los pods (solo tier=worker)
+          # Verificar imagen del worker en todos los pods (solo tier=worker).
+          # Retry: mismo race de preStop que en el backend, por si el sleep 15
+          # de arriba no alcanzó a cubrir la terminación completa.
           echo "🔍 Verificando imagen del worker en todos los pods..."
-          WORKER_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker,tier=worker --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-worker")].image}{"\n"}{end}')
-          echo "$WORKER_IMAGES_BY_POD"
-          
-          if [ -z "$WORKER_IMAGES_BY_POD" ]; then
-            echo "❌ No se encontraron pods worker para validar"
-            exit 1
-          fi
-          
-          MISMATCHED_WORKER=$(echo "$WORKER_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_WORKER_IMAGE" 'NF==2 && $2!=expected {print}')
+          MISMATCHED_WORKER=""
+          for attempt in $(seq 1 6); do
+            WORKER_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-worker,tier=worker --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-worker")].image}{"\n"}{end}')
+            echo "$WORKER_IMAGES_BY_POD"
+
+            if [ -z "$WORKER_IMAGES_BY_POD" ]; then
+              echo "❌ No se encontraron pods worker para validar"
+              exit 1
+            fi
+
+            MISMATCHED_WORKER=$(echo "$WORKER_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_WORKER_IMAGE" 'NF==2 && $2!=expected {print}')
+            if [ -z "$MISMATCHED_WORKER" ]; then
+              break
+            fi
+            echo "⏳ Intento $attempt/6: pods con imagen vieja (probablemente terminando), reintentando en 10s..."
+            sleep 10
+          done
+
           if [ -n "$MISMATCHED_WORKER" ]; then
             echo "❌ Algunos pods worker no tienen la imagen esperada"
             echo "Imagen esperada: $EXPECTED_WORKER_IMAGE"
@@ -820,7 +865,7 @@ jobs:
             echo "$MISMATCHED_WORKER"
             exit 1
           fi
-          
+
           echo "✅ Worker desplegado correctamente con imagen: $EXPECTED_WORKER_IMAGE"
 
       - name: Pin deployed image tag in Git manifests
@@ -1205,17 +1250,27 @@ jobs:
           kubectl wait --for=delete pod -n ${{ env.NAMESPACE }} -l app=cuenly-frontend --field-selector=status.phase!=Running --timeout=60s 2>/dev/null || true
           sleep 15
           
-          # Verificar que los pods estén usando la imagen correcta (solo tier=frontend)
+          # Verificar que los pods estén usando la imagen correcta (solo tier=frontend).
+          # Retry: mismo race de preStop que en backend/worker.
           echo "🔍 Verificando imagen desplegada:"
-          FRONTEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend,tier=frontend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-frontend")].image}{"\n"}{end}')
-          echo "$FRONTEND_IMAGES_BY_POD"
-          
-          if [ -z "$FRONTEND_IMAGES_BY_POD" ]; then
-            echo "❌ No se encontraron pods frontend para validar imagen"
-            exit 1
-          fi
-          
-          MISMATCHED_FRONTEND=$(echo "$FRONTEND_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_FRONTEND_IMAGE" 'NF==2 && $2!=expected {print}')
+          MISMATCHED_FRONTEND=""
+          for attempt in $(seq 1 6); do
+            FRONTEND_IMAGES_BY_POD=$(kubectl get pods -n ${{ env.NAMESPACE }} -l app=cuenly-frontend,tier=frontend --field-selector=status.phase=Running -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.spec.containers[?(@.name=="cuenly-frontend")].image}{"\n"}{end}')
+            echo "$FRONTEND_IMAGES_BY_POD"
+
+            if [ -z "$FRONTEND_IMAGES_BY_POD" ]; then
+              echo "❌ No se encontraron pods frontend para validar imagen"
+              exit 1
+            fi
+
+            MISMATCHED_FRONTEND=$(echo "$FRONTEND_IMAGES_BY_POD" | awk -F= -v expected="$EXPECTED_FRONTEND_IMAGE" 'NF==2 && $2!=expected {print}')
+            if [ -z "$MISMATCHED_FRONTEND" ]; then
+              break
+            fi
+            echo "⏳ Intento $attempt/6: pods con imagen vieja (probablemente terminando), reintentando en 10s..."
+            sleep 10
+          done
+
           if [ -n "$MISMATCHED_FRONTEND" ]; then
             echo "❌ Error: Algunos pods frontend no están usando la imagen esperada"
             echo "Imagen esperada: $EXPECTED_FRONTEND_IMAGE"
@@ -1223,7 +1278,7 @@ jobs:
             echo "$MISMATCHED_FRONTEND"
             exit 1
           fi
-          
+
           echo "✅ Frontend desplegado correctamente con imagen: ${IMAGE_TAG}"
           
       - name: Frontend health check
