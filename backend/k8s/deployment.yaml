@@ -9,7 +9,6 @@ metadata:
     component: api-server
     version: v2.0.0
   annotations:
-    deployment.kubernetes.io/revision: "1"
     prometheus.io/scrape: "true"
     prometheus.io/port: "8000"
     prometheus.io/path: "/metrics"

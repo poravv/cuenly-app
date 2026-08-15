@@ -7,7 +7,7 @@ metadata:
     app: cuenly-worker
     tier: worker
 spec:
-  replicas: 1
+  # replicas lo gestiona KEDA (ScaledObject, min=3) — no declarar acá para no pelear en cada sync
   strategy:
     type: RollingUpdate
     rollingUpdate:
