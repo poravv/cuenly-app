@@ -602,20 +602,21 @@ jobs:
           echo "📦 Preparando imagen: ${EXPECTED_BACKEND_IMAGE}"
           
           # Verificar que la imagen backend existe antes de desplegar.
-          # Retry: GHCR a veces tarda en propagar el manifest recién pusheado
-          # (visto varias veces: el push termina ok pero el inspect inmediato
-          # devuelve "not found" por unos minutos).
+          # Retry: GHCR a veces tarda varios minutos en propagar el manifest
+          # recién pusheado (medido en runs reales: el push termina ok pero
+          # el inspect sigue devolviendo "not found" hasta ~4-5 min después).
+          # 15 intentos x 20s = 5 min de margen.
           IMAGE_FOUND=false
-          for attempt in $(seq 1 5); do
+          for attempt in $(seq 1 15); do
             if docker manifest inspect "${EXPECTED_BACKEND_IMAGE}" > /dev/null 2>&1; then
               IMAGE_FOUND=true
               break
             fi
-            echo "⏳ Intento $attempt/5: imagen no encontrada todavía en GHCR, reintentando en 15s..."
-            sleep 15
+            echo "⏳ Intento $attempt/15: imagen no encontrada todavía en GHCR, reintentando en 20s..."
+            sleep 20
           done
           if [ "$IMAGE_FOUND" != "true" ]; then
-            echo "❌ Error: imagen backend no encontrada en GHCR tras 5 intentos: ${EXPECTED_BACKEND_IMAGE}"
+            echo "❌ Error: imagen backend no encontrada en GHCR tras 15 intentos (5 min): ${EXPECTED_BACKEND_IMAGE}"
             exit 1
           fi
           
@@ -759,18 +760,22 @@ jobs:
           EXPECTED_WORKER_IMAGE=${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}
           
           # Verificar que la imagen worker (backend) existe antes de desplegar.
-          # Retry: mismo flake de propagación de GHCR que en el backend.
+          # Retry: mismo flake de propagación de GHCR que en el backend (ver
+          # nota de 5 min de margen en "Deploy backend application"). En la
+          # práctica esto ya debería estar resuelto porque el paso de backend
+          # usa la misma imagen y corre antes, pero se deja el mismo margen
+          # por las dudas (ej. si algún día se desacopla el tag).
           IMAGE_FOUND=false
-          for attempt in $(seq 1 5); do
+          for attempt in $(seq 1 15); do
             if docker manifest inspect "${EXPECTED_WORKER_IMAGE}" > /dev/null 2>&1; then
               IMAGE_FOUND=true
               break
             fi
-            echo "⏳ Intento $attempt/5: imagen no encontrada todavía en GHCR, reintentando en 15s..."
-            sleep 15
+            echo "⏳ Intento $attempt/15: imagen no encontrada todavía en GHCR, reintentando en 20s..."
+            sleep 20
           done
           if [ "$IMAGE_FOUND" != "true" ]; then
-            echo "❌ Error: imagen worker no encontrada en GHCR tras 5 intentos: ${EXPECTED_WORKER_IMAGE}"
+            echo "❌ Error: imagen worker no encontrada en GHCR tras 15 intentos (5 min): ${EXPECTED_WORKER_IMAGE}"
             exit 1
           fi
           
