@@ -337,6 +337,9 @@ jobs:
     if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped')
     runs-on: self-hosted
     environment: ${{ github.event.inputs.environment || 'development' }}
+    permissions:
+      contents: write
+      packages: read
     env:
       NAMESPACE: cuenly-backend
     outputs:
@@ -354,11 +357,9 @@ jobs:
       - name: Setup kubectl context
         run: |
           kubectl config current-context
-          
-      - name: Ensure namespace exists
-        run: |
-          kubectl get ns ${{ env.NAMESPACE }} || kubectl create ns ${{ env.NAMESPACE }}
-          
+
+      # Namespace la crea Argo (CreateNamespace=true en la Application cuenly)
+
       - name: Create/Update backend secrets
         run: |
           set -euo pipefail
@@ -504,19 +505,8 @@ jobs:
           # Esperar a que se limpien los pods
           sleep 10
             
-      - name: Deploy simple MongoDB
-        run: |
-          set -euo pipefail
-          kubectl apply -f backend/k8s/mongodb-simple.yaml -n ${{ env.NAMESPACE }}
-          kubectl rollout status deployment/mongodb -n ${{ env.NAMESPACE }} --timeout=300s
-          kubectl wait --for=condition=ready pod -l app=mongodb -n ${{ env.NAMESPACE }} --timeout=300s
-
-      - name: Deploy MinIO
-        run: |
-          set -euo pipefail
-          echo "🚀 Desplegando MinIO interno (PVC + Deployment + Service + NetworkPolicy)..."
-          kubectl apply -f backend/k8s/minio.yaml -n ${{ env.NAMESPACE }}
-          kubectl rollout status deployment/minio -n ${{ env.NAMESPACE }} --timeout=300s
+      # MongoDB y MinIO (backend/k8s/mongodb-simple.yaml, backend/k8s/minio.yaml) los
+      # aplica Argo (Application cuenly, path backend/k8s). El CI ya no los apply-ea.
 
       - name: Migrate legacy MinIO data
         env:
@@ -561,11 +551,9 @@ jobs:
 
       - name: Apply NetworkPolicies and Security Configurations
         run: |
-          # NetworkPolicies existentes
-          kubectl apply -f backend/k8s/networkpolicy-mongodb.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f backend/k8s/networkpolicy-backend.yaml -n ${{ env.NAMESPACE }}
-          
-          # Rate limiting y configuraciones de seguridad
+          # NetworkPolicies (backend/k8s/networkpolicy-*.yaml) las aplica Argo.
+
+          # Rate limiting y configuraciones de seguridad (fuera de backend/k8s, Argo no los cubre)
           echo "🛡️  Aplicando configuraciones de rate limiting y seguridad..."
           kubectl apply -f k8s-security-improvements/rate-limiting-configmap.yaml -n ${{ env.NAMESPACE }} || echo "⚠️  Rate limiting config no encontrado, continuando..."
           
@@ -625,27 +613,7 @@ jobs:
             echo "⚠️  No se encontró script mongo-indexes.js, continuando..."
           fi
           
-      - name: Clean problematic backend resources
-        run: |
-          set -euo pipefail
-          echo "🧹 Limpiando recursos problemáticos del backend..."
-          
-          # Eliminar deployment problemático si existe
-          kubectl delete deployment cuenly-backend -n ${{ env.NAMESPACE }} --ignore-not-found=true --force --grace-period=0 || true
-          
-          # Esperar a que los pods terminen
-          echo "⏳ Esperando terminación de pods..."
-          sleep 10
-          
-          # Forzar eliminación de pods colgados
-          kubectl delete pods -l app=cuenly-backend -n ${{ env.NAMESPACE }} --force --grace-period=0 --ignore-not-found=true || true
-          
-          # Eliminar replica sets huérfanos
-          kubectl delete replicaset -l app=cuenly-backend -n ${{ env.NAMESPACE }} --force --grace-period=0 --ignore-not-found=true || true
-          
-          echo "✅ Limpieza completada"
-          
-      - name: Deploy backend application  
+      - name: Deploy backend application
         run: |
           set -euo pipefail
           echo "🚀 Desplegando backend..."
@@ -694,14 +662,12 @@ jobs:
 
           # Limpiar pods legacy que no tengan tier=backend
           kubectl delete pods -n ${{ env.NAMESPACE }} -l app=cuenly-backend,!tier --ignore-not-found=true || true
-          
-          # Aplicar configuración de Kubernetes
-          echo "📋 Aplicando configuración de Redis..."
-          kubectl apply -f backend/k8s/redis-deployment.yaml -n ${{ env.NAMESPACE }}
 
-          echo "📋 Aplicando configuración de backend..."
-          kubectl apply -f backend/k8s/deployment.yaml -n ${{ env.NAMESPACE }}
-          
+          # redis-deployment.yaml y deployment.yaml (backend/k8s) los aplica Argo.
+          # Acá solo actualizamos la imagen: Argo IGNORA ese campo a propósito
+          # (ignoreDifferences en la Application cuenly), así que el deploy real
+          # de imagen sigue siendo responsabilidad del CI.
+
           # Actualizar imagen + forzar rollout en un solo patch atómico
           echo "🔄 Actualizando imagen del deployment (patch atómico)..."
           kubectl patch deployment cuenly-backend -n ${{ env.NAMESPACE }} -p \
@@ -792,15 +758,10 @@ jobs:
             exit 1
           fi
           
-          # Aplicar configuración de worker
-          echo "📋 Aplicando configuración de worker..."
-          kubectl apply -f backend/k8s/worker-deployment.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f backend/k8s/worker-pdb.yaml -n ${{ env.NAMESPACE }}
-          
-          # Aplicar KEDA ScaledObject para autoscaling
-          echo "📋 Aplicando KEDA ScaledObject para worker..."
-          kubectl apply -f backend/k8s/worker-scaledobject.yaml -n ${{ env.NAMESPACE }} || echo "⚠️ KEDA ScaledObject no aplicado (KEDA puede no estar instalado)"
-          
+          # worker-deployment.yaml, worker-pdb.yaml y worker-scaledobject.yaml
+          # (backend/k8s) los aplica Argo. Acá solo actualizamos la imagen (ver
+          # nota de ignoreDifferences en el paso de deploy del backend).
+
           # Actualizar imagen + forzar rollout en un solo patch atómico
           echo "🔄 Actualizando imagen del worker deployment (patch atómico)..."
           kubectl patch deployment cuenly-worker -n ${{ env.NAMESPACE }} -p \
@@ -876,7 +837,27 @@ jobs:
           fi
           
           echo "✅ Worker desplegado correctamente con imagen: $EXPECTED_WORKER_IMAGE"
-          
+
+      - name: Pin deployed image tag in Git manifests
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+          NEW_IMAGE="${{ env.REGISTRY }}/${{ env.BASE_IMAGE_NAME }}-backend:sha-${SHORT_SHA}"
+
+          sed -i -E "s#image: ghcr\.io/poravv/cuenly-app-backend:[A-Za-z0-9_.-]+#image: ${NEW_IMAGE}#" \
+            backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml
+
+          if git diff --quiet -- backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml; then
+            echo "ℹ️ Git ya tenía el tag ${SHORT_SHA}, nada que commitear"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backend/k8s/deployment.yaml backend/k8s/worker-deployment.yaml
+          git commit -m "chore(k8s): pin backend/worker image to sha-${SHORT_SHA} [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
+
       - name: Remove old backend ingress (now handled by frontend)
         run: |
           kubectl delete ingress cuenly-backend-ingress -n ${{ env.NAMESPACE }} --ignore-not-found=true
