@@ -508,46 +508,12 @@ jobs:
       # MongoDB y MinIO (backend/k8s/mongodb-simple.yaml, backend/k8s/minio.yaml) los
       # aplica Argo (Application cuenly, path backend/k8s). El CI ya no los apply-ea.
 
-      - name: Migrate legacy MinIO data
-        env:
-          MINIO_LEGACY_ENDPOINT: ${{ secrets.MINIO_LEGACY_ENDPOINT }}
-          MINIO_LEGACY_ACCESS_KEY: ${{ secrets.MINIO_LEGACY_ACCESS_KEY }}
-          MINIO_LEGACY_SECRET_KEY: ${{ secrets.MINIO_LEGACY_SECRET_KEY }}
-        run: |
-          set -euo pipefail
-          echo "🔄 Preparando migración de datos legacy de MinIO (si aplica)..."
-
-          # El MinIO legacy (minpoint.mindtechpy.net) fue dado de baja; estos secrets solo se setean si aparece un endpoint legacy recuperable para migrar datos.
-          if [ -z "$MINIO_LEGACY_ENDPOINT" ]; then
-            echo "ℹ️ Sin MinIO legacy configurado — skip migración"
-            exit 0
-          fi
-
-          # Asegurar que el secret temporal con credenciales legacy se borre siempre,
-          # tanto si el job termina bien como si falla.
-          cleanup() {
-            kubectl delete secret minio-legacy-credentials -n ${{ env.NAMESPACE }} --ignore-not-found=true
-          }
-          trap cleanup EXIT
-
-          kubectl delete secret minio-legacy-credentials -n ${{ env.NAMESPACE }} --ignore-not-found=true
-          kubectl create secret generic minio-legacy-credentials \
-            --namespace=${{ env.NAMESPACE }} \
-            --from-literal=OLD_MINIO_ENDPOINT="$MINIO_LEGACY_ENDPOINT" \
-            --from-literal=OLD_MINIO_ACCESS_KEY="$MINIO_LEGACY_ACCESS_KEY" \
-            --from-literal=OLD_MINIO_SECRET_KEY="$MINIO_LEGACY_SECRET_KEY"
-
-          kubectl delete job minio-migrate-legacy -n ${{ env.NAMESPACE }} --ignore-not-found=true
-          kubectl apply -f backend/k8s/minio-migration-job.yaml -n ${{ env.NAMESPACE }}
-
-          echo "⏳ Esperando finalización del job de migración..."
-          if ! kubectl wait --for=condition=complete job/minio-migrate-legacy -n ${{ env.NAMESPACE }} --timeout=600s; then
-            echo "❌ Job de migración de MinIO falló o no completó a tiempo. Diagnóstico:"
-            kubectl describe job minio-migrate-legacy -n ${{ env.NAMESPACE }} || true
-            kubectl logs job/minio-migrate-legacy -n ${{ env.NAMESPACE }} --tail=200 || true
-            exit 1
-          fi
-          echo "✅ Migración de datos legacy completada"
+      # La migración de datos legacy de MinIO ya se hizo (ver commit d2cf732,
+      # que borró backend/k8s/minio-migration-job.yaml). El MinIO legacy
+      # (minpoint.mindtechpy.net) fue dado de baja. Se elimina el step
+      # "Migrate legacy MinIO data": aplicaba ese manifiesto, que ya no existe
+      # en el repo — quedaba vivo solo porque MINIO_LEGACY_ENDPOINT nunca
+      # estuvo seteado (early exit), pero de setearse habría fallado.
 
       - name: Apply NetworkPolicies and Security Configurations
         run: |
@@ -667,6 +633,10 @@ jobs:
           # Acá solo actualizamos la imagen: Argo IGNORA ese campo a propósito
           # (ignoreDifferences en la Application cuenly), así que el deploy real
           # de imagen sigue siendo responsabilidad del CI.
+          # TODO: quitar este kubectl set image/patch cuando la Application
+          # cuenly pase a selfHeal:true y se le saque el ignoreDifferences de
+          # containers[0].image — en ese punto el sync de Argo pasa a ser el
+          # deploy de imagen (pin en Git + Argo aplica).
 
           # Actualizar imagen + forzar rollout en un solo patch atómico
           echo "🔄 Actualizando imagen del deployment (patch atómico)..."
@@ -761,6 +731,9 @@ jobs:
           # worker-deployment.yaml, worker-pdb.yaml y worker-scaledobject.yaml
           # (backend/k8s) los aplica Argo. Acá solo actualizamos la imagen (ver
           # nota de ignoreDifferences en el paso de deploy del backend).
+          # TODO: mismo bridge temporal que el backend — quitar cuando la
+          # Application cuenly pase a selfHeal:true (ver TODO en "Deploy
+          # backend application").
 
           # Actualizar imagen + forzar rollout en un solo patch atómico
           echo "🔄 Actualizando imagen del worker deployment (patch atómico)..."
@@ -987,6 +960,15 @@ jobs:
           echo "  Backend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') }}"
           echo "  Frontend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true')) }}"
 
+  # SCOPE: ninguna Argo Application trackea frontend/k8s hoy (la Application
+  # "cuenly" en k8s-platforms/argocd/apps/cuenly.yaml solo trackea
+  # backend/k8s, namespace cuenly-backend). Este job queda 100%
+  # CI-managed a propósito — no se tocaron sus kubectl apply/set-image/rollout
+  # como parte de la migración anti-drift (paso 2), porque no hay Argo
+  # gestionando ese path para que el CI le ceda el apply. Tampoco se tocó
+  # k8s-security-improvements/ (fuera de backend/k8s y frontend/k8s, sin
+  # Application propia). Si algún día se crea una Application para el
+  # frontend, este job necesita el mismo tratamiento que deploy-backend.
   deploy-frontend:
     needs: [detect-changes, build-frontend, deploy-backend]
     # Frontend se despliega si cambió O si backend cambió (para mantener sincronización) Y estamos en rama principal
