@@ -131,14 +131,6 @@ spec:
           podSelector:
             matchLabels:
               app: cuenly-worker
-        # Permite al Job one-off de migración de datos legacy alcanzar MinIO.
-        # Kubernetes etiqueta automáticamente los pods de un Job con job-name=<nombre>.
-        - namespaceSelector:
-            matchLabels:
-              name: cuenly-backend
-          podSelector:
-            matchLabels:
-              job-name: minio-migrate-legacy
       ports:
         - protocol: TCP
           port: 9000
