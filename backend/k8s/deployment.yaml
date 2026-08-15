@@ -39,7 +39,7 @@ spec:
     spec:
       containers:
       - name: cuenly-backend
-        image: ghcr.io/poravv/cuenly-app-backend:sha-4fbae38
+        image: ghcr.io/poravv/cuenly-app-backend:sha-fa66928
         imagePullPolicy: Always
         ports:
         - containerPort: 8000

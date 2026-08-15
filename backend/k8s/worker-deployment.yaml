@@ -30,7 +30,7 @@ spec:
         - name: ghcr-secret
       containers:
         - name: cuenly-worker
-          image: ghcr.io/poravv/cuenly-app-backend:sha-4fbae38
+          image: ghcr.io/poravv/cuenly-app-backend:sha-fa66928
           imagePullPolicy: Always
           command: ["python", "/app/worker.py"]
           resources:
