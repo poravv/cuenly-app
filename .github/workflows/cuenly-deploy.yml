@@ -9,6 +9,11 @@ on:
       - 'frontend/**'
       - 'config/**'
       - 'nginx/**'
+      # Se deja este propio workflow en paths a propósito: un cambio CI-only
+      # SÍ dispara un build+deploy real (config-changed fuerza backend/frontend
+      # a true), así que sirve para validar que el pipeline sigue funcionando
+      # después de tocarlo — con el fix de más abajo (build-backend == 'success'
+      # a secas) ya no puede fallar por "build skipped, imagen inexistente".
       - '.github/workflows/cuenly-deploy.yml'
   pull_request:
     branches: [ main, master ]
@@ -333,8 +338,15 @@ jobs:
 
   deploy-backend:
     needs: [detect-changes, build-backend]
-    # Backend se despliega si cambió backend O config Y el build fue exitoso Y estamos en rama principal
-    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped')
+    # Backend se despliega si cambió backend O config Y el build fue exitoso Y estamos en rama principal.
+    # Requiere build-backend == 'success' a secas (no 'skipped'): este job no tiene
+    # fallback si la imagen sha-<GITHUB_SHA> no existe (a diferencia de deploy-frontend,
+    # que sí cae a :latest) — deployar con build skipped apunta a un tag que nadie
+    # buildeó y el docker manifest inspect falla siempre. Nota: dado que build-backend
+    # corre con el mismo gate (backend-changed || config-changed) que este job, en la
+    # práctica 'skipped' nunca coincide con este 'if' ya true — pero se deja explícito
+    # por higiene, no por necesidad estricta hoy.
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && needs.build-backend.result == 'success'
     runs-on: self-hosted
     environment: ${{ github.event.inputs.environment || 'development' }}
     permissions:
@@ -957,7 +969,7 @@ jobs:
           echo "  config-changed: '${{ needs.detect-changes.outputs.config-changed }}'"
           echo ""
           echo "🎯 SHOULD DEPLOY:"
-          echo "  Backend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') }}"
+          echo "  Backend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') && needs.build-backend.result == 'success' }}"
           echo "  Frontend: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') && ((needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.config-changed == 'true') || (needs.deploy-backend.result == 'success' && needs.deploy-backend.outputs.backend-ready == 'true')) }}"
 
   # SCOPE: ninguna Argo Application trackea frontend/k8s hoy (la Application
