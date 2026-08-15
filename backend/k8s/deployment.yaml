@@ -123,8 +123,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: cuenly-backend
-  minReplicas: 2    # Mínimo 2 réplicas para alta disponibilidad
-  maxReplicas: 5    # Aumentado a 5 réplicas para picos de carga
+  minReplicas: 1    # App con poco uso: 1 réplica por defecto
+  maxReplicas: 2    # Máximo 2 réplicas para picos de carga
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 30

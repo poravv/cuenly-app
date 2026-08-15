@@ -13,7 +13,7 @@ metadata:
     prometheus.io/scrape: "true"
     prometheus.io/port: "80"
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -103,8 +103,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: cuenly-frontend
-  minReplicas: 2
-  maxReplicas: 5
+  minReplicas: 1
+  maxReplicas: 2
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0
