@@ -38,6 +38,18 @@ spec:
         runAsUser: 65532
         runAsGroup: 65532
         fsGroup: 65532
+      initContainers:
+      # Chainguard corre como 65532: los datos previos son de root/1000. Idempotente;
+      # ponytail: chown -R en cada arranque, cambiar a find -not -user si el volumen crece mucho.
+      - name: chown-data
+        image: busybox:1.36
+        command: ["sh", "-c", "chown -R 65532:65532 /data"]
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
+        volumeMounts:
+          - name: minio-storage
+            mountPath: /data
       containers:
       - name: minio
         image: cgr.dev/chainguard/minio:latest@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1
