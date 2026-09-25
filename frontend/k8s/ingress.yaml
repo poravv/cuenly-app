@@ -4,9 +4,9 @@ metadata:
   name: cuenly-ingress
   namespace: cuenly-frontend
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    acme.cert-manager.io/http01-edit-in-place: "true"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Sin TLS en el cluster: app.cuenly.com apunta al proxy openresty externo, que termina TLS
+    # con su propio cert Let's Encrypt. cert-manager no puede emitir para cuenly.com (el
+    # ClusterIssuer solo tiene DNS-01 para la zona mindtechpy.net) y dejaba la Order colgada.
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "900"
@@ -16,10 +16,6 @@ metadata:
     # CORS es manejado directamente por el backend para mayor seguridad y control
 spec:
   ingressClassName: nginx
-  tls:
-    - hosts:
-        - app.cuenly.com
-      secretName: cuenly-frontend-tls-secret
   rules:
     - host: app.cuenly.com
       http:
