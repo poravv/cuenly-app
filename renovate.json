@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabledManagers": ["kubernetes", "docker-compose"],
+  "kubernetes": {
+    "managerFilePatterns": ["/(^|/)k8s/.+\\.ya?ml$/"]
+  },
+  "dependencyDashboard": false,
+  "packageRules": [
+    {
+      "description": "Solo Chainguard (MinIO/mc): el resto de imágenes se pinea a mano o por CI.",
+      "matchPackageNames": ["!cgr.dev/chainguard/**"],
+      "enabled": false
+    },
+    {
+      "description": "Chainguard solo publica latest: se sigue el digest, una vez al mes, merge directo a main (Argo despliega).",
+      "matchPackageNames": ["cgr.dev/chainguard/**"],
+      "groupName": "chainguard minio",
+      "schedule": ["* 0-6 1 * *"],
+      "automerge": true,
+      "automergeType": "branch",
+      "commitMessagePrefix": "chore(deps):"
+    }
+  ]
+}
