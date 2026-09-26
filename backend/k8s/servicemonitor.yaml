@@ -1,0 +1,21 @@
+# Prometheus global (ns monitoring, kube-prometheus-stack) scrapea /metrics del backend.
+# /health no va: devuelve JSON, no formato Prometheus (daba up=0 → TargetDown).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cuenly-backend-monitor
+  namespace: cuenly-backend
+  labels:
+    app: cuenly-backend
+spec:
+  selector:
+    matchLabels:
+      app: cuenly-backend
+  namespaceSelector:
+    matchNames: [cuenly-backend]
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
