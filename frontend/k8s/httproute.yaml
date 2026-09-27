@@ -1,4 +1,4 @@
-# app.cuenly.com por Traefik (Gateway API), reemplaza al Ingress nginx (ingress-nginx retirado).
+# app.cuenly.com por Traefik (Gateway API), reemplaza al Ingress nginx (retirado).
 # cuenly.com no está en Cloudflare: NPM termina TLS y reenvía a Traefik (192.168.100.222:80).
 # Body size sin límite en Traefik; timeouts de 900 s en el entrypoint web (k8s-platforms).
 apiVersion: gateway.networking.k8s.io/v1

@@ -1080,7 +1080,6 @@ jobs:
           kubectl apply -f frontend/k8s/backend-proxy-service.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/configmap.yaml -n ${{ env.NAMESPACE }}
           # httproute.yaml y networkpolicy.yaml los aplica Argo (Application cuenly-frontend en k8s-platforms).
-          # El Ingress nginx ya no se aplica: ingress-nginx se retira.
 
           echo "✅ Infraestructura frontend con seguridad configurada"
           

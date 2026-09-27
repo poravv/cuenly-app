@@ -15,10 +15,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: traefik
-        # ingress-nginx solo mientras NPM migra a Traefik; quitar al apagarlo
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
       ports:
         - protocol: TCP
           port: 80
