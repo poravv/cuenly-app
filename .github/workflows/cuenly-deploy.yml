@@ -1079,35 +1079,9 @@ jobs:
           # Aplicar backend proxy service primero
           kubectl apply -f frontend/k8s/backend-proxy-service.yaml -n ${{ env.NAMESPACE }}
           kubectl apply -f frontend/k8s/configmap.yaml -n ${{ env.NAMESPACE }}
-          kubectl apply -f frontend/k8s/networkpolicy.yaml -n ${{ env.NAMESPACE }}
-          
-          # Aplicar ingress seguro con rate limiting con fallbacks
-          echo "🛡️  Configurando ingress con seguridad..."
-          
-          # Intentar ingress seguro sin snippets (más compatible)
-          if [ -f "k8s-security-improvements/ingress-secure-nosnippets.yaml" ]; then
-            echo "🔐 Intentando ingress seguro sin snippets..."
-            if kubectl apply -f k8s-security-improvements/ingress-secure-nosnippets.yaml -n ${{ env.NAMESPACE }}; then
-              echo "✅ Ingress seguro aplicado correctamente"
-            else
-              echo "⚠️  Ingress seguro falló, intentando con ingress normal..."
-              kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
-            fi
-          # Fallback: intentar ingress seguro con snippets
-          elif [ -f "k8s-security-improvements/ingress-secure.yaml" ]; then
-            echo "🔐 Intentando ingress seguro con snippets..."
-            if kubectl apply -f k8s-security-improvements/ingress-secure.yaml -n ${{ env.NAMESPACE }}; then
-              echo "✅ Ingress seguro aplicado correctamente"
-            else
-              echo "⚠️  Ingress seguro falló (snippets deshabilitados), usando ingress normal..."
-              kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
-            fi
-          # Fallback final: ingress normal
-          else
-            echo "⚠️  Ingress seguro no encontrado, usando ingress normal"
-            kubectl apply -f frontend/k8s/ingress.yaml -n ${{ env.NAMESPACE }}
-          fi
-          
+          # httproute.yaml y networkpolicy.yaml los aplica Argo (Application cuenly-frontend en k8s-platforms).
+          # El Ingress nginx ya no se aplica: ingress-nginx se retira.
+
           echo "✅ Infraestructura frontend con seguridad configurada"
           
       - name: Pre-deploy diagnostics

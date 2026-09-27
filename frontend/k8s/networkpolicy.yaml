@@ -12,14 +12,13 @@ spec:
     - Ingress
   ingress:
     - from:
-        # Ingress controller namespace (commonly 'ingress-nginx')
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+        # ingress-nginx solo mientras NPM migra a Traefik; quitar al apagarlo
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
-        # Alternative common name
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: nginx-ingress
       ports:
         - protocol: TCP
           port: 80
