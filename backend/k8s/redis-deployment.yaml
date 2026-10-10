@@ -6,7 +6,7 @@ metadata:
   labels:
     app: cuenly-redis
 spec:
-  replicas: 1
+  replicas: 0  # CuenlyApp dado de baja (2026-10-10)
   selector:
     matchLabels:
       app: cuenly-redis

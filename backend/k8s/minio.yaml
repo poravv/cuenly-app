@@ -20,7 +20,7 @@ metadata:
     app: minio
     tier: storage
 spec:
-  replicas: 1
+  replicas: 0  # CuenlyApp dado de baja (2026-10-10)
   strategy:
     type: Recreate   # Para que nunca haya dos pods con el mismo PVC
   selector:

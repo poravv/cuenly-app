@@ -13,7 +13,7 @@ metadata:
     prometheus.io/scrape: "true"
     prometheus.io/port: "80"
 spec:
-  replicas: 1
+  replicas: 0  # CuenlyApp dado de baja (2026-10-10)
   strategy:
     type: RollingUpdate
     rollingUpdate:
